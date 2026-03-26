@@ -28,13 +28,20 @@ The user describes what they're looking for in natural language. You search mult
    - Project name if mentioned (e.g., "scrutinizer", "psychodeli")
    - Time range if mentioned (e.g., "last week", "yesterday")
 
-2. **Run the search script** for a quick overview:
+2. **Try semantic search first** (if Qdrant + embedding server are running):
+   ```bash
+   node "${CLAUDE_PLUGIN_ROOT}/../../scripts/semantic-search.js" "<natural language query>" --limit 15
+   ```
+   If a project was mentioned, add `--project <name>`.
+   If this fails (services not running), fall back to step 3.
+
+3. **Fall back to keyword search:**
    ```bash
    bash "${CLAUDE_PLUGIN_ROOT}/scripts/remember-search.sh" "<keywords>" --max-results 15
    ```
    If a project was mentioned, add `--project <name>`.
 
-3. **For deeper results**, search transcripts directly with Grep:
+4. **For deeper results**, search transcripts directly with Grep:
    ```bash
    # Search all transcripts for keyword
    grep -r -i "<keyword>" ~/.claude/projects/ --include="*.jsonl" -l
@@ -45,14 +52,14 @@ The user describes what they're looking for in natural language. You search mult
    jq 'select(.type == "user" or .type == "assistant") | select(.message.content | type == "string") | select(.message.content | test("<keyword>"; "i")) | {timestamp, type, uuid, content: .message.content[:200]}' <transcript_path>
    ```
 
-4. **Present results** organized by relevance:
+5. **Present results** organized by relevance:
    - Lead with the most relevant hits (exact keyword matches in conversation)
    - Include the `deeplink` URL if available (for history viewer navigation)
    - Include the `transcript_path` and `uuid` for direct reference
    - Quote the relevant excerpt from the conversation
    - Note the project and date for context
 
-5. **If the user wants more detail** on a specific result, read the full transcript at that point:
+6. **If the user wants more detail** on a specific result, read the full transcript at that point:
    ```bash
    # Read messages around a specific UUID
    jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>

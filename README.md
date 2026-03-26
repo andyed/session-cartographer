@@ -129,11 +129,25 @@ All log paths default to `~/Documents/dev/` but are configurable via `CARTOGRAPH
 
 Results include timestamps, project names, excerpts, and deep links for [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) navigation.
 
+## Semantic search
+
+With Qdrant + llama.cpp embedding server running, `/remember` upgrades from keyword grep to vector similarity search. Falls back gracefully when services aren't available.
+
+```bash
+# Index your event logs
+node scripts/embed-events.js
+
+# Search directly
+node scripts/semantic-search.js "that approach we tried for pooling regions"
+```
+
+See [docs/SETUP.md](docs/SETUP.md) for full setup (Qdrant binary + embedding model, no Docker, under 1GB total).
+
 ## Roadmap
 
-- [ ] Semantic search via embeddings (Qdrant integration)
 - [ ] Session topology graph (which sessions touched which projects)
 - [ ] Auto-generated energy viz from live event data
+- [ ] Incremental indexing via hook (embed on write, not batch)
 - [ ] CLI tool for non-plugin usage
 
 ## See also
