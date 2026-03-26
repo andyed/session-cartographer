@@ -9,6 +9,10 @@ plugins/session-cartographer/
   .claude-plugin/plugin.json    — Plugin metadata
   skills/remember/SKILL.md      — /remember skill definition
   scripts/remember-search.sh    — Search implementation (bash + jq)
+  hooks/
+    hooks.json                  — Hook registrations (PostToolUse, PreCompact, SessionEnd, SubagentStop)
+    log-research.sh             — Logs WebFetch/WebSearch to research-log.jsonl + changelog.jsonl
+    log-session-milestones.sh   — Logs compactions, session ends, agent stops
 docs/
   CHANGELOG_SPEC.md             — Event log format specification
   energy-viz.html               — Project energy allocation dashboard

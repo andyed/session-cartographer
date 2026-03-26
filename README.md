@@ -100,16 +100,23 @@ claude install ./session-cartographer
 
 ## Event sources
 
-Cartographer searches JSONL files created by Claude Code hooks:
+The plugin registers hooks that automatically log session activity to JSONL files:
+
+| Hook | Triggers on | Writes to |
+|------|-------------|-----------|
+| `log-research.sh` | WebFetch, WebSearch | `research-log.jsonl` + `changelog.jsonl` |
+| `log-session-milestones.sh` | PreCompact, SessionEnd, SubagentStop | `session-milestones.jsonl` + `changelog.jsonl` |
+
+`/remember` then searches across these files plus raw session transcripts:
 
 | File | Contents |
 |------|----------|
-| `~/Documents/dev/changelog.jsonl` | Unified event index (all event types) |
-| `~/Documents/dev/session-milestones.jsonl` | Session lifecycle events with deep links |
-| `~/Documents/dev/research-log.jsonl` | Every WebFetch/WebSearch URL |
+| `changelog.jsonl` | Unified event index (all event types) |
+| `session-milestones.jsonl` | Session lifecycle events with deep links |
+| `research-log.jsonl` | Every WebFetch/WebSearch URL with auto-categorization |
 | `~/.claude/projects/*/*.jsonl` | Session transcripts (`--transcripts` flag) |
 
-Paths are configurable via environment variables — see `scripts/remember-search.sh`.
+All log paths default to `~/Documents/dev/` but are configurable via `CARTOGRAPHER_DEV_DIR`. Transcript path configurable via `CARTOGRAPHER_TRANSCRIPTS_DIR`.
 
 ## Usage
 
