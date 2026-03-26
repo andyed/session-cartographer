@@ -1,0 +1,5 @@
+{
+  "name": "session-cartographer",
+  "version": "0.1.0",
+  "description": "Map and search Claude Code session history — remember past decisions, research, and conversations"
+}
