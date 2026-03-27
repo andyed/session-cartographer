@@ -1,7 +1,7 @@
 ---
 name: remember
-description: Search conversation history across all Claude Code sessions. Finds past discussions, decisions, research URLs, and milestones by keyword or semantic similarity.
-argument-hint: "<what to find>"
+description: Recall past work across all Claude Code sessions. Finds decisions, research, fixes, and conversations by intent — not just keyword matching.
+argument-hint: "<what to recall>"
 allowed-tools:
   - Bash
   - Read
@@ -9,29 +9,41 @@ allowed-tools:
 
 # Remember
 
-Search across all Claude Code session history.
+Recall past work from Claude Code session history. The user is trying to recover context — a decision, a fix, a paper, an approach — not run a database query.
+
+## What can be remembered
+
+Hooks determine what's in the searchable index:
+- **Research activity** — every URL fetched, every web search query
+- **Session lifecycle** — compactions, session ends, agent completions
+- **Code changes** — file edits, bash commands (when `CARTOGRAPHER_LOG_TOOL_USE=true`)
+- **Raw transcripts** — full conversation text (slower, searched as fallback)
+
+If the user asks about something that wasn't captured by a hook, the transcript fallback may still find it — but it's slower and keyword-only.
 
 ## IMPORTANT: Use the search script
 
-Do NOT freestyle grep or jq commands. Always use the unified search script which handles semantic search, keyword search, and transcript search automatically.
+Do NOT freestyle grep or jq commands. Always use the unified search script.
 
 ## Step 1: Run the search
 
+Think about what the user is trying to recall, then translate to search terms. `/remember that shader fix` → search for "shader fix". `/remember the paper about pooling regions` → search for "pooling regions".
+
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<user's query>"
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<search terms>"
 ```
 
 If the user mentioned a specific project, add `--project <name>`:
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<query>" --project scrutinizer
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<terms>" --project scrutinizer
 ```
 
 For more results, add `--limit 25`.
 
 The script automatically:
 - Tries semantic search via Qdrant (if running)
-- Falls back to keyword search across all JSONL event logs
-- Searches session transcripts
+- Runs BM25 keyword search across all JSONL event logs
+- Falls back to transcript search
 - Handles missing files and cold starts gracefully
 
 ## Step 2: Present results
@@ -66,8 +78,18 @@ jq -c 'select(.type == "user" or .type == "assistant") | select(.message.content
 /remember the commit that fixed blur
 ```
 
-## Typical workflow
+## The remember → recall pipeline
 
-1. `/remember shader fix` → finds 3 results with timestamps and transcript paths
-2. Read the top result's transcript → recover the full reasoning and code
-3. Continue working with that context, or hand the transcript path to a new session
+```
+/remember "that shader fix"          ← intent (what the user wants to recall)
+        ↓
+  search event index                 ← find the event (BM25 + Qdrant)
+        ↓
+  [2026-03-07] shader fix evt-abc    ← located (summary + transcript path)
+        ↓
+  Read transcript at that point      ← retrieve the full memory (declarative recall)
+        ↓
+  Full reasoning, code, decisions    ← context recovered
+```
+
+**Don't stop at the search result.** The search result tells you *when and where* something happened. The transcript tells you *what and why*. When the user says "remember," they want the full context — go get it from the transcript automatically.
