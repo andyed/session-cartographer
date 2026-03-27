@@ -1,8 +1,6 @@
 # Session Cartographer
 
-![Session Cartographer](docs/wordmark.png)
-
-Search your Claude Code session history, or better yet, have Claude do it for you with `/remember`.
+Search your Claude Code session history, or better yet, have Claude do it for you with `/remember`. In the pictured case, "/remember remember skill"
 
 ![/remember in action](docs/remember_remember_skill.png)
 
