@@ -58,8 +58,8 @@ Transcripts participate in fusion as equal citizens — they're not appended at 
 
 ```js
 // bm25.js — extractSearchText()
-[event.summary, event.description, event.prompt, event.url,
- event.query, event.title].filter(Boolean).join(' ')
+[event.summary, event.description, event.display, event.prompt,
+ event.url, event.query, event.title].filter(Boolean).join(' ')
 ```
 
 ```awk
@@ -147,14 +147,6 @@ The bottleneck is transcript search (grep across many JSONL files). The 5-file c
 
 4. **Transcript content extraction truncates at 150 chars** and strips `\n`/`\t` escapes. Long messages lose context. The deep-link to the full transcript is the escape hatch.
 
-## Known Coverage Gap: Code Generation Events
+## Code Generation Events
 
-The hooks currently capture **browsing** (WebFetch/WebSearch) and **lifecycle** (compaction, session end, agent stops). But Claude Code's primary activity — writing and editing code — is invisible to the JSONL index. If the agent modifies `foveation.frag`, that event only exists in the raw transcript.
-
-This means `/remember "fixed the foveation shader"` only works via slow transcript grep, not the fast JSONL path.
-
-**Planned fix:** A `log-tool-use.sh` hook on PostToolUse for Edit/Write/Bash that captures:
-- **User prompts** (the high-level intent that kicked off the task)
-- **File modifications** (which files were edited, one-line summary)
-
-This would close the gap between "what research did we do" (captured) and "what code did we write" (not captured).
+`log-tool-use.sh` captures Edit/Write/Bash events including file paths, git commits (with GitHub permalinks and changed files), and bash commands. Gated by `CARTOGRAPHER_LOG_TOOL_USE=true` at runtime — the hooks are always registered but the script exits early if the env var is unset.

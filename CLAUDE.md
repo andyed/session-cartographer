@@ -15,8 +15,9 @@ scripts/
   reconstruct-history.js        — Deep transcript analysis for backfill
 plugins/session-cartographer/
   .claude-plugin/plugin.json    — Plugin metadata
-  skills/carto/SKILL.md      — /carto skill definition
-  scripts/carto-search.sh    — Legacy search (superseded by cartographer-search.sh)
+  skills/carto/SKILL.md         — /carto skill (launches Explorer web app)
+  skills/remember/SKILL.md     — /remember skill (CLI search)
+  scripts/remember-search.sh   — Legacy keyword-only search (superseded by cartographer-search.sh)
   hooks/
     hooks.json                  — Hook registrations (8 hooks)
     log-research.sh             — WebFetch/WebSearch → research-log.jsonl + changelog.jsonl

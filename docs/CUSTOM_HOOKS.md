@@ -40,7 +40,7 @@ jq -n -c \
     >> "$CHANGELOG"
 
 # Real-time indexing (optional — silent fail if services aren't running)
-INDEXER="$(dirname "$0")/path/to/scripts/index-event.sh"
+INDEXER="$HOME/Documents/dev/session-cartographer/scripts/index-event.sh"
 if [ -x "$INDEXER" ]; then
   tail -1 "$CHANGELOG" | "$INDEXER" &
 fi

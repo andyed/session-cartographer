@@ -57,10 +57,13 @@ Search results link directly into transcripts — click any event card to read t
 
 ```bash
 git clone https://github.com/andyed/session-cartographer.git
-claude install ./session-cartographer
 ```
 
-`claude install` registers the `/remember` skill and event-logging hooks.
+Two skills, different install paths:
+
+- **`/remember`** — CLI search. Symlink the skill: `ln -s /path/to/session-cartographer/plugins/session-cartographer/skills/remember ~/.claude/skills/remember`. Add hooks to `~/.claude/settings.json` (see [docs/SETUP.md](docs/SETUP.md)). No cloned repo needed at runtime — search runs via bash + awk.
+
+- **`/carto`** — Explorer web app. Symlink the skill: `ln -s /path/to/session-cartographer/plugins/session-cartographer/skills/carto ~/.claude/skills/carto`. **Requires the cloned repo** — `/carto explore` starts the Node server and Vite dev server from `explorer/`. Run `cd explorer && npm install` first.
 
 Or use the CLI search standalone (no install needed):
 ```bash
@@ -74,17 +77,14 @@ After installing, add this to your project or global `CLAUDE.md` so the agent kn
 ```markdown
 ## Session History
 
-Session Cartographer is installed as a Claude Code plugin. It provides:
+Session Cartographer is installed. Two skills:
 - `/remember <query>` — search past session history (decisions, research, fixes)
-- Hooks that automatically log events (web fetches, searches, compactions, file edits)
+- `/carto explore` — open the Explorer web app for visual browsing
 
 When you need context from a previous conversation, use `/remember`. The skill
 runs BM25 + RRF search across event logs and transcripts. Don't freestyle grep
-on transcript files — the skill handles search automatically.
-
-Each search result includes a `transcript:` path pointing to the full session
-JSONL file. Read that transcript to recover the complete conversation context
-— the search result is the map, the transcript is the territory.
+— the skill handles search automatically. Read the transcript path from results
+to recover full conversation context.
 ```
 
 ### Extend your session history
