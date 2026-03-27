@@ -74,6 +74,20 @@ With a local Qdrant binary + llama.cpp embedding server, `/remember` adds vector
 - **awk JSON extraction is fragile.** Works for the flat JSONL schemas we control. Escaped quotes in values will break field extraction.
 - **Ranking is by BM25 score within source, then RRF across sources.** Not a relevance model — a document mentioning your query word 3 times scores higher than one mentioning it once, regardless of context.
 
+## Deep link viewer
+
+Cartographer includes a built-in transcript viewer (the Explorer at `:2527`), but you can also use [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) as an alternate deep link handler. Set `CARTOGRAPHER_VIEWER_PREFIX` to route links to whichever viewer you prefer:
+
+```bash
+# Built-in Explorer (default)
+CARTOGRAPHER_VIEWER_PREFIX="http://localhost:2527/session/"
+
+# claude-code-history-viewer
+CARTOGRAPHER_VIEWER_PREFIX="claude-history://session/"
+```
+
+**TODO:** Wire `CARTOGRAPHER_VIEWER_PREFIX` into `/remember` CLI output and EventCard links so the viewer is fully swappable.
+
 ## See also
 
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — How BM25 + RRF scoring works
