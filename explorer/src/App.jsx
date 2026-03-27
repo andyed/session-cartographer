@@ -18,7 +18,8 @@ function parseURL() {
     : urlQuery ? 'search'
     : 'timeline';
 
-  return { tab, query: urlQuery, transcript: deepLinkTranscript, uuid: urlUuid };
+  const urlHighlight = url.searchParams.get('highlight') || '';
+  return { tab, query: urlQuery, transcript: deepLinkTranscript, uuid: urlUuid, highlight: urlHighlight };
 }
 
 const initial = parseURL();
@@ -28,6 +29,7 @@ export default function App() {
   const [transcript, setTranscript] = useState({
     path: initial.transcript,
     uuid: initial.uuid,
+    highlight: initial.highlight,
   });
 
   // Browser back/forward
@@ -43,11 +45,15 @@ export default function App() {
 
   const prevTab = useRef(tab);
 
-  const openTranscript = useCallback((path, uuid) => {
+  const openTranscript = useCallback((path, uuid, highlight = '') => {
     prevTab.current = tab;
-    setTranscript({ path, uuid });
+    setTranscript({ path, uuid, highlight });
     setTab('transcript');
-    window.history.pushState({}, '', `/session/${encodeURIComponent(path)}${uuid ? `?uuid=${uuid}` : ''}`);
+    const params = new URLSearchParams();
+    if (uuid) params.set('uuid', uuid);
+    if (highlight) params.set('highlight', highlight);
+    const qs = params.toString();
+    window.history.pushState({}, '', `/session/${encodeURIComponent(path)}${qs ? '?' + qs : ''}`);
   }, [tab]);
 
   const closeTranscript = useCallback(() => {
@@ -94,6 +100,7 @@ export default function App() {
           <TranscriptViewer
             transcriptPath={transcript.path}
             targetUuid={transcript.uuid}
+            initialHighlight={transcript.highlight}
             onClose={closeTranscript}
           />
         )}

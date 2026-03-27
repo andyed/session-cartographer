@@ -53,8 +53,26 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
 
   if (!summary) summary = event.event_id || '';
 
+  // Click handler: open transcript if available, using summary text as highlight
+  const handleCardClick = (e) => {
+    // Don't intercept clicks on links, buttons, or interactive elements
+    if (e.target.closest('a, button, details')) return;
+    if (!onOpenTranscript || !event.transcript_path) return;
+
+    // Use a short search-friendly excerpt from summary for highlight
+    const highlightText = (event.summary || event.query || event.prompt || '').slice(0, 80);
+    onOpenTranscript(event.transcript_path, event.uuid, highlightText);
+  };
+
+  const isClickable = onOpenTranscript && event.transcript_path;
+
   return (
-    <div className="border border-gray-800 rounded-lg p-3 mb-2 hover:border-gray-600 transition-colors">
+    <div
+      onClick={handleCardClick}
+      className={`border border-gray-800 rounded-lg p-3 mb-2 hover:border-gray-600 transition-colors ${
+        isClickable ? 'cursor-pointer' : ''
+      }`}
+    >
       <div className="flex items-center gap-2 flex-wrap mb-1">
         <span
           className="text-xs text-gray-500 font-mono cursor-help"

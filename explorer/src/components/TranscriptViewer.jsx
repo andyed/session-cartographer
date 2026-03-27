@@ -88,11 +88,11 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
   );
 }
 
-export default function TranscriptViewer({ transcriptPath, targetUuid, onClose }) {
+export default function TranscriptViewer({ transcriptPath, targetUuid, initialHighlight = '', onClose }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialHighlight);
   const [showAllTypes, setShowAllTypes] = useState(false);
   const containerRef = useRef(null);
 
@@ -110,13 +110,22 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, onClose }
         setMessages(data.messages);
         setLoading(false);
 
-        // Scroll to target UUID after render
-        if (targetUuid) {
-          setTimeout(() => {
+        // Scroll to target: by UUID, or by first highlight match
+        setTimeout(() => {
+          if (targetUuid) {
             const el = document.getElementById(targetUuid);
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 100);
-        }
+          } else if (initialHighlight) {
+            // Find first message containing the highlight text and scroll to it
+            const match = data.messages.find(m =>
+              m.content.toLowerCase().includes(initialHighlight.toLowerCase())
+            );
+            if (match) {
+              const el = document.getElementById(match.uuid);
+              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }
+        }, 100);
       })
       .catch(e => {
         setError(e.message);
