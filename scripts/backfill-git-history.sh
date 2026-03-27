@@ -43,6 +43,13 @@ fi
 total=0
 skipped=0
 
+github_url_for_repo() {
+  local remote
+  remote=$(git remote get-url origin 2>/dev/null) || return
+  # Normalize to https://github.com/owner/repo
+  echo "$remote" | sed 's/\.git$//' | sed 's|git@github.com:|https://github.com/|'
+}
+
 process_repo() {
   local repo_path="$1"
   local project=$(basename "$repo_path")
@@ -50,6 +57,10 @@ process_repo() {
   # Check if it's actually a git repo
   cd "$repo_path" 2>/dev/null || return
   git rev-parse --git-dir >/dev/null 2>&1 || return
+
+  # Get GitHub URL for deep links
+  local github_base
+  github_base=$(github_url_for_repo)
 
   # Build git log format: hash|timestamp|subject|author
   local git_args=("log" "--format=%H|%aI|%s|%an" "--max-count=$LIMIT")
@@ -77,6 +88,12 @@ process_repo() {
     local summary="Commit ${short_hash}: ${subject}"
     [ -n "$files" ] && summary="${summary} | files: ${files}"
 
+    # Build commit URL
+    local commit_url=""
+    if [ -n "$github_base" ]; then
+      commit_url="${github_base}/commit/${hash}"
+    fi
+
     if $DRY_RUN; then
       echo "  [${timestamp}] ${project}: ${summary}" | head -c 120
       echo ""
@@ -89,7 +106,9 @@ process_repo() {
         --arg summary "$summary" \
         --arg hash "$hash" \
         --arg author "$author" \
-        '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, commit_hash: $hash, author: $author, related_ids: []}' \
+        --arg url "$commit_url" \
+        --arg files "$files" \
+        '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, commit_hash: $hash, author: $author, url: $url, files_changed: $files, related_ids: []}' \
         >> "$CHANGELOG"
 
       # Real-time indexing

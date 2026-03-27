@@ -133,9 +133,18 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         {summary.length > 300 ? summary.slice(0, 300) + '...' : summary}
       </p>
 
-      {(event.event_id || event.deeplink || event.session_id) && (
+      {/* Files changed for commits — show inline without expanding */}
+      {event.files_changed && (
+        <div className="mt-1 text-xs text-gray-500 font-mono">
+          {event.files_changed.split(',').map((f, i) => (
+            <span key={i} className="inline-block mr-2 text-gray-400">{f.trim()}</span>
+          ))}
+        </div>
+      )}
+
+      {(event.event_id || event.deeplink || event.session_id || event.commit_hash) && (
         <button
-          onClick={() => setExpanded(!expanded)}
+          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
           className="text-xs text-gray-500 hover:text-gray-300 mt-1"
         >
           {expanded ? 'less' : 'more'}
@@ -145,7 +154,16 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
       {expanded && (
         <div className="mt-2 text-xs text-gray-500 font-mono space-y-0.5">
           {event.event_id && <div>id: {event.event_id}</div>}
-          {event.url && (
+          {event.commit_hash && (
+            <div>
+              commit: <span className="text-orange-400">{event.commit_hash.slice(0, 7)}</span>
+              {event.url && (
+                <> — <a href={event.url} target="_blank" rel="noopener" className="text-blue-400 hover:underline">view on GitHub</a></>
+              )}
+            </div>
+          )}
+          {event.author && <div>author: {event.author}</div>}
+          {!event.commit_hash && event.url && (
             <div>
               url: <a href={event.url} target="_blank" rel="noopener" className="text-blue-400 hover:underline">{event.url}</a>
             </div>

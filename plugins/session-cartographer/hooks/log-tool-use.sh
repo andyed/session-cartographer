@@ -73,6 +73,13 @@ case "$TOOL_NAME" in
         SUMMARY="Commit ${COMMIT_HASH}: ${COMMIT_MSG}"
         [ -n "$CHANGED_FILES" ] && SUMMARY="${SUMMARY} | files: ${CHANGED_FILES}"
         TYPE="git_commit"
+
+        # Build GitHub commit URL from remote
+        COMMIT_URL=""
+        if [ -n "$GIT_REPO" ]; then
+          GITHUB_BASE=$(cd "$GIT_REPO" && git remote get-url origin 2>/dev/null | sed 's/\.git$//' | sed 's|git@github.com:|https://github.com/|')
+          [ -n "$GITHUB_BASE" ] && COMMIT_URL="${GITHUB_BASE}/commit/${COMMIT_HASH}"
+        fi
       else
         SUMMARY="Ran: $COMMAND"
         TYPE="tool_bash"
