@@ -27,18 +27,12 @@ function extract(json, field,    pat, val) {
 # Helper to get the searchable text body from the JSON line
 function get_search_text(line, src_type) {
     if (src_type == "transcript") {
-        # Transcript uses "content" for the text body
-        val = ""
-        uuid = extract(line, "uuid")
-        if (uuid != "") val = uuid " "
-        
-        if (match(line, /"content"[[:space:]]*:[[:space:]]*"/)) {
-            content = substr(line, RSTART + RLENGTH)
-            sub(/".*/, "", content)
-            gsub(/\\n/, " ", content)
-            gsub(/\\t/, " ", content)
-            val = val content
-        }
+        # Transcript content is often a nested array of tool_use blocks.
+        # Instead of strict regex parsing, we flatten the structural JSON characters 
+        # into spaces. The BM25 IDF naturally deprioritizes schema keys like 
+        # "role" or "content" because they appear in every document (df ≈ ndocs).
+        val = line
+        gsub(/[{"}\\[\\]:,]/, " ", val)
         return val
     } else {
         # Other logs use summary, description, prompt, url, query, event_id
@@ -50,6 +44,7 @@ function get_search_text(line, src_type) {
         f = extract(line, "query"); if (f != "") val = val " " f
         f = extract(line, "event_id"); if (f != "") val = val " " f
         f = extract(line, "milestone"); if (f != "") val = val " " f
+        f = extract(line, "cwd"); if (f != "") val = val " " f
         return val
     }
 }
@@ -137,7 +132,9 @@ NR == FNR {
             # Truncate content for display
             summary = length(body) > 150 ? substr(body, 1, 150) : body
             
+            cwdf = extract($0, "cwd")
             extras = "transcript:" tpath "|session:" sid "|"
+            if (cwdf != "") extras = extras "cwd:" cwdf "|"
             
             # Use negative score as a sort key placeholder since we want descending order
             results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract($0, "type"), 0, key, ts, pdir, summary, extras)
@@ -152,11 +149,13 @@ NR == FNR {
             url = extract($0, "url")
             deeplink = extract($0, "deeplink")
             transcript = extract($0, "transcript_path")
+            cwdf = extract($0, "cwd")
             
             extras = ""
             if (url != "") extras = extras "url:" url "|"
             if (deeplink != "" && deeplink != "none") extras = extras "deeplink:" deeplink "|"
             if (transcript != "") extras = extras "transcript:" transcript "|"
+            if (cwdf != "") extras = extras "cwd:" cwdf "|"
             
             results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras)
         }

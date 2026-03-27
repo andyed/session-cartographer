@@ -20,8 +20,14 @@ EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$GIT_REPO" ]; then
+    PROJECT=$(basename "$GIT_REPO")
+else
+    PROJECT=$(basename "$CWD")
+fi
 
 # Encode the transcript path for URL safety
 ENCODED_PATH=$(echo "$TRANSCRIPT" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=''))" 2>/dev/null || echo "$TRANSCRIPT")
@@ -66,8 +72,9 @@ jq -n -c \
     --arg transcript "$TRANSCRIPT" \
     --arg deeplink "$DEEPLINK" \
     --arg project "$PROJECT" \
+    --arg cwd "$CWD" \
     --arg event "$EVENT" \
-    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, event: $event}' \
+    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event}' \
     >> "$LOG_FILE"
 
 # Write to unified changelog
@@ -77,9 +84,10 @@ jq -n -c \
     --arg type "milestone_${MILESTONE}" \
     --arg session "$SESSION_ID" \
     --arg project "$PROJECT" \
+    --arg cwd "$CWD" \
     --arg deeplink "$DEEPLINK" \
     --arg summary "$DESCRIPTION" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, deeplink: $deeplink, summary: $summary, related_ids: []}' \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, related_ids: []}' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)

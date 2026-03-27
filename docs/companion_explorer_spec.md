@@ -60,6 +60,29 @@ This web architecture is the prerequisite for the visual roadmap:
 4. **Energy visualization**: Stacked area chart of events by project over time (port of `energy-viz.html`). "Where did my attention go" view.
 5. **Session topology** (roadmap, not 1.0): Force-directed graph clustering related events, showing which sessions intersected and where cumulative focus was spent.
 
+## Search Syntax & Autocomplete
+To provide a fast, keyboard-centric filtering experience similar to GitHub, the Explorer search bar will support tokenized prefix queries and intelligent autocomplete.
+
+### 1. GitHub-Style Query Syntax
+Users can mix unstructured semantic/keyword terms with strict categorical filters.
+- `repo:foo` or `project:foo`: Restricts results to a specific Git repository (e.g., `repo:psychodeli-plus-tvos`). Sent to the backend via the `--project` flag.
+- `type:bar`: Filters by event type (e.g., `type:research_fetch`, `type:tool_bash`, `type:session_milestone`, `type:transcript`). Applied as a high-speed post-filter in the React frontend against the incoming TSV stream.
+- `path:baz`: Filters results where the transcript path or URL matches the string.
+
+**Example Query**:
+`"focus management repo:psychodeli-plus-tvos type:research_fetch"`
+
+### 2. Autocomplete Dictionary
+The React frontend will power an autocomplete dropdown to discover available filters without leaving the keyboard.
+- **Bootstrapping**: Upon connecting, the frontend will hit a lightweight `/api/facets` endpoint (or parse the initial historical `changelog.jsonl` dump) to build an in-memory dictionary of all unique `project` and `type` values.
+- **Triggering**: Typing `repo:` or `type:` will instantly render a popover menu below the search bar.
+- **Fuzzy Matching**: Continuing to type (e.g., `repo:psy...`) will fuzzy-filter the dropdown list. Arrow keys map to selection, and `Enter` completes the token.
+
+### 3. Pipeline Integration
+1. **Frontend Parser**: A regex tokenizer in React extracts `key:value` pairs from the input string.
+2. **API Translation**: Stripped keywords are sent as the `q=` parameter. `repo:` constraints map to `project=` query params.
+3. **Backend Execution**: Node Express translates `project=` to the `--project` flag for `cartographer-search.sh`.
+
 ## Ports
 
 | Service | Port | Description |

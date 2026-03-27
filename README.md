@@ -2,7 +2,13 @@
 
 ![Session Cartographer](docs/wordmark.png)
 
-Search your Claude Code session history. Find the decision, paper, or fix from last week's conversation.
+Search your Claude Code session history, better yet, have Cluade do it for you with `/remember`. 
+
+Cartographer creates a index via hooks of critical moments in your sessions, referencing the original transcript files. This can preserve data past your Claude history retention period (30 days by default!). 
+
+Within this subset of content, Cartographer offers BM25f keyword search, semantic search via Qdrant, and RRF fusion of the two -- the hottest search stack around these days, but with a twist...
+
+![Session Cartographer](docs/remember.png)
 
 ## grep vs. cartographer
 
@@ -66,7 +72,7 @@ Claude Code deletes transcripts after 30 days by default. Cartographer is more u
 }
 ```
 
-A year of transcripts is ~17 GB for a heavy user (1,839 sessions in 63 days, extrapolated). The BM25 corpus for a year of events builds in ~140ms and uses ~25 MB of memory. Your session history is the training data for your future workflow — keep it.
+A year of transcripts is ~16 GB for a heavy user (extrapolating from 1,839 sessions in 63 days). But because Cartographer's hooks only extract high-signal *events* (not the chatty conversational text), the resulting metadata index is a fraction of the size. A full year of activity produces just ~8 MB of event logs—scoring against it takes milliseconds and effectively zero memory overhead. Your session history is the training data for your future workflow — keep it.
 
 ## What gets logged
 
@@ -101,7 +107,7 @@ The core tradeoff: grep scans 2.7GB of raw transcripts and finds *everything* �
 
 ## Deep link viewer
 
-Cartographer includes a built-in transcript viewer (the Explorer at `:2527`), but you can also use [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) as an alternate deep link handler. Set `CARTOGRAPHER_VIEWER_PREFIX` to route links to whichever viewer you prefer:
+Cartographer includes a built-in transcript viewer (the Explorer at `:2527`), but the plan is to support [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) as an alternate deep link handler. Set `CARTOGRAPHER_VIEWER_PREFIX` to route links to whichever viewer you prefer:
 
 ```bash
 # Built-in Explorer (default)

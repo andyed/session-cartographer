@@ -42,6 +42,7 @@ else
   EVENT_ID=$(echo "$INPUT" | jq -r '.event_id // empty')
   TEXT=$(echo "$INPUT" | jq -r '(.summary // .description // .prompt // .url // .query // "") + " | project: " + (.project // "")')
   PROJECT=$(echo "$INPUT" | jq -r '.project // empty')
+  CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
   TIMESTAMP=$(echo "$INPUT" | jq -r '.timestamp // empty')
   SOURCE=$(echo "$INPUT" | jq -r '.type // empty')
 fi
@@ -65,11 +66,22 @@ VECTOR=$(echo "$EMBED_RESPONSE" | jq -c '.data[0].embedding // empty' 2>/dev/nul
 # Hash event_id to numeric point ID (same as embed-events.js)
 POINT_ID=$(echo -n "$EVENT_ID" | cksum | awk '{print $1}')
 
-# Upsert to Qdrant
+# Upsert to Qdrant safely building the JSON with jq to avoid quote injection
+PAYLOAD=$(jq -n -c \
+  --arg id "$POINT_ID" \
+  --argjson vec "$VECTOR" \
+  --arg eid "$EVENT_ID" \
+  --arg src "$SOURCE" \
+  --arg ts "$TIMESTAMP" \
+  --arg proj "$PROJECT" \
+  --arg cwd "$CWD" \
+  --arg summ "$TEXT" \
+  '{points: [{id: ($id | tonumber), vector: $vec, payload: {event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ}}]}')
+
 curl -sf "$QDRANT_URL/collections/$COLLECTION/points" \
   -H "Content-Type: application/json" \
   -X PUT \
-  -d "{\"points\":[{\"id\":$POINT_ID,\"vector\":$VECTOR,\"payload\":{\"event_id\":\"$EVENT_ID\",\"source\":\"$SOURCE\",\"timestamp\":\"$TIMESTAMP\",\"project\":\"$PROJECT\",\"summary\":\"$TEXT\"}}]}" \
+  -d "$PAYLOAD" \
   >/dev/null 2>&1
 
 exit 0

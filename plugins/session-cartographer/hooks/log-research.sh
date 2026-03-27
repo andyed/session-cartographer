@@ -26,8 +26,14 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$GIT_REPO" ]; then
+    PROJECT=$(basename "$GIT_REPO")
+else
+    PROJECT=$(basename "$CWD")
+fi
 
 # Auto-categorize URL by domain
 categorize_url() {
@@ -62,9 +68,10 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg prompt "$PROMPT" \
         --arg category "$CATEGORY" \
         --arg project "$PROJECT" \
+        --arg cwd "$CWD" \
         --arg session "$SESSION_ID" \
         --arg transcript "$TRANSCRIPT" \
-        '{event_id: $eid, timestamp: $ts, type: $type, url: $url, prompt: $prompt, category: $category, project: $project, session: $session, transcript_path: $transcript}' \
+        '{event_id: $eid, timestamp: $ts, type: $type, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}' \
         >> "$LOG_FILE"
 
     # Changelog envelope
@@ -73,8 +80,9 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg ts "$TIMESTAMP" \
         --arg session "$SESSION_ID" \
         --arg project "$PROJECT" \
+        --arg cwd "$CWD" \
         --arg summary "Fetched: $URL" \
-        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, summary: $summary, related_ids: []}' \
+        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: []}' \
         >> "$CHANGELOG"
 
 elif [ "$TOOL_NAME" = "WebSearch" ]; then
@@ -88,9 +96,10 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg type "search" \
         --arg query "$QUERY" \
         --arg project "$PROJECT" \
+        --arg cwd "$CWD" \
         --arg session "$SESSION_ID" \
         --arg transcript "$TRANSCRIPT" \
-        '{event_id: $eid, timestamp: $ts, type: $type, query: $query, project: $project, session: $session, transcript_path: $transcript}' \
+        '{event_id: $eid, timestamp: $ts, type: $type, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}' \
         >> "$LOG_FILE"
 
     # Changelog envelope
@@ -99,8 +108,9 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg ts "$TIMESTAMP" \
         --arg session "$SESSION_ID" \
         --arg project "$PROJECT" \
+        --arg cwd "$CWD" \
         --arg summary "Search: $QUERY" \
-        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, summary: $summary, related_ids: []}' \
+        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: []}' \
         >> "$CHANGELOG"
 
     # Extract result URLs from tool_response and log each as search_result
@@ -136,10 +146,11 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
             --arg query "$QUERY" \
             --arg category "$CATEGORY" \
             --arg project "$PROJECT" \
+            --arg cwd "$CWD" \
             --arg session "$SESSION_ID" \
             --arg transcript "$TRANSCRIPT" \
             --arg parent "$SEARCH_EVENT_ID" \
-            '{event_id: $eid, timestamp: $ts, type: $type, url: $url, title: $title, query: $query, category: $category, project: $project, session: $session, transcript_path: $transcript, related_ids: [$parent]}' \
+            '{event_id: $eid, timestamp: $ts, type: $type, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent]}' \
             >> "$LOG_FILE"
     done
 fi

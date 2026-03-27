@@ -23,13 +23,23 @@ TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-PROJECT=$(basename "$CWD")
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+if [ -n "$GIT_REPO" ]; then
+    PROJECT=$(basename "$GIT_REPO")
+else
+    PROJECT=$(basename "$CWD")
+fi
 
 case "$TOOL_NAME" in
   Edit|Write)
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
     [ -z "$FILE_PATH" ] && exit 0
+    # Refine project via file path's git repo
+    FILE_REPO=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+    [ -n "$FILE_REPO" ] && PROJECT=$(basename "$FILE_REPO")
+    
     # Skip noisy paths (node_modules, .git, lock files)
     case "$FILE_PATH" in
       */node_modules/*|*/.git/*|*/package-lock.json|*/yarn.lock|*/pnpm-lock.yaml) exit 0 ;;
@@ -61,9 +71,10 @@ jq -n -c \
     --arg tool "$TOOL_NAME" \
     --arg summary "$SUMMARY" \
     --arg project "$PROJECT" \
+    --arg cwd "$CWD" \
     --arg session "$SESSION_ID" \
     --arg transcript "$TRANSCRIPT" \
-    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, session: $session, transcript_path: $transcript}' \
+    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}' \
     >> "$LOG_FILE"
 
 # Write to unified changelog
@@ -73,8 +84,9 @@ jq -n -c \
     --arg type "$TYPE" \
     --arg session "$SESSION_ID" \
     --arg project "$PROJECT" \
+    --arg cwd "$CWD" \
     --arg summary "$SUMMARY" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, summary: $summary, related_ids: []}' \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: []}' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)
