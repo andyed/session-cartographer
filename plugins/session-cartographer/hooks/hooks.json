@@ -26,6 +26,24 @@
       "event": "SubagentStop",
       "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
       "async": true
+    },
+    {
+      "event": "PostToolUse",
+      "match_tool_name": "Edit",
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
+      "async": true
+    },
+    {
+      "event": "PostToolUse",
+      "match_tool_name": "Write",
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
+      "async": true
+    },
+    {
+      "event": "PostToolUse",
+      "match_tool_name": "Bash",
+      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
+      "async": true
     }
   ]
 }

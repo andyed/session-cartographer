@@ -77,8 +77,8 @@ build_and_pattern() {
 HAS_JQ=false
 command -v jq &>/dev/null && HAS_JQ=true
 
-# ─── 1. Semantic search (best results, needs services) ───
-semantic_search() {
+# ─── 1. Semantic search → TSV (for fusion with keyword results) ───
+semantic_search_to_tsv() {
   $HAS_JQ || return 1
   curl -sf "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
   curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1
@@ -111,19 +111,18 @@ semantic_search() {
   count=$(echo "$results" | jq '.result | length' 2>/dev/null)
   [ "$count" = "0" ] || [ -z "$count" ] && return 1
 
-  echo "=== Semantic search: $count results ==="
-  echo ""
-  echo "$results" | jq -r '.result[] |
-    "[\(.payload.timestamp // "?")] [\(.payload.source // "?")] \(.payload.event_id // "no-id")  (score: \(.score | tostring | .[:5]))" +
-    "\n  " + (.payload.summary // .payload.url // .payload.type // "?") +
-    "\n  project: " + (.payload.project // "?") +
-    (if .payload.url then "\n  url: " + .payload.url else "" end) +
-    (if .payload.deeplink and .payload.deeplink != "" then "\n  deeplink: " + .payload.deeplink else "" end) +
-    (if .payload.transcript_path and .payload.transcript_path != "" then "\n  transcript: " + .payload.transcript_path else "" end) +
-    "\n"
+  # Emit TSV in the same format as keyword sources — RRF fuses them together
+  echo "$results" | jq -r '.result | to_entries[] |
+    "semantic\t" +
+    (.key + 1 | tostring) + "\t" +
+    (.value.payload.event_id // "sem-" + (.key | tostring)) + "\t" +
+    (.value.payload.timestamp // "?") + "\t" +
+    (.value.payload.project // "?") + "\t" +
+    (.value.payload.summary // .value.payload.url // .value.payload.type // "?") + "\t" +
+    (if .value.payload.url then "url:" + .value.payload.url + "|" else "" end) +
+    (if .value.payload.deeplink and .value.payload.deeplink != "" then "deeplink:" + .value.payload.deeplink + "|" else "" end) +
+    (if .value.payload.transcript_path and .value.payload.transcript_path != "" then "transcript:" + .value.payload.transcript_path + "|" else "" end)
   ' 2>/dev/null
-  FOUND=1
-  return 0
 }
 
 # ─── 2. Keyword search with rank fusion via awk ───
@@ -337,52 +336,50 @@ echo "=== Searching for: \"$QUERY\" ==="
 [ -n "$PROJECT" ] && echo "=== Project filter: $PROJECT ==="
 echo ""
 
-# Try semantic first (silent fail)
-semantic_search 2>/dev/null
+# Collect keyword results from all JSONL sources + transcripts
+keyword_search() {
+  grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
+  grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
+  grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
+  grep_jsonl_to_tsv "$DEV/tool-use-log.jsonl" "tool-use"
+  grep_transcripts_to_tsv
+}
 
-# Keyword search with rank fusion
-if [ "$FOUND" -eq 0 ]; then
-  # Collect all sources into one TSV stream, pipe through fusion
-  PHRASE_RESULTS=$({
-    grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
-    grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
-    grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
-    grep_transcripts_to_tsv
-  } | tee "$TMPDIR/phrase_results.tsv" | wc -l | tr -d ' ')
+# Phase 1: keyword search (always runs)
+PHRASE_RESULTS=$(keyword_search | tee "$TMPDIR/phrase_results.tsv" | wc -l | tr -d ' ')
 
-  if [ "$PHRASE_RESULTS" -ge "$LOW_RECALL_THRESHOLD" ] || [ "$WORD_COUNT" -le 1 ]; then
-    # Enough results with exact phrase, or single word — use as-is
-    cat "$TMPDIR/phrase_results.tsv" | rank_fuse_and_display
-    [ $? -eq 0 ] && FOUND=1
+# Phase 1b: AND fallback for multi-word low recall
+if [ "$PHRASE_RESULTS" -lt "$LOW_RECALL_THRESHOLD" ] && [ "$WORD_COUNT" -gt 1 ]; then
+  AND_PATTERN=$(build_and_pattern)
+  ORIG_QUERY="$QUERY"
+  QUERY="$AND_PATTERN"
+  AND_RESULTS=$(keyword_search | tee "$TMPDIR/and_results.tsv" | wc -l | tr -d ' ')
+  QUERY="$ORIG_QUERY"
+
+  if [ "$AND_RESULTS" -gt "$PHRASE_RESULTS" ]; then
+    echo "(expanded to AND: all words, any order)"
+    echo ""
+    # Merge phrase (boosted by appearing first) + AND results
+    cat "$TMPDIR/phrase_results.tsv" "$TMPDIR/and_results.tsv" > "$TMPDIR/keyword_results.tsv"
   else
-    # Low recall on multi-word phrase — retry with AND (all words, any order)
-    AND_PATTERN=$(build_and_pattern)
-    ORIG_QUERY="$QUERY"
-    QUERY="$AND_PATTERN"
-
-    AND_RESULTS=$({
-      grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
-      grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
-      grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
-      grep_transcripts_to_tsv
-    } | tee "$TMPDIR/and_results.tsv" | wc -l | tr -d ' ')
-
-    QUERY="$ORIG_QUERY"
-
-    if [ "$AND_RESULTS" -gt "$PHRASE_RESULTS" ]; then
-      # AND found more — merge phrase results (boosted) with AND results
-      echo "(expanded to AND: all words, any order)"
-      echo ""
-      # Phrase matches get a rank boost by appearing first
-      cat "$TMPDIR/phrase_results.tsv" "$TMPDIR/and_results.tsv" | rank_fuse_and_display
-      [ $? -eq 0 ] && FOUND=1
-    elif [ "$PHRASE_RESULTS" -gt 0 ]; then
-      # AND didn't help — use phrase results
-      cat "$TMPDIR/phrase_results.tsv" | rank_fuse_and_display
-      [ $? -eq 0 ] && FOUND=1
-    fi
+    cp "$TMPDIR/phrase_results.tsv" "$TMPDIR/keyword_results.tsv"
   fi
+else
+  cp "$TMPDIR/phrase_results.tsv" "$TMPDIR/keyword_results.tsv"
 fi
+
+# Phase 2: semantic search (if available — fuses with keyword, doesn't replace)
+semantic_search_to_tsv > "$TMPDIR/semantic_results.tsv" 2>/dev/null
+
+# Phase 3: fuse everything through RRF
+SEMANTIC_COUNT=$(wc -l < "$TMPDIR/semantic_results.tsv" | tr -d ' ')
+if [ "$SEMANTIC_COUNT" -gt 0 ]; then
+  echo "(hybrid: keyword + semantic)"
+  echo ""
+fi
+
+cat "$TMPDIR/keyword_results.tsv" "$TMPDIR/semantic_results.tsv" | rank_fuse_and_display
+[ $? -eq 0 ] && FOUND=1
 
 # ─── Cold start guidance ───
 if [ "$FOUND" -eq 0 ]; then
