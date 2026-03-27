@@ -5,7 +5,7 @@
 
 ![Session Cartographer](docs/wordmark.png)
 
-Search your Claude Code session history, or better yet, have Claude do it for you with `/remember`. 
+Search your Claude Code session history, or better yet, have Claude do it for you with `/carto`. 
 
 **The Origin Problem:** When Claude does deep literature reviews or explores extensive documentation, it reads dozens of URLs via `WebFetch` and `WebSearch`—but leaves no permanent, searchable trace of what it actually studied once the session ends. 
 
@@ -14,8 +14,6 @@ Cartographer fixes this by creating a lightweight metadata index via bash hooks 
 But the utility quickly expanded beyond securing web research. By additionally intercepting the files Claude edits, the Bash commands it runs, and the moments context size peaks, Cartographer builds a complete topological map of your session evolution.
 
 To query this map, it fuses Semantic Similarity (via optional Qdrant) with Okapi BM25 keyword scoring via Reciprocal Rank Fusion. The twist? To keep dependencies strictly at zero, the entire BM25 search engine is implemented purely in `awk`.
-
-![Session Cartographer](docs/remember.png)
 
 ## grep vs. cartographer
 
@@ -64,7 +62,7 @@ git clone https://github.com/andyed/session-cartographer.git
 claude install ./session-cartographer
 ```
 
-`claude install` registers the `/remember` skill and event-logging hooks. The Explorer web app runs separately from the cloned repo — it's not part of the plugin install:
+`claude install` registers the `/carto` skill and event-logging hooks. The Explorer web app runs separately from the cloned repo — it's not part of the plugin install:
 
 ```bash
 cd session-cartographer/explorer && npm install && npm run dev
@@ -77,16 +75,16 @@ bash scripts/cartographer-search.sh "your query" --project myproject --limit 10
 
 ### Add to your CLAUDE.md
 
-After installing, add this to your project or global `CLAUDE.md` so the agent knows how to use the `/remember` skill:
+After installing, add this to your project or global `CLAUDE.md` so the agent knows how to use the `/carto` skill:
 
 ```markdown
 ## Session History
 
 Session Cartographer is installed as a Claude Code plugin. It provides:
-- `/remember <query>` — search past session history (decisions, research, fixes)
+- `/carto <query>` — search past session history (decisions, research, fixes)
 - Hooks that automatically log events (web fetches, searches, compactions, file edits)
 
-When you need context from a previous conversation, use `/remember`. The skill
+When you need context from a previous conversation, use `/carto`. The skill
 runs BM25 + RRF search across event logs and transcripts. Don't freestyle grep
 on transcript files — the skill handles search automatically.
 
@@ -136,7 +134,7 @@ Hooks only capture events going forward. Three backfill scripts index your exist
 | `scripts/backfill-memories.sh` | Claude Code memory files (feedback, project notes, references) | `~/.claude/projects/*/memory/*.md` |
 | `scripts/retro-index.sh` | Historical transcript content into Qdrant | `~/.claude/projects/*/*.jsonl` |
 
-**Claude's memory files are particularly valuable to index.** These are curated, high-signal notes that Claude wrote about your projects, preferences, and decisions. They have structured frontmatter (name, type, description) and survive across sessions — but they're not searchable by default. Backfilling them means `/remember "Blauch collaboration"` finds the memory file alongside research events and transcripts.
+**Claude's memory files are particularly valuable to index.** These are curated, high-signal notes that Claude wrote about your projects, preferences, and decisions. They have structured frontmatter (name, type, description) and survive across sessions — but they're not searchable by default. Backfilling them means `/carto "Blauch collaboration"` finds the memory file alongside research events and transcripts.
 
 ```bash
 # Index all 3 sources
@@ -149,7 +147,7 @@ All scripts are idempotent — they skip events already in the changelog.
 
 ## Semantic search (optional)
 
-With a local Qdrant binary + llama.cpp embedding server, `/remember` adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. See [docs/SETUP.md](docs/SETUP.md). No Docker — two binaries, under 1GB total.
+With a local Qdrant binary + llama.cpp embedding server, `/carto` adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. See [docs/SETUP.md](docs/SETUP.md). No Docker — two binaries, under 1GB total.
 
 ## Tradeoffs: speed vs. recall
 
@@ -178,7 +176,7 @@ CARTOGRAPHER_VIEWER_PREFIX="http://localhost:2527/session/"
 CARTOGRAPHER_VIEWER_PREFIX="claude-history://session/"
 ```
 
-**TODO:** Wire `CARTOGRAPHER_VIEWER_PREFIX` into `/remember` CLI output and EventCard links so the viewer is fully swappable.
+**TODO:** Wire `CARTOGRAPHER_VIEWER_PREFIX` into `/carto` CLI output and EventCard links so the viewer is fully swappable.
 
 ## Landscape
 

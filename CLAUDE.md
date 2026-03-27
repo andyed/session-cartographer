@@ -1,6 +1,6 @@
 # Session Cartographer
 
-Claude Code plugin (installed via `claude install`). Contains the `/remember` skill, event-logging hooks, and search scripts. Companion Explorer web app for visual browsing.
+Claude Code plugin (installed via `claude install`). Contains the `/carto` skill, event-logging hooks, and search scripts. Companion Explorer web app for visual browsing.
 
 ## Project Structure
 
@@ -15,8 +15,8 @@ scripts/
   reconstruct-history.js        — Deep transcript analysis for backfill
 plugins/session-cartographer/
   .claude-plugin/plugin.json    — Plugin metadata
-  skills/remember/SKILL.md      — /remember skill definition
-  scripts/remember-search.sh    — Legacy search (superseded by cartographer-search.sh)
+  skills/carto/SKILL.md      — /carto skill definition
+  scripts/carto-search.sh    — Legacy search (superseded by cartographer-search.sh)
   hooks/
     hooks.json                  — Hook registrations (8 hooks)
     log-research.sh             — WebFetch/WebSearch → research-log.jsonl + changelog.jsonl
@@ -54,7 +54,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 
 ## Two Search Paths
 
-1. **CLI** (`cartographer-search.sh`): bash + awk BM25. Used by `/remember` skill. No server needed.
+1. **CLI** (`cartographer-search.sh`): bash + awk BM25. Used by `/carto` skill. No server needed.
 2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, sub-millisecond queries. Used by the Explorer UI. Proxies Qdrant for semantic search.
 
 Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (RRF k=60).
