@@ -82,4 +82,10 @@ jq -n -c \
     '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, deeplink: $deeplink, summary: $summary, related_ids: []}' \
     >> "$CHANGELOG"
 
+# Real-time indexing (silent fail if services aren't running)
+INDEXER="$(dirname "$0")/../../../scripts/index-event.sh"
+if [ -x "$INDEXER" ]; then
+  tail -1 "$CHANGELOG" | "$INDEXER" &
+fi
+
 exit 0

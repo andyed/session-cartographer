@@ -144,5 +144,11 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
     done
 fi
 
+# Real-time indexing (silent fail if services aren't running)
+INDEXER="$(dirname "$0")/../../../scripts/index-event.sh"
+if [ -x "$INDEXER" ]; then
+  tail -1 "$CHANGELOG" | "$INDEXER" &
+fi
+
 # Always exit 0 — this is a passive logger, never blocks
 exit 0
