@@ -9,6 +9,7 @@ export const LOG_FILES = {
   research: join(DEV_DIR, 'research-log.jsonl'),
   milestones: join(DEV_DIR, 'session-milestones.jsonl'),
   'tool-use': join(DEV_DIR, 'tool-use-log.jsonl'),
+  'claude-history': join(homedir(), '.claude', 'history.jsonl'),
 };
 
 /**

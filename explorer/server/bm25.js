@@ -24,6 +24,7 @@ export function extractSearchText(event) {
   const parts = [
     event.summary,
     event.description,
+    event.display,
     event.prompt,
     event.url,
     event.query,
