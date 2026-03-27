@@ -9,19 +9,19 @@ Default Claude Code search is `grep -r` on transcript files — raw JSON, no ran
 Benchmark against session-cartographer's own development history (8 queries, ~200 transcript files):
 
 ```
-                           ── grep ──         ── carto ──
-Query                        hits     ms        hits     ms
-─────────────────────────  ────── ──────      ────── ──────
-"BM25 scoring"                  4  32.7s         15  23.0s
-"rank fusion awk"               1  32.5s         15  23.8s
-"session cartographer"          5  31.5s         15  23.5s
-"hook log research"             1  31.8s         15  23.8s
-"cold start"                   82  26.7s          3   8.4s
-"Qdrant embedding"              7  30.4s         15  24.6s
-"real-time indexing"            3  32.8s         15  24.7s
-"JSONL event"                   5  32.0s         15  24.1s
-─────────────────────────  ────── ──────      ────── ──────
-TOTAL                         108  250.4s       108  175.9s
+                           ── grep ──        ── carto ──
+Query                       hits    sec       hits    sec
+─────────────────────────  ────── ──────     ────── ──────
+"BM25 scoring"                 4   32.7        15   23.0
+"rank fusion awk"              1   32.5        15   23.8
+"session cartographer"         5   31.5        15   23.5
+"hook log research"            1   31.8        15   23.8
+"cold start"                  82   26.7         3    8.4
+"Qdrant embedding"             7   30.4        15   24.6
+"real-time indexing"           3   32.8        15   24.7
+"JSONL event"                  5   32.0        15   24.1
+─────────────────────────  ────── ──────     ────── ──────
+TOTAL                        108  250.4       108  175.9
 ```
 
 grep returns raw JSONL blobs. Cartographer returns ranked, formatted results with timestamps, project tags, and deep links. Same total hits, 30% faster, actually readable.
