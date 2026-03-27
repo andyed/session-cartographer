@@ -12,18 +12,18 @@ Benchmark against session-cartographer's own development history (8 queries, 1,8
 
 ```
                            ── grep ──        ── carto ──
-Query                       hits    sec       hits     ms
+Query                       hits    sec       hits    sec
 ─────────────────────────  ────── ──────     ────── ──────
-"BM25 scoring"                 4   32.8         4    521
-"rank fusion awk"              1   37.7         6    716
-"session cartographer"         5   49.4        15    673
-"hook log research"            1   45.9        15    585
-"cold start"                  82   34.2         3    548
-"Qdrant embedding"             7   35.4         0    491
-"real-time indexing"           3   47.4        15    732
-"JSONL event"                  5   46.8         1    564
+"BM25 scoring"                 4   32.8         4    0.5
+"rank fusion awk"              1   37.7         6    0.7
+"session cartographer"         5   49.4        15    0.7
+"hook log research"            1   45.9        15    0.6
+"cold start"                  82   34.2         3    0.5
+"Qdrant embedding"             7   35.4         0    0.5
+"real-time indexing"           3   47.4        15    0.7
+"JSONL event"                  5   46.8         1    0.6
 ─────────────────────────  ────── ──────     ────── ──────
-TOTAL                        108  329.8s       59   4.8s
+TOTAL                        108  329.8        59    4.8
 ```
 
 grep takes 33-49 seconds per query scanning 2.7GB of transcripts, returning raw JSONL blobs. Cartographer returns BM25-ranked, formatted results in under a second.
