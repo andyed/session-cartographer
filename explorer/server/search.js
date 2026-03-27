@@ -95,45 +95,33 @@ function rrfFuse(list1, list1Source, list2, list2Source, limit) {
 /**
  * Run hybrid search: BM25 + optional Qdrant, fused via RRF.
  */
-export async function hybridSearch(index, query, { project = '', limit = 15 } = {}) {
-  // Always run BM25
-  const bm25Results = scoreBM25(index, query, { project, limit });
+export async function hybridSearch(index, query, { project = '', limit = 15, offset = 0 } = {}) {
+  const FUSION_DEPTH = 500;
+  // Always run BM25 and get full pool
+  const bm25All = scoreBM25(index, query, { project });
 
-  // Try semantic search (silent fail)
-  let semanticResults = [];
+  // Try semantic search
+  let semanticAll = [];
   try {
-    semanticResults = await semanticSearch(query, { project, limit });
-  } catch {
-    // Qdrant or embedding server down — keyword only
+    semanticAll = await semanticSearch(query, { project, limit: FUSION_DEPTH });
+  } catch {}
+
+  let fusedItems = [];
+  let keywordCount = bm25All.total;
+  let semanticCount = semanticAll.length;
+
+  if (semanticAll.length > 0 && bm25All.items.length > 0) {
+    fusedItems = rrfFuse(bm25All.items.slice(0, FUSION_DEPTH), 'keyword', semanticAll, 'semantic', FUSION_DEPTH);
+  } else if (bm25All.items.length > 0) {
+    fusedItems = bm25All.items.map(r => ({ ...r.event, _score: r.score, _sources: 'keyword' }));
+  } else {
+    fusedItems = semanticAll.map(r => ({ ...r.event, _score: r.score, _sources: 'semantic' }));
   }
 
-  // If both have results, fuse via RRF
-  if (semanticResults.length > 0 && bm25Results.length > 0) {
-    const fused = rrfFuse(bm25Results, 'keyword', semanticResults, 'semantic', limit);
-    return {
-      items: fused,
-      keywordCount: bm25Results.length,
-      semanticCount: semanticResults.length,
-    };
-  }
-
-  // Keyword only
-  if (bm25Results.length > 0) {
-    return {
-      items: bm25Results.map(r => ({ ...r.event, _score: r.score, _sources: 'keyword' })),
-      keywordCount: bm25Results.length,
-      semanticCount: 0,
-    };
-  }
-
-  // Semantic only
-  if (semanticResults.length > 0) {
-    return {
-      items: semanticResults.map(r => ({ ...r.event, _score: r.score, _sources: 'semantic' })),
-      keywordCount: 0,
-      semanticCount: semanticResults.length,
-    };
-  }
-
-  return { items: [], keywordCount: 0, semanticCount: 0 };
+  return {
+    items: fusedItems.slice(offset, offset + limit),
+    fusedCount: fusedItems.length,
+    keywordCount,
+    semanticCount,
+  };
 }

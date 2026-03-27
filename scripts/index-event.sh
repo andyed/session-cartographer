@@ -45,6 +45,7 @@ else
   CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
   TIMESTAMP=$(echo "$INPUT" | jq -r '.timestamp // empty')
   SOURCE=$(echo "$INPUT" | jq -r '.type // empty')
+  SESSION=$(echo "$INPUT" | jq -r '(.session // .session_id // empty)')
 fi
 
 [ -z "$EVENT_ID" ] || [ -z "$TEXT" ] && exit 0
@@ -76,7 +77,8 @@ PAYLOAD=$(jq -n -c \
   --arg proj "$PROJECT" \
   --arg cwd "$CWD" \
   --arg summ "$TEXT" \
-  '{points: [{id: ($id | tonumber), vector: $vec, payload: {event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ}}]}')
+  --arg sess "$SESSION" \
+  '{points: [{id: ($id | tonumber), vector: $vec, payload: {event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess}}]}')
 
 curl -sf "$QDRANT_URL/collections/$COLLECTION/points" \
   -H "Content-Type: application/json" \

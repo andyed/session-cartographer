@@ -19,6 +19,15 @@ function getDomain(url) {
   try { return new URL(url).hostname; } catch { return ''; }
 }
 
+function parseTs(ts) {
+  if (!ts) return 0;
+  if (!isNaN(ts)) {
+    const n = parseFloat(ts);
+    return n < 2000000000 ? n * 1000 : n;
+  }
+  return new Date(ts).getTime() || 0;
+}
+
 /**
  * Group consecutive events by (project, type, domain).
  * Events within 5 minutes of each other with same signature collapse.
@@ -31,10 +40,10 @@ export function groupEvents(events) {
     const type = event.type || event.milestone || '';
     const domain = getDomain(event.url || '');
     const key = `${event.project}|${type}|${domain}`;
-    const ts = new Date(event.timestamp || 0).getTime();
+    const ts = parseTs(event.timestamp);
 
     if (current && current.key === key) {
-      const lastTs = new Date(current.events[current.events.length - 1].timestamp || 0).getTime();
+      const lastTs = parseTs(current.events[current.events.length - 1].timestamp);
       // Within 5 minutes
       if (Math.abs(ts - lastTs) < 5 * 60 * 1000) {
         current.events.push(event);
@@ -50,13 +59,13 @@ export function groupEvents(events) {
   return groups;
 }
 
-export default function EventGroup({ group, onOpenTranscript }) {
+export default function EventGroup({ group, onOpenTranscript, onProjectClick }) {
   const [expanded, setExpanded] = useState(false);
   const events = group.events;
 
   // Single event — no grouping needed
   if (events.length === 1) {
-    return <EventCard event={events[0]} onOpenTranscript={onOpenTranscript} />;
+    return <EventCard event={events[0]} onOpenTranscript={onOpenTranscript} onProjectClick={onProjectClick} />;
   }
 
   const first = events[0];
@@ -79,7 +88,7 @@ export default function EventGroup({ group, onOpenTranscript }) {
         {domain && (
           <span className="text-xs text-blue-400/60 font-mono">{domain}</span>
         )}
-        <ProjectBadge project={first.project} />
+        <ProjectBadge project={first.project} onClick={onProjectClick} />
         <span className="text-xs text-gray-600 ml-auto">
           {expanded ? '▾' : '▸'}
         </span>
@@ -92,6 +101,7 @@ export default function EventGroup({ group, onOpenTranscript }) {
               key={event.event_id || event.timestamp + i}
               event={event}
               onOpenTranscript={onOpenTranscript}
+              onProjectClick={onProjectClick}
             />
           ))}
         </div>

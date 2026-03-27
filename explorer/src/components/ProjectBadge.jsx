@@ -12,9 +12,26 @@ function hashColor(str) {
   return COLORS[Math.abs(hash) % COLORS.length];
 }
 
-export default function ProjectBadge({ project }) {
+export default function ProjectBadge({ project, onClick }) {
   if (!project) return null;
   const color = hashColor(project);
+
+  if (onClick) {
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick(project);
+        }}
+        className="inline-block text-xs px-1.5 py-0.5 rounded font-mono hover:brightness-125 transition-all outline-none"
+        style={{ backgroundColor: color + '22', color, border: `1px solid ${color}66`, cursor: 'pointer' }}
+        title={`Filter by ${project}`}
+      >
+        {project}
+      </button>
+    );
+  }
+
   return (
     <span
       className="inline-block text-xs px-1.5 py-0.5 rounded font-mono"

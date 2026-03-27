@@ -150,12 +150,15 @@ NR == FNR {
             deeplink = extract($0, "deeplink")
             transcript = extract($0, "transcript_path")
             cwdf = extract($0, "cwd")
+            sid = extract($0, "session_id")
+            if (sid == "") sid = extract($0, "session")
             
             extras = ""
             if (url != "") extras = extras "url:" url "|"
             if (deeplink != "" && deeplink != "none") extras = extras "deeplink:" deeplink "|"
             if (transcript != "") extras = extras "transcript:" transcript "|"
             if (cwdf != "") extras = extras "cwd:" cwdf "|"
+            if (sid != "") extras = extras "session:" sid "|"
             
             results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras)
         }

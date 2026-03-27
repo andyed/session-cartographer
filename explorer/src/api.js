@@ -5,8 +5,8 @@ export async function fetchEvents({ limit = 50, offset = 0, project = '' } = {})
   return res.json();
 }
 
-export async function searchEvents(query, { project = '', limit = 15 } = {}) {
-  const params = new URLSearchParams({ q: query, limit });
+export async function searchEvents(query, { project = '', limit = 15, offset = 0 } = {}) {
+  const params = new URLSearchParams({ q: query, limit, offset });
   if (project) params.set('project', project);
   const res = await fetch(`/api/search?${params}`);
   return res.json();

@@ -97,10 +97,11 @@ app.get('/api/search', async (req, res) => {
   const query = req.query.q || '';
   const project = req.query.project || '';
   const limit = Math.min(parseInt(req.query.limit || '15', 10), 100);
+  const offset = parseInt(req.query.offset || '0', 10);
 
   // No query and no project filter — return empty
   if (!query.trim() && !project) {
-    return res.json({ results: [], meta: { query: '', keyword_count: 0, semantic_count: 0, fused_count: 0, duration_ms: 0 } });
+    return res.json({ results: [], meta: { query: '', keyword_count: 0, semantic_count: 0, fused_count: 0, duration_ms: 0, total_matches: 0 } });
   }
 
   const start = Date.now();
@@ -110,12 +111,13 @@ app.get('/api/search', async (req, res) => {
     // Project-only filter: return recent events for that project (no BM25 needed)
     const filtered = events
       .filter(e => (e.project || '').toLowerCase().includes(project.toLowerCase()))
-      .filter(isHighSignal)
-      .slice(0, limit)
-      .map(e => ({ ...e, _score: 0, _sources: 'browse' }));
-    results = { items: filtered, keywordCount: 0, semanticCount: 0 };
+      .filter(isHighSignal);
+    
+    // Paginate manually
+    const subset = filtered.slice(offset, offset + limit).map(e => ({ ...e, _score: 0, _sources: 'browse' }));
+    results = { items: subset, keywordCount: 0, semanticCount: 0, fusedCount: filtered.length };
   } else {
-    results = await hybridSearch(index, query, { project, limit });
+    results = await hybridSearch(index, query, { project, limit, offset });
   }
 
   const duration = Date.now() - start;
@@ -126,7 +128,8 @@ app.get('/api/search', async (req, res) => {
       query,
       keyword_count: results.keywordCount,
       semantic_count: results.semanticCount,
-      fused_count: results.items.length,
+      fused_count: results.fusedCount,
+      total_matches: results.keywordCount || results.fusedCount,
       duration_ms: duration,
     },
   });
