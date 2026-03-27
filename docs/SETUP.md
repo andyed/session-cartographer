@@ -87,9 +87,58 @@ All paths and endpoints are configurable:
 
 Set these in your shell profile or Claude Code settings for your work machine.
 
-## Resource Usage
+## Cold Start: Backfilling History
+
+On a fresh install, the JSONL event logs are empty — hooks only capture events going forward. Two scripts backfill your existing Claude Code session history into the Qdrant index for immediate semantic search.
+
+### Quick backfill (bash + jq)
+
+```bash
+# Index all historical transcripts into Qdrant
+bash scripts/retro-index.sh
+
+# Limit to recent history
+bash scripts/retro-index.sh --limit-days 30
+
+# Filter to a specific project
+bash scripts/retro-index.sh --project scrutinizer
+```
+
+Extracts user/assistant messages from transcript JSONL files and pipes each through `index-event.sh` → Qdrant. Lightweight but only indexes message text.
+
+### Deep reconstruction (Node.js)
+
+```bash
+node scripts/reconstruct-history.js
+```
+
+Does full transcript analysis: extracts tool_use blocks (WebFetch, WebSearch, Edit, Bash), synthesizes research events and session boundary milestones, and indexes everything into Qdrant. Provides richer search surface than the quick backfill.
+
+**Note:** Both scripts require Qdrant + embedding server to be running. They index into the `session-cartographer` collection for semantic search. Keyword search (`/remember` via BM25) works against the JSONL logs, which only grow from hooks going forward — backfill is Qdrant-only.
+
+## Disk Usage
+
+Cartographer's own data is small. Your existing Claude Code transcripts are the bulk.
+
+**Reference: heavy user (1,839 sessions, 25 days of hooks):**
+
+| Component | Size | Notes |
+|-----------|------|-------|
+| Event logs (JSONL) | ~1.5 MB | changelog + research + milestones |
+| Cartographer repo | ~2 MB | Scripts, docs, plugin (excluding node_modules) |
+| Explorer node_modules | ~75 MB | `npm install` in explorer/ |
+| Qdrant storage | ~5-50 MB | Depends on indexed events |
+| Embedding model (GGUF) | ~670 MB | One-time download, shared with other projects |
+| Claude Code transcripts | **2.9 GB** | Not ours — this is Claude Code's own data |
+
+The JSONL event logs grow at roughly **60 KB/day** for an active user (3-5 concurrent sessions, heavy research). At that rate, a year of logs is ~22 MB.
+
+**Your mileage will vary.** The numbers above reflect a power user running 3-5 concurrent Claude Code sessions daily across 40+ projects with heavy WebFetch/WebSearch activity. A typical user with 1-2 sessions/day will see much smaller logs.
+
+## Resource Usage (runtime)
 
 - **Qdrant**: ~50-100MB RAM for small collections (<50k events)
 - **llama.cpp embedding**: ~670MB model + ~200MB runtime
-- **Total**: under 1GB for both services
-- **Disk**: Qdrant storage grows ~1KB per event; negligible for session logs
+- **Explorer server**: ~50-100MB RAM (in-memory BM25 index of ~3k events)
+- **Total**: under 1GB for all services
+- **Ports**: 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings)
