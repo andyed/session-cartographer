@@ -90,12 +90,27 @@ CARTOGRAPHER_VIEWER_PREFIX="claude-history://session/"
 
 **TODO:** Wire `CARTOGRAPHER_VIEWER_PREFIX` into `/remember` CLI output and EventCard links so the viewer is fully swappable.
 
+## Landscape
+
+There are 30+ projects augmenting Claude Code's memory and session management. They fall into distinct categories — cartographer occupies the navigation/search niche that most memory projects ignore.
+
+| Category | Examples | What they do |
+|----------|----------|-------------|
+| **Persistent memory** | [claude-mem](https://github.com/thedotmack/claude-mem) (40k stars), [cortex](https://github.com/hjertefolger/cortex), [claude-supermemory](https://github.com/supermemoryai/claude-supermemory) | Write facts forward into future sessions |
+| **Cross-session search** | [episodic-memory](https://github.com/obra/episodic-memory), [recall](https://github.com/joseairosa/recall), **session-cartographer** | Find things from past sessions |
+| **Session visualization** | [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) (726 stars), [ccstat](https://github.com/ktny/ccstat) | Browse and display transcripts |
+| **Knowledge graphs** | [mcp-memory-service](https://github.com/doobidoo/mcp-memory-service) (1.6k stars), [memsearch](https://github.com/zilliztech/memsearch) | Structured entity/relation storage |
+| **Cognitive architectures** | [claude-cognitive](https://github.com/GMaN1911/claude-cognitive), [Continuous-Claude-v3](https://github.com/parcadei/Continuous-Claude-v3) (3.6k stars) | Attention-based memory tiers, multi-agent frameworks |
+
+Cartographer is different: it doesn't store knowledge — it indexes the *events* of your sessions (research, edits, milestones) and makes them searchable with [BM25 scoring](docs/RANK_FUSION.md) and [interpretable scores](docs/SCORING.md). Full survey with 30+ projects: [docs/landscape-survey.md](docs/landscape-survey.md).
+
 ## See also
 
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — How BM25 + RRF scoring works
-- [docs/SCORING.md](docs/SCORING.md) — What scores mean
-- [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events
-- [docs/landscape-survey.md](docs/landscape-survey.md) — Survey of 30+ Claude Code memory projects
+- [docs/SCORING.md](docs/SCORING.md) — What scores mean, when to chase a result
+- [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events to the index
+- [docs/SETUP.md](docs/SETUP.md) — Qdrant + embedding server setup, cold start backfill
+- [docs/EXPLORER_SPEC.md](docs/EXPLORER_SPEC.md) — Companion web UI architecture
 
 ## Attribution
 
