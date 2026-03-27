@@ -147,6 +147,19 @@ The Explorer includes a built-in transcript viewer at `:2527`. [claude-code-hist
 - [docs/SETUP.md](docs/SETUP.md) — Qdrant setup, cold start backfill, disk usage
 - [docs/landscape-survey.md](docs/landscape-survey.md) — 30+ Claude Code memory projects compared
 
+## Uninstall
+
+Remove the skill symlinks, hooks from settings.json, and optionally the JSONL event logs:
+
+```bash
+rm ~/.claude/skills/remember ~/.claude/skills/carto    # skill symlinks
+# Remove hooks section from ~/.claude/settings.json (or delete the PostToolUse/PreCompact/SessionEnd/SubagentStop entries pointing to session-cartographer)
+rm ~/Documents/dev/changelog.jsonl ~/Documents/dev/research-log.jsonl ~/Documents/dev/session-milestones.jsonl ~/Documents/dev/tool-use-log.jsonl   # event logs (optional — these are yours)
+rm -rf ~/Documents/dev/session-cartographer              # the repo
+```
+
+A proper `scripts/uninstall.sh` that automates this is on the roadmap.
+
 ## Attribution
 
 Search concept originated in a fork of [claude-code-session-bridge](https://github.com/PatilShreyas/claude-code-session-bridge) by Shreyas Patil (MIT License).
