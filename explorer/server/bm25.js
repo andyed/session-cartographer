@@ -19,14 +19,17 @@ export function tokenize(text) {
  * Matches bm25-search.awk get_search_text().
  */
 export function extractSearchText(event) {
-  return event.summary
-    || event.description
-    || event.prompt
-    || event.url
-    || event.query
-    || event.event_id
-    || event.milestone
-    || '';
+  // Concatenate all text fields — URL should always be searchable
+  // even when summary exists
+  const parts = [
+    event.summary,
+    event.description,
+    event.prompt,
+    event.url,
+    event.query,
+    event.title,
+  ].filter(Boolean);
+  return parts.join(' ') || event.event_id || event.milestone || '';
 }
 
 /**
