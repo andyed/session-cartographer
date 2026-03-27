@@ -138,55 +138,10 @@ grep_jsonl_to_tsv() {
   local file="$1" source="$2"
   [ -f "$file" ] || return 0
 
-  LC_ALL=C grep -iEn "$QUERY" "$file" 2>/dev/null | \
-  LC_ALL=C awk -F'\t' -v src="$source" -v proj_filter="$PROJECT" '
-  BEGIN { rank = 0 }
-  {
-    line = $0
-    # Strip the line-number prefix from grep -n
-    sub(/^[0-9]+:/, "", line)
-
-    # Poor-mans JSON field extraction — fast, no jq
-    key = extract(line, "event_id")
-    if (key == "") key = extract(line, "milestone")
-    if (key == "") key = src "-" NR
-
-    ts = extract(line, "timestamp")
-    proj = extract(line, "project")
-    summary = extract(line, "summary")
-    if (summary == "") summary = extract(line, "description")
-    if (summary == "") summary = extract(line, "prompt")
-    if (summary == "") summary = extract(line, "url")
-    if (summary == "") summary = extract(line, "query")
-
-    url = extract(line, "url")
-    deeplink = extract(line, "deeplink")
-    transcript = extract(line, "transcript_path")
-
-    # Project filter (case-insensitive)
-    if (proj_filter != "" && tolower(proj) !~ tolower(proj_filter)) next
-
-    rank++
-
-    # Extras: url, deeplink, transcript (pipe-separated)
-    extras = ""
-    if (url != "") extras = extras "url:" url "|"
-    if (deeplink != "" && deeplink != "none") extras = extras "deeplink:" deeplink "|"
-    if (transcript != "") extras = extras "transcript:" transcript "|"
-
-    printf "%s\t%d\t%s\t%s\t%s\t%s\t%s\n", src, rank, key, ts, proj, summary, extras
-  }
-
-  function extract(json, field,    pat, val) {
-    pat = "\"" field "\"[[:space:]]*:[[:space:]]*\""
-    if (match(json, pat)) {
-      val = substr(json, RSTART + RLENGTH)
-      sub(/".*/, "", val)
-      return val
-    }
-    return ""
-  }
-  '
+  # Note: The file is passed twice for the 2-pass (NR==FNR) BM25 algorithm
+  awk -f "$(dirname "$0")/bm25-search.awk" \
+    -v query="$QUERY" -v src="$source" -v proj_filter="$PROJECT" \
+    "$file" "$file" 2>/dev/null
 }
 
 grep_transcripts_to_tsv() {
@@ -209,50 +164,10 @@ grep_transcripts_to_tsv() {
 
     matched_files=$((matched_files + 1))
 
-    # Use awk to extract matching messages — much faster than jq for large files
-    LC_ALL=C grep -iEn "$QUERY" "$transcript" 2>/dev/null | \
-    LC_ALL=C awk -F'\t' -v sid="$session_id" -v pdir="$project_dir" -v tpath="$transcript" '
-    BEGIN { rank = 0 }
-    {
-      line = $0
-      sub(/^[0-9]+:/, "", line)
-
-      type = extract(line, "type")
-      if (type != "user" && type != "assistant") next
-
-      # Check message.content exists and contains a string
-      # Look for "content":" pattern
-      if (line !~ /"content"[[:space:]]*:[[:space:]]*"/) next
-
-      ts = extract(line, "timestamp")
-      uuid = extract(line, "uuid")
-      if (uuid == "") uuid = "transcript-" sid "-" NR
-
-      # Extract content snippet (first 150 chars after "content":")
-      content = ""
-      if (match(line, /"content"[[:space:]]*:[[:space:]]*"/)) {
-        content = substr(line, RSTART + RLENGTH, 150)
-        gsub(/".*/, "", content)
-        gsub(/\\n/, " ", content)
-        gsub(/\\t/, " ", content)
-      }
-
-      rank++
-      extras = "transcript:" tpath "|session:" sid "|"
-
-      printf "transcript:%s\t%d\t%s\t%s\t%s\t%s\t%s\n", type, rank, uuid, ts, pdir, content, extras
-    }
-
-    function extract(json, field,    pat, val) {
-      pat = "\"" field "\"[[:space:]]*:[[:space:]]*\""
-      if (match(json, pat)) {
-        val = substr(json, RSTART + RLENGTH)
-        sub(/".*/, "", val)
-        return val
-      }
-      return ""
-    }
-    ' | head -$((LIMIT * 2))
+    # Use bm25 algorithm — much faster than jq for large files, and ranks properly via TF-IDF
+    awk -f "$(dirname "$0")/bm25-search.awk" \
+      -v query="$QUERY" -v src="transcript" -v sid="$session_id" -v pdir="$project_dir" -v tpath="$transcript" \
+      "$transcript" "$transcript" 2>/dev/null | head -$((LIMIT * 2))
 
     [ "$matched_files" -ge 5 ] && break
   done
