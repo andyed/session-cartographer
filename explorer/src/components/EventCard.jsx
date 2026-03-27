@@ -40,21 +40,35 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
   const [expanded, setExpanded] = useState(false);
   const cat = eventCategory(event);
 
-  // Build display text — prefer human-readable summaries over raw URLs
-  let summary = event.summary || event.description || event.prompt || '';
+  // Build display text
+  let summary = event.title || event.description || event.prompt || '';
+  let extractedUrl = event.url || '';
 
-  // For search events, show query
-  if (!summary && event.query) {
-    summary = event.query;
+  // "Fetched: https://..." or "Search: ..." summaries
+  if (!summary && event.summary) {
+    const fetchMatch = event.summary.match(/^(?:Fetched|Search):\s*(https?:\/\/\S+)/);
+    if (fetchMatch) {
+      extractedUrl = extractedUrl || fetchMatch[1];
+      // Show domain + path instead of "Fetched: url"
+      try {
+        const u = new URL(fetchMatch[1]);
+        summary = `${u.hostname}${u.pathname.length > 50 ? u.pathname.slice(0, 50) + '...' : u.pathname}`;
+      } catch {
+        summary = event.summary;
+      }
+    } else {
+      summary = event.summary;
+    }
   }
 
-  // If all we have is a URL, show it compactly
-  if (!summary && event.url) {
+  if (!summary && event.query) summary = event.query;
+
+  if (!summary && extractedUrl) {
     try {
-      const u = new URL(event.url);
+      const u = new URL(extractedUrl);
       summary = `${u.hostname}${u.pathname.length > 50 ? u.pathname.slice(0, 50) + '...' : u.pathname}`;
     } catch {
-      summary = event.url;
+      summary = extractedUrl;
     }
   }
 
@@ -99,12 +113,12 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         <ProjectBadge project={event.project} onClick={onProjectClick} />
 
         {/* URL indicator — link icon with hover tooltip */}
-        {event.url && (
+        {extractedUrl && (
           <a
-            href={event.url}
+            href={extractedUrl}
             target="_blank"
             rel="noopener"
-            title={event.url}
+            title={extractedUrl}
             className="text-blue-400/60 hover:text-blue-400 transition-colors"
           >
             <svg className="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
