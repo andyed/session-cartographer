@@ -72,12 +72,20 @@ export function readAllEvents() {
   for (const [source, filePath] of Object.entries(LOG_FILES)) {
     for (const event of readJsonlFile(filePath)) {
       const id = event.event_id;
-      // Deduplicate: prefer domain log (research/milestones) over changelog
+      // Deduplicate: merge fields from both sources, prefer richer values
       if (id && seen.has(id)) {
-        // If we already have this from changelog, replace with domain source
-        if (source !== 'changelog') {
-          const idx = all.findIndex(e => e.event_id === id);
-          if (idx !== -1) all[idx] = { ...event, _source: source };
+        const idx = all.findIndex(e => e.event_id === id);
+        if (idx !== -1) {
+          // Merge: for each field, keep whichever is non-empty and longer
+          const existing = all[idx];
+          for (const [k, v] of Object.entries(event)) {
+            if (k === '_source') continue;
+            if (v && (!existing[k] || (typeof v === 'string' && v.length > (existing[k]?.length || 0)))) {
+              existing[k] = v;
+            }
+          }
+          // Prefer domain source label
+          if (source !== 'changelog') existing._source = source;
         }
         continue;
       }
@@ -86,8 +94,19 @@ export function readAllEvents() {
     }
   }
 
+  // Robustly parse timestamps (ISO strings or numeric epochs) for chronological sorting
+  function parseTs(ts) {
+    if (!ts) return 0;
+    if (!isNaN(ts)) {
+      const n = parseFloat(ts);
+      // Auto-detect seconds vs milliseconds (seconds < year 2033)
+      return n < 2000000000 ? n * 1000 : n;
+    }
+    return new Date(ts).getTime() || 0;
+  }
+
   // Sort by timestamp descending (newest first)
-  all.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  all.sort((a, b) => parseTs(b.timestamp) - parseTs(a.timestamp));
   return all;
 }
 

@@ -152,6 +152,20 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         {summary.length > 300 ? summary.slice(0, 300) + '...' : summary}
       </p>
 
+      {/* Fetch context — show the prompt that triggered this fetch */}
+      {event.prompt && event.prompt !== summary && (
+        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed italic">
+          {event.prompt.length > 150 ? event.prompt.slice(0, 150) + '...' : event.prompt}
+        </p>
+      )}
+
+      {/* Search query context */}
+      {event.query && event.query !== summary && (
+        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed italic">
+          query: {event.query.length > 150 ? event.query.slice(0, 150) + '...' : event.query}
+        </p>
+      )}
+
       {/* Files changed for commits — show inline without expanding */}
       {event.files_changed && (
         <div className="mt-1 text-xs text-gray-500 font-mono">
