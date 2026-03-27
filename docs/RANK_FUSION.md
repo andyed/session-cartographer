@@ -115,9 +115,18 @@ The Explorer API loads events from these JSONL files (configured in `explorer/se
 
 Events from multiple sources sharing the same `event_id` are **merged** (not replaced) — each field keeps whichever value is non-empty and longer. The `_source` label prefers the domain log over changelog.
 
-### Unicode handling
+### Language support
 
-`LC_ALL=C` is set for both grep and awk to avoid multibyte conversion errors on emoji/unicode in JSONL content. Trade-off: case-insensitive matching (`-i`) becomes ASCII-only, but query terms are typically ASCII.
+| Script | BM25 keyword | Semantic (Qdrant) |
+|--------|-------------|-------------------|
+| Latin (English, French, German, Spanish...) | Full support. Accented characters normalized via NFD (`résumé` → `resume`). | Full support. |
+| CJK (Chinese, Japanese, Korean) | Not supported. Tokenizer strips non-Latin characters. | Full support (`mxbai-embed-large` is multilingual). |
+| RTL (Arabic, Hebrew) | Not supported. | Full support. |
+| Cyrillic (Russian, Ukrainian...) | Not supported. | Full support. |
+
+The BM25 tokenizer (`/[^a-z0-9]+/`) operates on ASCII after NFD normalization. `LC_ALL=C` is set on grep/awk to avoid multibyte conversion errors — this means case-insensitive matching is ASCII-only.
+
+For non-Latin content, semantic search is the path. If Qdrant isn't running, those events are invisible to keyword search but still exist in the JSONL logs for future indexing.
 
 ## Performance
 
