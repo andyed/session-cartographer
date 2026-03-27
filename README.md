@@ -78,8 +78,9 @@ from previous conversations — decisions, research, fixes, approaches. The
 search uses BM25 + RRF across event logs and transcripts. Don't freestyle
 grep on transcript files — always use the search script.
 
-When the Explorer is running (localhost:2527), use `/explore <query>` to open
-a visual search in the browser, or link to it from /remember results.
+If the user asks to "explore" session history, start the Explorer web app
+(`cd explorer && npm run dev`) and open localhost:2527 in their browser.
+The Explorer is a visual tool for the human, not the agent.
 ```
 
 ### Extend your session history
