@@ -64,26 +64,38 @@ git clone https://github.com/andyed/session-cartographer.git
 claude install ./session-cartographer
 ```
 
-Or use standalone (no plugin install needed):
+`claude install` registers the `/remember` skill and event-logging hooks. The Explorer web app runs separately from the cloned repo — it's not part of the plugin install:
+
+```bash
+cd session-cartographer/explorer && npm install && npm run dev
+```
+
+Or use the CLI search standalone (no install needed):
 ```bash
 bash scripts/cartographer-search.sh "your query" --project myproject --limit 10
 ```
 
 ### Add to your CLAUDE.md
 
-After installing, add this to your project or global `CLAUDE.md` so the agent knows to use cartographer:
+After installing, add this to your project or global `CLAUDE.md` so the agent knows how to use the `/remember` skill:
 
 ```markdown
 ## Session History
 
-Use `/remember <query>` to search past session history when you need context
-from previous conversations — decisions, research, fixes, approaches. The
-search uses BM25 + RRF across event logs and transcripts. Don't freestyle
-grep on transcript files — always use the search script.
+Session Cartographer is installed as a Claude Code plugin. It provides:
+- `/remember <query>` — search past session history (decisions, research, fixes)
+- Hooks that automatically log events (web fetches, searches, compactions, file edits)
 
-Each search result includes a `transcript:` path pointing to the full
-session JSONL file. When you need the full reasoning behind a result,
-read that transcript with jq to recover the complete conversation context.
+When you need context from a previous conversation, use `/remember`. The skill
+runs BM25 + RRF search across event logs and transcripts. Don't freestyle grep
+on transcript files — the skill handles search automatically.
+
+Each search result includes a `transcript:` path pointing to the full session
+JSONL file. Read that transcript to recover the complete conversation context
+— the search result is the map, the transcript is the territory.
+
+If the user asks to "explore" session history, start the Explorer web app
+and open localhost:2527 in their browser. The Explorer is for the human.
 
 If the user asks to "explore" session history, start the Explorer web app
 (`cd explorer && npm run dev`) and open localhost:2527 in their browser.

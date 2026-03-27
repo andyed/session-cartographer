@@ -1,6 +1,6 @@
 # Session Cartographer
 
-Claude Code plugin + companion web app for searching session history.
+Claude Code plugin (installed via `claude install`). Contains the `/remember` skill, event-logging hooks, and search scripts. Companion Explorer web app for visual browsing.
 
 ## Project Structure
 
