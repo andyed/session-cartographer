@@ -49,14 +49,42 @@ case "$TOOL_NAME" in
     TYPE="tool_file_edit"
     ;;
   Bash)
-    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 200)
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 500)
     [ -z "$COMMAND" ] && exit 0
     # Skip noisy commands (ls, cat, echo, pwd)
     case "$COMMAND" in
-      ls*|cat\ *|echo\ *|pwd|cd\ *|which\ *) exit 0 ;;
+      ls*|cat\ *|echo\ *|pwd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) exit 0 ;;
     esac
-    SUMMARY="Ran: $COMMAND"
-    TYPE="tool_bash"
+
+    # Detect git commit — extract commit hash, message, and changed files
+    if echo "$COMMAND" | grep -q "git commit"; then
+      # Parse the commit output from tool_response
+      RESPONSE=$(echo "$INPUT" | jq -r '.tool_response // empty' | head -c 2000)
+      COMMIT_HASH=$(echo "$RESPONSE" | grep -oE '[a-f0-9]{7,}' | head -1)
+      COMMIT_MSG=$(echo "$RESPONSE" | grep -oE '\] .+' | head -1 | sed 's/^\] //')
+
+      # Get changed files from the commit if we can
+      CHANGED_FILES=""
+      if [ -n "$COMMIT_HASH" ] && [ -n "$GIT_REPO" ]; then
+        CHANGED_FILES=$(cd "$GIT_REPO" && git diff-tree --no-commit-id --name-only -r "$COMMIT_HASH" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
+      fi
+
+      if [ -n "$COMMIT_HASH" ]; then
+        SUMMARY="Commit ${COMMIT_HASH}: ${COMMIT_MSG}"
+        [ -n "$CHANGED_FILES" ] && SUMMARY="${SUMMARY} | files: ${CHANGED_FILES}"
+        TYPE="git_commit"
+      else
+        SUMMARY="Ran: $COMMAND"
+        TYPE="tool_bash"
+      fi
+    # Detect git push
+    elif echo "$COMMAND" | grep -q "git push"; then
+      SUMMARY="Pushed: $COMMAND"
+      TYPE="git_push"
+    else
+      SUMMARY="Ran: $(echo "$COMMAND" | head -c 200)"
+      TYPE="tool_bash"
+    fi
     ;;
   *)
     exit 0

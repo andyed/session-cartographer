@@ -26,10 +26,12 @@ function eventCategory(event) {
   if (type.includes('bridge_query')) return { label: 'bridge query', color: '#c678dd' };
   if (type === 'tool_file_edit') return { label: 'edit', color: '#98c379' };
   if (type === 'tool_bash') return { label: 'bash', color: '#56b6c2' };
+  if (type === 'git_commit') return { label: 'commit', color: '#ff9e64' };
+  if (type === 'git_push') return { label: 'push', color: '#ff6b6b' };
   return { label: event._source || type || '?', color: '#5c6370' };
 }
 
-export default function EventCard({ event, showScore, showSource, onOpenTranscript }) {
+export default function EventCard({ event, showScore, showSource, onOpenTranscript, onProjectClick }) {
   const [expanded, setExpanded] = useState(false);
   const cat = eventCategory(event);
 
@@ -89,7 +91,7 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
           {cat.label}
         </span>
 
-        <ProjectBadge project={event.project} />
+        <ProjectBadge project={event.project} onClick={onProjectClick} />
 
         {/* URL indicator — link icon with hover tooltip */}
         {event.url && (
