@@ -1,5 +1,7 @@
 # Session Cartographer
 
+![Session Cartographer](docs/wordmark.png)
+
 Search your Claude Code session history. Find the decision, paper, or fix from last week's conversation.
 
 ## grep vs. cartographer
