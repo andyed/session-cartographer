@@ -50,19 +50,36 @@ source \t rank \t key \t timestamp \t project \t summary \t extras
 
 Transcripts participate in fusion as equal citizens — they're not appended at the bottom. A highly relevant transcript excerpt can outrank a research log entry if it appears in multiple files or has a lower within-source rank.
 
-### Field extraction with fallback chain
+### Field extraction: indexing vs. display
 
-Different log types store their display text in different fields. The awk extractor tries a fallback chain:
+**Critical distinction:** indexing and display use fields differently.
 
-```awk
-summary = extract(line, "summary")          # changelog events
-if (summary == "") summary = extract(line, "description")  # milestones
-if (summary == "") summary = extract(line, "prompt")       # WebFetch events
-if (summary == "") summary = extract(line, "url")          # research entries
-if (summary == "") summary = extract(line, "query")        # WebSearch events
+**For BM25 indexing** (`explorer/server/bm25.js` and `bm25-search.awk`), all text fields are **concatenated** so every word is searchable:
+
+```js
+// bm25.js — extractSearchText()
+[event.summary, event.description, event.prompt, event.url,
+ event.query, event.title].filter(Boolean).join(' ')
 ```
 
-For transcripts, the display text is extracted from `message.content` (first 150 chars).
+```awk
+// bm25-search.awk — get_search_text()
+val = extract("summary") " " extract("description") " "
+      extract("prompt") " " extract("url") " " extract("query")
+```
+
+**For display** (`EventCard.jsx`), fields have distinct roles — DO NOT put prompt in the summary fallback chain:
+
+| Field | Display role | Example |
+|-------|-------------|---------|
+| `title` | Primary headline (if available) | "Abramov et al. (1991) - Color appearance..." |
+| `summary` / `description` | Primary headline (fallback) | "Fetched: https://..." → parsed to domain+path |
+| `prompt` | Context line (italic, below headline) | "What datasets does FixaTons include?" |
+| `query` | Context line (italic, below headline) | "query: foveated rendering eccentricity" |
+| `url` | Link icon + compact display | `arxiv.org/abs/2010.07399` |
+| `files_changed` | Inline file list (commits) | `shader.frag, app.js` |
+
+**The bug we fixed:** `prompt` was in the display fallback chain (`title || description || prompt`), so it became the headline. Then the "show prompt as context" check saw `prompt === summary` and hid it. The prompt should never be the headline — it's the "why was this fetched" context shown separately.
 
 The `extract()` function uses awk pattern matching instead of jq:
 
@@ -83,6 +100,20 @@ No jq process spawned per line. Trade-off: won't handle escaped quotes in values
 ### Deduplication
 
 Same event appearing in multiple sources (e.g., a research fetch logged in both `research-log.jsonl` and `changelog.jsonl`) is identified by matching `event_id` and scored once with accumulated RRF score. The `sources` field shows provenance: `[changelog+research]`.
+
+### Event sources
+
+The Explorer API loads events from these JSONL files (configured in `explorer/server/jsonl.js`):
+
+| Key | File | Contents |
+|-----|------|----------|
+| `changelog` | `$DEV/changelog.jsonl` | Unified event index (all hook-generated events) |
+| `research` | `$DEV/research-log.jsonl` | WebFetch/WebSearch with prompts, URLs, categories |
+| `milestones` | `$DEV/session-milestones.jsonl` | Compactions, session ends, agent completions |
+| `tool-use` | `$DEV/tool-use-log.jsonl` | File edits, bash commands, git commits |
+| `claude-history` | `~/.claude/history.jsonl` | Claude Code's own session history index |
+
+Events from multiple sources sharing the same `event_id` are **merged** (not replaced) — each field keeps whichever value is non-empty and longer. The `_source` label prefers the domain log over changelog.
 
 ### Unicode handling
 
