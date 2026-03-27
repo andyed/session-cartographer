@@ -8,6 +8,7 @@ function parseURL() {
   const urlQuery = url.searchParams.get('q') || '';
   const urlTranscript = url.searchParams.get('transcript') || '';
   const urlUuid = url.searchParams.get('uuid') || '';
+  const urlHighlight = url.searchParams.get('highlight') || '';
 
   const sessionMatch = url.pathname.match(/^\/session\/(.+)/);
   const deepLinkTranscript = sessionMatch
@@ -18,7 +19,6 @@ function parseURL() {
     : urlQuery ? 'search'
     : 'timeline';
 
-  const urlHighlight = url.searchParams.get('highlight') || '';
   return { tab, query: urlQuery, transcript: deepLinkTranscript, uuid: urlUuid, highlight: urlHighlight };
 }
 
@@ -32,34 +32,55 @@ export default function App() {
     highlight: initial.highlight,
   });
 
-  // Browser back/forward
+  // Browser back/forward — use state object to know which tab to restore
   useEffect(() => {
-    const onPopState = () => {
-      const state = parseURL();
-      setTab(state.tab);
-      setTranscript({ path: state.transcript, uuid: state.uuid });
+    // Replace initial entry with state
+    window.history.replaceState({ tab: initial.tab }, '');
+
+    const onPopState = (e) => {
+      if (e.state?.tab) {
+        setTab(e.state.tab);
+        if (e.state.tab === 'transcript' && e.state.transcript) {
+          setTranscript(e.state.transcript);
+        } else {
+          setTranscript({ path: '', uuid: '', highlight: '' });
+        }
+      } else {
+        // Fallback: parse URL
+        const state = parseURL();
+        setTab(state.tab);
+        setTranscript({ path: state.transcript, uuid: state.uuid, highlight: state.highlight });
+      }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  const prevTab = useRef(tab);
+  const handleTabClick = useCallback((t) => {
+    setTab(t);
+    window.history.pushState({ tab: t }, '', t === 'search' ? '/?q=' : '/');
+  }, []);
 
   const openTranscript = useCallback((path, uuid, highlight = '') => {
-    prevTab.current = tab;
-    setTranscript({ path, uuid, highlight });
+    // Push current tab state first so back returns here
+    window.history.pushState({ tab }, '', window.location.href);
+    // Then push transcript
+    const transcriptState = { path, uuid, highlight };
+    setTranscript(transcriptState);
     setTab('transcript');
     const params = new URLSearchParams();
     if (uuid) params.set('uuid', uuid);
     if (highlight) params.set('highlight', highlight);
     const qs = params.toString();
-    window.history.pushState({}, '', `/session/${encodeURIComponent(path)}${qs ? '?' + qs : ''}`);
+    window.history.pushState(
+      { tab: 'transcript', transcript: transcriptState },
+      '',
+      `/session/${encodeURIComponent(path)}${qs ? '?' + qs : ''}`
+    );
   }, [tab]);
 
   const closeTranscript = useCallback(() => {
-    setTab(prevTab.current === 'transcript' ? 'timeline' : prevTab.current);
-    setTranscript({ path: '', uuid: '' });
-    window.history.pushState({}, '', '/');
+    window.history.back();
   }, []);
 
   return (
@@ -70,7 +91,7 @@ export default function App() {
           {['timeline', 'search'].map(t => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => handleTabClick(t)}
               className={`px-3 py-1 text-xs rounded ${
                 tab === t
                   ? 'bg-gray-700 text-gray-200'
@@ -89,7 +110,6 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-hidden relative">
-        {/* Keep Search mounted but hidden so scroll position is preserved */}
         <div className={`absolute inset-0 ${tab === 'timeline' ? '' : 'hidden'}`}>
           <Timeline onOpenTranscript={openTranscript} />
         </div>
