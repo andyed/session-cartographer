@@ -33,12 +33,12 @@ Hooks log events to a searchable index:
 Translate the user's intent to search terms. `/carto that shader fix` → search for "shader fix".
 
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<search terms>"
+bash "${CLAUDE_PLUGIN_ROOT}/../../scripts/cartographer-search.sh" "<search terms>"
 ```
 
 If the user mentioned a specific project, add `--project <name>`:
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<terms>" --project scrutinizer
+bash "${CLAUDE_PLUGIN_ROOT}/../../scripts/cartographer-search.sh" "<terms>" --project scrutinizer
 ```
 
 For more results, add `--limit 25`.
@@ -69,7 +69,7 @@ jq -c 'select(.type == "user" or .type == "assistant") | select(.message.content
 Start the Explorer web app for the human to browse visually.
 
 ```bash
-cd ~/Documents/dev/session-cartographer/explorer && npm run dev &
+cd "${CLAUDE_PLUGIN_ROOT}/../../explorer" && npm run dev &
 sleep 3
 open "http://127.0.0.1:2527/"
 ```
