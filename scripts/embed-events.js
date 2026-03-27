@@ -58,8 +58,8 @@ function eventToText(event, source) {
   if (event.title) parts.push(event.title);
   if (event.project) parts.push(`project: ${event.project}`);
   const text = parts.join(' | ') || `${source} event`;
-  // Truncate to ~400 words to stay under 512-token context
-  return text.split(/\s+/).slice(0, 400).join(' ');
+  // Truncate to ~200 words to stay under 512-token context (subword tokenization inflates count)
+  return text.split(/\s+/).slice(0, 200).join(' ');
 }
 
 function eventId(event) {
@@ -201,7 +201,24 @@ async function main() {
     const batch = allEvents.slice(i, i + BATCH_SIZE);
     const texts = batch.map(e => e.text);
 
-    const embeddings = await getEmbeddings(texts);
+    let embeddings;
+    try {
+      embeddings = await getEmbeddings(texts);
+    } catch (err) {
+      // If batch fails, try one at a time (skip oversized events)
+      console.error(`\n  Batch failed, retrying individually: ${err.message}`);
+      for (let j = 0; j < batch.length; j++) {
+        try {
+          const [vec] = await getEmbeddings([batch[j].text]);
+          await upsertBatch([{ id: batch[j].id, vector: vec, payload: batch[j].payload }]);
+          indexed++;
+        } catch {
+          console.error(`\n  Skipped oversized event: ${batch[j].payload.event_id}`);
+        }
+      }
+      process.stdout.write(`\r  ${indexed}/${allEvents.length}`);
+      continue;
+    }
 
     const points = batch.map((event, idx) => ({
       id: event.id,
