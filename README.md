@@ -137,7 +137,7 @@ With a local Qdrant binary + llama.cpp embedding server, search adds vector simi
 
 ## Deep link viewer
 
-Built-in transcript viewer at `:2527`, or use [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) via `CARTOGRAPHER_VIEWER_PREFIX`.
+The Explorer includes a built-in transcript viewer at `:2527`. [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) is a natural complement — potential integration via `CARTOGRAPHER_VIEWER_PREFIX` is on the roadmap.
 
 ## See also
 
