@@ -17,7 +17,8 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
   const [query, setQuery] = useState(urlState.query || initialQuery);
   const [project, setProject] = useState(urlState.project);
   const [projects, setProjects] = useState([]);
-  const [limit, setLimit] = useState(15);
+  const [limit] = useState(15);
+  const [offset, setOffset] = useState(0);
   const { results, loading, search } = useSearch();
   const bottomRef = useRef(null);
 
@@ -26,7 +27,8 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
   }, []);
 
   useEffect(() => {
-    search(query, { project, limit });
+    // Only fire standard first-page load here. (Load more passes explicitly true flags)
+    search(query, { project, limit, offset: 0, isLoadMore: false });
   }, [query, project, limit, search]);
 
   // Sync URL as permalink when query/project changes
@@ -39,14 +41,18 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
     window.history.replaceState({ tab: 'search' }, '', url);
   }, [query, project]);
 
-  // Reset limit when query/project changes
+  // Reset offset when query/project changes
   useEffect(() => {
-    setLimit(15);
+    setOffset(0);
   }, [query, project]);
 
-  const loadMore = () => setLimit(prev => prev + 10);
+  const loadMore = () => {
+    const nextOffset = offset + limit;
+    setOffset(nextOffset);
+    search(query, { project, limit, offset: nextOffset, isLoadMore: true });
+  };
 
-  const hasMore = results && results.meta.fused_count >= limit;
+  const hasMore = results && (offset + limit < (results.meta.fused_count || 0));
 
   return (
     <div className="flex flex-col h-full">
@@ -79,9 +85,9 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
         {results && !loading && (
           <>
             <div className="text-xs text-gray-500 mb-3 font-mono">
-              {results.meta.fused_count} results
+              {results.meta.total_matches} absolute matches
               {results.meta.semantic_count > 0 && (
-                <> (keyword: {results.meta.keyword_count}, semantic: {results.meta.semantic_count})</>
+                <> (keyword: {results.meta.keyword_count}, semantic pool: {results.meta.semantic_count})</>
               )}
               {' '}in {results.meta.duration_ms}ms
             </div>
@@ -115,21 +121,6 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Bottom refinement bar — sticky at bottom */}
-      {results && results.results.length > 0 && (
-        <div className="flex gap-2 p-3 border-t border-gray-800 flex-shrink-0">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Refine search..."
-            className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
-          />
-          <span className="text-xs text-gray-600 self-center font-mono whitespace-nowrap">
-            {results.meta.fused_count} results
-          </span>
-        </div>
-      )}
     </div>
   );
 }
