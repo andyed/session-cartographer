@@ -41,7 +41,7 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
   const cat = eventCategory(event);
 
   // Build display text
-  let summary = event.title || event.description || event.prompt || '';
+  let summary = event.title || event.description || '';
   let extractedUrl = event.url || '';
 
   // "Fetched: https://..." or "Search: ..." summaries
