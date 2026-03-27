@@ -15,8 +15,10 @@ function parseURL() {
     ? decodeURIComponent(sessionMatch[1])
     : urlTranscript;
 
+  const urlProject = url.searchParams.get('project') || '';
+
   const tab = deepLinkTranscript ? 'transcript'
-    : urlQuery ? 'search'
+    : (urlQuery || urlProject) ? 'search'
     : 'timeline';
 
   return { tab, query: urlQuery, transcript: deepLinkTranscript, uuid: urlUuid, highlight: urlHighlight };
@@ -58,7 +60,7 @@ export default function App() {
 
   const handleTabClick = useCallback((t) => {
     setTab(t);
-    window.history.pushState({ tab: t }, '', t === 'search' ? '/?q=' : '/');
+    window.history.pushState({ tab: t }, '', t === 'timeline' ? '/' : window.location.href);
   }, []);
 
   const openTranscript = useCallback((path, uuid, highlight = '') => {

@@ -3,9 +3,19 @@ import { useSearch } from '../hooks/useSearch';
 import { fetchProjects } from '../api';
 import EventCard from './EventCard';
 
+// Read initial state from URL
+function parseSearchURL() {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    query: params.get('q') || '',
+    project: params.get('project') || '',
+  };
+}
+
 export default function Search({ initialQuery = '', onOpenTranscript }) {
-  const [query, setQuery] = useState(initialQuery);
-  const [project, setProject] = useState('');
+  const urlState = parseSearchURL();
+  const [query, setQuery] = useState(urlState.query || initialQuery);
+  const [project, setProject] = useState(urlState.project);
   const [projects, setProjects] = useState([]);
   const [limit, setLimit] = useState(15);
   const { results, loading, search } = useSearch();
@@ -18,6 +28,16 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
   useEffect(() => {
     search(query, { project, limit });
   }, [query, project, limit, search]);
+
+  // Sync URL as permalink when query/project changes
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    if (project) params.set('project', project);
+    const qs = params.toString();
+    const url = qs ? `/?${qs}` : '/';
+    window.history.replaceState({ tab: 'search' }, '', url);
+  }, [query, project]);
 
   // Reset limit when query/project changes
   useEffect(() => {
