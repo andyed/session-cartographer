@@ -1,6 +1,10 @@
 # Session Cartographer
 
-Claude Code plugin (installed via `claude install`). Contains the `/carto` skill, event-logging hooks, and search scripts. Companion Explorer web app for visual browsing.
+Session history search and exploration for Claude Code. Designed for **both Claude and humans**:
+
+- **`/remember`** — Claude uses this to recover context from past sessions (decisions, research, fixes). It's the agent's primary tool for loading relevant history into a conversation.
+- **`/carto explore`** — Opens the Explorer web app for the human to browse visually. The Explorer is a human tool, not an agent tool.
+- **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by both skills under the hood.
 
 ## Project Structure
 
@@ -11,18 +15,19 @@ scripts/
   embed-events.js               — Batch index JSONL events into Qdrant
   semantic-search.js             — Query Qdrant by vector similarity
   index-event.sh                — Real-time single-event indexing (called by hooks)
+  backfill-git-history.sh       — Import git commits into event logs
+  backfill-memories.sh          — Index Claude Code memory files
   retro-index.sh                — Backfill historical transcripts into Qdrant
   reconstruct-history.js        — Deep transcript analysis for backfill
 plugins/session-cartographer/
-  .claude-plugin/plugin.json    — Plugin metadata
-  skills/carto/SKILL.md         — /carto skill (launches Explorer web app)
-  skills/remember/SKILL.md     — /remember skill (CLI search)
-  scripts/remember-search.sh   — Legacy keyword-only search (superseded by cartographer-search.sh)
+  skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
+  skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
+  scripts/remember-search.sh    — Legacy keyword-only search (superseded by cartographer-search.sh)
   hooks/
     hooks.json                  — Hook registrations (8 hooks)
     log-research.sh             — WebFetch/WebSearch → research-log.jsonl + changelog.jsonl
     log-session-milestones.sh   — Compactions, session ends, agent stops
-    log-tool-use.sh             — Edit/Write/Bash (opt-in: CARTOGRAPHER_LOG_TOOL_USE=true)
+    log-tool-use.sh             — Edit/Write/Bash + git commits (opt-in: CARTOGRAPHER_LOG_TOOL_USE=true)
 explorer/
   server/
     index.js                    — Express API (:2526), SSE stream, search proxy
@@ -55,10 +60,16 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 
 ## Two Search Paths
 
-1. **CLI** (`cartographer-search.sh`): bash + awk BM25. Used by `/carto` skill. No server needed.
-2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, sub-millisecond queries. Used by the Explorer UI. Proxies Qdrant for semantic search.
+1. **CLI** (`cartographer-search.sh`): bash + awk BM25. Used by `/remember` skill. No server needed.
+2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, sub-millisecond queries. Used by the Explorer UI (`/carto explore`). Proxies Qdrant for semantic search.
 
 Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (RRF k=60).
+
+## How Claude should use this
+
+When a user says "remember X" or needs context from a past session, use `/remember`. The skill runs the search, returns ranked results with transcript paths. **Read the transcript** to recover full context — the search result is the map, the transcript is the territory.
+
+When a user says "explore" or wants to browse history visually, use `/carto explore` to start the web app and open the browser. That's a human tool — don't try to scrape it.
 
 ## Testing
 
