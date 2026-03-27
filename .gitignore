@@ -4,3 +4,5 @@ node_modules/
 tests/private/
 docs/energy-viz.html
 docs/rankfusion_with_awk.md
+explorer/node_modules/
+explorer/dist/

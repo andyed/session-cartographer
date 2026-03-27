@@ -1,0 +1,138 @@
+import { readFileSync, statSync, watch, openSync, readSync, closeSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+
+const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
+
+export const LOG_FILES = {
+  changelog: join(DEV_DIR, 'changelog.jsonl'),
+  research: join(DEV_DIR, 'research-log.jsonl'),
+  milestones: join(DEV_DIR, 'session-milestones.jsonl'),
+  'tool-use': join(DEV_DIR, 'tool-use-log.jsonl'),
+};
+
+/**
+ * Read all events from a JSONL file. Skips malformed lines (mid-flush writes).
+ */
+export function readJsonlFile(filePath) {
+  let content;
+  try {
+    content = readFileSync(filePath, 'utf-8');
+  } catch {
+    return [];
+  }
+
+  const events = [];
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      events.push(JSON.parse(line));
+    } catch {
+      // Incomplete write — Claude is mid-flush. Skip.
+    }
+  }
+  return events;
+}
+
+/**
+ * Read all events from all known log files, tagged with source.
+ */
+export function readAllEvents() {
+  const all = [];
+  for (const [source, filePath] of Object.entries(LOG_FILES)) {
+    for (const event of readJsonlFile(filePath)) {
+      all.push({ ...event, _source: source });
+    }
+  }
+  // Sort by timestamp descending (newest first)
+  all.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  return all;
+}
+
+/**
+ * Watch all JSONL files for new events. Calls onNewEvents(events) when new
+ * lines appear. Uses byte offsets to avoid re-reading entire files.
+ * Returns a cleanup function.
+ */
+export function watchFiles(onNewEvents) {
+  const offsets = {};
+  const watchers = [];
+
+  // Initialize offsets to current file sizes (don't replay history)
+  for (const [source, filePath] of Object.entries(LOG_FILES)) {
+    try {
+      offsets[source] = statSync(filePath).size;
+    } catch {
+      offsets[source] = 0;
+    }
+  }
+
+  for (const [source, filePath] of Object.entries(LOG_FILES)) {
+    let debounceTimer = null;
+
+    const handleChange = () => {
+      // Debounce — fs.watch can fire multiple times per write
+      if (debounceTimer) return;
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+
+        let size;
+        try {
+          size = statSync(filePath).size;
+        } catch {
+          return;
+        }
+
+        // Detect truncation/rotation
+        if (size < offsets[source]) {
+          offsets[source] = 0;
+        }
+
+        if (size <= offsets[source]) return;
+
+        // Read new bytes
+        const bytesToRead = size - offsets[source];
+        const buffer = Buffer.alloc(bytesToRead);
+        let fd;
+        try {
+          fd = openSync(filePath, 'r');
+          readSync(fd, buffer, 0, bytesToRead, offsets[source]);
+          closeSync(fd);
+        } catch {
+          if (fd) try { closeSync(fd); } catch {}
+          return;
+        }
+
+        offsets[source] = size;
+
+        // Parse new lines
+        const newEvents = [];
+        for (const line of buffer.toString('utf-8').split('\n')) {
+          if (!line.trim()) continue;
+          try {
+            newEvents.push({ ...JSON.parse(line), _source: source });
+          } catch {
+            // Mid-flush write — skip
+          }
+        }
+
+        if (newEvents.length > 0) {
+          onNewEvents(newEvents);
+        }
+      }, 100);
+    };
+
+    try {
+      const w = watch(filePath, handleChange);
+      watchers.push(w);
+    } catch {
+      // File doesn't exist yet — that's fine
+    }
+  }
+
+  return () => {
+    for (const w of watchers) {
+      try { w.close(); } catch {}
+    }
+  };
+}
