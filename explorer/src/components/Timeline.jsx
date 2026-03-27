@@ -3,7 +3,7 @@ import { fetchEvents } from '../api';
 import { useEventStream } from '../hooks/useEventStream';
 import EventCard from './EventCard';
 
-export default function Timeline() {
+export default function Timeline({ onOpenTranscript }) {
   const [events, setEvents] = useState([]);
   const [newCount, setNewCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -67,7 +67,7 @@ export default function Timeline() {
           </div>
         ) : (
           events.map((event, i) => (
-            <EventCard key={event.event_id || event.timestamp + i} event={event} />
+            <EventCard key={event.event_id || event.timestamp + i} event={event} onOpenTranscript={onOpenTranscript} />
           ))
         )}
       </div>

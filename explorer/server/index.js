@@ -1,8 +1,10 @@
 import express from 'express';
-import { readAllEvents, watchFiles, LOG_FILES } from './jsonl.js';
+import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch } from './search.js';
 import { statSync } from 'fs';
+import { resolve, normalize } from 'path';
+import { homedir } from 'os';
 
 const PORT = parseInt(process.env.CARTOGRAPHER_API_PORT || '2526', 10);
 const app = express();
@@ -137,6 +139,50 @@ app.get('/api/stream', (req, res) => {
     sseClients.delete(res);
     clearInterval(heartbeat);
   });
+});
+
+// ─── Transcript viewer ───
+const TRANSCRIPTS_DIR = resolve(
+  process.env.CARTOGRAPHER_TRANSCRIPTS_DIR || `${homedir()}/.claude/projects`
+);
+
+app.get('/api/transcript', (req, res) => {
+  const rawPath = req.query.path || '';
+  if (!rawPath) return res.status(400).json({ error: 'path required' });
+
+  // Path traversal protection
+  const resolved = resolve(rawPath.replace(/^~/, homedir()));
+  if (!resolved.startsWith(TRANSCRIPTS_DIR)) {
+    return res.status(403).json({ error: 'path outside transcripts directory' });
+  }
+
+  const entries = readJsonlFile(resolved);
+  if (entries.length === 0) {
+    return res.status(404).json({ error: 'transcript not found or empty' });
+  }
+
+  // Filter to conversation entries (user, assistant, tool results)
+  const messages = entries.filter(e =>
+    e.type === 'user' || e.type === 'assistant' || e.type === 'progress'
+  ).map(e => ({
+    uuid: e.uuid,
+    type: e.type,
+    timestamp: e.timestamp,
+    role: e.message?.role || e.type,
+    content: typeof e.message?.content === 'string'
+      ? e.message.content
+      : Array.isArray(e.message?.content)
+        ? e.message.content
+            .filter(b => b.type === 'text')
+            .map(b => b.text)
+            .join('\n')
+        : e.data?.type || '',
+    model: e.message?.model || '',
+    toolUseID: e.toolUseID || '',
+    parentToolUseID: e.parentToolUseID || '',
+  })).filter(m => m.content);
+
+  res.json({ path: resolved, messages, total: messages.length });
 });
 
 // ─── Start ───

@@ -10,4 +10,6 @@ export default defineConfig({
       '/api': 'http://127.0.0.1:2526',
     },
   },
+  // SPA fallback — /session/* deep links route to index.html
+  appType: 'spa',
 });

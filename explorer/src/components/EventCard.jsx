@@ -15,7 +15,7 @@ function relativeTime(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
-export default function EventCard({ event, showScore, showSource }) {
+export default function EventCard({ event, showScore, showSource, onOpenTranscript }) {
   const [expanded, setExpanded] = useState(false);
 
   const summary = event.summary || event.description || event.prompt || event.url || event.query || event.event_id || '';
@@ -62,7 +62,21 @@ export default function EventCard({ event, showScore, showSource }) {
             </div>
           )}
           {event.deeplink && <div>deeplink: {event.deeplink}</div>}
-          {event.transcript_path && <div>transcript: {event.transcript_path}</div>}
+          {event.transcript_path && (
+            <div>
+              transcript:{' '}
+              {onOpenTranscript ? (
+                <button
+                  onClick={() => onOpenTranscript(event.transcript_path, event.uuid)}
+                  className="text-blue-400 hover:underline"
+                >
+                  {event.transcript_path}
+                </button>
+              ) : (
+                event.transcript_path
+              )}
+            </div>
+          )}
           {event.session_id && <div>session: {event.session_id}</div>}
         </div>
       )}
