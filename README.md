@@ -6,25 +6,25 @@ Search your Claude Code session history. Find the decision, paper, or fix from l
 
 Default Claude Code search is `grep -r` on transcript files — raw JSON, no ranking, no event logs. Cartographer adds BM25 scoring, event log coverage, deduplication, and RRF fusion across sources.
 
-Benchmark against session-cartographer's own development history (8 queries, ~200 transcript files):
+Benchmark against session-cartographer's own development history (8 queries, 1,839 transcript files, 2.7GB):
 
 ```
                            ── grep ──        ── carto ──
-Query                       hits    sec       hits    sec
+Query                       hits    sec       hits     ms
 ─────────────────────────  ────── ──────     ────── ──────
-"BM25 scoring"                 4   32.7        15   23.0
-"rank fusion awk"              1   32.5        15   23.8
-"session cartographer"         5   31.5        15   23.5
-"hook log research"            1   31.8        15   23.8
-"cold start"                  82   26.7         3    8.4
-"Qdrant embedding"             7   30.4        15   24.6
-"real-time indexing"           3   32.8        15   24.7
-"JSONL event"                  5   32.0        15   24.1
+"BM25 scoring"                 4   32.8         4    521
+"rank fusion awk"              1   37.7         6    716
+"session cartographer"         5   49.4        15    673
+"hook log research"            1   45.9        15    585
+"cold start"                  82   34.2         3    548
+"Qdrant embedding"             7   35.4         0    491
+"real-time indexing"           3   47.4        15    732
+"JSONL event"                  5   46.8         1    564
 ─────────────────────────  ────── ──────     ────── ──────
-TOTAL                        108  250.4       108  175.9
+TOTAL                        108  329.8s       59   4.8s
 ```
 
-grep returns raw JSONL blobs. Cartographer returns ranked, formatted results with timestamps, project tags, and deep links. Same total hits, 30% faster, actually readable.
+grep takes 33-49 seconds per query scanning 2.7GB of transcripts, returning raw JSONL blobs. Cartographer returns BM25-ranked, formatted results in under a second.
 
 ## How it works
 
