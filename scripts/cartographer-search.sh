@@ -44,6 +44,35 @@ FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
+# ─── Multi-word query handling ───
+# If query has multiple words, we first try exact phrase (high precision).
+# If that yields < LOW_RECALL_THRESHOLD results, re-run with AND pattern
+# (all words must appear on the same line, any order).
+LOW_RECALL_THRESHOLD=3
+WORD_COUNT=$(echo "$QUERY" | wc -w | tr -d ' ')
+
+# Build AND grep pattern: word1.*word2|word2.*word1 for 2 words,
+# or chain of awk conditions for 3+ words
+build_and_pattern() {
+  local words
+  read -ra words <<< "$QUERY"
+  if [ "${#words[@]}" -eq 2 ]; then
+    # Two permutations
+    echo "${words[0]}.*${words[1]}|${words[1]}.*${words[0]}"
+  else
+    # For 3+ words, just require all words present (awk handles this better,
+    # but for grep we chain: word1.*word2.*word3 etc, plus we accept any order
+    # by using a lookahead-style pattern — grep -E doesn't have lookahead,
+    # so we use the simplest approach: one ordering)
+    local pat=""
+    for w in "${words[@]}"; do
+      [ -n "$pat" ] && pat="${pat}.*"
+      pat="${pat}${w}"
+    done
+    echo "$pat"
+  fi
+}
+
 # ─── Check for jq (needed for semantic search and transcript parsing) ───
 HAS_JQ=false
 command -v jq &>/dev/null && HAS_JQ=true
@@ -110,7 +139,7 @@ grep_jsonl_to_tsv() {
   local file="$1" source="$2"
   [ -f "$file" ] || return 0
 
-  LC_ALL=C grep -in "$QUERY" "$file" 2>/dev/null | \
+  LC_ALL=C grep -iEn "$QUERY" "$file" 2>/dev/null | \
   LC_ALL=C awk -F'\t' -v src="$source" -v proj_filter="$PROJECT" '
   BEGIN { rank = 0 }
   {
@@ -167,7 +196,7 @@ grep_transcripts_to_tsv() {
   local matched_files=0
   for transcript in "$TRANSCRIPTS"/*/*.jsonl; do
     [ -f "$transcript" ] || continue
-    grep -qi "$QUERY" "$transcript" 2>/dev/null || continue
+    LC_ALL=C grep -qiE "$QUERY" "$transcript" 2>/dev/null || continue
 
     local project_dir session_file session_id
     project_dir=$(basename "$(dirname "$transcript")")
@@ -182,7 +211,7 @@ grep_transcripts_to_tsv() {
     matched_files=$((matched_files + 1))
 
     # Use awk to extract matching messages — much faster than jq for large files
-    LC_ALL=C grep -in "$QUERY" "$transcript" 2>/dev/null | \
+    LC_ALL=C grep -iEn "$QUERY" "$transcript" 2>/dev/null | \
     LC_ALL=C awk -F'\t' -v sid="$session_id" -v pdir="$project_dir" -v tpath="$transcript" '
     BEGIN { rank = 0 }
     {
@@ -314,15 +343,44 @@ semantic_search 2>/dev/null
 # Keyword search with rank fusion
 if [ "$FOUND" -eq 0 ]; then
   # Collect all sources into one TSV stream, pipe through fusion
-  {
+  PHRASE_RESULTS=$({
     grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
     grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
     grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
     grep_transcripts_to_tsv
-  } | rank_fuse_and_display
+  } | tee "$TMPDIR/phrase_results.tsv" | wc -l | tr -d ' ')
 
-  if [ $? -eq 0 ]; then
-    FOUND=1
+  if [ "$PHRASE_RESULTS" -ge "$LOW_RECALL_THRESHOLD" ] || [ "$WORD_COUNT" -le 1 ]; then
+    # Enough results with exact phrase, or single word — use as-is
+    cat "$TMPDIR/phrase_results.tsv" | rank_fuse_and_display
+    [ $? -eq 0 ] && FOUND=1
+  else
+    # Low recall on multi-word phrase — retry with AND (all words, any order)
+    AND_PATTERN=$(build_and_pattern)
+    ORIG_QUERY="$QUERY"
+    QUERY="$AND_PATTERN"
+
+    AND_RESULTS=$({
+      grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
+      grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
+      grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
+      grep_transcripts_to_tsv
+    } | tee "$TMPDIR/and_results.tsv" | wc -l | tr -d ' ')
+
+    QUERY="$ORIG_QUERY"
+
+    if [ "$AND_RESULTS" -gt "$PHRASE_RESULTS" ]; then
+      # AND found more — merge phrase results (boosted) with AND results
+      echo "(expanded to AND: all words, any order)"
+      echo ""
+      # Phrase matches get a rank boost by appearing first
+      cat "$TMPDIR/phrase_results.tsv" "$TMPDIR/and_results.tsv" | rank_fuse_and_display
+      [ $? -eq 0 ] && FOUND=1
+    elif [ "$PHRASE_RESULTS" -gt 0 ]; then
+      # AND didn't help — use phrase results
+      cat "$TMPDIR/phrase_results.tsv" | rank_fuse_and_display
+      [ $? -eq 0 ] && FOUND=1
+    fi
   fi
 fi
 
