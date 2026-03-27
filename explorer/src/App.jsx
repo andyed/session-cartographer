@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import Timeline from './components/Timeline';
 import Search from './components/Search';
 import TranscriptViewer from './components/TranscriptViewer';
@@ -41,14 +41,17 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
+  const prevTab = useRef(tab);
+
   const openTranscript = useCallback((path, uuid) => {
+    prevTab.current = tab;
     setTranscript({ path, uuid });
     setTab('transcript');
     window.history.pushState({}, '', `/session/${encodeURIComponent(path)}${uuid ? `?uuid=${uuid}` : ''}`);
-  }, []);
+  }, [tab]);
 
   const closeTranscript = useCallback(() => {
-    setTab('timeline');
+    setTab(prevTab.current === 'transcript' ? 'timeline' : prevTab.current);
     setTranscript({ path: '', uuid: '' });
     window.history.pushState({}, '', '/');
   }, []);
@@ -79,9 +82,14 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">
-        {tab === 'timeline' && <Timeline onOpenTranscript={openTranscript} />}
-        {tab === 'search' && <Search initialQuery={initial.query} onOpenTranscript={openTranscript} />}
+      <main className="flex-1 overflow-hidden relative">
+        {/* Keep Search mounted but hidden so scroll position is preserved */}
+        <div className={`absolute inset-0 ${tab === 'timeline' ? '' : 'hidden'}`}>
+          <Timeline onOpenTranscript={openTranscript} />
+        </div>
+        <div className={`absolute inset-0 ${tab === 'search' ? '' : 'hidden'}`}>
+          <Search initialQuery={initial.query} onOpenTranscript={openTranscript} />
+        </div>
         {tab === 'transcript' && (
           <TranscriptViewer
             transcriptPath={transcript.path}
