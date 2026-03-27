@@ -2,12 +2,27 @@
 
 Interactive web UI for browsing, searching, and visualizing session history. Companion to the CLI `/remember` skill.
 
+## Core UX: Remember vs. Explore
+
+Two commands, two flow states:
+
+### `/remember <query>`
+Fast, mid-flow context recovery without leaving the terminal. BM25 + Qdrant RRF results in terminal text. Footer links into the Explorer:
+```
+Explore full context: http://localhost:2527/explore?q=<query>
+```
+
+### `/explore [query]`
+Deep investigation while the agent is working. Opens the Explorer in browser via `open` command, pre-filtered to query. Same search backend, rich visual output.
+
+Both commands hit the same search pipeline. `/remember` renders in terminal. `/explore` renders in browser.
+
 ## Architecture
 
 ```
 ┌──────────────┐     SSE      ┌──────────────┐    fs.watch     ┌───────────────┐
 │  React App   │◄────────────│  Node API    │◄──────────────│  JSONL files  │
-│  :3001       │   /api/stream │  :3000       │                │  (changelog,  │
+│  :2527       │   /api/stream │  :2526       │                │  (changelog,  │
 │              │──────────────►│              │───────────────►│   research,   │
 │  search bar  │  /api/search  │  Qdrant proxy│  localhost:6333 │   milestones) │
 └──────────────┘               └──────────────┘                └───────────────┘
@@ -22,7 +37,7 @@ Interactive web UI for browsing, searching, and visualizing session history. Com
 
 ### Why SSE, not WebSockets
 
-Data flow is strictly one-way: backend reads JSONL, pushes new events to the frontend. SSE is standard HTTP, works through proxies, requires no handshake protocol, and is trivial in React:
+Data flow is strictly one-way: backend reads JSONL, pushes new events to the frontend. SSE is standard HTTP, auto-reconnects, requires no library:
 
 ```js
 const source = new EventSource('/api/stream');
@@ -32,23 +47,19 @@ source.onmessage = (e) => {
 };
 ```
 
-No socket.io, no ws library, no reconnection logic (SSE auto-reconnects).
-
 ### Why proxy Qdrant through Node
 
-React app at :3001 cannot query Qdrant at :6333 directly — CORS will block it. The Node API at :3000 proxies semantic search:
+React at :2527 cannot query Qdrant at :6333 directly — CORS. The Node API at :2526 proxies semantic search and runs BM25 keyword search, fusing both via RRF.
 
-```
-React → GET /api/search?q=foveation&project=scrutinizer&limit=10
-Node  → POST http://localhost:6333/collections/session-cartographer/points/search
-Node  → POST http://localhost:8890/v1/embeddings (to embed the query)
-Node  ← Qdrant results
-React ← JSON response
-```
+## Security
 
-The Node API also runs BM25 keyword search and fuses both via RRF — same logic as `cartographer-search.sh` but in JS for the API layer.
+The Explorer has raw access to session transcripts. Local-only hardening:
 
-## Node API
+1. **Localhost binding**: API and Vite servers bind to `127.0.0.1`, never `0.0.0.0`.
+2. **Path traversal protection**: Transcript endpoint (`/api/transcript?path=...`) verifies the resolved path is a descendant of `CARTOGRAPHER_TRANSCRIPTS_DIR`. Reject anything reaching outside.
+3. **XSS sanitization**: Transcript content rendered through DOMPurify before injection. Claude generates arbitrary code/markdown — treat it as untrusted.
+
+## Node API (:2526)
 
 ### Endpoints
 
@@ -65,13 +76,12 @@ The Node API also runs BM25 keyword search and fuses both via RRF — same logic
 
 Uses `fs.watch()` on the JSONL files. On file change:
 
-1. Read new lines since last known offset
-2. Parse each line with `JSON.parse()` wrapped in try/catch
-3. **Silently skip incomplete lines** — Claude writes to these files in real-time, so the watcher may read a line mid-flush. Never crash on bad JSON. Retry on next file change.
+1. Read new lines since last known byte offset
+2. Parse each line with `JSON.parse()` in try/catch
+3. **Silently skip incomplete lines** — Claude writes to these files in real-time, the watcher may read a line mid-flush. Never crash on bad JSON. The complete line will arrive on the next file change.
 4. Emit parsed events as SSE `data:` frames
 
 ```js
-// Resilient line reader
 function parseNewLines(buffer) {
   const lines = buffer.split('\n');
   const events = [];
@@ -80,20 +90,20 @@ function parseNewLines(buffer) {
     try {
       events.push(JSON.parse(line));
     } catch {
-      // Incomplete write — Claude is mid-flush. Skip, will catch on next change.
+      // Incomplete write — Claude is mid-flush. Skip.
     }
   }
   return events;
 }
 ```
 
-Track file offsets to avoid re-reading the entire file on each change. Use `fs.stat()` to detect truncation (offset > file size = file was rotated).
+Track byte offsets per file. Detect truncation via `fs.stat()` (offset > file size = file was rotated → reset to 0).
 
 ### Search (`/api/search`)
 
 1. Embed query via `POST http://localhost:8890/v1/embeddings`
 2. Search Qdrant via `POST http://localhost:6333/collections/session-cartographer/points/search`
-3. Run BM25 keyword search on JSONL files (port the awk logic to JS, or shell out to `cartographer-search.sh` and parse TSV output)
+3. Run BM25 keyword search (shell out to `cartographer-search.sh` and parse TSV, or port awk logic to JS)
 4. Fuse via RRF (k=60)
 5. Return unified results
 
@@ -110,7 +120,7 @@ If Qdrant/embedding server is down, return keyword-only results. Never error on 
       "summary": "Extract Nick Blauch's full explanation...",
       "score": 0.033,
       "url": "https://...",
-      "deeplink": "claude-history://...",
+      "deeplink": "http://localhost:2527/session/...",
       "transcript": "~/.claude/projects/.../abc.jsonl"
     }
   ],
@@ -124,38 +134,55 @@ If Qdrant/embedding server is down, return keyword-only results. Never error on 
 }
 ```
 
-## React App
+## Configurable Viewer Links
+
+Deep link prefix is configurable via env var so `/remember` CLI output stays tool-agnostic:
+
+```bash
+# Use the Companion Explorer (default when explorer is running)
+CARTOGRAPHER_VIEWER_PREFIX="http://localhost:2527/session/"
+
+# Use claude-code-history-viewer instead
+CARTOGRAPHER_VIEWER_PREFIX="claude-history://session/"
+```
+
+`/remember` prepends `CARTOGRAPHER_VIEWER_PREFIX` to transcript paths in its output. The search script doesn't hardcode a viewer.
+
+## React App (:2527)
 
 ### Views
 
 #### 1. Timeline (default)
 
-Vertical event stream, most recent first. Each event card shows:
-- Timestamp (relative: "2h ago", absolute on hover)
+Vertical event stream, most recent first. Each event card:
+- Timestamp (relative, absolute on hover)
 - Source badge (changelog, research, milestones, tool-use, transcript)
 - Project tag (color-coded)
 - Summary text
 - Expandable: deep link, transcript path, URL
 
-New events arrive via SSE and prepend to the top with a subtle animation. Show a "N new events" pill if user has scrolled down.
+New events arrive via SSE, prepend with animation. "N new events" pill when scrolled down.
 
 #### 2. Search
 
-Full-width search bar. Results render inline as event cards (same component as timeline). Show source badges indicating which pipeline contributed (`[keyword]`, `[semantic]`, `[keyword+semantic]`).
+Full-width search bar with project filter dropdown (populated from `/api/projects`). Results as event cards. Source badges show pipeline contribution (`[keyword]`, `[semantic]`, `[keyword+semantic]`).
 
-Debounce at 300ms. Show loading state. Display `meta.duration_ms` and source counts.
-
-Project filter as a dropdown populated from `/api/projects`.
+Debounce 300ms. Show `meta.duration_ms` and source counts.
 
 #### 3. Energy (stretch)
 
-Port of `energy-viz.html` — stacked area chart of events by project over time. Data from `/api/stats`. This is the "where did my attention go" view.
+Stacked area chart of events by project over time. Data from `/api/stats`.
+
+#### 4. Session topology (roadmap, not 1.0)
+
+Force-directed graph of session relationships. Which sessions touched which projects, when milestones handed context between sessions. `react-force-graph` when we get there.
 
 ### Tech stack
 
 - **React 19** + Vite
-- **Tailwind CSS** — dark theme (matches energy-viz aesthetic)
-- **No state library** — `useReducer` + context is enough for an event stream
+- **Tailwind CSS** — dark theme
+- **DOMPurify** — transcript content sanitization
+- **No state library** — `useReducer` + context
 - **No router** — tab switching, not pages
 
 ### File structure
@@ -165,18 +192,18 @@ explorer/
   src/
     App.jsx
     components/
-      Timeline.jsx        — SSE-fed event stream
-      Search.jsx           — search bar + results
-      EventCard.jsx        — shared event display
-      ProjectBadge.jsx     — color-coded project tag
-      SourceBadge.jsx      — source indicator
+      Timeline.jsx
+      Search.jsx
+      EventCard.jsx
+      ProjectBadge.jsx
+      SourceBadge.jsx
     hooks/
       useEventStream.js    — SSE connection + reconnect
-      useSearch.js         — debounced search with loading state
-    api.js                 — fetch wrappers for Node API
+      useSearch.js         — debounced search with loading
+    api.js
   server/
-    index.js               — Express server
-    stream.js              — SSE + fs.watch logic
+    index.js               — Express, localhost-only
+    stream.js              — SSE + fs.watch
     search.js              — hybrid search (BM25 + Qdrant proxy)
     jsonl.js               — resilient JSONL reader
   package.json
@@ -188,23 +215,26 @@ explorer/
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CARTOGRAPHER_DEV_DIR` | `~/Documents/dev` | JSONL log directory |
+| `CARTOGRAPHER_TRANSCRIPTS_DIR` | `~/.claude/projects` | Session transcripts |
 | `CARTOGRAPHER_QDRANT_URL` | `http://localhost:6333` | Qdrant endpoint |
 | `CARTOGRAPHER_EMBED_URL` | `http://localhost:8890/v1/embeddings` | Embedding endpoint |
 | `CARTOGRAPHER_EMBED_MODEL` | `mxbai-embed-large` | Embedding model |
 | `CARTOGRAPHER_COLLECTION` | `session-cartographer` | Qdrant collection |
-| `PORT` | `3000` | Node API port |
+| `CARTOGRAPHER_VIEWER_PREFIX` | `http://localhost:2527/session/` | Deep link prefix |
+| `CARTOGRAPHER_API_PORT` | `2526` | Node API port |
+| `CARTOGRAPHER_UI_PORT` | `2527` | React app port |
 
 ## Error handling
 
-- **Qdrant down**: Search returns keyword-only results. Health endpoint reports `qdrant: false`. No errors in UI.
-- **Embedding server down**: Same as Qdrant down — keyword only.
-- **JSONL file missing**: Stream reports no events. Timeline shows cold start message.
-- **Malformed JSONL line**: Silently skipped. Logged to stderr at debug level. Never crashes the server or corrupts the SSE stream.
-- **JSONL file rotated/truncated**: Detected via offset > file size. Reset offset to 0.
-- **SSE disconnection**: `EventSource` auto-reconnects. React hook handles reconnection state.
+- **Qdrant down**: keyword-only results. Health reports `qdrant: false`. No UI errors.
+- **Embedding server down**: same — keyword only.
+- **JSONL file missing**: empty timeline, cold start message.
+- **Malformed JSONL line**: silently skipped, stderr debug log. Never crashes server or SSE stream.
+- **JSONL file rotated/truncated**: offset > size → reset to 0.
+- **SSE disconnection**: `EventSource` auto-reconnects. React hook shows reconnection state.
 
 ## What this is NOT
 
-- Not a replacement for claude-code-history-viewer (which shows full transcripts with tool calls). This shows the *event index* — the map, not the territory.
+- Not a transcript reader (that's claude-code-history-viewer). This shows the event index — the map, not the territory. Transcript depth will iterate.
 - Not a memory editor. Read-only. Events are append-only JSONL.
-- Not a multi-user tool. Single-machine, single-user. No auth.
+- Not a multi-user tool. Single-machine, single-user. No auth beyond localhost binding.
