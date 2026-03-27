@@ -120,15 +120,19 @@ Does full transcript analysis: extracts tool_use blocks (WebFetch, WebSearch, Ed
 
 Cartographer's own data is small. Your existing Claude Code transcripts are the bulk.
 
-Cartographer's event logs are a **~0.05% overhead** on your existing Claude Code transcript data. Reference from a heavy user (1,839 sessions, 3-5 concurrent daily, 40+ projects):
+Cartographer adds very little to your filesystem relative to what Claude Code already generates.
 
-| | Size |
-|---|---|
-| Claude Code transcripts | 2.9 GB |
-| Cartographer event logs | 1.5 MB |
-| **Ratio** | **~1:2000** |
+**Event log overhead:** ~1:2000 ratio. For every 2 GB of Claude Code transcripts, cartographer's JSONL event logs add ~1 MB.
 
-Your event logs will scale proportionally to your Claude Code usage — the ratio stays roughly the same regardless of how heavy a user you are.
+**Source files added to your project:** The plugin installs 3 hook scripts (~200 lines each) and 1 skill definition. The CLI search is 2 scripts (bash + awk, ~350 lines total). The Explorer is ~20 files / ~1,500 lines of JS+JSX. No files are added to your project repos — everything lives in the cartographer directory.
+
+Reference from a heavy user (1,839 sessions, 3-5 concurrent daily, 40+ projects):
+
+| Component | Size | Notes |
+|-----------|------|-------|
+| Claude Code transcripts | 2.9 GB | Not ours — Claude Code's own data |
+| Cartographer event logs | 1.5 MB | changelog + research + milestones |
+| Cartographer source | ~2 MB | All scripts, docs, plugin (excl. node_modules) |
 
 ## Resource Usage (runtime)
 

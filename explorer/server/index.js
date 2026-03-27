@@ -13,7 +13,7 @@ const app = express();
 console.log('Loading events...');
 const events = readAllEvents();
 const index = buildIndex(events);
-console.log(`Loaded ${events.length} events, BM25 index built.`);
+console.log(`Loaded ${events.length} events, ${index.docs.size} docs in BM25 corpus (avgdl: ${index.avgdl.toFixed(1)} tokens).`);
 
 // ─── SSE clients ───
 const sseClients = new Set();
