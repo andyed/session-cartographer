@@ -120,12 +120,20 @@ All log paths default to `~/Documents/dev/` but are configurable via `CARTOGRAPH
 
 ## Usage
 
+Via the Claude Code plugin:
 ```
 /remember TTM pooling regions
 /remember that paper about foveated rendering
 /remember what we decided about the shader approach
-/remember the commit that fixed the blur kernel
 ```
+
+Or run the search script directly (no plugin install needed):
+```bash
+# Keyword search with Reciprocal Rank Fusion across all sources
+bash scripts/cartographer-search.sh "foveated rendering" --project scrutinizer --limit 10
+```
+
+Results are ranked via awk-based RRF across changelog, research log, milestones, and transcripts — unified, deduplicated, scored. See [docs/RANK_FUSION.md](docs/RANK_FUSION.md).
 
 Results include timestamps, project names, excerpts, and deep links for [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) navigation.
 
