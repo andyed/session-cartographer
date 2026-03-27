@@ -5,11 +5,11 @@ export function useSearch() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const timerRef = useRef(null);
-  const firstCall = useRef(true);
 
   const search = useCallback((query, { project = '', limit = 15 } = {}) => {
     if (timerRef.current) clearTimeout(timerRef.current);
 
+    // Need at least a query or a project filter
     if (!query.trim() && !project) {
       setResults(null);
       setLoading(false);
@@ -28,10 +28,9 @@ export function useSearch() {
       setLoading(false);
     };
 
-    // Fire immediately on first call (e.g. initialQuery from URL), debounce after
-    if (firstCall.current) {
-      firstCall.current = false;
-      doSearch();
+    // Debounce typing, but fire immediately for project-only changes
+    if (!query.trim()) {
+      doSearch(); // project filter change — no debounce
     } else {
       timerRef.current = setTimeout(doSearch, 300);
     }

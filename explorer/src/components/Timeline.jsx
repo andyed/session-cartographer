@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { fetchEvents } from '../api';
 import { useEventStream } from '../hooks/useEventStream';
-import EventCard from './EventCard';
+import EventGroup, { groupEvents } from './EventGroup';
 
 export default function Timeline({ onOpenTranscript }) {
   const [events, setEvents] = useState([]);
@@ -10,15 +10,13 @@ export default function Timeline({ onOpenTranscript }) {
   const scrollRef = useRef(null);
   const isAtTop = useRef(true);
 
-  // Load initial events
   useEffect(() => {
-    fetchEvents({ limit: 100 }).then(data => {
+    fetchEvents({ limit: 200 }).then(data => {
       setEvents(data.events);
       setLoading(false);
     });
   }, []);
 
-  // Stream new events via SSE
   useEventStream((event) => {
     setEvents(prev => [event, ...prev]);
     if (!isAtTop.current) {
@@ -26,7 +24,6 @@ export default function Timeline({ onOpenTranscript }) {
     }
   });
 
-  // Track scroll position
   const handleScroll = () => {
     if (scrollRef.current) {
       isAtTop.current = scrollRef.current.scrollTop < 50;
@@ -40,6 +37,8 @@ export default function Timeline({ onOpenTranscript }) {
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     setNewCount(0);
   };
+
+  const groups = useMemo(() => groupEvents(events), [events]);
 
   if (loading) {
     return <div className="p-8 text-gray-500">Loading events...</div>;
@@ -66,8 +65,12 @@ export default function Timeline({ onOpenTranscript }) {
             No events yet. Events will appear as Claude Code hooks fire.
           </div>
         ) : (
-          events.map((event, i) => (
-            <EventCard key={event.event_id || event.timestamp + i} event={event} onOpenTranscript={onOpenTranscript} />
+          groups.map((group, i) => (
+            <EventGroup
+              key={group.events[0].event_id || group.events[0].timestamp + i}
+              group={group}
+              onOpenTranscript={onOpenTranscript}
+            />
           ))
         )}
       </div>
