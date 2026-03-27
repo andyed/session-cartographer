@@ -36,7 +36,12 @@ If the user mentioned a specific project, add `--project <name>`:
 bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<terms>" --project scrutinizer
 ```
 
-For more results, add `--limit 25`.
+For more results, add `--limit 25` or `--limit 50`. If the user says "more" or "keep going" after seeing results, re-run with a higher limit:
+```bash
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<same terms>" --limit 30
+```
+
+Wildcard prefix search works: `shader*` matches `shader`, `shaders`, `shaderlab`, etc.
 
 ## Step 2: Present results
 
