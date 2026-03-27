@@ -10,7 +10,7 @@ export function useSearch() {
   const search = useCallback((query, { project = '', limit = 15 } = {}) => {
     if (timerRef.current) clearTimeout(timerRef.current);
 
-    if (!query.trim()) {
+    if (!query.trim() && !project) {
       setResults(null);
       setLoading(false);
       return;

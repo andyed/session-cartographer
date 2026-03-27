@@ -1,18 +1,52 @@
-const BADGE_STYLES = {
-  keyword: { bg: '#2a4a2a', color: '#98c379', label: 'keyword' },
-  semantic: { bg: '#2a3a4a', color: '#61afef', label: 'semantic' },
-  'keyword+semantic': { bg: '#3a2a4a', color: '#c678dd', label: 'keyword+semantic' },
-};
-
+/**
+ * Dual-color score indicator.
+ * Left half = keyword (green), right half = semantic (blue).
+ * Filled = present in that source, empty = not.
+ */
 export default function SourceBadge({ source }) {
   if (!source) return null;
-  const style = BADGE_STYLES[source] || { bg: '#2a2a2a', color: '#888', label: source };
+
+  const hasKeyword = source.includes('keyword');
+  const hasSemantic = source.includes('semantic');
+  const isBrowse = source === 'browse';
+
+  if (isBrowse) {
+    return (
+      <span className="inline-block text-xs px-1.5 py-0.5 rounded font-mono"
+        style={{ backgroundColor: '#2a2a2a', color: '#888' }}>
+        browse
+      </span>
+    );
+  }
+
+  const kwColor = hasKeyword ? '#98c379' : '#333';
+  const semColor = hasSemantic ? '#61afef' : '#333';
+
+  const title = hasKeyword && hasSemantic ? 'keyword + semantic'
+    : hasKeyword ? 'keyword only'
+    : hasSemantic ? 'semantic only'
+    : source;
+
   return (
-    <span
-      className="inline-block text-xs px-1.5 py-0.5 rounded font-mono"
-      style={{ backgroundColor: style.bg, color: style.color }}
+    <svg
+      width="14" height="14"
+      viewBox="0 0 14 14"
+      className="inline-block"
+      title={title}
     >
-      {style.label}
-    </span>
+      <title>{title}</title>
+      {/* Left half — keyword */}
+      <path
+        d="M7,1 A6,6 0 0,0 7,13 Z"
+        fill={kwColor}
+      />
+      {/* Right half — semantic */}
+      <path
+        d="M7,1 A6,6 0 0,1 7,13 Z"
+        fill={semColor}
+      />
+      {/* Border */}
+      <circle cx="7" cy="7" r="6" fill="none" stroke="#555" strokeWidth="0.5" />
+    </svg>
   );
 }

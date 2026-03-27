@@ -95,15 +95,29 @@ app.get('/api/events', (req, res) => {
 
 app.get('/api/search', async (req, res) => {
   const query = req.query.q || '';
-  if (!query.trim()) {
-    return res.json({ results: [], meta: { query: '', keyword_count: 0, semantic_count: 0, fused_count: 0, duration_ms: 0 } });
-  }
-
   const project = req.query.project || '';
   const limit = Math.min(parseInt(req.query.limit || '15', 10), 100);
 
+  // No query and no project filter — return empty
+  if (!query.trim() && !project) {
+    return res.json({ results: [], meta: { query: '', keyword_count: 0, semantic_count: 0, fused_count: 0, duration_ms: 0 } });
+  }
+
   const start = Date.now();
-  const results = await hybridSearch(index, query, { project, limit });
+  let results;
+
+  if (!query.trim() && project) {
+    // Project-only filter: return recent events for that project (no BM25 needed)
+    const filtered = events
+      .filter(e => (e.project || '').toLowerCase().includes(project.toLowerCase()))
+      .filter(isHighSignal)
+      .slice(0, limit)
+      .map(e => ({ ...e, _score: 0, _sources: 'browse' }));
+    results = { items: filtered, keywordCount: 0, semanticCount: 0 };
+  } else {
+    results = await hybridSearch(index, query, { project, limit });
+  }
+
   const duration = Date.now() - start;
 
   res.json({
