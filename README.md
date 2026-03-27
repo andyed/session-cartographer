@@ -56,6 +56,18 @@ Or use standalone (no plugin install needed):
 bash scripts/cartographer-search.sh "your query" --project myproject --limit 10
 ```
 
+### Extend your session history
+
+Claude Code deletes transcripts after 30 days by default. Cartographer is more useful the more history it can search. Extend retention in `~/.claude/settings.json`:
+
+```json
+{
+  "cleanupPeriodDays": 365
+}
+```
+
+A year of transcripts is ~17 GB for a heavy user (1,839 sessions in 63 days, extrapolated). The BM25 corpus for a year of events builds in ~140ms and uses ~25 MB of memory. Your session history is the training data for your future workflow — keep it.
+
 ## What gets logged
 
 | Hook | Triggers on | Captures |
