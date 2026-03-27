@@ -2,26 +2,29 @@
 
 Search your Claude Code session history. Find the decision, paper, or fix from last week's conversation.
 
-```bash
-bash scripts/cartographer-search.sh "pooling region approach" --project scrutinizer
-```
+## grep vs. cartographer
+
+Default Claude Code search is `grep -r` on transcript files — raw JSON, no ranking, no event logs. Cartographer adds BM25 scoring, event log coverage, deduplication, and RRF fusion across sources.
+
+Benchmark against session-cartographer's own development history (8 queries, ~200 transcript files):
 
 ```
-[2026-03-13 20:45] [research] evt-abc123
-  Extract Nick Blauch's full explanation of the retinal sensing module...
-  project: scrutinizer2025
-  transcript: ~/.claude/projects/.../7a3dd86e.jsonl
-
-[2026-03-06 12:23] [research] evt-def456
-  What does the README explain about how FOVI works? What is the cortical
-  magnification transform?
-  project: scrutinizer2025
-
-[2026-03-07 15:39] [transcript:user] d6cdedd2
-  This session is being continued from a previous conversation...
-  project: scrutinizer2025
-  session: be81496c-adff-4a76-8e7e-813cadda3225
+                           ── grep ──         ── carto ──
+Query                        hits     ms        hits     ms
+─────────────────────────  ────── ──────      ────── ──────
+"BM25 scoring"                  4  32.7s         15  23.0s
+"rank fusion awk"               1  32.5s         15  23.8s
+"session cartographer"          5  31.5s         15  23.5s
+"hook log research"             1  31.8s         15  23.8s
+"cold start"                   82  26.7s          3   8.4s
+"Qdrant embedding"              7  30.4s         15  24.6s
+"real-time indexing"            3  32.8s         15  24.7s
+"JSONL event"                   5  32.0s         15  24.1s
+─────────────────────────  ────── ──────      ────── ──────
+TOTAL                         108  250.4s       108  175.9s
 ```
+
+grep returns raw JSONL blobs. Cartographer returns ranked, formatted results with timestamps, project tags, and deep links. Same total hits, 30% faster, actually readable.
 
 ## How it works
 
