@@ -78,6 +78,10 @@ from previous conversations — decisions, research, fixes, approaches. The
 search uses BM25 + RRF across event logs and transcripts. Don't freestyle
 grep on transcript files — always use the search script.
 
+Each search result includes a `transcript:` path pointing to the full
+session JSONL file. When you need the full reasoning behind a result,
+read that transcript with jq to recover the complete conversation context.
+
 If the user asks to "explore" session history, start the Explorer web app
 (`cd explorer && npm run dev`) and open localhost:2527 in their browser.
 The Explorer is a visual tool for the human, not the agent.
