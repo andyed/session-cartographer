@@ -44,6 +44,38 @@ FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
+# ─── Query rewriting: wildcard expansion ───
+# "hallucinat*" → find all tokens starting with "hallucinat" in the logs,
+# then pass them as the query to BM25 (which does exact token matching).
+GREP_QUERY="$QUERY"
+AWK_QUERY="$QUERY"
+if echo "$QUERY" | grep -q '\*'; then
+  # Build grep pattern for file matching
+  GREP_QUERY=$(echo "$QUERY" | sed 's/\*/[a-z0-9]*/g')
+
+  # Expand wildcard terms against actual tokens in the event logs
+  EXPANDED=""
+  for word in $QUERY; do
+    if echo "$word" | grep -q '\*'; then
+      prefix=$(echo "$word" | sed 's/\*//' | tr '[:upper:]' '[:lower:]')
+      # Extract matching tokens from all JSONL files
+      matches=$(LC_ALL=C grep -ohiE "${prefix}[a-z0-9]*" \
+        "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
+        "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" \
+        2>/dev/null | tr '[:upper:]' '[:lower:]' | sort -u | head -20)
+      if [ -n "$matches" ]; then
+        EXPANDED="$EXPANDED $matches"
+      else
+        EXPANDED="$EXPANDED $prefix"
+      fi
+    else
+      EXPANDED="$EXPANDED $word"
+    fi
+  done
+  AWK_QUERY=$(echo "$EXPANDED" | xargs)
+  [ -n "$AWK_QUERY" ] && echo "(expanded: $AWK_QUERY)"
+fi
+
 
 
 # ─── Check for jq (needed for semantic search and transcript parsing) ───
@@ -95,7 +127,8 @@ semantic_search_to_tsv() {
     (if .value.payload.url then "url:" + .value.payload.url + "|" else "" end) +
     (if .value.payload.deeplink and .value.payload.deeplink != "" then "deeplink:" + .value.payload.deeplink + "|" else "" end) +
     (if .value.payload.transcript_path and .value.payload.transcript_path != "" then "transcript:" + .value.payload.transcript_path + "|" else "" end) +
-    (if .value.payload.cwd and .value.payload.cwd != "" then "cwd:" + .value.payload.cwd + "|" else "" end)
+    (if .value.payload.cwd and .value.payload.cwd != "" then "cwd:" + .value.payload.cwd + "|" else "" end) +
+    (if .value.payload.session then "session:" + .value.payload.session + "|" else "" end)
   ' 2>/dev/null
 }
 
@@ -114,7 +147,7 @@ grep_jsonl_to_tsv() {
 
   # Note: The file is passed twice for the 2-pass (NR==FNR) BM25 algorithm
   awk -f "$(dirname "$0")/bm25-search.awk" \
-    -v query="$QUERY" -v src="$source" -v proj_filter="$PROJECT" \
+    -v query="$AWK_QUERY" -v src="$source" -v proj_filter="$PROJECT" \
     "$file" "$file" 2>/dev/null
 }
 
@@ -145,7 +178,7 @@ grep_transcripts_to_tsv() {
       "$transcript" "$transcript" 2>/dev/null | head -$((LIMIT * 2))
 
     [ "$matched_files" -ge 5 ] && break
-  done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec LC_ALL=C grep -liE "$QUERY" {} + 2>/dev/null)
+  done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec LC_ALL=C grep -liE "$GREP_QUERY" {} + 2>/dev/null)
 }
 
 # ─── Rank fusion ───

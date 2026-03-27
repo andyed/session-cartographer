@@ -85,8 +85,45 @@ export function addToIndex(index, event) {
 /**
  * Score all documents against a query. Returns sorted results (highest first).
  */
+/**
+ * Expand wildcard tokens (e.g., "hallucinat*") into matching terms from the index.
+ * Returns expanded token list with wildcards replaced by all matching terms.
+ */
+function expandWildcards(rawQuery, dfMap) {
+  // Split on whitespace, preserving wildcards (don't run through tokenize which strips *)
+  const parts = rawQuery.toLowerCase().split(/\s+/).filter(Boolean);
+  const expanded = [];
+
+  for (const part of parts) {
+    if (part.endsWith('*') && part.length > 2) {
+      // Prefix match against all terms in the DF map
+      const prefix = part.slice(0, -1).replace(/[^a-z0-9]/g, '');
+      if (prefix.length < 2) continue;
+
+      for (const term of dfMap.keys()) {
+        if (term.startsWith(prefix)) {
+          expanded.push(term);
+        }
+      }
+      // If no matches, keep the prefix as a literal (best effort)
+      if (!expanded.some(t => t.startsWith(prefix))) {
+        expanded.push(prefix);
+      }
+    } else {
+      // Normal token — run through tokenize
+      expanded.push(...tokenize(part));
+    }
+  }
+
+  return [...new Set(expanded)]; // deduplicate
+}
+
 export function scoreBM25(index, query, { project, limit = 15 } = {}) {
-  const queryTokens = tokenize(query);
+  // Expand wildcards before tokenizing
+  const hasWildcard = query.includes('*');
+  const queryTokens = hasWildcard
+    ? expandWildcards(query, index.df)
+    : tokenize(query);
   if (queryTokens.length === 0) return [];
 
   const N = index.docs.size;
@@ -120,5 +157,8 @@ export function scoreBM25(index, query, { project, limit = 15 } = {}) {
   }
 
   results.sort((a, b) => b.score - a.score);
-  return results.slice(0, limit);
+  return {
+    items: results,
+    total: results.length
+  };
 }
