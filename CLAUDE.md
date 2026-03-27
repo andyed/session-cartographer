@@ -1,50 +1,67 @@
 # Session Cartographer
 
-Claude Code plugin for mapping and searching session history.
+Claude Code plugin + companion web app for searching session history.
 
 ## Project Structure
 
 ```
 scripts/
-  cartographer-search.sh        — Unified search: semantic → keyword+awk RRF → transcripts
-  embed-events.js               — Index JSONL events into Qdrant
+  cartographer-search.sh        — CLI search: BM25 (awk) + semantic + RRF fusion
+  bm25-search.awk               — BM25 scorer (two-pass TF-IDF, pure awk)
+  embed-events.js               — Batch index JSONL events into Qdrant
   semantic-search.js             — Query Qdrant by vector similarity
+  index-event.sh                — Real-time single-event indexing (called by hooks)
+  retro-index.sh                — Backfill historical transcripts into Qdrant
+  reconstruct-history.js        — Deep transcript analysis for backfill
 plugins/session-cartographer/
   .claude-plugin/plugin.json    — Plugin metadata
   skills/remember/SKILL.md      — /remember skill definition
-  scripts/remember-search.sh    — Legacy keyword-only search (superseded by cartographer-search.sh)
+  scripts/remember-search.sh    — Legacy search (superseded by cartographer-search.sh)
   hooks/
-    hooks.json                  — Hook registrations (PostToolUse, PreCompact, SessionEnd, SubagentStop)
-    log-research.sh             — Logs WebFetch/WebSearch to research-log.jsonl + changelog.jsonl
-    log-session-milestones.sh   — Logs compactions, session ends, agent stops
+    hooks.json                  — Hook registrations (8 hooks)
+    log-research.sh             — WebFetch/WebSearch → research-log.jsonl + changelog.jsonl
+    log-session-milestones.sh   — Compactions, session ends, agent stops
+    log-tool-use.sh             — Edit/Write/Bash (opt-in: CARTOGRAPHER_LOG_TOOL_USE=true)
+explorer/
+  server/
+    index.js                    — Express API (:2526), SSE stream, search proxy
+    bm25.js                     — BM25 scorer (JS port for API path)
+    search.js                   — Hybrid search: BM25 + Qdrant proxy + RRF
+    jsonl.js                    — Resilient JSONL reader with fs.watch
+  src/                          — React 19 + Vite + Tailwind UI (:2527)
 docs/
-  CHANGELOG_SPEC.md             — Event log format specification
-  RANK_FUSION.md                — How awk-based RRF scoring works
-  SETUP.md                      — Work machine setup guide
-  energy-viz.html               — Project energy allocation dashboard
-  landscape-survey.md           — Survey of 30+ Claude Code memory projects
-tests/private/                  — gitignored test cases and fixtures
+  RANK_FUSION.md                — BM25 + RRF scoring architecture
+  SCORING.md                    — Score interpretation guide
+  SETUP.md                      — Install, Qdrant, cold start backfill, disk usage
+  CUSTOM_HOOKS.md               — How to log your own events
+  EXPLORER_SPEC.md              — Explorer implementation spec
+  companion_explorer_spec.md    — Explorer product spec
+  CHANGELOG_SPEC.md             — Event log format
+  landscape-survey.md           — 30+ Claude Code memory projects compared
+tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 ```
-
-## Key Design Decisions
-
-- **Not a memory store.** Cartographer maps session territory — events, deep links, energy topology. It doesn't write facts into future sessions.
-- **Event-centric.** Everything is a timestamped event with an ID and optional deep link. The changelog is the index.
-- **Shell-native.** Core search is bash + grep + awk. No Node/Python runtime required for keyword search.
-- **Configurable paths.** `CARTOGRAPHER_DEV_DIR` and `CARTOGRAPHER_TRANSCRIPTS_DIR` env vars override defaults for different machine setups.
 
 ## Implementation Constraints — READ THESE
 
-- **Rank fusion is intentionally implemented in awk** for zero-dependency operation. Do not port to Node or Python. The awk pipeline (grep → field extraction → RRF scoring → dedup → sort) runs without jq for the keyword path. jq is only required for semantic search (Qdrant API calls).
-- **Field extraction uses awk `extract()` with a fallback chain** (`summary → description → prompt → url → query`) to handle diverse JSONL schemas across log types. Do not hardcode a single field name.
-- **Transcripts participate in rank fusion as equal citizens.** They emit the same TSV intermediate format as JSONL sources and compete in RRF scoring. Do not append them at the bottom.
-- **`LC_ALL=C` on grep and awk calls** prevents multibyte conversion errors on unicode/emoji in JSONL content.
+- **BM25 in awk is intentional.** `bm25-search.awk` is the CLI search scorer. Zero dependencies (no Node, no jq). Do not port to Python. The JS port in `explorer/server/bm25.js` exists separately for the API path.
+- **Field extraction uses a fallback chain** (`summary → description → prompt → url → query → event_id → milestone`) across diverse JSONL schemas. Do not hardcode a single field.
+- **Transcripts are first-class citizens in RRF.** They compete equally with event log results. Do not append them at the bottom.
+- **`LC_ALL=C` on grep and awk** prevents multibyte errors on unicode in JSONL.
+- **Transcript search uses `find -exec grep {} +`** to batch file matching in one process. Do not revert to per-file subprocess loops (1,839 files = 40x slower).
+- **Hooks call `index-event.sh` for real-time Qdrant indexing.** Silent fail if services aren't running. Do not make Qdrant a hard dependency.
+- **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Path traversal protection on transcript endpoints. DOMPurify on rendered content.
+- **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 
-## Semantic Search
+## Two Search Paths
 
-Embedding layer uses Qdrant + llama.cpp (mxbai-embed-large-v1, 1024-dim). Configurable via env vars. Falls back gracefully to keyword search when services aren't running. The embedding infra is a service dependency — no code imported from interests2025 or any other project.
+1. **CLI** (`cartographer-search.sh`): bash + awk BM25. Used by `/remember` skill. No server needed.
+2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, sub-millisecond queries. Used by the Explorer UI. Proxies Qdrant for semantic search.
+
+Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (RRF k=60).
 
 ## Testing
 
-Private test cases in `tests/private/` (gitignored). Run: `bash tests/private/run-tests.sh`
-11 tests covering context recovery, research retrieval, cross-project search, cold start, and edge cases.
+- `bash tests/private/run-tests.sh` — 11 tests against live data
+- `bash tests/private/run-fixture-tests.sh` — 14 tests against synthetic fixtures
+- `bash tests/private/benchmark.sh` — 8-query speed comparison (grep vs. cartographer)
+- `bash tests/private/head-to-head.sh "query"` — side-by-side comparison for a single query
