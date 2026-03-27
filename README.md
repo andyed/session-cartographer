@@ -2,11 +2,15 @@
 
 ![Session Cartographer](docs/wordmark.png)
 
-Search your Claude Code session history, better yet, have Cluade do it for you with `/remember`. 
+Search your Claude Code session history, or better yet, have Claude do it for you with `/remember`. 
 
-Cartographer creates a index via hooks of critical moments in your sessions, referencing the original transcript files. This can preserve data past your Claude history retention period (30 days by default!). 
+**The Origin Problem:** When Claude does deep literature reviews or explores extensive documentation, it reads dozens of URLs via `WebFetch` and `WebSearch`—but leaves no permanent, searchable trace of what it actually studied once the session ends. 
 
-Within this subset of content, Cartographer offers BM25f keyword search, semantic search via Qdrant, and RRF fusion of the two -- the hottest search stack around these days, but with a twist...
+Cartographer fixes this by creating a lightweight metadata index via bash hooks during critical moments in your sessions (like permanently logging every URL and research paper that was fetched). This preserves your research trace forever, surviving past Claude's default 30-day history retention purge!
+
+But the utility quickly expanded beyond securing web research. By additionally intercepting the files Claude edits, the Bash commands it runs, and the moments context size peaks, Cartographer builds a complete topological map of your session evolution.
+
+To query this map, it fuses Semantic Similarity (via optional Qdrant) with Okapi BM25 keyword scoring via Reciprocal Rank Fusion. The twist? To keep dependencies strictly at zero, the entire BM25 search engine is implemented purely in `awk`.
 
 ![Session Cartographer](docs/remember.png)
 
@@ -60,6 +64,22 @@ claude install ./session-cartographer
 Or use standalone (no plugin install needed):
 ```bash
 bash scripts/cartographer-search.sh "your query" --project myproject --limit 10
+```
+
+### Add to your CLAUDE.md
+
+After installing, add this to your project or global `CLAUDE.md` so the agent knows to use cartographer:
+
+```markdown
+## Session History
+
+Use `/remember <query>` to search past session history when you need context
+from previous conversations — decisions, research, fixes, approaches. The
+search uses BM25 + RRF across event logs and transcripts. Don't freestyle
+grep on transcript files — always use the search script.
+
+When the Explorer is running (localhost:2527), use `/explore <query>` to open
+a visual search in the browser, or link to it from /remember results.
 ```
 
 ### Extend your session history
