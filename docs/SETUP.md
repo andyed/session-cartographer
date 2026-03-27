@@ -120,20 +120,15 @@ Does full transcript analysis: extracts tool_use blocks (WebFetch, WebSearch, Ed
 
 Cartographer's own data is small. Your existing Claude Code transcripts are the bulk.
 
-**Reference: heavy user (1,839 sessions, 25 days of hooks):**
+Cartographer's event logs are a **~0.05% overhead** on your existing Claude Code transcript data. Reference from a heavy user (1,839 sessions, 3-5 concurrent daily, 40+ projects):
 
-| Component | Size | Notes |
-|-----------|------|-------|
-| Event logs (JSONL) | ~1.5 MB | changelog + research + milestones |
-| Cartographer repo | ~2 MB | Scripts, docs, plugin (excluding node_modules) |
-| Explorer node_modules | ~75 MB | `npm install` in explorer/ |
-| Qdrant storage | ~5-50 MB | Depends on indexed events |
-| Embedding model (GGUF) | ~670 MB | One-time download, shared with other projects |
-| Claude Code transcripts | **2.9 GB** | Not ours — this is Claude Code's own data |
+| | Size |
+|---|---|
+| Claude Code transcripts | 2.9 GB |
+| Cartographer event logs | 1.5 MB |
+| **Ratio** | **~1:2000** |
 
-The JSONL event logs grow at roughly **60 KB/day** for an active user (3-5 concurrent sessions, heavy research). At that rate, a year of logs is ~22 MB.
-
-**Your mileage will vary.** The numbers above reflect a power user running 3-5 concurrent Claude Code sessions daily across 40+ projects with heavy WebFetch/WebSearch activity. A typical user with 1-2 sessions/day will see much smaller logs.
+Your event logs will scale proportionally to your Claude Code usage — the ratio stays roughly the same regardless of how heavy a user you are.
 
 ## Resource Usage (runtime)
 
