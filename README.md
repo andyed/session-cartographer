@@ -160,8 +160,8 @@ The core tradeoff: grep scans 2.7GB of raw transcripts and finds *everything* �
 
 ## Other limitations
 
-- **BM25 is ASCII-only.** The tokenizer splits on `[^a-z0-9]+`, so CJK, Arabic, Cyrillic, and accented characters are invisible to keyword search. Semantic search (Qdrant with `mxbai-embed-large`) is multilingual and handles non-English content natively — it's the path for non-Latin scripts.
-- **No stemming.** `"shader"` won't match `"shaders"`. Use wildcard prefix: `shader*`. Multi-word queries try exact phrase first, fall back to AND if too few results.
+- **BM25 handles Latin scripts only.** European accented characters are normalized to ASCII (`résumé` → `resume`). CJK, Arabic, Cyrillic, and other non-Latin scripts need semantic search (Qdrant with `mxbai-embed-large`), which is multilingual natively.
+- **No stemming.** `"shader"` won't match `"shaders"`. Use wildcard prefix: `shader*`. Multi-word queries try exact phrase first, fall back to AND if too few results. See [docs/query_rewrite_spec.md](docs/query_rewrite_spec.md) for the query rewriting roadmap.
 - **BM25 scores are term frequency, not relevance.** A document mentioning your query word 3 times scores higher than one mentioning it once, regardless of context. Semantic search provides actual relevance ranking.
 
 ## Deep link viewer

@@ -11,7 +11,11 @@ const B = 0.75;
  * Matches the awk: split(tolower(body), words, /[^a-z0-9]+/)
  */
 export function tokenize(text) {
-  return text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  // Normalize accented characters to ASCII (résumé → resume, über → uber)
+  // then split on non-alphanumeric. Handles European languages without
+  // breaking the simple tokenizer. CJK/RTL still needs semantic search.
+  const normalized = text.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return normalized.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
 }
 
 /**
