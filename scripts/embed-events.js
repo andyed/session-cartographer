@@ -57,7 +57,9 @@ function eventToText(event, source) {
   if (event.prompt) parts.push(event.prompt);
   if (event.title) parts.push(event.title);
   if (event.project) parts.push(`project: ${event.project}`);
-  return parts.join(' | ') || `${source} event`;
+  const text = parts.join(' | ') || `${source} event`;
+  // Truncate to ~400 words to stay under 512-token context
+  return text.split(/\s+/).slice(0, 400).join(' ');
 }
 
 function eventId(event) {
