@@ -34,16 +34,58 @@ export function readJsonlFile(filePath) {
   return events;
 }
 
+// Low-signal event types to hide from timeline (still searchable via BM25)
+const NOISE_TYPES = new Set([
+  'bridge_ping_received',
+  'bridge_ping_sent',
+]);
+
+// Low-signal milestone types
+const NOISE_MILESTONES = new Set([
+  'agent_Explore',
+  'agent_Plan',
+  'agent_general-purpose',
+]);
+
+/**
+ * Check if an event is high enough signal for the timeline.
+ */
+export function isHighSignal(event) {
+  const type = event.type || '';
+  const milestone = event.milestone || '';
+  if (NOISE_TYPES.has(type) || NOISE_TYPES.has(milestone)) return false;
+  if (NOISE_MILESTONES.has(milestone)) return false;
+  if (type.startsWith('milestone_agent_')) return false;
+  if (type.startsWith('bridge_ping')) return false;
+  if (milestone.startsWith('bridge_ping')) return false;
+  return true;
+}
+
 /**
  * Read all events from all known log files, tagged with source.
+ * Deduplicates by event_id (same event in changelog + domain log).
  */
 export function readAllEvents() {
   const all = [];
+  const seen = new Set();
+
   for (const [source, filePath] of Object.entries(LOG_FILES)) {
     for (const event of readJsonlFile(filePath)) {
+      const id = event.event_id;
+      // Deduplicate: prefer domain log (research/milestones) over changelog
+      if (id && seen.has(id)) {
+        // If we already have this from changelog, replace with domain source
+        if (source !== 'changelog') {
+          const idx = all.findIndex(e => e.event_id === id);
+          if (idx !== -1) all[idx] = { ...event, _source: source };
+        }
+        continue;
+      }
+      if (id) seen.add(id);
       all.push({ ...event, _source: source });
     }
   }
+
   // Sort by timestamp descending (newest first)
   all.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
   return all;

@@ -1,5 +1,5 @@
 import express from 'express';
-import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile } from './jsonl.js';
+import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch } from './search.js';
 import { statSync } from 'fs';
@@ -25,9 +25,10 @@ const stopWatching = watchFiles((newEvents) => {
     addToIndex(index, event);
   }
 
-  // Push to SSE clients
+  // Push high-signal events to SSE clients
+  const highSignal = newEvents.filter(isHighSignal);
   for (const res of sseClients) {
-    for (const event of newEvents) {
+    for (const event of highSignal) {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   }
@@ -74,10 +75,14 @@ app.get('/api/events', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '50', 10), 500);
   const offset = parseInt(req.query.offset || '0', 10);
   const project = req.query.project || '';
+  const showAll = req.query.all === 'true';
 
   let filtered = events;
+  if (!showAll) {
+    filtered = filtered.filter(isHighSignal);
+  }
   if (project) {
-    filtered = events.filter(e =>
+    filtered = filtered.filter(e =>
       (e.project || '').toLowerCase().includes(project.toLowerCase())
     );
   }
