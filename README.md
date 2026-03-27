@@ -30,15 +30,19 @@ grep takes 33-49 seconds per query scanning 2.7GB of transcripts, returning raw 
 
 ## How it works
 
-Hooks log session events (web fetches, searches, compactions, file edits) to append-only JSONL files. The search script runs BM25 scoring across all logs + raw session transcripts, fuses results via Reciprocal Rank Fusion, and deduplicates by event ID. Optional Qdrant integration adds semantic search — results from both are fused through the same RRF pipeline.
+Hooks log session events (web fetches, searches, compactions, file edits) to append-only JSONL files (~1.5 MB for 3,000 events — a 1:2000 ratio to Claude's own transcript data).
+
+The Explorer server loads all events into memory at startup (~7 MB for 3,000 events) and builds a BM25 corpus — term frequencies, document frequencies, average document length. This corpus lives in memory for the server's lifetime. Queries score against it in sub-millisecond time with zero disk I/O. New events are added incrementally via file watcher.
 
 ```
-Sessions → hooks → JSONL event logs → BM25 + RRF → ranked results
-                                     ↗
-              Qdrant (optional) ────┘
+Startup:  JSONL files → in-memory BM25 corpus (7 MB, built once)
+Query:    tokenize → score 2,000 docs → sort → top N    (~1 ms)
+Live:     fs.watch → addToIndex() → SSE push to UI      (real-time)
 ```
 
-No jq dependency for the search path. The BM25 scorer and field extraction are pure awk.
+Optional Qdrant integration adds semantic search — both keyword and vector results fuse through the same RRF pipeline.
+
+The CLI search path (`cartographer-search.sh`) uses pure awk for BM25 — no Node, no jq dependency.
 
 ## Install
 
@@ -68,11 +72,18 @@ All paths configurable via `CARTOGRAPHER_DEV_DIR` and `CARTOGRAPHER_TRANSCRIPTS_
 
 With a local Qdrant binary + llama.cpp embedding server, `/remember` adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. See [docs/SETUP.md](docs/SETUP.md). No Docker — two binaries, under 1GB total.
 
-## Limitations
+## Tradeoffs: speed vs. recall
+
+The core tradeoff: grep scans 2.7GB of raw transcripts and finds *everything* — perfect recall, 30-50 seconds per query, unranked. Cartographer searches a 1.5MB event index — sub-second, ranked, but only finds what the hooks captured.
+
+**Recall is our main challenge.** If a decision was made in conversation but no hook fired (no WebFetch, no file edit, no compaction), it only exists in the raw transcript. The fast JSONL path won't find it. Mitigations:
+- `CARTOGRAPHER_LOG_TOOL_USE=true` captures Edit/Write/Bash events
+- The CLI search falls back to transcript grep when the index returns too few results
+- Qdrant backfill via `retro-index.sh` or `reconstruct-history.js` indexes historical transcripts (see [docs/SETUP.md](docs/SETUP.md))
+
+## Other limitations
 
 - **BM25 matches whole tokens, not substrings.** Searching `"shader"` won't match `"shaders"`. No stemming. Multi-word queries try exact phrase first, fall back to AND (all words present, any order) if too few results.
-- **Hooks only capture what they're registered for.** Code decisions only appear in search if they hit a logged event or exist in a transcript. Pre-hook history is invisible to the fast JSONL path.
-- **Transcript search is slow on large histories.** Capped at 5 files per search. Semantic indexing is the fix.
 - **awk JSON extraction is fragile.** Works for the flat JSONL schemas we control. Escaped quotes in values will break field extraction.
 - **Ranking is by BM25 score within source, then RRF across sources.** Not a relevance model — a document mentioning your query word 3 times scores higher than one mentioning it once, regardless of context.
 
