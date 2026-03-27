@@ -14,7 +14,20 @@ function relativeTime(ts) {
 
 function highlightMatches(text, searchTerms) {
   if (!searchTerms.length || !text) return text;
-  const pattern = searchTerms.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+
+  // Filter out trivially short terms (< 3 chars) that cause noise highlights
+  const meaningful = searchTerms.filter(t => t.length >= 3);
+  if (!meaningful.length) return text;
+
+  // Escape regex special chars, join as alternation, require word-ish boundaries
+  // Use \b for terms that start/end with word chars, raw for others
+  const pattern = meaningful
+    .map(t => {
+      const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return `\\b${escaped}\\b`;
+    })
+    .join('|');
+
   const regex = new RegExp(`(${pattern})`, 'gi');
   const parts = text.split(regex);
   return parts.map((part, i) =>
@@ -133,8 +146,11 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
       });
   }, [transcriptPath, targetUuid]);
 
+  // Split search into terms, filter out noise (< 3 chars)
   const searchTerms = useMemo(() =>
-    search.trim() ? search.trim().split(/\s+/) : [],
+    search.trim()
+      ? search.trim().split(/\s+/).filter(t => t.length >= 3)
+      : [],
     [search]
   );
 
