@@ -28,6 +28,11 @@ function eventCategory(event) {
   if (type === 'tool_bash') return { label: 'bash', color: '#56b6c2' };
   if (type === 'git_commit') return { label: 'commit', color: '#ff9e64' };
   if (type === 'git_push') return { label: 'push', color: '#ff6b6b' };
+  if (type === 'memory_feedback') return { label: 'memory', color: '#e5c07b' };
+  if (type === 'memory_project') return { label: 'memory', color: '#c678dd' };
+  if (type === 'memory_user') return { label: 'memory', color: '#56b6c2' };
+  if (type === 'memory_reference') return { label: 'memory', color: '#61afef' };
+  if (type.startsWith('memory_')) return { label: 'memory', color: '#d19a66' };
   return { label: event._source || type || '?', color: '#5c6370' };
 }
 

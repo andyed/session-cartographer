@@ -1,5 +1,8 @@
 # Session Cartographer
 
+> [!NOTE]
+> The Companion Explorer web app UI is currently a heavily active Work In Progress (WIP).
+
 ![Session Cartographer](docs/wordmark.png)
 
 Search your Claude Code session history, or better yet, have Claude do it for you with `/remember`. 
@@ -110,6 +113,27 @@ A year of transcripts is ~16 GB for a heavy user (extrapolating from 1,839 sessi
 Transcripts (`~/.claude/projects/*/*.jsonl`) are also searched directly.
 
 All paths configurable via `CARTOGRAPHER_DEV_DIR` and `CARTOGRAPHER_TRANSCRIPTS_DIR`.
+
+### Backfill scripts
+
+Hooks only capture events going forward. Three backfill scripts index your existing history:
+
+| Script | What it indexes | Source |
+|--------|----------------|--------|
+| `scripts/backfill-git-history.sh` | Git commits with messages, changed files, GitHub permalinks | `git log` across all repos in DEV_DIR |
+| `scripts/backfill-memories.sh` | Claude Code memory files (feedback, project notes, references) | `~/.claude/projects/*/memory/*.md` |
+| `scripts/retro-index.sh` | Historical transcript content into Qdrant | `~/.claude/projects/*/*.jsonl` |
+
+**Claude's memory files are particularly valuable to index.** These are curated, high-signal notes that Claude wrote about your projects, preferences, and decisions. They have structured frontmatter (name, type, description) and survive across sessions — but they're not searchable by default. Backfilling them means `/remember "Blauch collaboration"` finds the memory file alongside research events and transcripts.
+
+```bash
+# Index all 3 sources
+bash scripts/backfill-git-history.sh --since 2026-01-01
+bash scripts/backfill-memories.sh
+bash scripts/retro-index.sh --limit-days 30
+```
+
+All scripts are idempotent — they skip events already in the changelog.
 
 ## Semantic search (optional)
 
