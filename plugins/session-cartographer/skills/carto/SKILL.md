@@ -51,15 +51,21 @@ Show results as-is from the script output. They're already formatted with timest
 
 ### Step 3: Read the transcript when needed
 
-Search results are summaries. When you need full context, **read the transcript file directly**:
+Search results are summaries. When you need full context, **read the transcript file directly**.
 
+Find the transcript path — it's in the search result as `transcript:`. If missing, resolve from `session:`:
 ```bash
-jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
+find ~/.claude/projects -name "<session-id>.jsonl" 2>/dev/null
 ```
 
-Or read a broader window:
+Then read around the relevant moment:
 ```bash
 jq -c 'select(.type == "user" or .type == "assistant") | select(.message.content | type == "string") | {type, timestamp, content: .message.content[:500]}' <transcript_path> | grep -A5 -B5 "<keyword>"
+```
+
+Or jump to a specific message by UUID:
+```bash
+jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
 ```
 
 **The search result is the map. The transcript is the territory.** Use both.
