@@ -49,7 +49,7 @@ cd session-cartographer/explorer && npm install && npm run dev
 # API on :2526, UI on :2527
 ```
 
-Search results link directly into transcripts — click any event card to read the full conversation context. Every URL is a permalink: `/?q=shader&project=scrutinizer`, `/session/<path>?highlight=foveation`.
+Search results link directly into transcripts — click any event card to read the full conversation context. Every URL is a shareable permalink: `/?q=shader&project=scrutinizer`, `/session/<path>?highlight=foveation`. See [permalink spec](docs/PERMALINK_SPEC.md).
 
 ## Origin
 
@@ -139,18 +139,21 @@ With a local Qdrant binary + llama.cpp embedding server, search adds vector simi
 
 **No stemming.** `shader*` for prefix matching. See [query rewrite roadmap](docs/query_rewrite_spec.md).
 
-## Deep link viewer
+## Deep linking
 
-The Explorer includes a built-in transcript viewer at `:2527`. [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) is a natural complement — potential integration via `CARTOGRAPHER_VIEWER_PREFIX` is on the roadmap.
+Every search result carries a [`claude-history://`](docs/PERMALINK_SPEC.md) URI pointing into the source transcript. The Explorer resolves these as clickable links into its built-in transcript viewer. Other tools like [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) can resolve them via `CARTOGRAPHER_VIEWER_PREFIX`. Fragment references (`#uuid-`, `#evt-`, `#t=`) for linking to specific conversation moments are on the [roadmap](docs/PERMALINK_SPEC.md#roadmap-fragment-references).
 
 ## See also
 
-- [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture
-- [docs/SCORING.md](docs/SCORING.md) — What scores mean
-- [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme and deep linking
+- [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme, deep linking, fragment references
 - [docs/LOG_SCHEMAS.md](docs/LOG_SCHEMAS.md) — Formal JSONL schemas for all event types
-- [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events
+- [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture
+- [docs/SCORING.md](docs/SCORING.md) — What scores mean, when to chase a result
+- [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events to the index
 - [docs/SETUP.md](docs/SETUP.md) — Qdrant setup, cold start backfill, disk usage
+- [docs/CHANGELOG_SPEC.md](docs/CHANGELOG_SPEC.md) — Event envelope format
+- [docs/EXPLORER_SPEC.md](docs/EXPLORER_SPEC.md) — Explorer implementation architecture
+- [docs/companion_explorer_spec.md](docs/companion_explorer_spec.md) — Explorer product spec
 - [docs/landscape-survey.md](docs/landscape-survey.md) — 30+ Claude Code memory projects compared
 
 ## Uninstall
