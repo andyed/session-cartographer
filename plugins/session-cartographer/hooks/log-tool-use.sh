@@ -121,7 +121,8 @@ jq -n -c \
     --arg project "$PROJECT" \
     --arg cwd "$CWD" \
     --arg summary "$SUMMARY" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: []}' \
+    --arg transcript "$TRANSCRIPT" \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)

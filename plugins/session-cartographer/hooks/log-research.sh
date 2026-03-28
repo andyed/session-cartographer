@@ -82,7 +82,8 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg project "$PROJECT" \
         --arg cwd "$CWD" \
         --arg summary "Fetched: $URL" \
-        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: []}' \
+        --arg transcript "$TRANSCRIPT" \
+        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}' \
         >> "$CHANGELOG"
 
 elif [ "$TOOL_NAME" = "WebSearch" ]; then
@@ -110,7 +111,8 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg project "$PROJECT" \
         --arg cwd "$CWD" \
         --arg summary "Search: $QUERY" \
-        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: []}' \
+        --arg transcript "$TRANSCRIPT" \
+        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}' \
         >> "$CHANGELOG"
 
     # Extract result URLs from tool_response and log each as search_result

@@ -87,7 +87,8 @@ jq -n -c \
     --arg cwd "$CWD" \
     --arg deeplink "$DEEPLINK" \
     --arg summary "$DESCRIPTION" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, related_ids: []}' \
+    --arg transcript "$TRANSCRIPT" \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: []}' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)

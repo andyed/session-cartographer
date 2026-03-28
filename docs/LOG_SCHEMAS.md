@@ -16,7 +16,7 @@ Every event across all log types should include:
 | `project` | string | yes | Git repo basename or directory basename |
 | `session_id` | string | recommended | Claude Code session UUID |
 | `cwd` | string | optional | Working directory at event time |
-| `transcript_path` | string | optional | Path to session transcript JSONL |
+| `transcript_path` | string | **required** | Path to session transcript JSONL — this is how search results link to full context |
 | `summary` | string | recommended | Human-readable one-liner for display |
 
 ### Generating event IDs
@@ -149,6 +149,19 @@ Claude Code's own session history. Not written by Cartographer hooks — read-on
 | `session_id` | string | (when present) |
 
 **Note:** This file uses `display` instead of `summary`, and numeric timestamps instead of ISO 8601. The Explorer's BM25 extractor handles both.
+
+## Cross-schema consistency
+
+These fields must be consistent across all log types for the pipeline to work end-to-end:
+
+| Field | Why it matters | Failure mode if missing |
+|-------|---------------|----------------------|
+| `event_id` | Dedup across changelog + domain logs | Same event appears twice in results |
+| `transcript_path` | Search result → full conversation context | Agent finds event but can't read the transcript |
+| `project` | Project filter, EventCard badges, energy viz | Event is unsearchable by project, invisible in filtered views |
+| `timestamp` | Timeline ordering, "N ago" display | Event has no temporal context |
+
+The `transcript_path` gap was the most impactful bug: changelog entries were missing it, so search results had no link to the raw conversation. All hooks now write `transcript_path` to both domain logs AND changelog.
 
 ## Searchable fields
 
