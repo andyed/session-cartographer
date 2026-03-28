@@ -16,6 +16,10 @@ export async function searchEvents(query, { project = '', limit = 15, offset = 0
   return apiFetch(`/api/search?${params}`);
 }
 
+export async function autocomplete(prefix) {
+  return apiFetch(`/api/autocomplete?prefix=${encodeURIComponent(prefix)}`);
+}
+
 export async function fetchProjects() {
   const data = await apiFetch('/api/projects');
   return data.projects;

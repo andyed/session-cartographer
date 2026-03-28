@@ -93,6 +93,25 @@ app.get('/api/events', (req, res) => {
   });
 });
 
+app.get('/api/autocomplete', (req, res) => {
+  const prefix = (req.query.prefix || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (prefix.length < 2) return res.json({ suggestions: [] });
+
+  const limit = Math.min(parseInt(req.query.limit || '8', 10), 20);
+  const matches = [];
+
+  for (const [term, df] of index.df) {
+    if (term.startsWith(prefix) && term.length > prefix.length) {
+      matches.push({ term, df });
+    }
+  }
+
+  // Sort by document frequency (most common first), then alphabetically
+  matches.sort((a, b) => b.df - a.df || a.term.localeCompare(b.term));
+
+  res.json({ suggestions: matches.slice(0, limit).map(m => m.term) });
+});
+
 app.get('/api/search', async (req, res) => {
   const query = req.query.q || '';
   const project = req.query.project || '';

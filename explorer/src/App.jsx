@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Timeline from './components/Timeline';
 import Search from './components/Search';
+import SearchInput from './components/SearchInput';
 import TranscriptViewer from './components/TranscriptViewer';
 
 function parseURL() {
@@ -97,15 +98,8 @@ export default function App() {
   return (
     <div className="h-screen flex flex-col">
       <header className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 flex-shrink-0">
-        {/* Search input — flush left */}
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => handleSearchInput(e.target.value)}
-          placeholder="Search session history..."
-          className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-base text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
-          autoFocus
-        />
+        {/* Search input with autocomplete — flush left */}
+        <SearchInput value={searchQuery} onChange={handleSearchInput} />
 
         {/* Nav — flush right */}
         <div className="flex items-center gap-3 flex-shrink-0">
