@@ -59,6 +59,8 @@ Every entry in `changelog.jsonl`:
 
 ### Event Types
 
+Event types are dynamic — they depend on which hooks you enable and how you use Claude Code. The table below shows types produced by the default hooks. Custom hooks ([docs/CUSTOM_HOOKS.md](CUSTOM_HOOKS.md)) and backfill scripts add their own types.
+
 | Type | Source | Trigger |
 |------|--------|---------|
 | `milestone_compaction_auto` | milestones hook | PreCompact (auto) |
@@ -68,6 +70,16 @@ Every entry in `changelog.jsonl`:
 | `milestone_session_end_*` | milestones hook | SessionEnd |
 | `research_fetch` | research hook | WebFetch |
 | `research_search` | research hook | WebSearch |
+| `tool_file_edit` | tool-use hook | Edit/Write (opt-in) |
+| `tool_bash` | tool-use hook | Bash (opt-in) |
+| `git_commit` | tool-use hook / backfill | Git commits |
+| `git_push` | tool-use hook | Git pushes |
+| `memory_*` | backfill-memories.sh | Claude Code memory files |
+
+Discover your actual type distribution:
+```bash
+jq -r '.type' ~/Documents/dev/changelog.jsonl | sort | uniq -c | sort -rn
+```
 
 ## Related IDs & Graph Traversal
 
@@ -103,7 +115,8 @@ jq -r '.type' ~/Documents/dev/changelog.jsonl | sort | uniq -c | sort -rn
 - `deeplink` field contains `claude-history://` URLs
 - `event_id` can serve as anchor for scroll-to-message navigation
 
-### Embedding / Semantic Search (planned)
-- Embed `summary` field for semantic search over session activity
+### Embedding / Semantic Search
+- `summary` field embedded for semantic search via Qdrant
 - `event_id` as vector store point ID for deduplication
-- Qdrant collection `session-cartographer` (ports 6333/8890 if available)
+- Qdrant collection `session-cartographer` (ports 6333/8890)
+- Real-time indexing via `index-event.sh` called from hooks

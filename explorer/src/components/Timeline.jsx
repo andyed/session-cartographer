@@ -32,6 +32,7 @@ export default function Timeline({ onOpenTranscript }) {
   const [events, setEvents] = useState([]);
   const [newCount, setNewCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [viewMode, setViewMode] = useState('chronological'); // 'sessions' or 'chronological'
   const [projectFilter, setProjectFilter] = useState('');
   const scrollRef = useRef(null);
@@ -39,10 +40,16 @@ export default function Timeline({ onOpenTranscript }) {
 
   useEffect(() => {
     setLoading(true);
-    fetchEvents({ limit: 400, project: projectFilter }).then(data => {
-      setEvents(data.events);
-      setLoading(false);
-    });
+    setError(null);
+    fetchEvents({ limit: 400, project: projectFilter })
+      .then(data => {
+        setEvents(data.events);
+        setLoading(false);
+      })
+      .catch(e => {
+        setError(e.message);
+        setLoading(false);
+      });
   }, [projectFilter]);
 
   useEventStream((event) => {
@@ -71,6 +78,21 @@ export default function Timeline({ onOpenTranscript }) {
 
   if (loading) {
     return <div className="p-8 text-gray-500">Loading timeline...</div>;
+  }
+
+  if (error) {
+    return (
+      <div className="p-8">
+        <div className="text-red-400 text-sm mb-2">Failed to load timeline — is the server running?</div>
+        <div className="text-xs text-gray-500 font-mono mb-3">{error}</div>
+        <button
+          onClick={() => { setError(null); setLoading(true); fetchEvents({ limit: 400, project: projectFilter }).then(data => { setEvents(data.events); setLoading(false); }).catch(e => { setError(e.message); setLoading(false); }); }}
+          className="text-xs text-gray-400 hover:text-gray-200 underline"
+        >
+          retry
+        </button>
+      </div>
+    );
   }
 
   return (

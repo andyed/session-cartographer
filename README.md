@@ -1,12 +1,73 @@
 # Session Cartographer
 
-Search your Claude Code session history, or better yet, have Claude do it for you with `/remember`. In the pictured case, "/remember remember skill"
+Searchable memory for Claude Code. Hooks capture every URL fetched, file edited, git commit, and context compaction. Search fuses BM25 keyword scoring with vector similarity via Reciprocal Rank Fusion — then facets the results by project, event type, source, and time.
 
 ![/remember in action](docs/remember_remember_skill.png)
 
-Cartographer creates a lightweight metadata index via hooks at critical moments in your sessions — every URL fetched, every file edited, every git commit, every context compaction. This preserves your research trace and decision history past Claude's default 30-day transcript retention.
+## What you get
 
-To query this index, it fuses BM25 keyword scoring with optional semantic similarity (via Qdrant), merged through Reciprocal Rank Fusion. The BM25 engine is implemented purely in `awk` — zero runtime dependencies.
+- **`/remember`** — Ask Claude to recall past decisions, research, fixes. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
+- **`/carto explore`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
+- **Faceted search** — Server computes distributions over the top 500 fused results. Filter by project, event type (fetch/search/commit/edit/bash), and match source (keyword/semantic). Client-side filtering, URL-persisted state.
+- **Hybrid ranking** — BM25 keyword scoring + Qdrant semantic similarity, merged via RRF (k=60). Graceful degradation — keyword-only if Qdrant isn't running.
+
+## Install
+
+```bash
+git clone https://github.com/andyed/session-cartographer.git
+claude install /path/to/session-cartographer
+```
+
+That's it. Hooks auto-register and start logging immediately. `/remember` works with keyword search out of the box.
+
+### Explorer (web UI)
+
+```bash
+cd session-cartographer/explorer && npm install && npm run dev
+# API on :2526, UI on :2527
+```
+
+Then use `/carto explore` to open it in your browser.
+
+### Semantic search (optional)
+
+Adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. No Docker — two binaries, under 1GB total. See [docs/SETUP.md](docs/SETUP.md).
+
+### Add to your CLAUDE.md
+
+After installing, add this so the agent knows to use cartographer:
+
+```markdown
+## Session History
+
+Session Cartographer is installed. Two skills:
+- `/remember <query>` — search past session history (decisions, research, fixes)
+- `/carto explore` — open the Explorer web app for visual browsing
+
+When you need context from a previous conversation, use `/remember`. The skill
+runs BM25 + RRF search across event logs and transcripts. Read the transcript
+path from results to recover full conversation context.
+```
+
+## Cold start
+
+Hooks only capture events going forward. On a fresh install your event logs are empty — that's expected. You'll start seeing results after a few sessions of normal Claude Code use.
+
+To backfill existing history:
+
+```bash
+# Git commits across your repos (fast, no Qdrant needed)
+bash scripts/backfill-git-history.sh --since 2026-01-01
+
+# Claude Code memory files (feedback, project notes)
+bash scripts/backfill-memories.sh
+
+# Historical transcripts into Qdrant (requires Qdrant + embedding server)
+bash scripts/retro-index.sh --limit-days 30
+
+# Deep reconstruction — extracts tool_use blocks, synthesizes research events
+node scripts/reconstruct-history.js
+```
 
 ## grep vs. cartographer
 
@@ -26,7 +87,7 @@ Query                       hits    sec       hits    sec
 TOTAL                        108  329.8        59    4.8
 ```
 
-grep takes 33-49 seconds per query scanning 2.7GB of transcripts, returning raw JSONL blobs. Cartographer returns BM25-ranked, formatted results in under a second.
+grep scans 2.7GB of transcripts in 30-50s, returning raw JSONL. Cartographer returns BM25-ranked, formatted results in under a second.
 
 ## Architecture
 
@@ -35,76 +96,12 @@ Hooks are the foundation. Everything else is a lens.
 ```
 Hooks (produce JSONL event logs)
   ├── /remember — CLI search (bash + awk, zero dependencies)
-  ├── /carto explore — web UI (Node + React, visual browsing)
+  ├── /carto explore — web UI (Node + React, faceted search)
   ├── extras/briefings — project summaries (grep + jq)
   └── Qdrant indexer — semantic search (optional)
 ```
 
 Each layer is independent. You can use `/remember` without the Explorer, briefings without `/remember`, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
-
-The hook system started as a [standalone gist](https://gist.github.com/andyed/72f8af0fd2f737dfb9fa3ab343b593b3). Session Cartographer grew from that into the search + visualization layers.
-
-## Install
-
-```bash
-git clone https://github.com/andyed/session-cartographer.git
-```
-
-### Step 1: Hooks (the foundation)
-
-Add hooks to `~/.claude/settings.json` (see [docs/SETUP.md](docs/SETUP.md)). This starts logging events immediately — everything else builds on this data.
-
-### Step 2: Pick your lenses
-
-| Lens | Install | What it does |
-|------|---------|-------------|
-| **`/remember`** | `ln -s .../skills/remember ~/.claude/skills/remember` | CLI search via bash + awk. No runtime deps. |
-| **`/carto explore`** | `ln -s .../skills/carto ~/.claude/skills/carto` + `cd explorer && npm install` | Web UI with timeline, search, transcript viewer |
-| **Qdrant** | See [docs/SETUP.md](docs/SETUP.md) | Adds semantic search to both lenses |
-| **Briefings** | Copy `extras/briefings/` hook to settings | Auto-compiled project context on session start |
-
-Or skip all skills and use the search script directly:
-```bash
-bash scripts/cartographer-search.sh "your query" --project myproject --limit 10
-```
-
-### Companion Explorer
-
-Timeline with SSE live updates, BM25-scored search, transcript viewer with inline highlight.
-
-```bash
-cd session-cartographer/explorer && npm install && npm run dev
-# API on :2526, UI on :2527
-```
-
-### Add to your CLAUDE.md
-
-After installing, add this to your project or global `CLAUDE.md` so the agent knows to use cartographer:
-
-```markdown
-## Session History
-
-Session Cartographer is installed. Two skills:
-- `/remember <query>` — search past session history (decisions, research, fixes)
-- `/carto explore` — open the Explorer web app for visual browsing
-
-When you need context from a previous conversation, use `/remember`. The skill
-runs BM25 + RRF search across event logs and transcripts. Don't freestyle grep
-— the skill handles search automatically. Read the transcript path from results
-to recover full conversation context.
-```
-
-### Extend your session history
-
-Claude Code deletes transcripts after 30 days by default. Extend retention in `~/.claude/settings.json`:
-
-```json
-{
-  "cleanupPeriodDays": 365
-}
-```
-
-A year of event logs is ~8 MB. Scoring against it takes milliseconds. Your session history is the training data for your future workflow — keep it.
 
 ## What gets logged
 
@@ -114,31 +111,27 @@ A year of event logs is ~8 MB. Scoring against it takes milliseconds. Your sessi
 | `log-session-milestones.sh` | PreCompact, SessionEnd, SubagentStop | Session lifecycle with deep links |
 | `log-tool-use.sh` | Edit, Write, Bash | File modifications, git commits, commands (opt-in: `CARTOGRAPHER_LOG_TOOL_USE=true`) |
 
-### Backfill scripts
+Event types are dynamic — they depend on which hooks you enable and how you use Claude Code. Run `jq -r '.type' ~/Documents/dev/changelog.jsonl | sort | uniq -c | sort -rn` to see your actual type distribution.
 
-Hooks only capture events going forward. Three scripts index your existing history:
+## Configuration
 
-| Script | What it indexes | Source |
-|--------|----------------|--------|
-| `backfill-git-history.sh` | Git commits with messages, changed files, GitHub permalinks | `git log` across repos |
-| `backfill-memories.sh` | Claude Code memory files (feedback, project notes, references) | `~/.claude/projects/*/memory/*.md` |
-| `retro-index.sh` | Historical transcript content into Qdrant | `~/.claude/projects/*/*.jsonl` |
+All paths and endpoints are configurable via environment variables. See [docs/SETUP.md](docs/SETUP.md) for the full table.
 
-Claude's memory files are particularly valuable — curated, high-signal notes with structured frontmatter that survive across sessions but aren't searchable by default.
+### Extend session transcript retention
 
-```bash
-bash scripts/backfill-git-history.sh --since 2026-01-01
-bash scripts/backfill-memories.sh
-bash scripts/retro-index.sh --limit-days 30
+Claude Code deletes transcripts after 30 days by default. Extend in `~/.claude/settings.json`:
+
+```json
+{
+  "cleanupPeriodDays": 365
+}
 ```
 
-## Semantic search (optional)
-
-With a local Qdrant binary + llama.cpp embedding server, search adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. See [docs/SETUP.md](docs/SETUP.md). No Docker — two binaries, under 1GB total.
+A year of event logs is ~8 MB. Your session history is the training data for your future workflow — keep it.
 
 ## Tradeoffs
 
-**Speed vs. recall:** grep scans 2.7GB and finds everything (30-50s). Cartographer searches a 1.5MB index (sub-second, ranked) but only finds what hooks captured. Mitigations: `CARTOGRAPHER_LOG_TOOL_USE=true`, transcript grep fallback, Qdrant backfill.
+**Speed vs. recall:** grep scans everything (30-50s). Cartographer searches a 1.5MB index (sub-second, ranked) but only finds what hooks captured. Mitigations: `CARTOGRAPHER_LOG_TOOL_USE=true`, transcript grep fallback, Qdrant backfill.
 
 **BM25 handles Latin scripts only.** Accented characters normalized (`résumé` → `resume`). CJK/RTL needs semantic search, which is multilingual natively.
 
@@ -146,33 +139,28 @@ With a local Qdrant binary + llama.cpp embedding server, search adds vector simi
 
 ## Deep linking
 
-Hooks write [`claude-history://`](docs/PERMALINK_SPEC.md) URIs into every event — stable references into Claude Code session transcripts. These are the connective tissue between the event index and the raw conversations. Any tool that can resolve a transcript path + message UUID can follow them: the Explorer does it natively, [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) could via `CARTOGRAPHER_VIEWER_PREFIX`. Fragment references (`#uuid-`, `#evt-`, `#t=`) for anchoring into specific conversation moments are on the [roadmap](docs/PERMALINK_SPEC.md#roadmap-fragment-references).
+Hooks write [`claude-history://`](docs/PERMALINK_SPEC.md) URIs into every event — stable references into Claude Code session transcripts. The Explorer resolves these natively. Fragment references for anchoring into specific conversation moments are on the [roadmap](docs/PERMALINK_SPEC.md#roadmap-fragment-references).
 
 ## See also
 
-- [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme, deep linking, fragment references
-- [docs/LOG_SCHEMAS.md](docs/LOG_SCHEMAS.md) — Formal JSONL schemas for all event types
+- [docs/SETUP.md](docs/SETUP.md) — Full setup, Qdrant, environment variables, disk usage
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture
 - [docs/SCORING.md](docs/SCORING.md) — What scores mean, when to chase a result
 - [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events to the index
-- [docs/SETUP.md](docs/SETUP.md) — Qdrant setup, cold start backfill, disk usage
+- [docs/LOG_SCHEMAS.md](docs/LOG_SCHEMAS.md) — JSONL schemas for all event types
 - [docs/CHANGELOG_SPEC.md](docs/CHANGELOG_SPEC.md) — Event envelope format
 - [docs/EXPLORER_SPEC.md](docs/EXPLORER_SPEC.md) — Explorer implementation architecture
-- [docs/companion_explorer_spec.md](docs/companion_explorer_spec.md) — Explorer product spec
+- [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme
 - [docs/landscape-survey.md](docs/landscape-survey.md) — 30+ Claude Code memory projects compared
 
 ## Uninstall
 
-Remove the skill symlinks, hooks from settings.json, and optionally the JSONL event logs:
-
 ```bash
-rm ~/.claude/skills/remember ~/.claude/skills/carto    # skill symlinks
-# Remove hooks section from ~/.claude/settings.json (or delete the PostToolUse/PreCompact/SessionEnd/SubagentStop entries pointing to session-cartographer)
-rm ~/Documents/dev/changelog.jsonl ~/Documents/dev/research-log.jsonl ~/Documents/dev/session-milestones.jsonl ~/Documents/dev/tool-use-log.jsonl   # event logs (optional — these are yours)
+claude uninstall session-cartographer                    # remove plugin + hooks
+# Optionally delete event logs:
+rm ~/Documents/dev/changelog.jsonl ~/Documents/dev/research-log.jsonl ~/Documents/dev/session-milestones.jsonl
 rm -rf ~/Documents/dev/session-cartographer              # the repo
 ```
-
-A proper `scripts/uninstall.sh` that automates this is on the roadmap.
 
 ## Attribution
 

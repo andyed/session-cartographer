@@ -178,10 +178,14 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   }
 
   if (error) {
+    const friendly = error.includes('404') ? 'Transcript not found — the file may have been deleted or the path is stale.'
+      : error.includes('403') ? 'Access denied — transcript is outside the allowed directory.'
+      : `Could not load transcript (${error})`;
     return (
       <div className="p-8">
-        <div className="text-red-400 text-sm mb-2">Failed to load transcript: {error}</div>
-        <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-300">back</button>
+        <div className="text-red-400 text-sm mb-2">{friendly}</div>
+        <div className="text-xs text-gray-600 font-mono mb-3">{transcriptPath}</div>
+        <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-200 underline">back to results</button>
       </div>
     );
   }
