@@ -147,6 +147,7 @@ The Explorer includes a built-in transcript viewer at `:2527`. [claude-code-hist
 
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture
 - [docs/SCORING.md](docs/SCORING.md) — What scores mean
+- [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme and deep linking
 - [docs/LOG_SCHEMAS.md](docs/LOG_SCHEMAS.md) — Formal JSONL schemas for all event types
 - [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events
 - [docs/SETUP.md](docs/SETUP.md) — Qdrant setup, cold start backfill, disk usage
