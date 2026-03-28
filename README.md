@@ -51,6 +51,10 @@ cd session-cartographer/explorer && npm install && npm run dev
 
 Search results link directly into transcripts — click any event card to read the full conversation context. Every URL is a permalink: `/?q=shader&project=scrutinizer`, `/session/<path>?highlight=foveation`.
 
+## Origin
+
+The hook system started as a [standalone gist](https://gist.github.com/andyed/72f8af0fd2f737dfb9fa3ab343b593b3) for logging Claude Code research URLs and session milestones. Session Cartographer grew from that into a full search + visualization layer.
+
 ## Install
 
 ```bash
@@ -143,6 +147,7 @@ The Explorer includes a built-in transcript viewer at `:2527`. [claude-code-hist
 
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture
 - [docs/SCORING.md](docs/SCORING.md) — What scores mean
+- [docs/LOG_SCHEMAS.md](docs/LOG_SCHEMAS.md) — Formal JSONL schemas for all event types
 - [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events
 - [docs/SETUP.md](docs/SETUP.md) — Qdrant setup, cold start backfill, disk usage
 - [docs/landscape-survey.md](docs/landscape-survey.md) — 30+ Claude Code memory projects compared
