@@ -117,26 +117,36 @@ export default function SearchInput({ value, onChange }) {
           ref={listRef}
           id="search-suggestions"
           role="listbox"
-          className="absolute z-50 top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg max-h-60 overflow-y-auto"
+          className="absolute z-50 top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg max-h-60 overflow-y-auto w-fit min-w-48"
         >
-          {suggestions.map((term, i) => (
-            <li
-              key={term}
-              id={`suggestion-${i}`}
-              role="option"
-              aria-selected={i === activeIndex}
-              className={`px-3 py-1.5 cursor-pointer text-sm font-mono ${
-                i === activeIndex
-                  ? 'bg-gray-700 text-gray-100'
-                  : 'text-gray-300 hover:bg-gray-750 hover:text-gray-100'
-              }`}
-              onMouseDown={(e) => { e.preventDefault(); applySuggestion(term); }}
-              onMouseEnter={() => setActiveIndex(i)}
-            >
-              <span className="text-gray-500">{term.slice(0, lastWord.length)}</span>
-              <span>{term.slice(lastWord.length)}</span>
-            </li>
-          ))}
+          {suggestions.map((term, i) => {
+            // Fisheye: scale font size by distance from active item
+            const focus = activeIndex >= 0 ? activeIndex : 0;
+            const dist = Math.abs(i - focus);
+            const scale = Math.max(0.75, 1 - dist * 0.08); // 1.0 at focus, tapering to 0.75
+            const fontSize = Math.round(14 * scale);
+            const py = scale > 0.9 ? 6 : scale > 0.8 ? 4 : 2;
+
+            return (
+              <li
+                key={term}
+                id={`suggestion-${i}`}
+                role="option"
+                aria-selected={i === activeIndex}
+                className={`px-3 cursor-pointer font-mono transition-all duration-100 ${
+                  i === activeIndex
+                    ? 'bg-gray-700 text-gray-100'
+                    : 'text-gray-300 hover:bg-gray-750 hover:text-gray-100'
+                }`}
+                style={{ fontSize: `${fontSize}px`, padding: `${py}px 12px` }}
+                onMouseDown={(e) => { e.preventDefault(); applySuggestion(term); }}
+                onMouseEnter={() => setActiveIndex(i)}
+              >
+                <span className="text-gray-200">{term.slice(0, lastWord.length)}</span>
+                <span className="text-gray-500">{term.slice(lastWord.length)}</span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
