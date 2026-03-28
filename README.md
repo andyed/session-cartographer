@@ -28,32 +28,21 @@ TOTAL                        108  329.8        59    4.8
 
 grep takes 33-49 seconds per query scanning 2.7GB of transcripts, returning raw JSONL blobs. Cartographer returns BM25-ranked, formatted results in under a second.
 
-## How it works
+## Architecture
 
-Hooks log session events to append-only JSONL files (~1.5 MB for 3,000 events — a 1:2000 ratio to Claude's own transcript data).
+Hooks are the foundation. Everything else is a lens.
 
 ```
-Startup:  JSONL files → in-memory BM25 corpus (7 MB, built once)
-Query:    tokenize → score 2,000 docs → sort → top N    (~1 ms)
-Live:     fs.watch → addToIndex() → SSE push to UI      (real-time)
+Hooks (produce JSONL event logs)
+  ├── /remember — CLI search (bash + awk, zero dependencies)
+  ├── /carto explore — web UI (Node + React, visual browsing)
+  ├── extras/briefings — project summaries (grep + jq)
+  └── Qdrant indexer — semantic search (optional)
 ```
 
-The CLI search path (`cartographer-search.sh`) uses pure awk for BM25 — no Node, no jq dependency.
+Each layer is independent. You can use `/remember` without the Explorer, briefings without `/remember`, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
 
-## Companion Explorer
-
-A local web app for browsing and searching session history visually. Timeline view with SSE live updates, search with BM25 scores and source indicators, and a transcript viewer with inline search and highlight.
-
-```bash
-cd session-cartographer/explorer && npm install && npm run dev
-# API on :2526, UI on :2527
-```
-
-Search results link directly into transcripts — click any event card to read the full conversation context. Every URL is a shareable permalink: `/?q=shader&project=scrutinizer`, `/session/<path>?highlight=foveation`. See [permalink spec](docs/PERMALINK_SPEC.md).
-
-## Origin
-
-The hook system started as a [standalone gist](https://gist.github.com/andyed/72f8af0fd2f737dfb9fa3ab343b593b3) for logging Claude Code research URLs and session milestones. Session Cartographer grew from that into a full search + visualization layer.
+The hook system started as a [standalone gist](https://gist.github.com/andyed/72f8af0fd2f737dfb9fa3ab343b593b3). Session Cartographer grew from that into the search + visualization layers.
 
 ## Install
 
@@ -61,15 +50,31 @@ The hook system started as a [standalone gist](https://gist.github.com/andyed/72
 git clone https://github.com/andyed/session-cartographer.git
 ```
 
-Two skills, different install paths:
+### Step 1: Hooks (the foundation)
 
-- **`/remember`** — CLI search. Symlink the skill: `ln -s /path/to/session-cartographer/plugins/session-cartographer/skills/remember ~/.claude/skills/remember`. Add hooks to `~/.claude/settings.json` (see [docs/SETUP.md](docs/SETUP.md)). No cloned repo needed at runtime — search runs via bash + awk.
+Add hooks to `~/.claude/settings.json` (see [docs/SETUP.md](docs/SETUP.md)). This starts logging events immediately — everything else builds on this data.
 
-- **`/carto`** — Explorer web app. Symlink the skill: `ln -s /path/to/session-cartographer/plugins/session-cartographer/skills/carto ~/.claude/skills/carto`. **Requires the cloned repo** — `/carto explore` starts the Node server and Vite dev server from `explorer/`. Run `cd explorer && npm install` first.
+### Step 2: Pick your lenses
 
-Or use the CLI search standalone (no install needed):
+| Lens | Install | What it does |
+|------|---------|-------------|
+| **`/remember`** | `ln -s .../skills/remember ~/.claude/skills/remember` | CLI search via bash + awk. No runtime deps. |
+| **`/carto explore`** | `ln -s .../skills/carto ~/.claude/skills/carto` + `cd explorer && npm install` | Web UI with timeline, search, transcript viewer |
+| **Qdrant** | See [docs/SETUP.md](docs/SETUP.md) | Adds semantic search to both lenses |
+| **Briefings** | Copy `extras/briefings/` hook to settings | Auto-compiled project context on session start |
+
+Or skip all skills and use the search script directly:
 ```bash
 bash scripts/cartographer-search.sh "your query" --project myproject --limit 10
+```
+
+### Companion Explorer
+
+Timeline with SSE live updates, BM25-scored search, transcript viewer with inline highlight. Every URL is a [permalink](docs/PERMALINK_SPEC.md): `/?q=shader&project=scrutinizer`.
+
+```bash
+cd session-cartographer/explorer && npm install && npm run dev
+# API on :2526, UI on :2527
 ```
 
 ### Add to your CLAUDE.md

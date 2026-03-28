@@ -1,10 +1,18 @@
 # Session Cartographer
 
-Session history search and exploration for Claude Code. Designed for **both Claude and humans**:
+Hooks are the foundation — they produce JSONL event logs. Everything else is an independent lens on that data.
 
-- **`/remember`** — Claude uses this to recover context from past sessions (decisions, research, fixes). It's the agent's primary tool for loading relevant history into a conversation.
-- **`/carto explore`** — Opens the Explorer web app for the human to browse visually. The Explorer is a human tool, not an agent tool.
-- **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by both skills under the hood.
+```
+Hooks (produce JSONL)
+  ├── /remember (CLI search, bash + awk)
+  ├── /carto explore (web UI, Node + React)
+  ├── extras/briefings (project summaries)
+  └── Qdrant indexer (semantic search)
+```
+
+- **`/remember`** — Claude uses this to recover context from past sessions. Agent's primary history tool.
+- **`/carto explore`** — Opens the Explorer web app for the human. Not an agent tool.
+- **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by both skills.
 
 ## Project Structure
 
