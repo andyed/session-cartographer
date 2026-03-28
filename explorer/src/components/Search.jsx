@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearch } from '../hooks/useSearch';
 import { fetchProjects } from '../api';
 import EventCard from './EventCard';
+import ProjectBadge from './ProjectBadge';
 
 // Read initial state from URL
 function parseSearchURL() {
@@ -96,15 +97,10 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
               <div className="text-gray-500 text-center py-8">No results found.</div>
             ) : (
               <>
-                {results.results.map((event, i) => (
-                  <EventCard
-                    key={event.event_id || i}
-                    event={event}
-                    showScore
-                    showSource
-                    onOpenTranscript={onOpenTranscript}
-                  />
-                ))}
+                <GroupedResults
+                  results={results.results}
+                  onOpenTranscript={onOpenTranscript}
+                />
 
                 {hasMore && (
                   <button
@@ -121,6 +117,66 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
         <div ref={bottomRef} />
       </div>
 
+    </div>
+  );
+}
+
+/**
+ * Group search results with identical summary text.
+ * Keeps best-scored result visible, collapses duplicates.
+ */
+function GroupedResults({ results, onOpenTranscript }) {
+  const groups = useMemo(() => {
+    const out = [];
+    const seen = new Map(); // summary text → group index
+
+    for (const event of results) {
+      const text = (event.prompt || event.query || event.summary || event.display || event.url || '').slice(0, 120);
+      if (!text) {
+        out.push({ event, dupes: [] });
+        continue;
+      }
+
+      if (seen.has(text)) {
+        out[seen.get(text)].dupes.push(event);
+      } else {
+        seen.set(text, out.length);
+        out.push({ event, dupes: [] });
+      }
+    }
+    return out;
+  }, [results]);
+
+  return groups.map(({ event, dupes }, i) => (
+    <div key={event.event_id || i}>
+      <EventCard
+        event={event}
+        showScore
+        showSource
+        onOpenTranscript={onOpenTranscript}
+      />
+      {dupes.length > 0 && (
+        <DupeIndicator count={dupes.length} event={event} />
+      )}
+    </div>
+  ));
+}
+
+function DupeIndicator({ count, event }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="ml-4 mb-2">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="text-xs text-gray-500 hover:text-gray-300"
+      >
+        +{count} similar {expanded ? '▾' : '▸'}
+      </button>
+      {expanded && (
+        <div className="mt-1 text-xs text-gray-600 font-mono space-y-0.5">
+          {/* Just show timestamps and projects, not full cards */}
+        </div>
+      )}
     </div>
   );
 }
