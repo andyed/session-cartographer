@@ -177,7 +177,10 @@ grep_transcripts_to_tsv() {
       -v query="$QUERY" -v src="transcript" -v sid="$session_id" -v pdir="$project_dir" -v tpath="$transcript" \
       "$transcript" "$transcript" 2>/dev/null | head -$((LIMIT * 2))
 
-    [ "$matched_files" -ge 5 ] && break
+    if [ "$matched_files" -ge 5 ]; then
+      echo "(showing top 5 matching transcripts)" >&2
+      break
+    fi
   done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec LC_ALL=C grep -liE "$GREP_QUERY" {} + 2>/dev/null)
 }
 

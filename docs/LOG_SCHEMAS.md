@@ -67,6 +67,21 @@ Unified index — every event from every hook. This is the primary search surfac
 
 WebFetch and WebSearch events with domain-specific detail.
 
+### Auto-categorization
+
+URLs are classified at capture time by `categorize_url()` in `log-research.sh`, so you don't need to classify at query time. Categories are assigned by domain pattern matching:
+
+| Category | Domains |
+|----------|---------|
+| `research` | arxiv.org, pubmed, biorxiv.org, semanticscholar, springer.com/article, sciencedirect.com, jov.arvojournals |
+| `docs` | github.com, docs.*, developer.*, mdn.*, readthedocs, deepwiki.com |
+| `blog` | medium.com, dev.to, substack.com, *.blog, wordpress |
+| `news` | news.*, sciencedaily, arstechnica, theverge, hackernews |
+| `reference` | wikipedia.org, stackoverflow.com, stackexchange.com |
+| `other` | Everything else |
+
+To extend: add patterns to the `case` statement in `log-research.sh`. Categories are stored in the `category` field and are searchable via BM25.
+
 ### Fetch entry
 
 | Field | Type | Description |
