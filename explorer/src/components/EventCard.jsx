@@ -40,16 +40,24 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
   const [expanded, setExpanded] = useState(false);
   const cat = eventCategory(event);
 
-  // Build display text
-  let summary = event.title || event.description || '';
+  // Build display text — prefer the most useful human-readable field
   let extractedUrl = event.url || '';
+  let summary = '';
 
-  // "Fetched: https://..." or "Search: ..." summaries
-  if (!summary && event.summary) {
+  // For fetch events, the prompt is the most informative field
+  if (event.prompt) {
+    summary = event.prompt;
+  } else if (event.query) {
+    summary = event.query;
+  } else if (event.title || event.description) {
+    summary = event.title || event.description;
+  } else if (event.display) {
+    summary = event.display;
+  } else if (event.summary) {
+    // "Fetched: https://..." summaries — extract the URL and show domain
     const fetchMatch = event.summary.match(/^(?:Fetched|Search):\s*(https?:\/\/\S+)/);
     if (fetchMatch) {
       extractedUrl = extractedUrl || fetchMatch[1];
-      // Show domain + path instead of "Fetched: url"
       try {
         const u = new URL(fetchMatch[1]);
         summary = `${u.hostname}${u.pathname.length > 50 ? u.pathname.slice(0, 50) + '...' : u.pathname}`;
@@ -60,8 +68,6 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
       summary = event.summary;
     }
   }
-
-  if (!summary && event.query) summary = event.query;
 
   if (!summary && extractedUrl) {
     try {
