@@ -195,6 +195,14 @@ export default function SearchInput({ value, onChange }) {
   // Highlight the matching prefix in each suggestion
   const lastWord = (value.split(/\s+/).pop() || '').toLowerCase();
 
+  // Scroll active item into view
+  useEffect(() => {
+    if (activeIndex >= 0 && listRef.current) {
+      const el = listRef.current.children[activeIndex];
+      if (el) el.scrollIntoView({ block: 'nearest' });
+    }
+  }, [activeIndex]);
+
   // Compute flyout position when related terms are showing
   const [flyoutPos, setFlyoutPos] = useState(null);
   useEffect(() => {
@@ -233,7 +241,7 @@ export default function SearchInput({ value, onChange }) {
           ref={listRef}
           id="search-suggestions"
           role="listbox"
-          className="absolute z-50 top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg max-h-60 overflow-y-auto w-fit min-w-48"
+          className="absolute z-50 top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded shadow-lg max-h-[70vh] overflow-y-auto overflow-x-hidden w-fit min-w-48"
         >
           {suggestions.map((term, i) => {
             // Fisheye: scale font size by distance from active item
