@@ -24,6 +24,7 @@ QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit 
 shift
 
 LIMIT=15
+FUSION_DEPTH=500
 PROJECT=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -99,11 +100,12 @@ semantic_search_to_tsv() {
   [ -z "$vector" ] && return 1
 
   local search_body
+  local depth=$FUSION_DEPTH
   if [ -n "$PROJECT" ]; then
-    search_body=$(jq -n --argjson v "$vector" --argjson l "$LIMIT" --arg p "$PROJECT" \
+    search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --arg p "$PROJECT" \
       '{vector: $v, limit: $l, with_payload: true, filter: {must: [{key: "project", match: {value: $p}}]}}')
   else
-    search_body=$(jq -n --argjson v "$vector" --argjson l "$LIMIT" \
+    search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" \
       '{vector: $v, limit: $l, with_payload: true}')
   fi
 
@@ -117,6 +119,7 @@ semantic_search_to_tsv() {
   [ "$count" = "0" ] || [ -z "$count" ] && return 1
 
   # Emit TSV in the same format as keyword sources — RRF fuses them together
+  # Fields: src \t rank \t key \t ts \t proj \t summary \t extras \t etype
   echo "$results" | jq -r '.result | to_entries[] |
     "semantic\t" +
     (.key + 1 | tostring) + "\t" +
@@ -128,7 +131,9 @@ semantic_search_to_tsv() {
     (if .value.payload.deeplink and .value.payload.deeplink != "" then "deeplink:" + .value.payload.deeplink + "|" else "" end) +
     (if .value.payload.transcript_path and .value.payload.transcript_path != "" then "transcript:" + .value.payload.transcript_path + "|" else "" end) +
     (if .value.payload.cwd and .value.payload.cwd != "" then "cwd:" + .value.payload.cwd + "|" else "" end) +
-    (if .value.payload.session then "session:" + .value.payload.session + "|" else "" end)
+    (if .value.payload.session then "session:" + .value.payload.session + "|" else "" end) +
+    "\t" +
+    (.value.payload.type // (if (.value.payload.event_id // "") | startswith("git-") then "git_commit" else "?" end))
   ' 2>/dev/null
 }
 
@@ -188,10 +193,10 @@ grep_transcripts_to_tsv() {
 rank_fuse_and_display() {
   # RRF with k=60 (standard constant)
   # Input: TSV lines from all sources
-  # Output: deduplicated, scored, sorted, formatted results
-  awk -F'\t' -v limit="$LIMIT" '
+  # Output: faceted summary of top 500, then detailed top N results
+  awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" '
   {
-    src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7
+    src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7; etype = $8
 
     # RRF score: 1/(k + rank)
     score = 1.0 / (60 + rank)
@@ -207,6 +212,7 @@ rank_fuse_and_display() {
       project[key] = proj
       summaries[key] = summary
       extra[key] = extras
+      etype_map[key] = etype
       order[++n] = key
     }
   }
@@ -223,7 +229,144 @@ rank_fuse_and_display() {
       order[j+1] = k
     }
 
-    # Display top results
+    # ─── Faceting: summarize top fusion_depth results ───
+    facet_n = (n < fusion_depth) ? n : fusion_depth
+    if (facet_n > 0) {
+      # Count by project, source, type, time
+      delete proj_count
+      delete src_count
+      delete type_count
+      delete time_bucket
+      delete day_bucket
+      oldest = ""; newest = ""
+
+      for (i = 1; i <= facet_n; i++) {
+        k = order[i]
+        p = project[k]
+        if (p != "" && p != "?") proj_count[p]++
+
+        # Source facet (normalize compound sources to components)
+        ns = split(sources[k], src_parts, "+")
+        for (si = 1; si <= ns; si++) {
+          s = src_parts[si]
+          if (s != "") src_count[s]++
+        }
+
+        # Event type facet
+        et = etype_map[k]
+        if (et != "" && et != "?") type_count[et]++
+
+        # Time buckets: YYYY-MM (monthly) and YYYY-MM-DD (daily for recent)
+        t = timestamp[k]
+        if (t != "" && t != "?") {
+          ym = substr(t, 1, 7)
+          if (ym ~ /^[0-9]{4}-[0-9]{2}$/) {
+            time_bucket[ym]++
+            if (oldest == "" || t < oldest) oldest = t
+            if (newest == "" || t > newest) newest = t
+          }
+          ymd = substr(t, 1, 10)
+          if (ymd ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
+            day_bucket[ymd]++
+          }
+        }
+      }
+
+      printf "--- Facets (%d results) ---\n", facet_n
+
+      # Project distribution (sorted by count, descending)
+      np = 0
+      for (p in proj_count) { np++; pnames[np] = p; pcounts[np] = proj_count[p] }
+      for (i = 2; i <= np; i++) {
+        tk = pnames[i]; tv = pcounts[i]; j = i - 1
+        while (j >= 1 && pcounts[j] < tv) {
+          pnames[j+1] = pnames[j]; pcounts[j+1] = pcounts[j]; j--
+        }
+        pnames[j+1] = tk; pcounts[j+1] = tv
+      }
+      printf "  projects: "
+      for (i = 1; i <= np && i <= 8; i++) {
+        if (i > 1) printf ", "
+        printf "%s(%d)", pnames[i], pcounts[i]
+      }
+      if (np > 8) printf ", +%d more", np - 8
+      printf "\n"
+
+      # Event type distribution (sorted by count, descending)
+      nt = 0
+      for (et in type_count) { nt++; tnames[nt] = et; tcounts[nt] = type_count[et] }
+      for (i = 2; i <= nt; i++) {
+        tk = tnames[i]; tv = tcounts[i]; j = i - 1
+        while (j >= 1 && tcounts[j] < tv) {
+          tnames[j+1] = tnames[j]; tcounts[j+1] = tcounts[j]; j--
+        }
+        tnames[j+1] = tk; tcounts[j+1] = tv
+      }
+      printf "  types:    "
+      for (i = 1; i <= nt && i <= 8; i++) {
+        if (i > 1) printf ", "
+        printf "%s(%d)", tnames[i], tcounts[i]
+      }
+      if (nt > 8) printf ", +%d more", nt - 8
+      printf "\n"
+
+      # Source distribution
+      printf "  sources:  "
+      first = 1
+      for (s in src_count) {
+        if (!first) printf ", "
+        printf "%s(%d)", s, src_count[s]
+        first = 0
+      }
+      printf "\n"
+
+      # Time span + monthly + daily distribution
+      if (oldest != "" && newest != "") {
+        printf "  span:     %s to %s\n", substr(oldest, 1, 10), substr(newest, 1, 10)
+
+        # Monthly buckets (sorted descending, show up to 6)
+        nbk = 0
+        for (ym in time_bucket) { nbk++; bnames[nbk] = ym; bcounts[nbk] = time_bucket[ym] }
+        for (i = 2; i <= nbk; i++) {
+          tk = bnames[i]; tv = bcounts[i]; j = i - 1
+          while (j >= 1 && bnames[j] < tk) {
+            bnames[j+1] = bnames[j]; bcounts[j+1] = bcounts[j]; j--
+          }
+          bnames[j+1] = tk; bcounts[j+1] = tv
+        }
+        printf "  months:   "
+        for (i = 1; i <= nbk && i <= 6; i++) {
+          if (i > 1) printf ", "
+          printf "%s(%d)", bnames[i], bcounts[i]
+        }
+        if (nbk > 6) printf ", +%d older", nbk - 6
+        printf "\n"
+
+        # Daily buckets (sorted descending, show last 7 active days)
+        ndk = 0
+        for (ymd in day_bucket) { ndk++; dnames[ndk] = ymd; dcounts[ndk] = day_bucket[ymd] }
+        for (i = 2; i <= ndk; i++) {
+          tk = dnames[i]; tv = dcounts[i]; j = i - 1
+          while (j >= 1 && dnames[j] < tk) {
+            dnames[j+1] = dnames[j]; dcounts[j+1] = dcounts[j]; j--
+          }
+          dnames[j+1] = tk; dcounts[j+1] = tv
+        }
+        if (ndk > 0) {
+          printf "  days:     "
+          for (i = 1; i <= ndk && i <= 7; i++) {
+            if (i > 1) printf ", "
+            printf "%s(%d)", dnames[i], dcounts[i]
+          }
+          if (ndk > 7) printf ", +%d older", ndk - 7
+          printf "\n"
+        }
+      }
+
+      printf "---\n\n"
+    }
+
+    # ─── Display top results ───
     shown = 0
     for (i = 1; i <= n && shown < limit; i++) {
       k = order[i]

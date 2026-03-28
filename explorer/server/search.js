@@ -31,10 +31,12 @@ async function getEmbedding(text) {
 /**
  * Search Qdrant by vector similarity.
  */
+const SEMANTIC_SCORE_THRESHOLD = 0.3;
+
 async function semanticSearch(query, { project, limit }) {
   const vector = await getEmbedding(query);
 
-  const body = { vector, limit, with_payload: true };
+  const body = { vector, limit, with_payload: true, score_threshold: SEMANTIC_SCORE_THRESHOLD };
   if (project) {
     body.filter = { must: [{ key: 'project', match: { value: project } }] };
   }
@@ -93,9 +95,78 @@ function rrfFuse(list1, list1Source, list2, list2Source, limit) {
 }
 
 /**
- * Run hybrid search: BM25 + optional Qdrant, fused via RRF.
+ * Compute facets over a result set — project, type, source, and time distributions.
  */
-export async function hybridSearch(index, query, { project = '', limit = 15, offset = 0 } = {}) {
+export function computeFacets(items) {
+  const projMap = new Map();
+  const typeMap = new Map();
+  const srcMap = new Map();
+  const monthMap = new Map();
+  const dayMap = new Map();
+  let oldest = null, newest = null;
+
+  for (const item of items) {
+    // Project
+    const proj = item.project;
+    if (proj) projMap.set(proj, (projMap.get(proj) || 0) + 1);
+
+    // Event type
+    const type = item.type || item.milestone || '';
+    if (type) typeMap.set(type, (typeMap.get(type) || 0) + 1);
+
+    // Sources (split compound like "keyword+semantic")
+    const sources = (item._sources || '').split('+');
+    for (const s of sources) {
+      if (s) srcMap.set(s, (srcMap.get(s) || 0) + 1);
+    }
+
+    // Time buckets — normalize timestamps to ISO strings
+    const rawTs = item.timestamp;
+    let ts = '';
+    if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
+      ts = rawTs;
+    } else if (rawTs) {
+      // Numeric epoch (seconds or milliseconds) → ISO
+      const num = Number(rawTs);
+      if (!isNaN(num)) {
+        const d = new Date(num > 1e12 ? num : num * 1000);
+        ts = d.toISOString();
+      }
+    }
+    if (ts) {
+      const month = ts.slice(0, 7);  // YYYY-MM
+      const day = ts.slice(0, 10);    // YYYY-MM-DD
+      if (/^\d{4}-\d{2}$/.test(month)) monthMap.set(month, (monthMap.get(month) || 0) + 1);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day)) dayMap.set(day, (dayMap.get(day) || 0) + 1);
+      if (!oldest || ts < oldest) oldest = ts;
+      if (!newest || ts > newest) newest = ts;
+    }
+  }
+
+  const sortDesc = (map, max) =>
+    [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, max).map(([name, count]) => ({ name, count }));
+
+  const sortChron = (map, max) =>
+    [...map.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, max).map(([name, count]) => ({ name, count }));
+
+  return {
+    projects: sortDesc(projMap, 5),
+    types: sortDesc(typeMap, 5),
+    sources: sortDesc(srcMap, 5),
+    time: {
+      oldest: oldest ? oldest.slice(0, 10) : null,
+      newest: newest ? newest.slice(0, 10) : null,
+      months: sortChron(monthMap, 6),
+      days: sortChron(dayMap, 7),
+    },
+  };
+}
+
+/**
+ * Run hybrid search: BM25 + optional Qdrant, fused via RRF.
+ * Returns full fusion pool (up to 500) + facets. Client paginates.
+ */
+export async function hybridSearch(index, query, { project = '' } = {}) {
   const FUSION_DEPTH = 500;
   // Always run BM25 and get full pool
   const bm25All = scoreBM25(index, query, { project });
@@ -118,10 +189,19 @@ export async function hybridSearch(index, query, { project = '', limit = 15, off
     fusedItems = semanticAll.map(r => ({ ...r.event, _score: r.score, _sources: 'semantic' }));
   }
 
+  // Trim noise tail — keep results with meaningful RRF score
+  // Threshold: items scoring below 20% of the top score are noise
+  if (fusedItems.length > 0) {
+    const topScore = fusedItems[0]._score;
+    const minScore = topScore * 0.1;
+    fusedItems = fusedItems.filter(item => item._score >= minScore);
+  }
+
   return {
-    items: fusedItems.slice(offset, offset + limit),
+    items: fusedItems,
     fusedCount: fusedItems.length,
     keywordCount,
     semanticCount,
+    facets: computeFacets(fusedItems),
   };
 }

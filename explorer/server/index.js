@@ -1,7 +1,7 @@
 import express from 'express';
 import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
-import { hybridSearch } from './search.js';
+import { hybridSearch, computeFacets } from './search.js';
 import { statSync } from 'fs';
 import { resolve, normalize } from 'path';
 import { homedir } from 'os';
@@ -96,8 +96,6 @@ app.get('/api/events', (req, res) => {
 app.get('/api/search', async (req, res) => {
   const query = req.query.q || '';
   const project = req.query.project || '';
-  const limit = Math.min(parseInt(req.query.limit || '15', 10), 100);
-  const offset = parseInt(req.query.offset || '0', 10);
 
   // No query and no project filter — return empty
   if (!query.trim() && !project) {
@@ -112,18 +110,18 @@ app.get('/api/search', async (req, res) => {
     const filtered = events
       .filter(e => (e.project || '').toLowerCase().includes(project.toLowerCase()))
       .filter(isHighSignal);
-    
-    // Paginate manually
-    const subset = filtered.slice(offset, offset + limit).map(e => ({ ...e, _score: 0, _sources: 'browse' }));
-    results = { items: subset, keywordCount: 0, semanticCount: 0, fusedCount: filtered.length };
+
+    const allItems = filtered.slice(0, 500).map(e => ({ ...e, _score: 0, _sources: 'browse' }));
+    results = { items: allItems, keywordCount: 0, semanticCount: 0, fusedCount: filtered.length, facets: computeFacets(allItems) };
   } else {
-    results = await hybridSearch(index, query, { project, limit, offset });
+    results = await hybridSearch(index, query, { project });
   }
 
   const duration = Date.now() - start;
 
   res.json({
     results: results.items,
+    facets: results.facets || null,
     meta: {
       query,
       keyword_count: results.keywordCount,

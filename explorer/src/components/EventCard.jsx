@@ -146,12 +146,7 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
           </button>
         )}
 
-        {showSource && <SourceBadge source={event._sources} />}
-        {showScore && event._score != null && (
-          <span className="text-xs text-gray-500 font-mono">
-            {event._score.toFixed(3)}
-          </span>
-        )}
+        {showSource && <SourceBadge source={event._sources} score={event._score} />}
       </div>
 
       <p className="text-sm text-gray-300 leading-relaxed">

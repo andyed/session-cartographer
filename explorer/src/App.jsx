@@ -28,6 +28,7 @@ const initial = parseURL();
 
 export default function App() {
   const [tab, setTab] = useState(initial.tab);
+  const [searchQuery, setSearchQuery] = useState(initial.query);
   const [transcript, setTranscript] = useState({
     path: initial.transcript,
     uuid: initial.uuid,
@@ -63,6 +64,14 @@ export default function App() {
     window.history.pushState({ tab: t }, '', t === 'timeline' ? '/' : window.location.href);
   }, []);
 
+  // When typing in search, auto-switch to search tab
+  const handleSearchInput = useCallback((value) => {
+    setSearchQuery(value);
+    if (value.trim() && tab !== 'search') {
+      setTab('search');
+    }
+  }, [tab]);
+
   const openTranscript = useCallback((path, uuid, highlight = '') => {
     // Push current tab state first so back returns here
     window.history.pushState({ tab }, '', window.location.href);
@@ -87,27 +96,40 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col">
-      <header className="flex items-center gap-4 px-4 py-3 border-b border-gray-800">
-        <h1 className="text-sm font-medium text-gray-300">Session Cartographer</h1>
-        <div className="flex gap-1">
-          {['timeline', 'search'].map(t => (
-            <button
-              key={t}
-              onClick={() => handleTabClick(t)}
-              className={`px-3 py-1 text-xs rounded ${
-                tab === t
-                  ? 'bg-gray-700 text-gray-200'
-                  : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-          {tab === 'transcript' && (
-            <span className="px-3 py-1 text-xs rounded bg-gray-700 text-gray-200">
-              transcript
-            </span>
-          )}
+      <header className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 flex-shrink-0">
+        {/* Search input — flush left */}
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => handleSearchInput(e.target.value)}
+          placeholder="Search session history..."
+          className="flex-1 bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-base text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
+          autoFocus
+        />
+
+        {/* Nav — flush right */}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex gap-1">
+            {['timeline', 'search'].map(t => (
+              <button
+                key={t}
+                onClick={() => handleTabClick(t)}
+                className={`px-3 py-1 text-xs rounded ${
+                  tab === t
+                    ? 'bg-gray-700 text-gray-200'
+                    : 'text-gray-500 hover:text-gray-300'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+            {tab === 'transcript' && (
+              <span className="px-3 py-1 text-xs rounded bg-gray-700 text-gray-200">
+                transcript
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-gray-600 font-mono">SC</span>
         </div>
       </header>
 
@@ -116,7 +138,7 @@ export default function App() {
           <Timeline onOpenTranscript={openTranscript} />
         </div>
         <div className={`absolute inset-0 ${tab === 'search' ? '' : 'hidden'}`}>
-          <Search initialQuery={initial.query} onOpenTranscript={openTranscript} />
+          <Search query={searchQuery} onOpenTranscript={openTranscript} />
         </div>
         {tab === 'transcript' && (
           <TranscriptViewer

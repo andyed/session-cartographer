@@ -120,47 +120,56 @@ NR == FNR {
     }
 
     if (score > 0) {
-        # Format TSV values: src, _rank_, key, ts, proj, summary, extras
-        
+        # Format TSV values: src, _rank_, key, ts, proj, summary, extras, etype
+
         # Extract fields
         if (src == "transcript") {
             key = extract($0, "uuid")
             if (key == "") key = "transcript-" sid "-" FNR
             ts = extract($0, "timestamp")
             proj = (proj_filter != "") ? proj_filter : extract($0, "project")  # Often missing in line, passed down
-            
+
             # Truncate content for display
             summary = length(body) > 150 ? substr(body, 1, 150) : body
-            
+
             cwdf = extract($0, "cwd")
             extras = "transcript:" tpath "|session:" sid "|"
             if (cwdf != "") extras = extras "cwd:" cwdf "|"
-            
+
+            etype = "transcript:" extract($0, "type")
+
             # Use negative score as a sort key placeholder since we want descending order
-            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract($0, "type"), 0, key, ts, pdir, summary, extras)
+            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract($0, "type"), 0, key, ts, pdir, summary, extras, etype)
         } else {
             key = extract($0, "event_id")
             if (key == "") key = extract($0, "milestone")
             if (key == "") key = src "-" FNR
-            
+
             ts = extract($0, "timestamp")
             proj = extract($0, "project")
-            
+
             url = extract($0, "url")
             deeplink = extract($0, "deeplink")
             transcript = extract($0, "transcript_path")
             cwdf = extract($0, "cwd")
             sid = extract($0, "session_id")
             if (sid == "") sid = extract($0, "session")
-            
+
             extras = ""
             if (url != "") extras = extras "url:" url "|"
             if (deeplink != "" && deeplink != "none") extras = extras "deeplink:" deeplink "|"
             if (transcript != "") extras = extras "transcript:" transcript "|"
             if (cwdf != "") extras = extras "cwd:" cwdf "|"
             if (sid != "") extras = extras "session:" sid "|"
-            
-            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras)
+
+            etype = extract($0, "type")
+            if (etype == "") {
+                # Infer type from event_id prefix or source
+                if (key ~ /^git-/) etype = "git_commit"
+                else etype = src
+            }
+
+            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras, etype)
         }
     }
 }
@@ -168,6 +177,7 @@ NR == FNR {
 END {
     # Shell out to sort by score (column 1 numeric), then re-assign rank 1-N (so RRF works)
     # We pass the results array directly to sort.
+    # Output: src \t rank \t key \t ts \t proj \t summary \t extras \t etype
     if (nresults > 0) {
         sort_cmd = "sort -n | awk -F'\\t' '{ $3 = NR; for(i=2;i<=NF;i++) printf \"%s%s\", $i, (i==NF?\"\\n\":\"\\t\") }'"
         for (i = 1; i <= nresults; i++) {

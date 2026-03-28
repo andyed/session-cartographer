@@ -1,105 +1,138 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSearch } from '../hooks/useSearch';
-import { fetchProjects } from '../api';
 import EventCard from './EventCard';
-import ProjectBadge from './ProjectBadge';
+import FacetBar from './FacetBar';
 
-// Read initial state from URL
-function parseSearchURL() {
+// Parse facet params from URL: fp=a,b&ft=c&fs=d → { projects: Set, types: Set, sources: Set }
+function parseFacetsFromURL() {
   const params = new URLSearchParams(window.location.search);
-  return {
-    query: params.get('q') || '',
-    project: params.get('project') || '',
+  const parse = (key) => {
+    const val = params.get(key);
+    return val ? new Set(val.split(',').filter(Boolean)) : new Set();
   };
+  return { projects: parse('fp'), types: parse('ft'), sources: parse('fs') };
 }
 
-export default function Search({ initialQuery = '', onOpenTranscript }) {
-  const urlState = parseSearchURL();
-  const [query, setQuery] = useState(urlState.query || initialQuery);
-  const [project, setProject] = useState(urlState.project);
-  const [projects, setProjects] = useState([]);
-  const [limit] = useState(15);
-  const [offset, setOffset] = useState(0);
-  const { results, loading, search } = useSearch();
-  const bottomRef = useRef(null);
+export default function Search({ query = '', onOpenTranscript }) {
+  const project = new URLSearchParams(window.location.search).get('project') || '';
+  const [initialFacets] = useState(parseFacetsFromURL);
+  const {
+    results, loading, search,
+    filteredResults, displayLimit, loadMore,
+    facets, activeFacets, hasAnyFacet, toggleFacet, clearFacets,
+  } = useSearch(initialFacets);
+  const scrollRef = useRef(null);
+  const [visibleIds, setVisibleIds] = useState(new Set());
+  const cardRefs = useRef(new Map()); // event_id → DOM element
+  const isFirstSearch = useRef(true);
 
   useEffect(() => {
-    fetchProjects().then(setProjects);
-  }, []);
+    // Don't clear URL-restored facets on initial mount
+    if (isFirstSearch.current) {
+      isFirstSearch.current = false;
+    } else {
+      clearFacets();
+    }
+    search(query, { project });
+  }, [query, project, search, clearFacets]);
 
-  useEffect(() => {
-    // Only fire standard first-page load here. (Load more passes explicitly true flags)
-    search(query, { project, limit, offset: 0, isLoadMore: false });
-  }, [query, project, limit, search]);
-
-  // Sync URL as permalink when query/project changes
+  // Sync facets + query to URL
   useEffect(() => {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (project) params.set('project', project);
+    if (activeFacets.projects.size > 0) params.set('fp', [...activeFacets.projects].join(','));
+    if (activeFacets.types.size > 0) params.set('ft', [...activeFacets.types].join(','));
+    if (activeFacets.sources.size > 0) params.set('fs', [...activeFacets.sources].join(','));
     const qs = params.toString();
     const url = qs ? `/?${qs}` : '/';
     window.history.replaceState({ tab: 'search' }, '', url);
-  }, [query, project]);
+  }, [query, project, activeFacets]);
 
-  // Reset offset when query/project changes
+  // Track visible cards via IntersectionObserver
   useEffect(() => {
-    setOffset(0);
-  }, [query, project]);
+    const container = scrollRef.current;
+    if (!container) return;
 
-  const loadMore = () => {
-    const nextOffset = offset + limit;
-    setOffset(nextOffset);
-    search(query, { project, limit, offset: nextOffset, isLoadMore: true });
-  };
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setVisibleIds(prev => {
+          const next = new Set(prev);
+          for (const entry of entries) {
+            const id = entry.target.dataset.eventId;
+            if (!id) continue;
+            if (entry.isIntersecting) next.add(id);
+            else next.delete(id);
+          }
+          return next;
+        });
+      },
+      { root: container, threshold: 0.1 }
+    );
 
-  const hasMore = results && (offset + limit < (results.meta.fused_count || 0));
+    // Observe all card elements
+    for (const el of cardRefs.current.values()) {
+      if (el) observer.observe(el);
+    }
+
+    return () => observer.disconnect();
+  }, [filteredResults, displayLimit]);
+
+  const registerCard = useCallback((id, el) => {
+    if (el) cardRefs.current.set(id, el);
+    else cardRefs.current.delete(id);
+  }, []);
+
+  // Click a dot on the timeline → scroll to that card
+  const scrollToEvent = useCallback((eventId) => {
+    const el = cardRefs.current.get(eventId);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, []);
+
+  const displayItems = filteredResults.slice(0, displayLimit);
+  const hasMore = displayLimit < filteredResults.length;
 
   return (
     <div className="flex flex-col h-full">
-      {/* Top search bar */}
-      <div className="flex gap-2 p-4 pb-2 flex-shrink-0">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search session history..."
-          className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
-          autoFocus
+      {/* Sticky facet bar + timeline */}
+      {facets && (
+        <FacetBar
+          facets={facets}
+          activeFacets={activeFacets}
+          onToggle={toggleFacet}
+          onClear={clearFacets}
+          results={filteredResults}
+          visibleIds={visibleIds}
+          onDotClick={scrollToEvent}
         />
-        <select
-          value={project}
-          onChange={(e) => setProject(e.target.value)}
-          className="bg-gray-900 border border-gray-700 rounded-lg px-2 py-2 text-sm text-gray-400 focus:outline-none focus:border-gray-500"
-        >
-          <option value="">all projects</option>
-          {projects.map(p => (
-            <option key={p} value={p}>{p}</option>
-          ))}
-        </select>
-      </div>
+      )}
 
-      {/* Results */}
-      <div className="flex-1 overflow-y-auto px-4">
+      {/* Scrollable results */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
         {loading && <div className="text-gray-500 text-sm py-2">Searching...</div>}
 
         {results && !loading && (
           <>
-            <div className="text-xs text-gray-500 mb-3 font-mono">
-              {results.meta.total_matches} absolute matches
+            <div className="text-xs text-gray-300 mb-3 mt-2 font-mono">
+              {hasAnyFacet ? (
+                <>{filteredResults.length} of {results.results.length} results</>
+              ) : (
+                <>{results.results.length} results</>
+              )}
               {results.meta.semantic_count > 0 && (
-                <> (keyword: {results.meta.keyword_count}, semantic pool: {results.meta.semantic_count})</>
+                <> (keyword: {results.meta.keyword_count}, semantic: {results.meta.semantic_count})</>
               )}
               {' '}in {results.meta.duration_ms}ms
             </div>
 
-            {results.results.length === 0 ? (
+            {displayItems.length === 0 ? (
               <div className="text-gray-500 text-center py-8">No results found.</div>
             ) : (
               <>
                 <GroupedResults
-                  results={results.results}
+                  results={displayItems}
                   onOpenTranscript={onOpenTranscript}
+                  registerCard={registerCard}
                 />
 
                 {hasMore && (
@@ -107,28 +140,22 @@ export default function Search({ initialQuery = '', onOpenTranscript }) {
                     onClick={loadMore}
                     className="w-full py-2 mb-4 text-xs text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded-lg transition-colors"
                   >
-                    next 10
+                    show more ({filteredResults.length - displayLimit} remaining)
                   </button>
                 )}
               </>
             )}
           </>
         )}
-        <div ref={bottomRef} />
       </div>
-
     </div>
   );
 }
 
-/**
- * Group search results with identical summary text.
- * Keeps best-scored result visible, collapses duplicates.
- */
-function GroupedResults({ results, onOpenTranscript }) {
+function GroupedResults({ results, onOpenTranscript, registerCard }) {
   const groups = useMemo(() => {
     const out = [];
-    const seen = new Map(); // summary text → group index
+    const seen = new Map();
 
     for (const event of results) {
       const text = (event.prompt || event.query || event.summary || event.display || event.url || '').slice(0, 120);
@@ -148,7 +175,11 @@ function GroupedResults({ results, onOpenTranscript }) {
   }, [results]);
 
   return groups.map(({ event, dupes }, i) => (
-    <div key={event.event_id || i}>
+    <div
+      key={event.event_id || i}
+      ref={(el) => registerCard(event.event_id, el)}
+      data-event-id={event.event_id}
+    >
       <EventCard
         event={event}
         showScore
@@ -156,13 +187,13 @@ function GroupedResults({ results, onOpenTranscript }) {
         onOpenTranscript={onOpenTranscript}
       />
       {dupes.length > 0 && (
-        <DupeIndicator count={dupes.length} event={event} />
+        <DupeIndicator count={dupes.length} />
       )}
     </div>
   ));
 }
 
-function DupeIndicator({ count, event }) {
+function DupeIndicator({ count }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="ml-4 mb-2">
@@ -172,11 +203,6 @@ function DupeIndicator({ count, event }) {
       >
         +{count} similar {expanded ? '▾' : '▸'}
       </button>
-      {expanded && (
-        <div className="mt-1 text-xs text-gray-600 font-mono space-y-0.5">
-          {/* Just show timestamps and projects, not full cards */}
-        </div>
-      )}
     </div>
   );
 }
