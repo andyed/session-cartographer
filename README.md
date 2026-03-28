@@ -70,7 +70,7 @@ bash scripts/cartographer-search.sh "your query" --project myproject --limit 10
 
 ### Companion Explorer
 
-Timeline with SSE live updates, BM25-scored search, transcript viewer with inline highlight. Every URL is a [permalink](docs/PERMALINK_SPEC.md): `/?q=shader&project=scrutinizer`.
+Timeline with SSE live updates, BM25-scored search, transcript viewer with inline highlight.
 
 ```bash
 cd session-cartographer/explorer && npm install && npm run dev
@@ -146,7 +146,7 @@ With a local Qdrant binary + llama.cpp embedding server, search adds vector simi
 
 ## Deep linking
 
-Every search result carries a [`claude-history://`](docs/PERMALINK_SPEC.md) URI pointing into the source transcript. The Explorer resolves these as clickable links into its built-in transcript viewer. Other tools like [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) can resolve them via `CARTOGRAPHER_VIEWER_PREFIX`. Fragment references (`#uuid-`, `#evt-`, `#t=`) for linking to specific conversation moments are on the [roadmap](docs/PERMALINK_SPEC.md#roadmap-fragment-references).
+Hooks write [`claude-history://`](docs/PERMALINK_SPEC.md) URIs into every event — stable references into Claude Code session transcripts. These are the connective tissue between the event index and the raw conversations. Any tool that can resolve a transcript path + message UUID can follow them: the Explorer does it natively, [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) could via `CARTOGRAPHER_VIEWER_PREFIX`. Fragment references (`#uuid-`, `#evt-`, `#t=`) for anchoring into specific conversation moments are on the [roadmap](docs/PERMALINK_SPEC.md#roadmap-fragment-references).
 
 ## See also
 
