@@ -112,6 +112,44 @@ app.get('/api/autocomplete', (req, res) => {
   res.json({ suggestions: matches.slice(0, limit).map(m => m.term) });
 });
 
+// Co-occurring terms: find docs containing the keyword, count other terms
+app.get('/api/coterms', (req, res) => {
+  const keyword = (req.query.term || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!keyword || !index.df.has(keyword)) return res.json({ terms: [] });
+
+  const limit = Math.min(parseInt(req.query.limit || '6', 10), 20);
+  const docCount = index.docs.size;
+  const stopThreshold = docCount * 0.05; // terms in >5% of docs are stopwords
+  const STOP = new Set(['the','and','for','this','that','with','from','was','are','not','but','has','had','have','will','been','can','its','all','also','into','our','your','com','www','http','https']);
+  const coCount = new Map();
+
+  for (const doc of index.docs.values()) {
+    if (!doc.tf.has(keyword)) continue;
+    for (const [term, count] of doc.tf) {
+      if (term !== keyword && term.length > 2) {
+        coCount.set(term, (coCount.get(term) || 0) + count);
+      }
+    }
+  }
+
+  // Score by co-occurrence frequency weighted down by global commonness
+  // Filter stopwords (>15% of docs) and very rare terms (df=1)
+  const scored = [...coCount.entries()]
+    .filter(([term]) => {
+      if (STOP.has(term)) return false;
+      const df = index.df.get(term) || 0;
+      return df > 1 && df < stopThreshold;
+    })
+    .map(([term, co]) => {
+      const df = index.df.get(term) || 1;
+      const score = co / Math.log2(df + 1);
+      return { term, score, co };
+    });
+  scored.sort((a, b) => b.score - a.score);
+
+  res.json({ terms: scored.slice(0, limit).map(s => s.term) });
+});
+
 app.get('/api/search', async (req, res) => {
   const query = req.query.q || '';
   const project = req.query.project || '';

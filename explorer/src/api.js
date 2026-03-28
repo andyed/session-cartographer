@@ -20,6 +20,10 @@ export async function autocomplete(prefix) {
   return apiFetch(`/api/autocomplete?prefix=${encodeURIComponent(prefix)}`);
 }
 
+export async function coterms(term) {
+  return apiFetch(`/api/coterms?term=${encodeURIComponent(term)}`);
+}
+
 export async function fetchProjects() {
   const data = await apiFetch('/api/projects');
   return data.projects;
