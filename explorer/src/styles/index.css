@@ -6,3 +6,13 @@ body {
   background: #0a0a0f;
   color: #ccc;
 }
+
+/* Concurrent timeline: dim other lanes on hover */
+.swim-lanes:has(.session-bar:hover) .session-bar:not(:hover) {
+  opacity: 0.25;
+  transition: opacity 0.15s ease;
+}
+
+.swim-lanes .session-bar {
+  transition: opacity 0.2s ease;
+}

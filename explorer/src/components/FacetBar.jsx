@@ -41,6 +41,14 @@ const SOURCE_COLORS = {
   'tool-use': '#56b6c2', transcript: '#c678dd',
 };
 
+// Diff shape quadrant colors (Tier 3 — COGNITIVE_ARCHITECTURE.md)
+const QUADRANT_COLORS = {
+  bootstrap: '#56b6c2',     // cyan — scaffolding, new + small
+  construct: '#c678dd',     // purple — new + big, design decisions
+  surgical: '#98c379',      // green — small fixes, convergence
+  rework: '#d19a66',        // amber — big changes to existing files
+};
+
 // Font size range
 const MIN_FONT = 10;
 const MAX_FONT = 16;
@@ -90,13 +98,19 @@ function computeSizes(items, containerWidth) {
   });
 }
 
-function Pill({ label, count, color, active, onClick, fontSize }) {
+function Pill({ label, count, color, active, onClick, fontSize, dimension, onHover }) {
   const py = fontSize > 13 ? '2px' : '1px';
+
+  const hoverProps = onHover ? {
+    onMouseEnter: () => onHover({ dimension, value: label }),
+    onMouseLeave: () => onHover(null),
+  } : {};
 
   if (active) {
     return (
       <button
         onClick={onClick}
+        {...hoverProps}
         className="inline-flex items-center gap-1 rounded font-mono transition-all outline-none ring-1 ring-offset-1 ring-offset-gray-900"
         style={{
           fontSize: `${fontSize}px`,
@@ -117,6 +131,7 @@ function Pill({ label, count, color, active, onClick, fontSize }) {
   return (
     <button
       onClick={onClick}
+      {...hoverProps}
       className="inline-flex items-center gap-0.5 rounded font-mono transition-all outline-none hover:brightness-125"
       style={{
         fontSize: `${fontSize}px`,
@@ -260,7 +275,7 @@ function TimeSparkline({ results, oldest, newest, visibleIds, onDotClick }) {
   );
 }
 
-export default function FacetBar({ facets, activeFacets, onToggle, onClear, results, visibleIds, onDotClick }) {
+export default function FacetBar({ facets, activeFacets, onToggle, onClear, results, visibleIds, onDotClick, onBrush }) {
   if (!facets) return null;
 
   const containerRef = useRef(null);
@@ -289,6 +304,7 @@ export default function FacetBar({ facets, activeFacets, onToggle, onClear, resu
     };
     addGroup(facets.projects, 'projects', hashColor);
     addGroup(facets.types, 'types', typeColor);
+    addGroup(facets.quadrants, 'quadrants', (n) => QUADRANT_COLORS[n] || '#5c6370');
     addGroup(facets.sources, 'sources', (n) => SOURCE_COLORS[n] || '#5c6370');
     return items;
   }, [facets]);
@@ -311,6 +327,8 @@ export default function FacetBar({ facets, activeFacets, onToggle, onClear, resu
               active={activeFacets[item.dimension]?.has(item.label)}
               onClick={() => onToggle(item.dimension, item.label)}
               fontSize={fontSizes[i]}
+              dimension={item.dimension}
+              onHover={onBrush}
             />
             {item.separator && <span className="text-gray-700 mx-0.5">·</span>}
           </span>

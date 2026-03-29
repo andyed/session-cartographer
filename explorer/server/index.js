@@ -198,6 +198,69 @@ app.get('/api/projects', (_req, res) => {
   res.json({ projects: [...projects].sort() });
 });
 
+app.get('/api/sessions', (req, res) => {
+  const days = Math.min(parseInt(req.query.days || '7', 10), 90);
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+  const bySession = new Map();
+  for (const e of events) {
+    const sid = e.session_id || e.session;
+    if (!sid) continue;
+    if (!bySession.has(sid)) bySession.set(sid, []);
+    bySession.get(sid).push(e);
+  }
+
+  const sessions = [];
+  for (const [sid, evts] of bySession) {
+    if (evts.length < 2) continue;
+    let start = evts[0].timestamp, end = evts[0].timestamp;
+    const projectCounts = {}, typeCounts = {};
+    let transcriptPath = '';
+
+    for (const e of evts) {
+      if (e.timestamp < start) start = e.timestamp;
+      if (e.timestamp > end) end = e.timestamp;
+      const p = e.project || '';
+      if (p) projectCounts[p] = (projectCounts[p] || 0) + 1;
+      const t = e.type || '';
+      if (t) typeCounts[t] = (typeCounts[t] || 0) + 1;
+      if (!transcriptPath && e.transcript_path) transcriptPath = e.transcript_path;
+    }
+
+    if (end < cutoff) continue;
+    const project = Object.entries(projectCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+    const highSignal = evts.filter(isHighSignal).slice(0, 200);
+
+    sessions.push({
+      session_id: sid, start, end, event_count: evts.length, project,
+      projects: Object.keys(projectCounts), types: typeCounts,
+      transcript_path: transcriptPath,
+      events: highSignal.map(e => ({
+        event_id: e.event_id, timestamp: e.timestamp, type: e.type,
+        project: e.project, summary: (e.summary || '').slice(0, 120),
+      })),
+    });
+  }
+
+  sessions.sort((a, b) => a.start.localeCompare(b.start));
+
+  const overlaps = [];
+  for (let i = 0; i < sessions.length; i++) {
+    for (let j = i + 1; j < sessions.length; j++) {
+      const a = sessions[i], b = sessions[j];
+      if (a.start < b.end && b.start < a.end) {
+        overlaps.push({
+          sessions: [a.session_id, b.session_id],
+          start: a.start > b.start ? a.start : b.start,
+          end: a.end < b.end ? a.end : b.end,
+        });
+      }
+    }
+  }
+
+  res.json({ sessions, overlaps });
+});
+
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',

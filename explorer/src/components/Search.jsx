@@ -10,7 +10,7 @@ function parseFacetsFromURL() {
     const val = params.get(key);
     return val ? new Set(val.split(',').filter(Boolean)) : new Set();
   };
-  return { projects: parse('fp'), types: parse('ft'), sources: parse('fs') };
+  return { projects: parse('fp'), types: parse('ft'), quadrants: parse('fq'), sources: parse('fs') };
 }
 
 export default function Search({ query = '', onOpenTranscript }) {
@@ -23,6 +23,7 @@ export default function Search({ query = '', onOpenTranscript }) {
   } = useSearch(initialFacets);
   const scrollRef = useRef(null);
   const [visibleIds, setVisibleIds] = useState(new Set());
+  const [activeIdx, setActiveIdx] = useState(-1); // keyboard-selected result
   const cardRefs = useRef(new Map()); // event_id → DOM element
   const isFirstSearch = useRef(true);
 
@@ -43,6 +44,7 @@ export default function Search({ query = '', onOpenTranscript }) {
     if (project) params.set('project', project);
     if (activeFacets.projects.size > 0) params.set('fp', [...activeFacets.projects].join(','));
     if (activeFacets.types.size > 0) params.set('ft', [...activeFacets.types].join(','));
+    if (activeFacets.quadrants.size > 0) params.set('fq', [...activeFacets.quadrants].join(','));
     if (activeFacets.sources.size > 0) params.set('fs', [...activeFacets.sources].join(','));
     const qs = params.toString();
     const url = qs ? `/?${qs}` : '/';
@@ -89,8 +91,72 @@ export default function Search({ query = '', onOpenTranscript }) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, []);
 
+  // Reset active index when results change
+  useEffect(() => { setActiveIdx(-1); }, [filteredResults]);
+
   const displayItems = filteredResults.slice(0, displayLimit);
   const hasMore = displayLimit < filteredResults.length;
+
+  // Get grouped results for keyboard nav (same grouping as render)
+  const groups = useMemo(() => {
+    const out = [];
+    const seen = new Map();
+    for (const event of displayItems) {
+      const text = (event.prompt || event.query || event.summary || event.display || event.url || '').slice(0, 120);
+      if (!text) { out.push(event); continue; }
+      if (!seen.has(text)) { seen.set(text, true); out.push(event); }
+    }
+    return out;
+  }, [displayItems]);
+
+  // Keyboard navigation: ↓↑ to move, Enter to open, Escape to deselect
+  useEffect(() => {
+    const handleKey = (e) => {
+      // Don't capture if focus is in the search input or autocomplete
+      const tag = document.activeElement?.tagName;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA';
+
+      if (e.key === 'ArrowDown' && (!inInput || e.altKey)) {
+        e.preventDefault();
+        setActiveIdx(prev => {
+          const next = Math.min(prev + 1, groups.length - 1);
+          // Scroll into view
+          const eid = groups[next]?.event_id;
+          if (eid) {
+            const el = cardRefs.current.get(eid);
+            el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+          // Load more if near bottom
+          if (next >= groups.length - 3 && hasMore) loadMore();
+          return next;
+        });
+      } else if (e.key === 'ArrowUp' && (!inInput || e.altKey)) {
+        e.preventDefault();
+        setActiveIdx(prev => {
+          const next = Math.max(prev - 1, -1);
+          if (next >= 0) {
+            const eid = groups[next]?.event_id;
+            if (eid) {
+              const el = cardRefs.current.get(eid);
+              el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }
+          return next;
+        });
+      } else if (e.key === 'Enter' && activeIdx >= 0 && !inInput) {
+        e.preventDefault();
+        const event = groups[activeIdx];
+        if (event?.transcript_path && onOpenTranscript) {
+          onOpenTranscript(event.transcript_path, event.uuid);
+        }
+      } else if (e.key === 'Escape') {
+        setActiveIdx(-1);
+      }
+    };
+
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [groups, activeIdx, hasMore, loadMore, onOpenTranscript]);
 
   return (
     <div className="flex flex-col h-full">
@@ -133,6 +199,7 @@ export default function Search({ query = '', onOpenTranscript }) {
                   results={displayItems}
                   onOpenTranscript={onOpenTranscript}
                   registerCard={registerCard}
+                  activeEventId={activeIdx >= 0 ? groups[activeIdx]?.event_id : null}
                 />
 
                 {hasMore && (
@@ -152,7 +219,7 @@ export default function Search({ query = '', onOpenTranscript }) {
   );
 }
 
-function GroupedResults({ results, onOpenTranscript, registerCard }) {
+function GroupedResults({ results, onOpenTranscript, registerCard, activeEventId }) {
   const groups = useMemo(() => {
     const out = [];
     const seen = new Map();
@@ -174,7 +241,9 @@ function GroupedResults({ results, onOpenTranscript, registerCard }) {
     return out;
   }, [results]);
 
-  return groups.map(({ event, dupes }, i) => (
+  return <div className="result-list">{groups.map(({ event, dupes }, i) => {
+    const isActive = event.event_id === activeEventId;
+    return (
     <div
       key={event.event_id || i}
       ref={(el) => registerCard(event.event_id, el)}
@@ -185,12 +254,13 @@ function GroupedResults({ results, onOpenTranscript, registerCard }) {
         showScore
         showSource
         onOpenTranscript={onOpenTranscript}
+        active={isActive}
       />
       {dupes.length > 0 && (
         <DupeIndicator count={dupes.length} />
       )}
     </div>
-  ));
+  );})}</div>;
 }
 
 function DupeIndicator({ count }) {

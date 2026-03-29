@@ -101,6 +101,7 @@ export function computeFacets(items) {
   const projMap = new Map();
   const typeMap = new Map();
   const srcMap = new Map();
+  const quadMap = new Map();
   const monthMap = new Map();
   const dayMap = new Map();
   let oldest = null, newest = null;
@@ -113,6 +114,10 @@ export function computeFacets(items) {
     // Event type
     const type = item.type || item.milestone || '';
     if (type) typeMap.set(type, (typeMap.get(type) || 0) + 1);
+
+    // Diff shape quadrant (Tier 3)
+    const quad = item.diff_shape?.quadrant;
+    if (quad) quadMap.set(quad, (quadMap.get(quad) || 0) + 1);
 
     // Sources (split compound like "keyword+semantic")
     const sources = (item._sources || '').split('+');
@@ -152,6 +157,7 @@ export function computeFacets(items) {
   return {
     projects: sortDesc(projMap, 5),
     types: sortDesc(typeMap, 5),
+    quadrants: sortDesc(quadMap, 4),
     sources: sortDesc(srcMap, 5),
     time: {
       oldest: oldest ? oldest.slice(0, 10) : null,

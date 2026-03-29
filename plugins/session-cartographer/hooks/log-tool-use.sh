@@ -69,6 +69,12 @@ case "$TOOL_NAME" in
         CHANGED_FILES=$(cd "$GIT_REPO" && git diff-tree --no-commit-id --name-only -r "$COMMIT_HASH" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
       fi
 
+      # Extract diff shape metadata (Tier 3)
+      DIFF_SHAPE=""
+      if [ -n "$COMMIT_HASH" ] && [ -n "$GIT_REPO" ]; then
+        DIFF_SHAPE=$(bash "$(dirname "$0")/../../../scripts/diff-shape.sh" "$COMMIT_HASH" "$GIT_REPO" 2>/dev/null || echo "")
+      fi
+
       if [ -n "$COMMIT_HASH" ]; then
         SUMMARY="Commit ${COMMIT_HASH}: ${COMMIT_MSG}"
         [ -n "$CHANGED_FILES" ] && SUMMARY="${SUMMARY} | files: ${CHANGED_FILES}"
@@ -109,7 +115,8 @@ jq -n -c \
     --arg cwd "$CWD" \
     --arg session "$SESSION_ID" \
     --arg transcript "$TRANSCRIPT" \
-    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}' \
+    --argjson diff_shape "${DIFF_SHAPE:-null}" \
+    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape}' \
     >> "$LOG_FILE"
 
 # Write to unified changelog
@@ -122,7 +129,8 @@ jq -n -c \
     --arg cwd "$CWD" \
     --arg summary "$SUMMARY" \
     --arg transcript "$TRANSCRIPT" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}' \
+    --argjson diff_shape "${DIFF_SHAPE:-null}" \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: []}' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)

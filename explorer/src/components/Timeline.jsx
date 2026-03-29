@@ -3,6 +3,7 @@ import { fetchEvents } from '../api';
 import { useEventStream } from '../hooks/useEventStream';
 import EventGroup, { groupEvents } from './EventGroup';
 import SessionCard from './SessionCard';
+import ConcurrentTimeline from './ConcurrentTimeline';
 
 function groupEventsBySession(events) {
   const sessions = {};
@@ -33,7 +34,10 @@ export default function Timeline({ onOpenTranscript }) {
   const [newCount, setNewCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [viewMode, setViewMode] = useState('chronological'); // 'sessions' or 'chronological'
+  const [viewMode, setViewMode] = useState(() => {
+    const view = new URLSearchParams(window.location.search).get('view');
+    return ['concurrent', 'sessions', 'chronological'].includes(view) ? view : 'chronological';
+  });
   const [projectFilter, setProjectFilter] = useState('');
   const scrollRef = useRef(null);
   const isAtTop = useRef(true);
@@ -111,18 +115,19 @@ export default function Timeline({ onOpenTranscript }) {
         </div>
 
         <div className="bg-gray-800 p-1 rounded-md inline-flex text-xs shrink-0">
-          <button
-            onClick={() => setViewMode('sessions')}
-            className={`px-3 py-1 rounded transition-colors ${viewMode === 'sessions' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
-          >
-            Sessions
-          </button>
-          <button
-            onClick={() => setViewMode('chronological')}
-            className={`px-3 py-1 rounded transition-colors ${viewMode === 'chronological' ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
-          >
-            Event Feed
-          </button>
+          {[
+            ['concurrent', 'Concurrent'],
+            ['sessions', 'Sessions'],
+            ['chronological', 'Event Feed'],
+          ].map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              className={`px-3 py-1 rounded transition-colors ${viewMode === mode ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -135,35 +140,39 @@ export default function Timeline({ onOpenTranscript }) {
         </button>
       )}
 
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="overflow-y-auto flex-1 p-4"
-      >
-        {events.length === 0 ? (
-          <div className="text-gray-500 text-center py-12">
-            No events yet. Events will appear as Claude Code hooks fire.
-          </div>
-        ) : viewMode === 'sessions' ? (
-          sessionGroups.map((group, i) => (
-            <SessionCard
-              key={group.session_id || i}
-              session={group}
-              onOpenTranscript={onOpenTranscript}
-              onProjectClick={setProjectFilter}
-            />
-          ))
-        ) : (
-          timeGroups.map((group, i) => (
-            <EventGroup
-              key={group.events[0]?.event_id || group.events[0]?.timestamp || i}
-              group={group}
-              onOpenTranscript={onOpenTranscript}
-              onProjectClick={setProjectFilter}
-            />
-          ))
-        )}
-      </div>
+      {viewMode === 'concurrent' ? (
+        <ConcurrentTimeline onOpenTranscript={onOpenTranscript} />
+      ) : (
+        <div
+          ref={scrollRef}
+          onScroll={handleScroll}
+          className="overflow-y-auto flex-1 p-4"
+        >
+          {events.length === 0 ? (
+            <div className="text-gray-500 text-center py-12">
+              No events yet. Events will appear as Claude Code hooks fire.
+            </div>
+          ) : viewMode === 'sessions' ? (
+            sessionGroups.map((group, i) => (
+              <SessionCard
+                key={group.session_id || i}
+                session={group}
+                onOpenTranscript={onOpenTranscript}
+                onProjectClick={setProjectFilter}
+              />
+            ))
+          ) : (
+            timeGroups.map((group, i) => (
+              <EventGroup
+                key={group.events[0]?.event_id || group.events[0]?.timestamp || i}
+                group={group}
+                onOpenTranscript={onOpenTranscript}
+                onProjectClick={setProjectFilter}
+              />
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }

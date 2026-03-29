@@ -2,6 +2,43 @@ import { useState } from 'react';
 import ProjectBadge from './ProjectBadge';
 import SourceBadge from './SourceBadge';
 
+// 2×2 grid icon: active quadrant highlighted, others dim.
+// Layout:  [bootstrap | construct ]
+//          [surgical  | rework    ]
+const QUAD_COLORS = {
+  bootstrap: '#56b6c2',
+  construct: '#c678dd',
+  surgical: '#98c379',
+  rework: '#d19a66',
+};
+const QUAD_POS = {
+  bootstrap: { x: 0, y: 0 },
+  construct: { x: 7, y: 0 },
+  surgical:  { x: 0, y: 7 },
+  rework:    { x: 7, y: 7 },
+};
+
+function QuadrantIcon({ quadrant, shape }) {
+  const color = QUAD_COLORS[quadrant] || '#5c6370';
+  const title = `${quadrant} · +${shape.lines_added} −${shape.lines_removed} · ${shape.files_new} new, ${shape.files_modified} mod, ${shape.files_deleted} del${shape.commit_type ? ` · ${shape.commit_type}` : ''}`;
+
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" className="inline-block cursor-help flex-shrink-0">
+      <title>{title}</title>
+      {Object.entries(QUAD_POS).map(([name, pos]) => (
+        <rect
+          key={name}
+          x={pos.x} y={pos.y}
+          width="6" height="6"
+          rx="1"
+          fill={name === quadrant ? color : '#333'}
+          opacity={name === quadrant ? 0.9 : 0.2}
+        />
+      ))}
+    </svg>
+  );
+}
+
 function relativeTime(ts) {
   if (!ts) return '?';
   const diff = Date.now() - new Date(ts).getTime();
@@ -36,7 +73,7 @@ function eventCategory(event) {
   return { label: event._source || type || '?', color: '#5c6370' };
 }
 
-export default function EventCard({ event, showScore, showSource, onOpenTranscript, onProjectClick }) {
+export default function EventCard({ event, showScore, showSource, onOpenTranscript, onProjectClick, active }) {
   const [expanded, setExpanded] = useState(false);
   const cat = eventCategory(event);
 
@@ -96,9 +133,9 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
   return (
     <div
       onClick={handleCardClick}
-      className={`border border-gray-800 rounded-lg p-3 mb-2 hover:border-gray-600 transition-colors ${
-        isClickable ? 'cursor-pointer' : ''
-      }`}
+      className={`border rounded-lg p-3 mb-2 transition-colors ${
+        active ? 'border-gray-500 bg-gray-800/50 ring-1 ring-gray-600' : 'border-gray-800 hover:border-gray-600'
+      } ${isClickable ? 'cursor-pointer' : ''}`}
     >
       <div className="flex items-center gap-2 flex-wrap mb-1">
         <span
@@ -117,6 +154,9 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         </span>
 
         <ProjectBadge project={event.project} onClick={onProjectClick} />
+
+        {/* Diff shape quadrant indicator (Tier 3) */}
+        {event.diff_shape?.quadrant && <QuadrantIcon quadrant={event.diff_shape.quadrant} shape={event.diff_shape} />}
 
         {/* URL indicator — link icon with hover tooltip */}
         {extractedUrl && (

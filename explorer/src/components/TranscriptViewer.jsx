@@ -1,5 +1,152 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 
+/**
+ * Lightweight markdown renderer — no dependencies.
+ * Handles: headings, bold, italic, code blocks, inline code, hr, lists.
+ */
+function RenderMarkdown({ text, highlights = [] }) {
+  const lines = text.split('\n');
+  const elements = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Code block: ```
+    if (line.trimStart().startsWith('```')) {
+      const lang = line.trim().slice(3);
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++; // skip closing ```
+      elements.push(
+        <pre key={elements.length} className="bg-gray-800 border border-gray-700 rounded px-3 py-2 my-2 text-xs font-mono overflow-x-auto text-gray-300">
+          {codeLines.join('\n')}
+        </pre>
+      );
+      continue;
+    }
+
+    // Heading
+    const headingMatch = line.match(/^(#{1,4})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const sizes = { 1: 'text-lg font-bold text-gray-100', 2: 'text-base font-semibold text-gray-200', 3: 'text-sm font-semibold text-gray-200', 4: 'text-sm font-medium text-gray-300' };
+      elements.push(<div key={elements.length} className={`${sizes[level]} mt-3 mb-1`}>{inlineMarkdown(headingMatch[2], highlights)}</div>);
+      i++;
+      continue;
+    }
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      elements.push(<hr key={elements.length} className="border-gray-700 my-2" />);
+      i++;
+      continue;
+    }
+
+    // List item
+    if (/^\s*[-*]\s+/.test(line)) {
+      elements.push(
+        <div key={elements.length} className="flex gap-2 ml-2">
+          <span className="text-gray-500">·</span>
+          <span>{inlineMarkdown(line.replace(/^\s*[-*]\s+/, ''), highlights)}</span>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Numbered list
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const num = line.match(/^\s*(\d+)\./)[1];
+      elements.push(
+        <div key={elements.length} className="flex gap-2 ml-2">
+          <span className="text-gray-500 font-mono text-xs w-4 text-right">{num}.</span>
+          <span>{inlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''), highlights)}</span>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Empty line → spacer
+    if (line.trim() === '') {
+      elements.push(<div key={elements.length} className="h-2" />);
+      i++;
+      continue;
+    }
+
+    // Regular paragraph
+    elements.push(<div key={elements.length}>{inlineMarkdown(line, highlights)}</div>);
+    i++;
+  }
+
+  return <>{elements}</>;
+}
+
+// Inline markdown: **bold**, *italic*, `code`
+// Optionally highlights search terms in plain text segments
+function inlineMarkdown(text, highlights = []) {
+  const parts = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Inline code
+    let match = remaining.match(/^(.*?)`([^`]+)`/);
+    if (match) {
+      if (match[1]) parts.push(...applyHighlights(match[1], highlights, key)); key++;
+      parts.push(<code key={key++} className="bg-gray-800 px-1 rounded text-xs font-mono text-amber-300">{match[2]}</code>);
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Bold
+    match = remaining.match(/^(.*?)\*\*(.+?)\*\*/);
+    if (match) {
+      if (match[1]) parts.push(...applyHighlights(match[1], highlights, key)); key++;
+      parts.push(<strong key={key++} className="text-gray-100 font-semibold">{match[2]}</strong>);
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // Italic
+    match = remaining.match(/^(.*?)\*(.+?)\*/);
+    if (match) {
+      if (match[1]) parts.push(...applyHighlights(match[1], highlights, key)); key++;
+      parts.push(<em key={key++} className="text-gray-400">{match[2]}</em>);
+      remaining = remaining.slice(match[0].length);
+      continue;
+    }
+
+    // No more matches — emit the rest with highlights
+    parts.push(...applyHighlights(remaining, highlights, key));
+    break;
+  }
+
+  return parts;
+}
+
+// Apply search term highlights to a plain text string
+function applyHighlights(text, highlights, baseKey) {
+  if (!text || highlights.length === 0) return [text];
+
+  const pattern = highlights.map(h => h.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const regex = new RegExp(`(${pattern})`, 'gi');
+  const parts = text.split(regex);
+
+  return parts.map((part, i) => {
+    if (regex.test(part)) {
+      regex.lastIndex = 0; // reset after test
+      return <mark key={`hl-${baseKey}-${i}`} className="bg-yellow-500/30 text-yellow-200 rounded px-0.5">{part}</mark>;
+    }
+    return part;
+  });
+}
+
 function relativeTime(ts) {
   if (!ts) return '';
   const diff = Date.now() - new Date(ts).getTime();
@@ -80,14 +227,12 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
         </span>
       </div>
 
-      <pre className="text-sm text-gray-300 whitespace-pre-wrap break-words font-sans leading-relaxed">
-        {searchTerms.length > 0
-          ? highlightMatches(displayContent, searchTerms)
-          : displayContent}
+      <div className="text-sm text-gray-300 break-words font-sans leading-relaxed prose-transcript">
+        <RenderMarkdown text={displayContent} highlights={searchTerms} />
         {!expanded && isLong && (
           <span className="text-gray-500">...</span>
         )}
-      </pre>
+      </div>
 
       {isLong && (
         <button

@@ -85,6 +85,10 @@ process_repo() {
       files=$(git diff-tree --no-commit-id --name-only -r "$hash" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
     fi
 
+    # Diff shape metadata (Tier 3)
+    local diff_shape
+    diff_shape=$(bash "$(dirname "$0")/diff-shape.sh" "$hash" "$repo_path" 2>/dev/null || echo 'null')
+
     local summary="Commit ${short_hash}: ${subject}"
     [ -n "$files" ] && summary="${summary} | files: ${files}"
 
@@ -108,7 +112,8 @@ process_repo() {
         --arg author "$author" \
         --arg url "$commit_url" \
         --arg files "$files" \
-        '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, commit_hash: $hash, author: $author, url: $url, files_changed: $files, related_ids: []}' \
+        --argjson diff_shape "$diff_shape" \
+        '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, commit_hash: $hash, author: $author, url: $url, files_changed: $files, diff_shape: $diff_shape, related_ids: []}' \
         >> "$CHANGELOG"
 
       # Real-time indexing

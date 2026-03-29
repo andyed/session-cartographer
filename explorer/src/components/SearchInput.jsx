@@ -228,7 +228,8 @@ export default function SearchInput({ value, onChange }) {
         onKeyDown={handleKeyDown}
         onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
         placeholder="Search session history..."
-        className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-1.5 text-base text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
+        className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
+        style={{ fontSize: '28px' }}
         autoFocus
         role="combobox"
         aria-expanded={open}
