@@ -69,25 +69,19 @@ bash scripts/retro-index.sh --limit-days 30
 node scripts/reconstruct-history.js
 ```
 
-## grep vs. cartographer
+## Footprint
 
 ```
-                           ── grep ──        ── carto ──
-Query                       hits    sec       hits    sec
-─────────────────────────  ────── ──────     ────── ──────
-"BM25 scoring"                 4   32.8         4    0.5
-"rank fusion awk"              1   37.7         6    0.7
-"session cartographer"         5   49.4        15    0.7
-"hook log research"            1   45.9        15    0.6
-"cold start"                  82   34.2         3    0.5
-"Qdrant embedding"             7   35.4         0    0.5
-"real-time indexing"           3   47.4        15    0.7
-"JSONL event"                  5   46.8         1    0.6
-─────────────────────────  ────── ──────     ────── ──────
-TOTAL                        108  329.8        59    4.8
+  Disk footprint (1,839 sessions, 40+ projects)
+
+  Claude Code transcripts  ████████████████████████████████████  2,900 MB
+    Cartographer log data  ▏                                      1.5 MB
+      Cartographer source  ▏                                        2 MB
+
+  Cartographer adds ~1 MB per 2 GB of transcripts (1:2000)
 ```
 
-grep scans 2.7GB of transcripts in 30-50s, returning raw JSONL. Cartographer returns BM25-ranked, formatted results in under a second.
+grep scans 2.7 GB of transcripts in 30-50s per query, returning raw JSONL. Cartographer searches a 1.5 MB index in under a second — 69× faster, ranked and formatted.
 
 ## Architecture
 

@@ -28,17 +28,17 @@ Do NOT freestyle grep or jq commands. Always use the unified search script.
 Think about what the user is trying to recall, then translate to search terms.
 
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/../../scripts/cartographer-search.sh" "<search terms>"
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<search terms>"
 ```
 
 If the user mentioned a specific project, add `--project <name>`:
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/../../scripts/cartographer-search.sh" "<terms>" --project scrutinizer
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<terms>" --project scrutinizer
 ```
 
 For more results, add `--limit 25` or `--limit 50`. If the user says "more" or "keep going" after seeing results, re-run with a higher limit:
 ```bash
-bash "${CLAUDE_PLUGIN_ROOT}/../../scripts/cartographer-search.sh" "<same terms>" --limit 30
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<same terms>" --limit 30
 ```
 
 Wildcard prefix search works: `shader*` matches `shader`, `shaders`, `shaderlab`, etc.
