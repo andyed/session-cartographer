@@ -202,12 +202,14 @@ app.get('/api/sessions', (req, res) => {
   const days = Math.min(parseInt(req.query.days || '7', 10), 90);
   const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
+  const normalizeTs = (ts) => typeof ts === 'number' ? new Date(ts).toISOString() : ts;
+
   const bySession = new Map();
   for (const e of events) {
     const sid = e.session_id || e.session || e.sessionId;
     if (!sid) continue;
     if (!bySession.has(sid)) bySession.set(sid, []);
-    bySession.get(sid).push(e);
+    bySession.get(sid).push({ ...e, timestamp: normalizeTs(e.timestamp) });
   }
 
   const sessions = [];
@@ -256,7 +258,7 @@ app.get('/api/sessions', (req, res) => {
     }
   }
 
-  sessions.sort((a, b) => a.start.localeCompare(b.start));
+  sessions.sort((a, b) => b.start.localeCompare(a.start));
 
   const overlaps = [];
   for (let i = 0; i < sessions.length; i++) {
