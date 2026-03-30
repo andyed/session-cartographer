@@ -10,7 +10,7 @@
     "websites": ["mindbendingpixels-www", "scrutinizer-www", "sciprogfi-web"],
     "iblipper": ["iblipper2025"],
     "devtools": ["session-cartographer", "claude-code-session-bridge", "claude-code-history-viewer"],
-    "frakbot": ["nanobot", "openclaw"],
+    "frakbot": ["nanobot", "openclaw", "-Users-andyed-.openclaw"],
     "wyrdforge": ["wyrdforge"]
   }
 }
