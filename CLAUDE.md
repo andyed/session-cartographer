@@ -36,7 +36,6 @@ plugins/session-cartographer/
     log-research.sh             — WebFetch/WebSearch → research-log.jsonl + changelog.jsonl
     log-session-milestones.sh   — Compactions, session ends, agent stops
     log-tool-use.sh             — Edit/Write/Bash + git commits (opt-in: CARTOGRAPHER_LOG_TOOL_USE=true)
-    generate-briefing.sh        — Session end / compaction handoff briefing (last-session.md)
 explorer/
   server/
     index.js                    — Express API (:2526), SSE stream, search proxy

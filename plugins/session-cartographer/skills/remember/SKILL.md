@@ -15,9 +15,18 @@ Recall past work from Claude Code session history. The user is trying to recover
 
 Hooks determine what's in the searchable index:
 - **Research activity** — every URL fetched, every web search query
-- **Session lifecycle** — compactions, session ends, agent completions
-- **Code changes** — file edits, bash commands, git commits (when `CARTOGRAPHER_LOG_TOOL_USE=true`)
+- **Session lifecycle** — compactions (with git state snapshot), session ends, agent completions
+- **Code changes** — file edits, bash commands, git commits with type classification (when `CARTOGRAPHER_LOG_TOOL_USE=true`)
 - **Raw transcripts** — full conversation text (slower, searched as fallback)
+
+### Search facets
+
+Results include faceted summaries (project, source, event type, time range). Use these to narrow searches:
+
+- **`--project <name>`** — filter to a specific project
+- **Commit types** — git commits are classified as `feature`, `fix`, `refactor`, `enhancement`, `docs`, `test`, `chore`, `perf`, `ci`, `style`, `revert`, or `other`. These appear in summaries as `[feature] Commit abc1234: ...` and are searchable as keywords.
+- **Event types** in results: `git_commit`, `research_fetch`, `research_search`, `milestone_session_end_*`, `milestone_compaction_*`, `tool_file_edit`, `tool_bash`
+- **Session end events** now include git branch, dirty file count, and session event count — useful for finding "what was I working on last time"
 
 ## IMPORTANT: Use the search script
 
@@ -75,4 +84,6 @@ jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
 /remember what we decided about the shader approach
 /remember the commit that fixed blur
 /remember Blauch collaboration notes
+/remember recent feature commits --project scrutinizer
+/remember what was I working on last session
 ```

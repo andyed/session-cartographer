@@ -135,6 +135,10 @@ Session lifecycle events with deep links.
 | `deeplink` | string | `claude-history://session/{encoded_path}` |
 | `project` | string | |
 | `event` | string | Hook trigger: `PreCompact`, `SessionEnd`, `SubagentStop` |
+| `git_branch` | string | Current branch at event time |
+| `git_dirty_files` | number | Count of uncommitted changes |
+| `recent_commits` | string | Last 5 commits (pipe-delimited oneline) |
+| `session_event_count` | number | Total changelog events for this session |
 
 ## tool-use-log.jsonl
 
@@ -144,9 +148,11 @@ File edits and bash commands. Opt-in via `CARTOGRAPHER_LOG_TOOL_USE=true`.
 |-------|------|-------------|
 | `event_id` | string | |
 | `timestamp` | ISO 8601 | |
-| `type` | string | `tool_file_edit` or `tool_bash` |
+| `type` | string | `tool_file_edit`, `tool_bash`, `git_commit`, or `git_push` |
 | `tool` | string | `Edit`, `Write`, or `Bash` |
-| `summary` | string | `Modified: /path/to/file` or `Ran: command` |
+| `summary` | string | `Modified: /path/to/file` or `[feature] Commit abc1234: ...` |
+| `commit_type` | string | Git commits only: `feature`, `fix`, `refactor`, `enhancement`, `docs`, `test`, `chore`, `perf`, `ci`, `style`, `revert`, `other` |
+| `commit_url` | string | Git commits only: GitHub commit URL |
 | `project` | string | |
 | `cwd` | string | |
 | `session` | string | |

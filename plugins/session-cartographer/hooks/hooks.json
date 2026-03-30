@@ -18,18 +18,8 @@
       "async": true
     },
     {
-      "event": "PreCompact",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/generate-briefing.sh",
-      "async": true
-    },
-    {
       "event": "SessionEnd",
       "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
-      "async": true
-    },
-    {
-      "event": "SessionEnd",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/generate-briefing.sh",
       "async": true
     },
     {

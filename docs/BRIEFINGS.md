@@ -91,6 +91,26 @@ you mention a project. Read the briefing first instead of running orientation
 tool calls.
 ```
 
+## Session end & compaction context
+
+The `log-session-milestones.sh` hook enriches `SessionEnd` and `PreCompact` events with git context, making milestone entries useful as lightweight handoff records:
+
+| Field | Example |
+|-------|---------|
+| `git_branch` | `feat/search-v2` |
+| `git_dirty_files` | `3` |
+| `recent_commits` | `abc1234 fix search\|def5678 add tests` (pipe-delimited oneline) |
+| `session_event_count` | `12` |
+
+The changelog summary also includes this context inline, so `/remember` results show branch + dirty state without needing to read the full milestone entry.
+
+Example changelog summary:
+```
+Session ended (normal) [feat/search-v2, 3 dirty, 12 events]
+```
+
+This replaces the need for a separate `last-session.md` handoff file — the same data lives in the searchable event logs.
+
 ## Dependency
 
 Briefings read from the JSONL event logs (the map) for recent milestones. They don't depend on `/remember` or the Explorer — just the hooks that produce the data.
