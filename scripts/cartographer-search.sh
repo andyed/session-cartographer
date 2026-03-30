@@ -211,7 +211,7 @@ rank_fuse_and_display() {
   # RRF with k=60 (standard constant)
   # Input: TSV lines from all sources
   # Output: faceted summary of top 500, then detailed top N results
-  awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" '
+  awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" '
   {
     src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7; etype = $8
 
@@ -250,29 +250,31 @@ rank_fuse_and_display() {
     # score *= exp(-lambda * hours_since_event)
     # Applied after RRF fusion so it affects ranking but does not
     # eliminate old results entirely (they still appear if relevant enough).
-    if (decay_lambda + 0 > 0) {
-      now_epoch = systime()
+    if (decay_lambda + 0 > 0 && now_epoch + 0 > 0) {
       for (i = 1; i <= n; i++) {
         k = order[i]
         ts = timestamp[k]
         if (ts == "" || ts == "?") continue
 
         # Parse ISO timestamp: 2026-03-29T14:30:00...
-        # Extract date+time components
         y = substr(ts, 1, 4) + 0
         mo = substr(ts, 6, 2) + 0
-        d = substr(ts, 9, 2) + 0
+        da = substr(ts, 9, 2) + 0
         h = substr(ts, 12, 2) + 0
         mi = substr(ts, 15, 2) + 0
-        se = substr(ts, 18, 2) + 0
 
-        # Convert to epoch using mktime (GNU awk / macOS awk)
-        event_epoch = mktime(y " " mo " " d " " h " " mi " " se)
-        if (event_epoch > 0) {
-          hours = (now_epoch - event_epoch) / 3600
-          if (hours < 0) hours = 0
-          rrf_score[k] = rrf_score[k] * exp(-decay_lambda * hours)
-        }
+        # Portable epoch approximation (no mktime needed)
+        # Days from year + month + day, then add hours
+        days_from_year = (y - 1970) * 365 + int((y - 1969) / 4)
+        split("0,31,59,90,120,151,181,212,243,273,304,334", mdays, ",")
+        days_from_month = mdays[mo] + 0
+        if (mo > 2 && y % 4 == 0) days_from_month++
+        total_days = days_from_year + days_from_month + da - 1
+        event_epoch = total_days * 86400 + h * 3600 + mi * 60
+
+        hours = (now_epoch - event_epoch) / 3600
+        if (hours < 0) hours = 0
+        rrf_score[k] = rrf_score[k] * exp(-decay_lambda * hours)
       }
 
       # Re-sort after decay adjustment
