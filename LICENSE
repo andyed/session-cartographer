@@ -3,6 +3,7 @@ MIT License
 Copyright (c) 2026 Andy Edmonds
 
 Portions derived from claude-code-session-bridge by Shreyas Patil (MIT License).
+Portions adapted from claude-devtools by matt1398 (MIT License, https://github.com/matt1398/claude-devtools).
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

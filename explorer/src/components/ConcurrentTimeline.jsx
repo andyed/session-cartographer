@@ -127,7 +127,7 @@ export default function ConcurrentTimeline({ onOpenTranscript }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(urlParams.zoom);
-  const [activeFacets, setActiveFacets] = useState({ projects: new Set(), types: new Set(), sources: new Set() });
+  const [activeFacets, setActiveFacets] = useState({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set() });
   const [hoveredSession, setHoveredSession] = useState(null);
   const scrollRef = useRef(null);
 
@@ -152,15 +152,17 @@ export default function ConcurrentTimeline({ onOpenTranscript }) {
 
   const toggleFacet = useCallback((dimension, value) => {
     setActiveFacets(prev => {
+      const EXCLUSIVE = new Set(['quadrants']);
       const next = { ...prev, [dimension]: new Set(prev[dimension]) };
       if (next[dimension].has(value)) next[dimension].delete(value);
+      else if (EXCLUSIVE.has(dimension)) next[dimension] = new Set([value]);
       else next[dimension].add(value);
       return next;
     });
   }, []);
 
   const clearFacets = useCallback(() => {
-    setActiveFacets({ projects: new Set(), types: new Set(), sources: new Set() });
+    setActiveFacets({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set() });
   }, []);
 
   const filteredSessions = useMemo(() => {
@@ -170,6 +172,8 @@ export default function ConcurrentTimeline({ onOpenTranscript }) {
       sessions = sessions.filter(s => s.projects.some(p => activeFacets.projects.has(p)));
     if (activeFacets.types.size > 0)
       sessions = sessions.filter(s => Object.keys(s.types).some(t => activeFacets.types.has(t)));
+    if (activeFacets.quadrants.size > 0)
+      sessions = sessions.filter(s => Object.keys(s.quadrants || {}).some(q => activeFacets.quadrants.has(q)));
     return sessions;
   }, [data, activeFacets]);
 
@@ -181,13 +185,24 @@ export default function ConcurrentTimeline({ onOpenTranscript }) {
 
   const facets = useMemo(() => {
     if (!data?.sessions) return null;
-    const projMap = new Map(), typeMap = new Map();
+    const projMap = new Map(), typeMap = new Map(), quadMap = new Map(), ctMap = new Map();
     for (const s of data.sessions) {
       for (const p of s.projects) projMap.set(p, (projMap.get(p) || 0) + 1);
       for (const [t, c] of Object.entries(s.types)) typeMap.set(t, (typeMap.get(t) || 0) + c);
+      for (const [q, c] of Object.entries(s.quadrants || {})) quadMap.set(q, (quadMap.get(q) || 0) + c);
+      for (const [ct, c] of Object.entries(s.commit_types || {})) ctMap.set(ct, (ctMap.get(ct) || 0) + c);
     }
     const sortDesc = (map, n) => [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([name, count]) => ({ name, count }));
-    return { projects: sortDesc(projMap, 6), types: sortDesc(typeMap, 6), sources: [], time: null };
+    // Merge commit_types into types facet (they're complementary signals)
+    const allTypes = new Map([...typeMap]);
+    for (const [ct, c] of ctMap) allTypes.set(ct, (allTypes.get(ct) || 0) + c);
+    return {
+      projects: sortDesc(projMap, 6),
+      types: sortDesc(typeMap, 6),
+      quadrants: sortDesc(quadMap, 4),
+      sources: [],
+      time: null,
+    };
   }, [data]);
 
   const { windowStart, windowEnd, containerHeight, timeToY } = useMemo(() => {

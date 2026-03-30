@@ -19,7 +19,11 @@
 - [ ] CHANGELOG_SPEC — keep type table in sync with actual hook output
 - [ ] Uninstall script (`scripts/uninstall.sh`)
 
+## Project Registry
+- [ ] **`/registry` skill** — Conversational skill that maintains `project-registry.json`. Scans `$CARTOGRAPHER_DEV_DIR` for git repos, diffs against current registry, asks user about unregistered projects (which family? skip? new family?), flags stale entries pointing to dirs that no longer exist, writes updated JSON. Interactive — not a batch script.
+- [ ] **Setup docs for registry** — SETUP.md has no section on `project-registry.json`. New users need: what it does, how to populate it (manually or via `/registry`), what happens if it's empty (search/focus still work but can't expand aliases).
+
 ## Infrastructure
-- [ ] `npm install` pre-flight check in `/carto explore` skill
+- [ ] `npm install` pre-flight check in `/carto` skill
 - [ ] Connection status indicator for EventSource (SSE reconnect feedback)
 - [x] ~~Briefings system~~ — replaced with project registry + /focus skill + enriched milestones

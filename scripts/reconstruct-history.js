@@ -1,15 +1,38 @@
 #!/usr/bin/env node
 /**
  * reconstruct-logs.js
- * 
+ *
  * Synthesizes rich event logs (WebFetch, Bash, Session Boundaries)
  * entirely from cold ~/.claude/projects/ transcript files.
  * Provides complete Day-1 data parity for the UI.
+ *
+ * Feature flag: DEVTOOLS_PARSER=true
+ *   When set, each session is also run through the devtools-adapted parser
+ *   (src/lib/devtools-adapted/) which adds richer metadata to the session_milestone
+ *   event: token attribution breakdown (6 categories), compaction phase data,
+ *   and ongoing state. This data feeds activation scoring in future iterations.
+ *
+ *   Usage:
+ *     DEVTOOLS_PARSER=true node scripts/reconstruct-history.js
  */
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { execSync } = require('child_process');
+
+// Feature flag — checked once at startup
+const DEVTOOLS_PARSER = process.env.DEVTOOLS_PARSER === 'true' || process.env.DEVTOOLS_PARSER === '1';
+
+// Lazily-resolved ESM import (CJS → ESM bridge via dynamic import)
+// analyzeSession is only loaded when the flag is active.
+let _analyzeSession = null;
+async function getAnalyzeSession() {
+    if (!_analyzeSession) {
+        const mod = await import('../src/lib/devtools-adapted/index.js');
+        _analyzeSession = mod.analyzeSession;
+    }
+    return _analyzeSession;
+}
 
 const TRANSCRIPTS_DIR = process.env.CARTOGRAPHER_TRANSCRIPTS_DIR || path.join(process.env.HOME, '.claude/projects');
 const INDEX_SCRIPT = path.join(__dirname, 'index-event.sh');
@@ -132,14 +155,43 @@ async function processTranscript(filePath) {
         const durationMs = new Date(lastTimestamp) - new Date(firstTimestamp);
         const durationHours = (durationMs / (1000 * 60 * 60)).toFixed(1);
         if (durationHours > 0) {
-            sendToQdrant({
+            const milestonePayload = {
                 event_id: `session-bound-${sessionId}`,
                 timestamp: lastTimestamp,
                 project: projectDir,
                 type: 'session_milestone',
                 summary: `Session Concluded (Duration: ${durationHours} hours). ${eventCount} actions.`,
                 transcript_path: filePath
-            });
+            };
+
+            // DEVTOOLS_PARSER=true: enrich with attribution + compaction data
+            if (DEVTOOLS_PARSER) {
+                try {
+                    const analyzeSession = await getAnalyzeSession();
+                    const enriched = await analyzeSession(filePath);
+
+                    // Token attribution (6 categories, char/4 estimates)
+                    milestonePayload.attribution = enriched.attribution;
+
+                    // Compaction: how many context resets, total context work done
+                    milestonePayload.compaction_count = enriched.compaction.compactionCount;
+                    milestonePayload.context_consumption = enriched.compaction.contextConsumption;
+                    milestonePayload.compaction_phases = enriched.compaction.phases.length;
+
+                    // Session state
+                    milestonePayload.is_ongoing = enriched.isOngoing;
+                    milestonePayload.total_tokens = enriched.metrics.totalTokens;
+                    milestonePayload.output_tokens = enriched.metrics.outputTokens;
+                    milestonePayload.message_count = enriched.metrics.messageCount;
+
+                    console.log(`  [devtools] attribution: toolOutputs=${enriched.attribution.toolOutputs} thinkingText=${enriched.attribution.thinkingText} compactions=${enriched.compaction.compactionCount}`);
+                } catch (e) {
+                    // Non-fatal: degraded to basic milestone without enrichment
+                    console.warn(`  [devtools] enrichment failed for ${sessionId}:`, e.message);
+                }
+            }
+
+            sendToQdrant(milestonePayload);
         }
     }
 }

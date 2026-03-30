@@ -6,13 +6,13 @@ Hooks are the foundation — they produce JSONL event logs. Everything else is a
 Hooks (produce JSONL)
   ├── /remember (CLI search, bash + awk)
   ├── /focus (project orientation from event logs)
-  ├── /carto explore (web UI, Node + React)
+  ├── /carto (web UI, Node + React)
   └── Qdrant indexer (semantic search)
 ```
 
 - **`/remember`** — Claude uses this to recover context from past sessions. Agent's primary history tool.
 - **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
-- **`/carto explore`** — Opens the Explorer web app for the human. Not an agent tool.
+- **`/carto`** — Opens the Explorer web app for the human. Not an agent tool.
 - **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by all skills.
 
 ## Project Structure
@@ -68,11 +68,15 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Hooks call `index-event.sh` for real-time Qdrant indexing.** Silent fail if services aren't running. Do not make Qdrant a hard dependency.
 - **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Path traversal protection on transcript endpoints. DOMPurify on rendered content.
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
+- **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.
+- **Enrichment scripts modify `changelog.jsonl` in place.** Back up before running on large datasets.
+- **RRF score cutoff at 10% of top score** to trim the semantic noise tail.
+- **Diff-shape quadrant labels:** bootstrap, construct, surgical, rework. Not "dangerous."
 
 ## Two Search Paths
 
 1. **CLI** (`cartographer-search.sh`): bash + awk BM25. Used by `/remember` skill. No server needed.
-2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, sub-millisecond queries. Used by the Explorer UI (`/carto explore`). Proxies Qdrant for semantic search.
+2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, sub-millisecond queries. Used by the Explorer UI (`/carto`). Proxies Qdrant for semantic search.
 
 Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (RRF k=60).
 
@@ -80,7 +84,7 @@ Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (R
 
 When a user says "remember X" or needs context from a past session, use `/remember`. The skill runs the search, returns ranked results with transcript paths. **Read the transcript** to recover full context — the search result is the map, the transcript is the territory.
 
-When a user says "explore" or wants to browse history visually, use `/carto explore` to start the web app and open the browser. That's a human tool — don't try to scrape it.
+When a user says "explore" or wants to browse history visually, use `/carto` to start the web app and open the browser. That's a human tool — don't try to scrape it.
 
 ## Testing
 

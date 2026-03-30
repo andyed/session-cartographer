@@ -214,7 +214,7 @@ app.get('/api/sessions', (req, res) => {
   for (const [sid, evts] of bySession) {
     if (evts.length < 2) continue;
     let start = evts[0].timestamp, end = evts[0].timestamp;
-    const projectCounts = {}, typeCounts = {};
+    const projectCounts = {}, typeCounts = {}, quadrantCounts = {}, commitTypeCounts = {};
     let transcriptPath = '';
 
     for (const e of evts) {
@@ -224,6 +224,8 @@ app.get('/api/sessions', (req, res) => {
       if (p) projectCounts[p] = (projectCounts[p] || 0) + 1;
       const t = e.type || '';
       if (t) typeCounts[t] = (typeCounts[t] || 0) + 1;
+      if (e.diff_shape?.quadrant) quadrantCounts[e.diff_shape.quadrant] = (quadrantCounts[e.diff_shape.quadrant] || 0) + 1;
+      if (e.diff_shape?.commit_type) commitTypeCounts[e.diff_shape.commit_type] = (commitTypeCounts[e.diff_shape.commit_type] || 0) + 1;
       if (!transcriptPath && e.transcript_path) transcriptPath = e.transcript_path;
     }
 
@@ -233,13 +235,25 @@ app.get('/api/sessions', (req, res) => {
 
     sessions.push({
       session_id: sid, start, end, event_count: evts.length, project,
-      projects: Object.keys(projectCounts), types: typeCounts,
+      projects: Object.keys(projectCounts), types: typeCounts, quadrants: quadrantCounts, commit_types: commitTypeCounts,
       transcript_path: transcriptPath,
       events: highSignal.map(e => ({
         event_id: e.event_id, timestamp: e.timestamp, type: e.type,
         project: e.project, summary: (e.summary || '').slice(0, 120),
       })),
     });
+  }
+
+  // Associate orphan commits (backfilled, no session_id) with sessions by project + time overlap
+  const orphanCommits = events.filter(e => e.type === 'git_commit' && !e.session_id && !e.session && e.diff_shape);
+  for (const commit of orphanCommits) {
+    for (const s of sessions) {
+      if (commit.timestamp >= s.start && commit.timestamp <= s.end && s.projects.includes(commit.project)) {
+        if (commit.diff_shape.quadrant) s.quadrants[commit.diff_shape.quadrant] = (s.quadrants[commit.diff_shape.quadrant] || 0) + 1;
+        if (commit.diff_shape.commit_type) s.commit_types[commit.diff_shape.commit_type] = (s.commit_types[commit.diff_shape.commit_type] || 0) + 1;
+        break; // assign to first matching session
+      }
+    }
   }
 
   sessions.sort((a, b) => a.start.localeCompare(b.start));
@@ -323,6 +337,142 @@ app.get('/api/transcript', (req, res) => {
   })).filter(m => m.content);
 
   res.json({ path: resolved, messages, total: messages.length });
+});
+
+// ─── Transcript analysis (devtools-enriched metadata) ───────────────────────
+//
+// Returns token attribution, compaction events, and session summary for the
+// Transcript Viewer enrichment UI. Degrades gracefully on any parse failure —
+// the client treats a null summary as "no devtools data available."
+//
+// The three devtools-adapted modules are dynamically imported so a parse error
+// in those modules won't take down the whole API server.
+
+app.get('/api/transcript/analysis', async (req, res) => {
+  const rawPath = req.query.path || '';
+  if (!rawPath) return res.status(400).json({ error: 'path required' });
+
+  const resolved = resolve(rawPath.replace(/^~/, homedir()));
+  if (!resolved.startsWith(TRANSCRIPTS_DIR)) {
+    return res.status(403).json({ error: 'path outside transcripts directory' });
+  }
+
+  try {
+    const { parseJsonlFile } = await import('../../src/lib/devtools-adapted/session-parser.js');
+    const { computeTokenAttribution, estimateTokens } = await import('../../src/lib/devtools-adapted/token-attribution.js');
+    const { detectCompactionPhases } = await import('../../src/lib/devtools-adapted/compaction-detector.js');
+
+    const messages = await parseJsonlFile(resolved);
+    if (messages.length === 0) {
+      return res.status(404).json({ error: 'transcript not found or empty' });
+    }
+
+    const attribution = computeTokenAttribution(messages);
+    const { compactionCount, contextConsumption } = detectCompactionPhases(messages);
+
+    // Walk messages to collect compaction event UUIDs with pre/post token counts.
+    // The compaction summary is a user entry with isCompactSummary=true; the
+    // preceding assistant message holds the pre-compaction token count.
+    const compactionEvents = [];
+    let lastAssistantInputTokens = 0;
+    let awaitingPost = false;
+
+    for (const msg of messages) {
+      if (msg.isSidechain) continue;
+
+      if (msg.type === 'assistant' && msg.model !== '<synthetic>') {
+        const inputTokens =
+          (msg.usage?.input_tokens ?? 0) +
+          (msg.usage?.cache_read_input_tokens ?? 0) +
+          (msg.usage?.cache_creation_input_tokens ?? 0);
+        if (inputTokens > 0) {
+          if (awaitingPost && compactionEvents.length > 0) {
+            compactionEvents[compactionEvents.length - 1].postTokens = inputTokens;
+            awaitingPost = false;
+          }
+          lastAssistantInputTokens = inputTokens;
+        }
+      }
+
+      if (msg.isCompactSummary && msg.uuid) {
+        compactionEvents.push({ uuid: msg.uuid, preTokens: lastAssistantInputTokens, postTokens: 0 });
+        awaitingPost = true;
+      }
+    }
+
+    // Per-message dominant category for sidebar filter.
+    // Heuristic: assistant → thinkingText; user meta (tool results) → toolOutputs;
+    // user with heavy system injections → claudeMd; otherwise → userMessages.
+    const perMessageCategory = {};
+    for (const msg of messages) {
+      if (msg.isSidechain || !msg.uuid) continue;
+      let cat = null;
+
+      if (msg.type === 'assistant') {
+        cat = 'thinkingText';
+      } else if (msg.type === 'user') {
+        if (msg.isMeta) {
+          cat = 'toolOutputs';
+        } else if (!msg.isCompactSummary) {
+          const text = typeof msg.content === 'string'
+            ? msg.content
+            : Array.isArray(msg.content)
+              ? msg.content.filter(b => b.type === 'text').map(b => b.text ?? '').join('')
+              : '';
+          const totalTok = estimateTokens(text);
+          // Sum tokens inside <system-reminder>…</system-reminder> blocks
+          const injectionTok = (text.match(/<system-reminder>[\s\S]*?<\/system-reminder>/g) || [])
+            .reduce((sum, s) => sum + estimateTokens(s), 0);
+          cat = injectionTok > totalTok * 0.5 ? 'claudeMd' : 'userMessages';
+        }
+      }
+
+      if (cat) perMessageCategory[msg.uuid] = cat;
+    }
+
+    // Session-level summary metrics
+    const mainMessages = messages.filter(m => !m.isSidechain);
+    const totalTurns = mainMessages.filter(m => m.type === 'user' || m.type === 'assistant').length;
+    const toolCallCount = mainMessages.reduce((acc, msg) => {
+      if (msg.type === 'assistant' && Array.isArray(msg.content)) {
+        return acc + msg.content.filter(b => b.type === 'tool_use').length;
+      }
+      return acc;
+    }, 0);
+
+    // Timestamps are Date objects from session-parser
+    const timestamps = mainMessages
+      .map(m => m.timestamp)
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+    const duration = timestamps.length >= 2
+      ? timestamps[timestamps.length - 1] - timestamps[0]
+      : 0;
+
+    const totalAttr = Object.values(attribution).reduce((a, b) => a + b, 0);
+    const dominantCategory = totalAttr > 0
+      ? Object.entries(attribution).sort((a, b) => b[1] - a[1])[0][0]
+      : null;
+
+    res.json({
+      summary: {
+        totalTurns,
+        totalTokens: contextConsumption,
+        dominantCategory,
+        compactionCount,
+        duration,
+        toolCallCount,
+      },
+      attribution,
+      compactionEvents,
+      perMessageCategory,
+    });
+  } catch (err) {
+    // Parse failure or missing devtools modules — return empty enrichment so
+    // the Transcript Viewer falls back to its basic (unenriched) mode.
+    console.error('[transcript/analysis]', err.message);
+    res.json({ summary: null, attribution: null, compactionEvents: [], perMessageCategory: {} });
+  }
 });
 
 // ─── Start ───

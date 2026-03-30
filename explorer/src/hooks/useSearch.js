@@ -39,11 +39,16 @@ export function useSearch(initialFacets) {
     }
   }, []);
 
+  // Exclusive dimensions: selecting one value deselects others in the same group
+  const EXCLUSIVE_DIMENSIONS = new Set(['quadrants']);
+
   const toggleFacet = useCallback((dimension, value) => {
     setActiveFacets(prev => {
       const next = { ...prev, [dimension]: new Set(prev[dimension]) };
       if (next[dimension].has(value)) {
         next[dimension].delete(value);
+      } else if (EXCLUSIVE_DIMENSIONS.has(dimension)) {
+        next[dimension] = new Set([value]);
       } else {
         next[dimension].add(value);
       }

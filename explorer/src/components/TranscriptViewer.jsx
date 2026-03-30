@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 
 /**
  * Lightweight markdown renderer — no dependencies.
@@ -246,26 +246,205 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
   );
 }
 
+// ─── Duration formatter ───────────────────────────────────────────────────────
+
+function formatDuration(ms) {
+  if (ms < 60000) return `${Math.round(ms / 1000)}s`;
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  return remMins > 0 ? `${hours}h ${remMins}m` : `${hours}h`;
+}
+
+function fmtTokens(n) {
+  if (!n || n === 0) return '0';
+  if (n < 1000) return String(n);
+  return `${(n / 1000).toFixed(0)}k`;
+}
+
+// ─── 1c. Session Summary Header ──────────────────────────────────────────────
+
+function SessionSummaryCard({ summary }) {
+  const CATEGORY_LABELS = {
+    claudeMd: 'CLAUDE.md',
+    mentionedFiles: 'files',
+    toolOutputs: 'tool outputs',
+    thinkingText: 'thinking',
+    taskCoordination: 'coordination',
+    userMessages: 'user',
+  };
+
+  const stats = [
+    { label: 'turns', value: summary.totalTurns },
+    summary.totalTokens > 0 && { label: 'tokens', value: fmtTokens(summary.totalTokens) },
+    summary.toolCallCount > 0 && { label: 'tool calls', value: summary.toolCallCount },
+    summary.compactionCount > 0 && { label: 'compactions', value: summary.compactionCount, accent: true },
+    summary.duration > 0 && { label: 'duration', value: formatDuration(summary.duration) },
+    summary.dominantCategory && { label: 'dominated by', value: CATEGORY_LABELS[summary.dominantCategory] || summary.dominantCategory },
+  ].filter(Boolean);
+
+  return (
+    <div className="mx-4 mt-2 mb-1 bg-gray-900/60 border border-gray-800 rounded px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1 flex-shrink-0">
+      {stats.map(({ label, value, accent }) => (
+        <div key={label} className="flex flex-col">
+          <span className={`text-xs font-mono font-medium ${accent ? 'text-orange-400' : 'text-gray-200'}`}>
+            {value}
+          </span>
+          <span className="text-xs text-gray-600">{label}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── 1b. Compaction Event Banner ─────────────────────────────────────────────
+
+function CompactionBanner({ preTokens, postTokens }) {
+  const compressionPct = postTokens > 0 ? Math.round((1 - postTokens / preTokens) * 100) : null;
+
+  return (
+    <div className="relative my-3 flex items-center gap-3 select-none" title="Context compaction — prior conversation was compressed">
+      <div className="flex-1 h-px bg-gradient-to-r from-transparent to-orange-500/50" />
+      <div className="flex-shrink-0 flex items-center gap-2 bg-gray-950 border border-orange-500/25 rounded px-2.5 py-1 text-xs font-mono">
+        <span className="text-orange-400/80">⚡ compaction</span>
+        {preTokens > 0 && (
+          <span className="text-gray-600">
+            {fmtTokens(preTokens)}
+            <span className="mx-1 text-gray-700">→</span>
+            {postTokens > 0 ? fmtTokens(postTokens) : '?'}
+            {compressionPct !== null && (
+              <span className="text-orange-400/60 ml-1.5">−{compressionPct}%</span>
+            )}
+          </span>
+        )}
+      </div>
+      <div className="flex-1 h-px bg-gradient-to-l from-transparent to-orange-500/50" />
+    </div>
+  );
+}
+
+// ─── 1a. Token Attribution Sidebar ───────────────────────────────────────────
+
+const ATTRIBUTION_CATEGORIES = [
+  { key: 'claudeMd',        label: 'CLAUDE.md',     color: 'bg-blue-500',   dot: 'bg-blue-500' },
+  { key: 'mentionedFiles',  label: 'Files',          color: 'bg-green-500',  dot: 'bg-green-500' },
+  { key: 'toolOutputs',     label: 'Tool outputs',   color: 'bg-amber-500',  dot: 'bg-amber-500' },
+  { key: 'thinkingText',    label: 'Thinking / text',color: 'bg-purple-500', dot: 'bg-purple-500' },
+  { key: 'taskCoordination',label: 'Coordination',   color: 'bg-cyan-500',   dot: 'bg-cyan-500' },
+  { key: 'userMessages',    label: 'User',           color: 'bg-gray-500',   dot: 'bg-gray-500' },
+];
+
+function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick, collapsed, onToggle }) {
+  const total = Object.values(attribution).reduce((a, b) => a + b, 0);
+
+  return (
+    <div className={`border-l border-gray-800 bg-gray-950 flex-shrink-0 flex flex-col transition-[width] duration-200 ${collapsed ? 'w-8' : 'w-52'}`}>
+      {/* Toggle button */}
+      <button
+        onClick={onToggle}
+        className="flex-shrink-0 w-full h-8 flex items-center justify-center text-gray-600 hover:text-gray-400 border-b border-gray-800/60 text-xs"
+        title={collapsed ? 'Expand token attribution' : 'Collapse'}
+      >
+        {collapsed ? '◂' : '▸'}
+      </button>
+
+      {!collapsed && (
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="text-xs text-gray-600 mb-3 font-medium uppercase tracking-wide">
+            Token attribution
+          </div>
+
+          {/* Stacked horizontal bar */}
+          <div className="flex h-4 rounded overflow-hidden mb-3 gap-px">
+            {ATTRIBUTION_CATEGORIES.map(cat => {
+              const pct = total > 0 ? (attribution[cat.key] / total) * 100 : 0;
+              if (pct < 1) return null;
+              return (
+                <div
+                  key={cat.key}
+                  className={`${cat.color} cursor-pointer opacity-80 hover:opacity-100 transition-opacity ${activeCategory === cat.key ? 'ring-1 ring-white ring-inset' : ''}`}
+                  style={{ width: `${pct}%` }}
+                  onClick={() => onCategoryClick(cat.key)}
+                  title={`${cat.label}: ${pct.toFixed(1)}% (${fmtTokens(attribution[cat.key])} tokens)`}
+                />
+              );
+            })}
+          </div>
+
+          {/* Legend rows */}
+          {ATTRIBUTION_CATEGORIES.map(cat => {
+            const pct = total > 0 ? (attribution[cat.key] / total) * 100 : 0;
+            if (pct < 0.5) return null;
+            const isActive = activeCategory === cat.key;
+            return (
+              <button
+                key={cat.key}
+                onClick={() => onCategoryClick(cat.key)}
+                className={`w-full flex items-center gap-2 py-1 px-1.5 rounded text-left transition-colors ${
+                  isActive
+                    ? 'bg-gray-800 text-gray-200'
+                    : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'
+                }`}
+              >
+                <div className={`w-2 h-2 rounded-sm flex-shrink-0 ${cat.dot} ${isActive ? 'opacity-100' : 'opacity-60'}`} />
+                <span className="text-xs flex-1 leading-tight">{cat.label}</span>
+                <span className="text-xs font-mono text-gray-600">{pct.toFixed(0)}%</span>
+              </button>
+            );
+          })}
+
+          {activeCategory && (
+            <button
+              onClick={() => onCategoryClick(null)}
+              className="w-full mt-2 text-xs text-gray-600 hover:text-gray-400 text-center py-1"
+            >
+              clear filter
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main TranscriptViewer ────────────────────────────────────────────────────
+
 export default function TranscriptViewer({ transcriptPath, targetUuid, initialHighlight = '', onClose }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState(initialHighlight);
   const [showAllTypes, setShowAllTypes] = useState(false);
+  // Enrichment state (null = no devtools data / not yet loaded)
+  const [enriched, setEnriched] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activeCategory, setActiveCategory] = useState(null);
   const containerRef = useRef(null);
 
   useEffect(() => {
     if (!transcriptPath) return;
     setLoading(true);
     setError(null);
+    setEnriched(null);
+    setActiveCategory(null);
 
-    fetch(`/api/transcript?path=${encodeURIComponent(transcriptPath)}`)
+    // Fetch transcript and enrichment data in parallel.
+    // Enrichment failures are silent — TranscriptViewer works without it.
+    const transcriptReq = fetch(`/api/transcript?path=${encodeURIComponent(transcriptPath)}`)
       .then(r => {
         if (!r.ok) throw new Error(`${r.status}`);
         return r.json();
-      })
-      .then(data => {
+      });
+
+    const analysisReq = fetch(`/api/transcript/analysis?path=${encodeURIComponent(transcriptPath)}`)
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null);
+
+    Promise.all([transcriptReq, analysisReq])
+      .then(([data, analysis]) => {
         setMessages(data.messages);
+        if (analysis?.summary) setEnriched(analysis);
         setLoading(false);
 
         // Scroll to target: by UUID, or by first highlight match
@@ -274,7 +453,6 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
             const el = document.getElementById(targetUuid);
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           } else if (initialHighlight) {
-            // Find first message containing the highlight text and scroll to it
             const match = data.messages.find(m =>
               m.content.toLowerCase().includes(initialHighlight.toLowerCase())
             );
@@ -299,17 +477,23 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
     [search]
   );
 
+  // Map compaction UUID → event data for banner rendering
+  const compactionMap = useMemo(() => {
+    if (!enriched?.compactionEvents?.length) return {};
+    return Object.fromEntries(enriched.compactionEvents.map(e => [e.uuid, e]));
+  }, [enriched]);
+
   const filtered = useMemo(() => {
     let msgs = messages;
     if (!showAllTypes) {
       msgs = msgs.filter(m => m.role === 'user' || m.role === 'assistant');
     }
-    if (searchTerms.length > 0) {
-      // Show all messages but highlight matches — don't filter out non-matches
-      // so the conversation stays coherent
+    // Sidebar category filter: show only turns dominated by the selected category
+    if (activeCategory && enriched?.perMessageCategory) {
+      msgs = msgs.filter(m => enriched.perMessageCategory[m.uuid] === activeCategory);
     }
     return msgs;
-  }, [messages, showAllTypes, searchTerms]);
+  }, [messages, showAllTypes, activeCategory, enriched]);
 
   const matchCount = useMemo(() => {
     if (searchTerms.length === 0) return 0;
@@ -317,6 +501,10 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
       searchTerms.some(t => m.content.toLowerCase().includes(t.toLowerCase()))
     ).length;
   }, [filtered, searchTerms]);
+
+  function handleCategoryClick(cat) {
+    setActiveCategory(prev => prev === cat ? null : cat);
+  }
 
   if (loading) {
     return <div className="p-8 text-gray-500">Loading transcript...</div>;
@@ -380,16 +568,46 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
         {transcriptPath}
       </div>
 
-      {/* Messages */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-2">
-        {filtered.map((msg, i) => (
-          <MessageBlock
-            key={msg.uuid || i}
-            msg={msg}
-            searchTerms={searchTerms}
-            defaultExpanded={msg.uuid === targetUuid}
+      {/* Body: main content + optional attribution sidebar */}
+      <div className="flex flex-1 min-h-0">
+        {/* Main column */}
+        <div className="flex flex-col flex-1 min-h-0">
+          {/* 1c. Session summary header */}
+          {enriched?.summary && (
+            <SessionSummaryCard summary={enriched.summary} />
+          )}
+
+          {/* Messages */}
+          <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-2">
+            {filtered.map((msg, i) => (
+              <Fragment key={msg.uuid || i}>
+                {/* 1b. Compaction banner — rendered before the compaction summary message */}
+                {compactionMap[msg.uuid] && (
+                  <CompactionBanner
+                    preTokens={compactionMap[msg.uuid].preTokens}
+                    postTokens={compactionMap[msg.uuid].postTokens}
+                  />
+                )}
+                <MessageBlock
+                  msg={msg}
+                  searchTerms={searchTerms}
+                  defaultExpanded={msg.uuid === targetUuid}
+                />
+              </Fragment>
+            ))}
+          </div>
+        </div>
+
+        {/* 1a. Token attribution sidebar (only when enriched data is available) */}
+        {enriched?.attribution && (
+          <TokenAttributionSidebar
+            attribution={enriched.attribution}
+            activeCategory={activeCategory}
+            onCategoryClick={handleCategoryClick}
+            collapsed={sidebarCollapsed}
+            onToggle={() => setSidebarCollapsed(s => !s)}
           />
-        ))}
+        )}
       </div>
     </div>
   );
