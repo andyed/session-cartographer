@@ -62,6 +62,22 @@ esac
 
 DEEPLINK="claude-history://session/${ENCODED_PATH}"
 
+# Git context for session-end and compaction events
+GIT_BRANCH=""
+GIT_DIRTY=0
+GIT_RECENT=""
+if [ -n "$GIT_REPO" ]; then
+    GIT_BRANCH=$(git -C "$GIT_REPO" branch --show-current 2>/dev/null || echo "detached")
+    GIT_DIRTY=$(git -C "$GIT_REPO" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+    GIT_RECENT=$(git -C "$GIT_REPO" log --oneline -5 2>/dev/null | paste -sd '|' - || true)
+fi
+
+# Count session events from changelog
+SESSION_EVENT_COUNT=0
+if [ -f "$CHANGELOG" ] && [ -n "$SESSION_ID" ]; then
+    SESSION_EVENT_COUNT=$(LC_ALL=C grep -c "$SESSION_ID" "$CHANGELOG" 2>/dev/null || echo 0)
+fi
+
 # Write to milestones log
 jq -n -c \
     --arg eid "$EVENT_ID" \
@@ -74,8 +90,19 @@ jq -n -c \
     --arg project "$PROJECT" \
     --arg cwd "$CWD" \
     --arg event "$EVENT" \
-    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event}' \
+    --arg branch "$GIT_BRANCH" \
+    --argjson dirty "$GIT_DIRTY" \
+    --arg recent_commits "$GIT_RECENT" \
+    --argjson event_count "$SESSION_EVENT_COUNT" \
+    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count}' \
     >> "$LOG_FILE"
+
+# Build richer summary for changelog
+if [ -n "$GIT_BRANCH" ]; then
+    RICH_SUMMARY="${DESCRIPTION} [${GIT_BRANCH}, ${GIT_DIRTY} dirty, ${SESSION_EVENT_COUNT} events]"
+else
+    RICH_SUMMARY="${DESCRIPTION} [${SESSION_EVENT_COUNT} events]"
+fi
 
 # Write to unified changelog
 jq -n -c \
@@ -86,7 +113,7 @@ jq -n -c \
     --arg project "$PROJECT" \
     --arg cwd "$CWD" \
     --arg deeplink "$DEEPLINK" \
-    --arg summary "$DESCRIPTION" \
+    --arg summary "$RICH_SUMMARY" \
     --arg transcript "$TRANSCRIPT" \
     '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: []}' \
     >> "$CHANGELOG"

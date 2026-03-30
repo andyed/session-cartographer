@@ -1,0 +1,16 @@
+{
+  "_comment": "Maps short aliases to sets of project names as they appear in event logs (directory basenames). Used by cartographer-search.sh --project and /focus skill. Not git-specific — any project that produces JSONL events can be listed.",
+
+  "aliases": {
+    "scrutinizer": ["scrutinizer2025", "scrutinizer-www", "PooledStatisticsMetamers", "fovi", "clicksense"],
+    "psychodeli": ["psychodeli-webgl-port", "psychodeli-plus-tvos", "psychodeli-plus-firetv", "psychodeli-metal", "psychodeli-osx-vx", "psychodeli-brand-guide"],
+    "tvapps": ["oled-fireworks-tvos", "oled-fireworks-firetv", "cymatics-firetv", "pixelbop"],
+    "interests": ["interests2025", "histospire", "mcp-chrome"],
+    "sciprogfi": ["sciprogfi-web", "sciprogfi"],
+    "websites": ["mindbendingpixels-www", "scrutinizer-www", "sciprogfi-web"],
+    "iblipper": ["iblipper2025"],
+    "devtools": ["session-cartographer", "claude-code-session-bridge", "claude-code-history-viewer"],
+    "nanobot": ["nanobot"],
+    "wyrdforge": ["wyrdforge"]
+  }
+}

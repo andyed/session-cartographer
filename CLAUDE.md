@@ -5,14 +5,15 @@ Hooks are the foundation — they produce JSONL event logs. Everything else is a
 ```
 Hooks (produce JSONL)
   ├── /remember (CLI search, bash + awk)
+  ├── /focus (project orientation from event logs)
   ├── /carto explore (web UI, Node + React)
-  ├── extras/briefings (project summaries)
   └── Qdrant indexer (semantic search)
 ```
 
 - **`/remember`** — Claude uses this to recover context from past sessions. Agent's primary history tool.
+- **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
 - **`/carto explore`** — Opens the Explorer web app for the human. Not an agent tool.
-- **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by both skills.
+- **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by all skills.
 
 ## Project Structure
 
@@ -27,15 +28,17 @@ scripts/
   backfill-memories.sh          — Index Claude Code memory files
   retro-index.sh                — Backfill historical transcripts into Qdrant
   reconstruct-history.js        — Deep transcript analysis for backfill
+project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
+  skills/focus/SKILL.md         — /focus skill (project orientation from event logs)
   skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
   scripts/remember-search.sh    — Legacy keyword-only search (superseded by cartographer-search.sh)
   hooks/
     hooks.json                  — Hook registrations (8 hooks)
     log-research.sh             — WebFetch/WebSearch → research-log.jsonl + changelog.jsonl
-    log-session-milestones.sh   — Compactions, session ends, agent stops
-    log-tool-use.sh             — Edit/Write/Bash + git commits (opt-in: CARTOGRAPHER_LOG_TOOL_USE=true)
+    log-session-milestones.sh   — Compactions, session ends, agent stops (with git context)
+    log-tool-use.sh             — Edit/Write/Bash + git commits with classification (opt-in)
 explorer/
   server/
     index.js                    — Express API (:2526), SSE stream, search proxy

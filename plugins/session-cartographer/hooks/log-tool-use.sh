@@ -76,7 +76,27 @@ case "$TOOL_NAME" in
       fi
 
       if [ -n "$COMMIT_HASH" ]; then
-        SUMMARY="Commit ${COMMIT_HASH}: ${COMMIT_MSG}"
+        # Classify commit from conventional-commit prefix or keywords
+        COMMIT_TYPE="other"
+        case "$COMMIT_MSG" in
+          feat:*|feat\(*) COMMIT_TYPE="feature" ;;
+          fix:*|fix\(*|bugfix:*) COMMIT_TYPE="fix" ;;
+          refactor:*|refactor\(*) COMMIT_TYPE="refactor" ;;
+          docs:*|docs\(*) COMMIT_TYPE="docs" ;;
+          test:*|test\(*|tests:*) COMMIT_TYPE="test" ;;
+          chore:*|chore\(*) COMMIT_TYPE="chore" ;;
+          ci:*|ci\(*) COMMIT_TYPE="ci" ;;
+          style:*|style\(*) COMMIT_TYPE="style" ;;
+          perf:*|perf\(*) COMMIT_TYPE="perf" ;;
+          build:*|build\(*) COMMIT_TYPE="build" ;;
+          revert:*|revert\(*) COMMIT_TYPE="revert" ;;
+          *[Aa]dd*|*[Ii]mplement*|*[Cc]reate*) COMMIT_TYPE="feature" ;;
+          *[Ff]ix*|*[Rr]esolve*|*[Pp]atch*) COMMIT_TYPE="fix" ;;
+          *[Rr]efactor*|*[Cc]lean*|*[Ss]implif*) COMMIT_TYPE="refactor" ;;
+          *[Uu]pdate*|*[Ee]nhance*|*[Ii]mprov*) COMMIT_TYPE="enhancement" ;;
+        esac
+
+        SUMMARY="[${COMMIT_TYPE}] Commit ${COMMIT_HASH}: ${COMMIT_MSG}"
         [ -n "$CHANGED_FILES" ] && SUMMARY="${SUMMARY} | files: ${CHANGED_FILES}"
         TYPE="git_commit"
 
@@ -115,8 +135,12 @@ jq -n -c \
     --arg cwd "$CWD" \
     --arg session "$SESSION_ID" \
     --arg transcript "$TRANSCRIPT" \
+    --arg commit_type "${COMMIT_TYPE:-}" \
+    --arg commit_url "${COMMIT_URL:-}" \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
-    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape}' \
+    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape}
+     + if $commit_type != "" then {commit_type: $commit_type} else {} end
+     + if $commit_url != "" then {commit_url: $commit_url} else {} end' \
     >> "$LOG_FILE"
 
 # Write to unified changelog
@@ -129,8 +153,10 @@ jq -n -c \
     --arg cwd "$CWD" \
     --arg summary "$SUMMARY" \
     --arg transcript "$TRANSCRIPT" \
+    --arg commit_type "${COMMIT_TYPE:-}" \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: []}' \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: []}
+     + if $commit_type != "" then {commit_type: $commit_type} else {} end' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)
