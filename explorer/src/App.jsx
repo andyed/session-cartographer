@@ -129,7 +129,7 @@ export default function App() {
 
       <main className="flex-1 overflow-hidden relative">
         <div className={`absolute inset-0 ${tab === 'timeline' ? '' : 'hidden'}`}>
-          <Timeline onOpenTranscript={openTranscript} />
+          <Timeline onOpenTranscript={openTranscript} isActive={tab === 'timeline'} />
         </div>
         <div className={`absolute inset-0 ${tab === 'search' ? '' : 'hidden'}`}>
           <Search query={searchQuery} onOpenTranscript={openTranscript} />

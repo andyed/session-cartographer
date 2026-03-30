@@ -117,7 +117,7 @@ function splitIntoSegments(session) {
   return segments;
 }
 
-export default function ConcurrentTimeline({ onOpenTranscript }) {
+export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }) {
   const urlParams = useMemo(() => {
     const p = new URLSearchParams(window.location.search);
     return { days: parseInt(p.get('days') || '7', 10), zoom: p.get('zoom') || 'overview' };
@@ -139,8 +139,10 @@ export default function ConcurrentTimeline({ onOpenTranscript }) {
     if (activeFacets.projects.size > 0) params.set('fp', [...activeFacets.projects].join(','));
     if (activeFacets.types.size > 0) params.set('ft', [...activeFacets.types].join(','));
     const qs = params.toString();
-    window.history.replaceState({ tab: 'timeline' }, '', qs ? `/?${qs}` : '/');
-  }, [days, zoom, activeFacets]);
+    if (isActive) {
+      window.history.replaceState({ tab: 'timeline' }, '', qs ? `/?${qs}` : '/');
+    }
+  }, [days, zoom, activeFacets, isActive]);
 
   useEffect(() => {
     setLoading(true);

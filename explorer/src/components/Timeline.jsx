@@ -29,7 +29,7 @@ function groupEventsBySession(events) {
   });
 }
 
-export default function Timeline({ onOpenTranscript }) {
+export default function Timeline({ onOpenTranscript, isActive = true }) {
   const [events, setEvents] = useState([]);
   const [newCount, setNewCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -141,7 +141,7 @@ export default function Timeline({ onOpenTranscript }) {
       )}
 
       {viewMode === 'concurrent' ? (
-        <ConcurrentTimeline onOpenTranscript={onOpenTranscript} />
+        <ConcurrentTimeline onOpenTranscript={onOpenTranscript} isActive={isActive} />
       ) : (
         <div
           ref={scrollRef}
