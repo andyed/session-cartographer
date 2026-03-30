@@ -211,7 +211,15 @@ async function run() {
 
         const files = fs.readdirSync(projPath).filter(f => f.endsWith('.jsonl'));
         for (const file of files) {
-            await processTranscript(path.join(projPath, file));
+            try {
+                await processTranscript(path.join(projPath, file));
+            } catch (err) {
+                if (err.code === 'ENOENT') {
+                    console.warn(`Skipping missing file: ${file}`);
+                } else {
+                    console.error(`Error processing ${file}: ${err.message}`);
+                }
+            }
         }
     }
     console.log("Reconstruction complete!");
