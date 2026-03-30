@@ -12,9 +12,11 @@
 - [ ] Stopword model refinement — co-terms flyout still surfaces noise. Consider TF-IDF distinctiveness scoring or a learned stopword list from the index.
 - [ ] `--list-types` — auto-discover event types from JSONL files
 - [ ] Wildcard expansion feedback — show "expanded to N terms" in results meta
-- [ ] Query rewrite — synonym expansion, quoted phrases
+- [ ] **Phrase matching** — `"cold start"` (quoted) should match the phrase, not individual terms. Currently BM25 tokenizes to `cold OR start`, returning noise like "audio tap start" and "slow start, accelerating finish." Benchmark showed grep finding 58 "unique sessions" and carto finding 11 events, but both are almost entirely false positives from single-word matches. Only 2 results were actually about cold starts. Phrase matching would fix precision without hurting recall.
+- [ ] Query rewrite — synonym expansion (builds on phrase matching above)
 
 ## Documentation
+- [ ] **Cold start data coverage guide** — Document what each backfill script recovers vs what requires live hooks. New users need to understand the tradeoff: backfill gets git commits (no session_id, no transcript link) + transcript text (Qdrant only). Live hooks get session_id, transcript_path, diff shape, commit classification, research URLs. `enrich-sessions.js` bridges the gap by inferring session_id from timestamp+project overlap — but only for commits that happened during a Claude Code session. Commits from outside CC (terminal, IDE) will never have sessions. This matters for the sessions view and for `/remember` recall quality.
 - [ ] Doc-sync agent — manifest-driven drift detection between code and docs
 - [ ] CHANGELOG_SPEC — keep type table in sync with actual hook output
 - [ ] Uninstall script (`scripts/uninstall.sh`)

@@ -203,7 +203,7 @@ grep_transcripts_to_tsv() {
       echo "(showing top 20 matching transcripts)" >&2
       break
     fi
-  done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec LC_ALL=C grep -liE "$GREP_QUERY" {} + 2>/dev/null)
+  done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null)
 }
 
 # ─── Rank fusion ───
