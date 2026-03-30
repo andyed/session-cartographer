@@ -6,6 +6,7 @@
 - [ ] Loading skeletons instead of text spinners
 - [ ] Infinite scroll (auto-load on scroll vs. manual "show more")
 - [ ] Error boundary — catch React crashes, show recovery UI
+- [ ] **Transcript match display** — transcript search results show raw JSONL (`{"parentUuid":"...","isSidechain":false,...}`) instead of the conversation text. Need to extract the human-readable content from the message payload and display it as a summary, same as event log results.
 
 ## Search
 - [ ] Stemming / lemmatization — collapse word variants in autocomplete (refactor/refactored/refactoring → one entry). Two approaches: (a) Porter stemmer at index time, classical NLP. (b) Embed top-N suggestions via mxbai-embed-large (already on :8890), cluster by cosine similarity, show one representative per cluster. Option b handles domain terms (psychodeli/psychodeliplus) that stemmers can't.

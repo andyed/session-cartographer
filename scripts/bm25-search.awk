@@ -129,8 +129,17 @@ NR == FNR {
             ts = extract($0, "timestamp")
             proj = (proj_filter != "") ? proj_filter : extract($0, "project")  # Often missing in line, passed down
 
-            # Truncate content for display
-            summary = length(body) > 150 ? substr(body, 1, 150) : body
+            # Extract readable content from transcript JSON.
+            # Try "text" (content blocks), "content" (string messages),
+            # fall back to flattened body.
+            summary = extract($0, "text")
+            if (summary == "") summary = extract($0, "content")
+            if (summary == "") summary = length(body) > 150 ? substr(body, 1, 150) : body
+            # Clean up escaped characters
+            gsub(/\\n/, " ", summary)
+            gsub(/\\t/, " ", summary)
+            gsub(/  +/, " ", summary)
+            if (length(summary) > 200) summary = substr(summary, 1, 200)
 
             cwdf = extract($0, "cwd")
             extras = "transcript:" tpath "|session:" sid "|"
