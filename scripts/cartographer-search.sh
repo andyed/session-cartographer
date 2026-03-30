@@ -203,7 +203,15 @@ grep_transcripts_to_tsv() {
       echo "(showing top 20 matching transcripts)" >&2
       break
     fi
-  done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null)
+  done < <(
+    if command -v rg >/dev/null 2>&1; then
+      # ripgrep: fast, unicode-safe, parallelized
+      rg -l "$GREP_QUERY" "$TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null | head -20
+    else
+      # grep fallback: no LC_ALL=C (breaks on multibyte), slower but correct
+      find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+    fi
+  )
 }
 
 # ─── Rank fusion ───
