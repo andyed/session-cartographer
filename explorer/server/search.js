@@ -10,6 +10,7 @@ const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v
 const EMBED_MODEL = process.env.CARTOGRAPHER_EMBED_MODEL || 'mxbai-embed-large';
 const COLLECTION = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
 const RRF_K = 60;
+const DECAY_LAMBDA = parseFloat(process.env.CARTOGRAPHER_DECAY_LAMBDA || '0.001');
 
 /**
  * Get embedding vector for a query string.
@@ -92,6 +93,33 @@ function rrfFuse(list1, list1Source, list2, list2Source, limit) {
       _score: entry.score,
       _sources: [...entry.sources].join('+'),
     }));
+}
+
+/**
+ * Apply Ebbinghaus-inspired time decay to fused results.
+ * score *= exp(-lambda * hours_since_event)
+ * Gently favors recent results without eliminating old ones.
+ */
+function applyTimeDecay(items, lambda) {
+  if (lambda <= 0) return items;
+  const now = Date.now();
+  for (const item of items) {
+    const rawTs = item.timestamp;
+    let epoch = 0;
+    if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
+      epoch = new Date(rawTs).getTime();
+    } else if (rawTs) {
+      const num = Number(rawTs);
+      if (!isNaN(num)) epoch = num > 1e12 ? num : num * 1000;
+    }
+    if (epoch > 0) {
+      const hours = (now - epoch) / 3600000;
+      item._score *= Math.exp(-lambda * Math.max(0, hours));
+    }
+  }
+  // Re-sort after decay adjustment
+  items.sort((a, b) => b._score - a._score);
+  return items;
 }
 
 /**
@@ -194,6 +222,11 @@ export async function hybridSearch(index, query, { project = '' } = {}) {
   } else {
     fusedItems = semanticAll.map(r => ({ ...r.event, _score: r.score, _sources: 'semantic' }));
   }
+
+  // Apply time-decay: Ebbinghaus-inspired recency weighting.
+  // Applied after RRF fusion so it affects ranking but doesn't
+  // eliminate old results entirely (they still appear if relevant enough).
+  applyTimeDecay(fusedItems, DECAY_LAMBDA);
 
   // Trim noise tail — keep results with meaningful RRF score
   // Threshold: items scoring below 20% of the top score are noise

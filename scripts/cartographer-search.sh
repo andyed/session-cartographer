@@ -17,6 +17,7 @@
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
 #   CARTOGRAPHER_COLLECTION      — default: session-cartographer
+#   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~30-day half-life)
 
 set -o pipefail
 
@@ -34,6 +35,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 TRANSCRIPTS="${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
@@ -209,7 +211,7 @@ rank_fuse_and_display() {
   # RRF with k=60 (standard constant)
   # Input: TSV lines from all sources
   # Output: faceted summary of top 500, then detailed top N results
-  awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" '
+  awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" '
   {
     src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7; etype = $8
 
@@ -242,6 +244,48 @@ rank_fuse_and_display() {
         j--
       }
       order[j+1] = k
+    }
+
+    # ─── Time-decay: Ebbinghaus-inspired recency weighting ───
+    # score *= exp(-lambda * hours_since_event)
+    # Applied after RRF fusion so it affects ranking but does not
+    # eliminate old results entirely (they still appear if relevant enough).
+    if (decay_lambda + 0 > 0) {
+      now_epoch = systime()
+      for (i = 1; i <= n; i++) {
+        k = order[i]
+        ts = timestamp[k]
+        if (ts == "" || ts == "?") continue
+
+        # Parse ISO timestamp: 2026-03-29T14:30:00...
+        # Extract date+time components
+        y = substr(ts, 1, 4) + 0
+        mo = substr(ts, 6, 2) + 0
+        d = substr(ts, 9, 2) + 0
+        h = substr(ts, 12, 2) + 0
+        mi = substr(ts, 15, 2) + 0
+        se = substr(ts, 18, 2) + 0
+
+        # Convert to epoch using mktime (GNU awk / macOS awk)
+        event_epoch = mktime(y " " mo " " d " " h " " mi " " se)
+        if (event_epoch > 0) {
+          hours = (now_epoch - event_epoch) / 3600
+          if (hours < 0) hours = 0
+          rrf_score[k] = rrf_score[k] * exp(-decay_lambda * hours)
+        }
+      }
+
+      # Re-sort after decay adjustment
+      for (i = 2; i <= n; i++) {
+        k = order[i]
+        s = rrf_score[k]
+        j = i - 1
+        while (j >= 1 && rrf_score[order[j]] < s) {
+          order[j+1] = order[j]
+          j--
+        }
+        order[j+1] = k
+      }
     }
 
     # ─── Faceting: summarize top fusion_depth results ───
