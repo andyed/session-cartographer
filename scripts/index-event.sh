@@ -67,6 +67,22 @@ VECTOR=$(echo "$EMBED_RESPONSE" | jq -c '.data[0].embedding // empty' 2>/dev/nul
 # Hash event_id to numeric point ID (same as embed-events.js)
 POINT_ID=$(echo -n "$EVENT_ID" | cksum | awk '{print $1}')
 
+# Prediction error gate: skip if too similar to an existing entry
+PE_GATE_REJECT="${PE_GATE_REJECT:-0.85}"
+SEARCH_RESULT=$(curl -sf "$QDRANT_URL/collections/$COLLECTION/points/search" \
+  -H "Content-Type: application/json" \
+  -X POST \
+  -d "{\"vector\":$VECTOR,\"limit\":1,\"with_payload\":false}" 2>/dev/null)
+
+if [ -n "$SEARCH_RESULT" ]; then
+  TOP_SCORE=$(echo "$SEARCH_RESULT" | jq -r '.result[0].score // 0' 2>/dev/null)
+  # Compare using awk since bash can't do float comparison
+  GATE=$(echo "$TOP_SCORE $PE_GATE_REJECT" | awk '{print ($1 > $2) ? "reject" : "accept"}')
+  if [ "$GATE" = "reject" ]; then
+    exit 0
+  fi
+fi
+
 # Upsert to Qdrant safely building the JSON with jq to avoid quote injection
 PAYLOAD=$(jq -n -c \
   --arg id "$POINT_ID" \

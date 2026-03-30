@@ -30,6 +30,12 @@ const VECTOR_SIZE = 1024; // mxbai-embed-large-v1
 const BATCH_SIZE = 20;
 const REINDEX = process.argv.includes('--reindex');
 
+// Prediction error gating thresholds (inspired by Nexo Brain)
+// Events too similar to existing entries are redundant — skip them.
+const PE_GATE_REJECT = 0.85;  // cosine similarity above this → skip
+const PE_GATE_REFINE = 0.70;  // between refine and reject → upsert as refinement
+const gateStats = { accepted_novel: 0, accepted_refinement: 0, rejected: 0 };
+
 const FILES = [
   { path: join(DEV_DIR, 'changelog.jsonl'), source: 'changelog' },
   { path: join(DEV_DIR, 'research-log.jsonl'), source: 'research' },
@@ -136,6 +142,20 @@ async function upsertBatch(points) {
   }
 }
 
+// Prediction error gate: query for the most similar existing point.
+// Returns the top-1 cosine similarity score, or 0 if collection is empty.
+async function queryTopSimilar(vector) {
+  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vector, limit: 1, with_payload: false }),
+  });
+  if (!res.ok) return 0;
+  const data = await res.json();
+  const results = data.result || [];
+  return results.length > 0 ? results[0].score : 0;
+}
+
 async function main() {
   // Check services are running
   try {
@@ -210,6 +230,13 @@ async function main() {
       for (let j = 0; j < batch.length; j++) {
         try {
           const [vec] = await getEmbeddings([batch[j].text]);
+          const similarity = await queryTopSimilar(vec);
+          if (similarity > PE_GATE_REJECT) {
+            gateStats.rejected++;
+            continue;
+          }
+          if (similarity >= PE_GATE_REFINE) gateStats.accepted_refinement++;
+          else gateStats.accepted_novel++;
           await upsertBatch([{ id: batch[j].id, vector: vec, payload: batch[j].payload }]);
           indexed++;
         } catch {
@@ -220,18 +247,38 @@ async function main() {
       continue;
     }
 
-    const points = batch.map((event, idx) => ({
-      id: event.id,
-      vector: embeddings[idx],
-      payload: event.payload,
-    }));
+    // Prediction error gate: check each vector against existing entries
+    const gatedPoints = [];
+    for (let j = 0; j < batch.length; j++) {
+      const similarity = await queryTopSimilar(embeddings[j]);
+      if (similarity > PE_GATE_REJECT) {
+        gateStats.rejected++;
+        continue;
+      }
+      if (similarity >= PE_GATE_REFINE) {
+        gateStats.accepted_refinement++;
+      } else {
+        gateStats.accepted_novel++;
+      }
+      gatedPoints.push({
+        id: batch[j].id,
+        vector: embeddings[j],
+        payload: batch[j].payload,
+      });
+    }
 
-    await upsertBatch(points);
-    indexed += points.length;
+    if (gatedPoints.length > 0) {
+      await upsertBatch(gatedPoints);
+    }
+    indexed += gatedPoints.length;
     process.stdout.write(`\r  ${indexed}/${allEvents.length}`);
   }
 
   console.log(`\nDone. ${indexed} events indexed into ${COLLECTION}.`);
+  const total = gateStats.accepted_novel + gateStats.accepted_refinement + gateStats.rejected;
+  if (total > 0) {
+    console.log(`PE gate: ${gateStats.accepted_novel} novel, ${gateStats.accepted_refinement} refinement, ${gateStats.rejected} rejected (of ${total} candidates)`);
+  }
 }
 
 main().catch(err => {
