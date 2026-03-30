@@ -81,7 +81,29 @@ node scripts/reconstruct-history.js
   Cartographer adds ~1 MB per 2 GB of transcripts (1:2000)
 ```
 
-grep scans 2.7 GB of transcripts in 30-50s per query, returning raw JSONL. Cartographer searches a 1.5 MB index in under a second — 69× faster, ranked and formatted.
+## grep vs. cartographer
+
+Measured on 2.9 GB of transcripts, 4,400 indexed events, 186 sessions. Metric is unique sessions surfaced — the unit that matters for recovering context.
+
+```
+                            ── grep ──         ── cartographer ──
+Query                       sessions    sec    sessions    sec
+──────────────────────────  ────────  ──────   ────────  ──────
+"BM25"                           73    18.3         11     1.5
+"facets"                         45    24.5         19     1.5
+"transcript viewer"              21    20.5         14     1.6
+"backfill"                       49    25.2         17     1.5
+"concurrent timeline"            10    26.2         15     1.5
+"diff shape"                     14    26.0         27     1.5
+"session milestones"             27    21.2         42     1.6
+"fisheye autocomplete"            7    25.5         12     1.5
+──────────────────────────  ────────  ──────   ────────  ──────
+MEAN                             31    23.4         20     1.5
+```
+
+Cartographer is **15× faster** on average. grep session counts are inflated by CLAUDE.md content echoed in every session and compaction summaries that parrot parent conversations. Cartographer deduplicates through event-level indexing: each git commit, URL fetch, and milestone is one event with a session_id linking back to the source transcript.
+
+For queries that only appear in conversation text (not in indexed events), cartographer falls back to transcript search via ripgrep + BM25 — slower but still ranked.
 
 ## Architecture
 
