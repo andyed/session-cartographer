@@ -116,6 +116,20 @@ Does full transcript analysis: extracts tool_use blocks (WebFetch, WebSearch, Ed
 
 **Note:** Both scripts require Qdrant + embedding server to be running. They index into the `session-cartographer` collection for semantic search. Keyword search (`/remember` via BM25) works against the JSONL logs, which only grow from hooks going forward — backfill is Qdrant-only.
 
+## Verify Skills
+
+`claude install` should symlink all three skills into `~/.claude/skills/`. If any are missing, create the symlink manually:
+
+```bash
+# Check which skills are installed
+ls -la ~/.claude/skills/{remember,focus,carto} 2>&1
+
+# Fix any missing ones (replace <skill> with remember, focus, or carto)
+ln -s /path/to/session-cartographer/plugins/session-cartographer/skills/<skill> ~/.claude/skills/<skill>
+```
+
+All three should be present: `/remember` (search), `/focus` (project orientation), `/carto` (Explorer UI).
+
 ## Disk Usage
 
 Cartographer's own data is small. Your existing Claude Code transcripts are the bulk.
