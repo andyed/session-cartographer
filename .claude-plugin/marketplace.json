@@ -1,0 +1,20 @@
+{
+  "name": "session-cartographer",
+  "description": "Search and explore Claude Code session history",
+  "owner": {
+    "name": "Andy Edmonds"
+  },
+  "plugins": [
+    {
+      "name": "session-cartographer",
+      "description": "Hooks log events, /remember searches them, /carto opens the Explorer, /focus orients on a project",
+      "version": "0.2.0",
+      "author": {
+        "name": "Andy Edmonds"
+      },
+      "source": "./plugins/session-cartographer",
+      "category": "productivity",
+      "keywords": ["search", "history", "session", "memory", "BM25", "hooks"]
+    }
+  ]
+}
