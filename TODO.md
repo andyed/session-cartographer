@@ -22,4 +22,4 @@
 ## Infrastructure
 - [ ] `npm install` pre-flight check in `/carto explore` skill
 - [ ] Connection status indicator for EventSource (SSE reconnect feedback)
-- [ ] Briefings system — commit compile-briefing.sh + project-families.json
+- [x] ~~Briefings system~~ — replaced with project registry + /focus skill + enriched milestones

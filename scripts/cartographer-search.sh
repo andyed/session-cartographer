@@ -37,6 +37,13 @@ done
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 TRANSCRIPTS="${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
+
+# Resolve project aliases from registry
+REGISTRY="$(dirname "$0")/../project-registry.json"
+if [ -n "$PROJECT" ] && [ -f "$REGISTRY" ]; then
+  EXPANDED=$(jq -r --arg a "$PROJECT" '.aliases[$a] // empty | join("|")' "$REGISTRY" 2>/dev/null)
+  [ -n "$EXPANDED" ] && PROJECT="$EXPANDED"
+fi
 EMBED_URL="${CARTOGRAPHER_EMBED_URL:-http://localhost:8890/v1/embeddings}"
 EMBED_MODEL="${CARTOGRAPHER_EMBED_MODEL:-mxbai-embed-large}"
 COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
@@ -102,8 +109,16 @@ semantic_search_to_tsv() {
   local search_body
   local depth=$FUSION_DEPTH
   if [ -n "$PROJECT" ]; then
-    search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --arg p "$PROJECT" \
-      '{vector: $v, limit: $l, with_payload: true, filter: {must: [{key: "project", match: {value: $p}}]}}')
+    # Build Qdrant filter: single project uses match, multi-project alias uses should
+    if echo "$PROJECT" | grep -q '|'; then
+      local qdrant_filter
+      qdrant_filter=$(echo "$PROJECT" | tr '|' '\n' | jq -R '{key: "project", match: {value: .}}' | jq -sc '{must: [{should: .}]}')
+      search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --argjson f "$qdrant_filter" \
+        '{vector: $v, limit: $l, with_payload: true, filter: $f}')
+    else
+      search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --arg p "$PROJECT" \
+        '{vector: $v, limit: $l, with_payload: true, filter: {must: [{key: "project", match: {value: $p}}]}}')
+    fi
   else
     search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" \
       '{vector: $v, limit: $l, with_payload: true}')

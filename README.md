@@ -90,12 +90,12 @@ Hooks are the foundation. Everything else is a lens.
 ```
 Hooks (produce JSONL event logs)
   ├── /remember — CLI search (bash + awk, zero dependencies)
+  ├── /focus — project orientation from event logs
   ├── /carto explore — web UI (Node + React, faceted search)
-  ├── extras/briefings — project summaries (grep + jq)
   └── Qdrant indexer — semantic search (optional)
 ```
 
-Each layer is independent. You can use `/remember` without the Explorer, briefings without `/remember`, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
+Each layer is independent. You can use `/remember` without the Explorer, `/focus` without `/remember`, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
 
 ## What gets logged
 
