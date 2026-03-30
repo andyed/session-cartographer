@@ -15,16 +15,16 @@
  *   Usage:
  *     DEVTOOLS_PARSER=true node scripts/reconstruct-history.js
  */
-const fs = require('fs');
-const path = require('path');
-const readline = require('readline');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import readline from 'readline';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
 
 // Feature flag — checked once at startup
 const DEVTOOLS_PARSER = process.env.DEVTOOLS_PARSER === 'true' || process.env.DEVTOOLS_PARSER === '1';
 
-// Lazily-resolved ESM import (CJS → ESM bridge via dynamic import)
-// analyzeSession is only loaded when the flag is active.
+// Lazily-resolved dynamic import — only loaded when DEVTOOLS_PARSER is active.
 let _analyzeSession = null;
 async function getAnalyzeSession() {
     if (!_analyzeSession) {
@@ -34,6 +34,7 @@ async function getAnalyzeSession() {
     return _analyzeSession;
 }
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TRANSCRIPTS_DIR = process.env.CARTOGRAPHER_TRANSCRIPTS_DIR || path.join(process.env.HOME, '.claude/projects');
 const INDEX_SCRIPT = path.join(__dirname, 'index-event.sh');
 
