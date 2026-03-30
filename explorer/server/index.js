@@ -204,7 +204,7 @@ app.get('/api/sessions', (req, res) => {
 
   const bySession = new Map();
   for (const e of events) {
-    const sid = e.session_id || e.session;
+    const sid = e.session_id || e.session || e.sessionId;
     if (!sid) continue;
     if (!bySession.has(sid)) bySession.set(sid, []);
     bySession.get(sid).push(e);
