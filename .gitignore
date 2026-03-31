@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+*.log
+tests/private/
+docs/energy-viz.html
+docs/rankfusion_with_awk.md
+explorer/node_modules/
+explorer/dist/
