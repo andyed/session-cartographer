@@ -5,13 +5,13 @@
       "start": "2026-03-26T12:31:16Z",
       "end": "2026-03-28T15:29:45Z",
       "event_count": 62,
-      "project": "claude-code-session-bridge",
+      "project": "bridge-troll",
       "projects": [
-        "pize",
-        "iblipper2025",
+        "parallel-universe",
+        "haunted-spreadsheet",
         "session-cartographer",
-        "andyed",
-        "claude-code-session-bridge"
+        "demo-user",
+        "bridge-troll"
       ],
       "types": {
         "milestone_session_end_prompt_input_exit": 3,
@@ -36,21 +36,21 @@
           "event_id": "evt-hjr703zsc92g",
           "timestamp": "2026-03-28T15:29:45Z",
           "type": "milestone_session_end_prompt_input_exit",
-          "project": "pize",
+          "project": "parallel-universe",
           "summary": "Session ended (prompt_input_exit)"
         },
         {
           "event_id": "evt-ksjs3gww5520",
           "timestamp": "2026-03-28T14:15:56Z",
           "type": "milestone_session_end_prompt_input_exit",
-          "project": "iblipper2025",
+          "project": "haunted-spreadsheet",
           "summary": "Session ended (prompt_input_exit)"
         },
         {
           "event_id": "evt-n3y9kk9x33ip",
           "timestamp": "2026-03-28T01:51:27Z",
           "type": "milestone_compaction_manual",
-          "project": "iblipper2025",
+          "project": "haunted-spreadsheet",
           "summary": "Context compaction (manual) — session at peak density"
         },
         {
@@ -71,266 +71,266 @@
           "event_id": "evt-xhyl5ryjfx3v",
           "timestamp": "2026-03-26T12:44:24Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: claude code native memory features auto-dream session-memory CLAUDE.md 2026"
         },
         {
           "event_id": "evt-p180mzofr3ij",
           "timestamp": "2026-03-26T12:44:11Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
-          "summary": "Fetched: https://github.com/jhlee0409/claude-code-history-viewer"
+          "project": "bridge-troll",
+          "summary": "Fetched: https://github.com/jhlee0409/time-machine"
         },
         {
           "event_id": "evt-n9wo6x8bjvm9",
           "timestamp": "2026-03-26T12:44:01Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: \"git-notes-memory\" OR \"claude-code-auto-memory\" OR \"context-keeper\" claude code plugin github"
         },
         {
           "event_id": "evt-awuublvq4qdf",
           "timestamp": "2026-03-26T12:43:47Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: claude code session visualization timeline analytics tool github 2025 2026"
         },
         {
           "event_id": "evt-0javmqug7yz0",
           "timestamp": "2026-03-26T12:43:36Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/parcadei/Continuous-Claude-v3"
         },
         {
           "event_id": "evt-1do5nwe8p4w2",
           "timestamp": "2026-03-26T12:43:25Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: claude code \"continuous claude\" OR \"claude-auto-memory\" OR \"claude-context\" persistent memory github"
         },
         {
           "event_id": "evt-ualw1eiy66oz",
           "timestamp": "2026-03-26T12:43:12Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/rlancemartin/claude-diary"
         },
         {
           "event_id": "evt-3le8zeo1gyy7",
           "timestamp": "2026-03-26T12:43:03Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/agentsea/flashbacker"
         },
         {
           "event_id": "evt-6ht3vnq5kr8f",
           "timestamp": "2026-03-26T12:42:55Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: flashbacker claude code persistent memory github danieljeffries"
         },
         {
           "event_id": "evt-s5lf9q5lqbs2",
           "timestamp": "2026-03-26T12:42:45Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: blog.fsck.com episodic memory claude code fixing amnesia"
         },
         {
           "event_id": "evt-98h4vxovtrc3",
           "timestamp": "2026-03-26T12:42:36Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: shaneholloman mcp-knowledge-graph claude stars features"
         },
         {
           "event_id": "evt-272h68xgekjj",
           "timestamp": "2026-03-26T12:42:26Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/supermemoryai/claude-supermemory"
         },
         {
           "event_id": "evt-hrdokcyev55j",
           "timestamp": "2026-03-26T12:42:19Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: claude code plugin \"knowledge graph\" OR \"session bridge\" OR \"session memory\" OR \"persistent context\" github 2026"
         },
         {
           "event_id": "evt-4l8kn0x6ws4g",
           "timestamp": "2026-03-26T12:42:06Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/centminmod/my-claude-code-setup"
         },
         {
           "event_id": "evt-trkj75lmsrvp",
           "timestamp": "2026-03-26T12:41:56Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/adewale/claude-history-explorer"
         },
         {
           "event_id": "evt-r22nilub1upa",
           "timestamp": "2026-03-26T12:41:48Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/tradchenko/claude-sessions"
         },
         {
           "event_id": "evt-hn0kxsivs0fo",
           "timestamp": "2026-03-26T12:41:37Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/raine/claude-history"
         },
         {
           "event_id": "evt-c7ctsyv9lgab",
           "timestamp": "2026-03-26T12:41:26Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/ktny/ccstat"
         },
         {
           "event_id": "evt-wngn5tmqp9d4",
           "timestamp": "2026-03-26T12:41:20Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/doobidoo/mcp-memory-service"
         },
         {
           "event_id": "evt-qcky74pfy8c9",
           "timestamp": "2026-03-26T12:41:11Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/zilliztech/memsearch"
         },
         {
           "event_id": "evt-ge21u47jq2kz",
           "timestamp": "2026-03-26T12:41:01Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/julep-ai/memory-store-plugin"
         },
         {
           "event_id": "evt-5cqbi5xmq5np",
           "timestamp": "2026-03-26T12:40:50Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
-          "summary": "Fetched: https://github.com/PatilShreyas/claude-code-session-bridge"
+          "project": "bridge-troll",
+          "summary": "Fetched: https://github.com/PatilShreyas/bridge-troll"
         },
         {
           "event_id": "evt-5wbwjs8jurfo",
           "timestamp": "2026-03-26T12:40:36Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/joseairosa/recall"
         },
         {
           "event_id": "evt-2kqzbgzvyvuf",
           "timestamp": "2026-03-26T12:40:26Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/hjertefolger/cortex"
         },
         {
           "event_id": "evt-x4qauxn8mss8",
           "timestamp": "2026-03-26T12:40:16Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/GMaN1911/claude-cognitive"
         },
         {
           "event_id": "evt-sb8ncy7ezdv9",
           "timestamp": "2026-03-26T12:40:05Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/gajakannan/claude-code-memory"
         },
         {
           "event_id": "evt-ceyr0597fqi2",
           "timestamp": "2026-03-26T12:39:55Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/obra/episodic-memory"
         },
         {
           "event_id": "evt-lvfsn8lzryhv",
           "timestamp": "2026-03-26T12:39:46Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/marciopuga/cog"
         },
         {
           "event_id": "evt-w0bg8023yq2x",
           "timestamp": "2026-03-26T12:39:37Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/christian-byrne/claude-code-vector-memory"
         },
         {
           "event_id": "evt-hbfdopzg6cvq",
           "timestamp": "2026-03-26T12:39:28Z",
           "type": "research_fetch",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Fetched: https://github.com/thedotmack/claude-mem"
         },
         {
           "event_id": "evt-vfms4i2e7f6l",
           "timestamp": "2026-03-26T12:39:18Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: awesome claude code plugins list memory session management github"
         },
         {
           "event_id": "evt-01dnnqf1fkyd",
           "timestamp": "2026-03-26T12:39:06Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: \"claude code\" memory limitations solutions blog post discussion 2025 2026"
         },
         {
           "event_id": "evt-24cx17ks1da4",
           "timestamp": "2026-03-26T12:38:55Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: claude code semantic search embeddings vector memory github repo"
         },
         {
           "event_id": "evt-jk0mwm4665gv",
           "timestamp": "2026-03-26T12:38:44Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: claude code cross-session search recall memory plugin 2025 2026 github"
         },
         {
           "event_id": "evt-dd6wshvqvnkc",
           "timestamp": "2026-03-26T12:38:32Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
-          "summary": "Search: claude-code-history-viewer session visualization github"
+          "project": "bridge-troll",
+          "summary": "Search: time-machine session visualization github"
         },
         {
           "event_id": "evt-csvtcrmfx4au",
           "timestamp": "2026-03-26T12:38:21Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: MCP server memory claude code mem0 basic-memory knowledge graph 2025 2026"
         },
         {
           "event_id": "evt-hmr4nedksep7",
           "timestamp": "2026-03-26T12:38:11Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
-          "summary": "Search: claude-code-session-bridge PatilShreyas github"
+          "project": "bridge-troll",
+          "summary": "Search: bridge-troll PatilShreyas github"
         },
         {
           "event_id": "evt-mxjzmkapsy7b",
           "timestamp": "2026-03-26T12:38:02Z",
           "type": "research_search",
-          "project": "claude-code-session-bridge",
+          "project": "bridge-troll",
           "summary": "Search: claude code persistent memory CLI tool github 2025 2026"
         }
       ]
@@ -343,8 +343,8 @@
       "project": "session-cartographer",
       "projects": [
         "session-cartographer",
-        "andyed",
-        "sciprogfi-web"
+        "demo-user",
+        "yeti-memoir-web"
       ],
       "types": {
         "milestone_session_end_clear": 2,
@@ -542,7 +542,7 @@
           "timestamp": "2026-03-28T19:37:20Z",
           "type": "tool_bash",
           "project": "session-cartographer",
-          "summary": "Ran: sleep 3 && curl -s \"http://localhost:2526/api/coterms?term=psychodeli\" && echo && curl -s \"http://localhost:2526/ap"
+          "summary": "Ran: sleep 3 && curl -s \"http://localhost:2526/api/coterms?term=Turtle Surfboard\" && echo && curl -s \"http://localhost:2526/ap"
         },
         {
           "event_id": "evt-i9xpqmk6zfen",
@@ -605,7 +605,7 @@
           "timestamp": "2026-03-28T19:36:04Z",
           "type": "tool_bash",
           "project": "session-cartographer",
-          "summary": "Ran: sleep 3 && curl -s \"http://localhost:2526/api/coterms?term=psychodeli\" && echo && curl -s \"http://localhost:2526/ap"
+          "summary": "Ran: sleep 3 && curl -s \"http://localhost:2526/api/coterms?term=Turtle Surfboard\" && echo && curl -s \"http://localhost:2526/ap"
         },
         {
           "event_id": "evt-4dhfd3bod7ol",
@@ -619,7 +619,7 @@
           "timestamp": "2026-03-28T19:35:34Z",
           "type": "tool_bash",
           "project": "session-cartographer",
-          "summary": "Ran: sleep 3 && curl -s \"http://localhost:2526/api/coterms?term=psychodeli\""
+          "summary": "Ran: sleep 3 && curl -s \"http://localhost:2526/api/coterms?term=Turtle Surfboard\""
         },
         {
           "event_id": "evt-2qihm9y9x7em",
@@ -1234,7 +1234,7 @@
           "event_id": "evt-uy4vj9tkmfpw",
           "timestamp": "2026-03-28T14:50:23Z",
           "type": "milestone_compaction_manual",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Context compaction (manual) — session at peak density"
         },
         {
@@ -1248,84 +1248,84 @@
           "event_id": "evt-nlqcereen7l4",
           "timestamp": "2026-03-28T01:41:32Z",
           "type": "research_fetch",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Fetched: https://github.com/cwinvestments/memstack"
         },
         {
           "event_id": "evt-2fv42z9cy1r5",
           "timestamp": "2026-03-27T02:13:48Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://raw.githubusercontent.com/arwes/arwes/next/packages/frames/src/createFrameLinesSettings/createFrameLine"
         },
         {
           "event_id": "evt-w5wiji353gli",
           "timestamp": "2026-03-27T02:13:46Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://raw.githubusercontent.com/arwes/arwes/next/packages/frames/src/animateFrameAssembler/animateFrameAssemb"
         },
         {
           "event_id": "evt-flk26x7wot6j",
           "timestamp": "2026-03-27T02:13:34Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://raw.githubusercontent.com/arwes/arwes/next/packages/frames/src/createFrameCornersSettings/createFrameCo"
         },
         {
           "event_id": "evt-4oorkrtfcba9",
           "timestamp": "2026-03-27T02:13:33Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://raw.githubusercontent.com/arwes/arwes/next/packages/bleeps/src/types.ts"
         },
         {
           "event_id": "evt-cfutfk2qmy6r",
           "timestamp": "2026-03-27T02:13:31Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://raw.githubusercontent.com/arwes/arwes/next/packages/frames/src/createFrame/createFrame.ts"
         },
         {
           "event_id": "evt-dwu1fnnvtvgl",
           "timestamp": "2026-03-27T02:13:30Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://raw.githubusercontent.com/arwes/arwes/next/packages/bleeps/src/createBleep/createBleep.ts"
         },
         {
           "event_id": "evt-jsf2v1uekrxr",
           "timestamp": "2026-03-27T02:13:20Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://github.com/arwes/arwes/tree/next/packages/frames/src"
         },
         {
           "event_id": "evt-5rrrf2sfqrrf",
           "timestamp": "2026-03-27T02:13:19Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://github.com/arwes/arwes/tree/next/packages/bleeps/src"
         },
         {
           "event_id": "evt-qapuc4hsunx4",
           "timestamp": "2026-03-27T02:13:10Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://next.arwes.dev/docs/develop/bleeps"
         },
         {
           "event_id": "evt-smsqcji4zhqv",
           "timestamp": "2026-03-27T02:13:09Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://next.arwes.dev/docs/develop/frames"
         },
         {
           "event_id": "evt-z0udvvs5kc87",
           "timestamp": "2026-03-27T02:01:11Z",
           "type": "research_fetch",
-          "project": "andyed",
+          "project": "demo-user",
           "summary": "Fetched: https://github.com/arwes/arwes/blob/next/README.md"
         }
       ]
@@ -1337,9 +1337,9 @@
       "event_count": 60,
       "project": "session-cartographer",
       "projects": [
-        "psychodeli-webgl-port",
-        "scrutinizer2025",
-        "psychodeli-brand-guide",
+        "turtle-surfboard",
+        "quantum-toaster",
+        "turtle-surfboard-brand",
         "session-cartographer"
       ],
       "types": {
@@ -1358,49 +1358,49 @@
           "event_id": "evt-tnbkwl4s9rmr",
           "timestamp": "2026-03-28T12:58:33Z",
           "type": "milestone_session_end_clear",
-          "project": "psychodeli-webgl-port",
+          "project": "turtle-surfboard",
           "summary": "Session ended (clear)"
         },
         {
           "event_id": "evt-iokuky53605a",
           "timestamp": "2026-03-28T12:46:06Z",
           "type": "tool_file_edit",
-          "project": "psychodeli-webgl-port",
+          "project": "turtle-surfboard",
           "summary": "Modified: /home/user/.claude/plans/temporal-rolling-hearth.md"
         },
         {
           "event_id": "evt-qc27hfiua0pa",
           "timestamp": "2026-03-28T12:30:47Z",
           "type": "tool_bash",
-          "project": "psychodeli-webgl-port",
+          "project": "turtle-surfboard",
           "summary": "Ran: grep -oE \"(amp1|amp2|freq1|freq2|spiralPitch|postScale|sineTwistFactor|nodeRotation|nodeCount):\\s*[0-9]*\\.?[0-9]+\" "
         },
         {
           "event_id": "evt-uitspw5xky13",
           "timestamp": "2026-03-28T12:28:53Z",
           "type": "tool_bash",
-          "project": "psychodeli-webgl-port",
+          "project": "turtle-surfboard",
           "summary": "Ran: grep -r \"amp1\\|amp2\\|freq1\\|freq2\\|spiralPitch\\|postScale\\|sineTwistFactor\\|nodeRotation\\|nodeCount\" js/config/pres"
         },
         {
           "event_id": "evt-3enj6yqg8g41",
           "timestamp": "2026-03-28T12:28:36Z",
           "type": "tool_bash",
-          "project": "psychodeli-webgl-port",
-          "summary": "Ran: find /home/user/Documents/dev/psychodeli-webgl-port -type f -name \"*.js\" | head -20"
+          "project": "turtle-surfboard",
+          "summary": "Ran: find /home/user/Documents/dev/turtle-surfboard -type f -name \"*.js\" | head -20"
         },
         {
           "event_id": "evt-0vxwy2w45d70",
           "timestamp": "2026-03-28T12:24:01Z",
           "type": "tool_bash",
-          "project": "scrutinizer2025",
+          "project": "quantum-toaster",
           "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"parameter unification\" --project psychode"
         },
         {
           "event_id": "evt-945kbje9oj0v",
           "timestamp": "2026-03-28T12:22:45Z",
           "type": "tool_bash",
-          "project": "psychodeli-brand-guide",
+          "project": "turtle-surfboard-brand",
           "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"parameter unification\" --project scrutini"
         },
         {
@@ -1408,7 +1408,7 @@
           "timestamp": "2026-03-28T12:03:45Z",
           "type": "tool_file_edit",
           "project": "session-cartographer",
-          "summary": "Modified: /home/user/Documents/dev/psychodeli-brand-guide/TODO.md"
+          "summary": "Modified: /home/user/Documents/dev/turtle-surfboard-brand/TODO.md"
         },
         {
           "event_id": "evt-2eqocg9vx77u",
@@ -1695,7 +1695,7 @@
           "timestamp": "2026-03-28T01:14:15Z",
           "type": "research_fetch",
           "project": "session-cartographer",
-          "summary": "Fetched: https://gist.github.com/andyed/72f8af0fd2f737dfb9fa3ab343b593b3"
+          "summary": "Fetched: https://gist.github.com/demo-user/72f8af0fd2f737dfb9fa3ab343b593b3"
         },
         {
           "event_id": "evt-7u0pj3ma6gwm",
@@ -1785,11 +1785,11 @@
       "start": "2026-03-29T03:18:18Z",
       "end": "2026-03-30T01:46:01Z",
       "event_count": 344,
-      "project": "sciprogfi-web",
+      "project": "yeti-memoir-web",
       "projects": [
-        "mindbendingpixels-www",
-        "sciprogfi-web",
-        "andyed",
+        "demo-brand-www",
+        "yeti-memoir-web",
+        "demo-user",
         "session-cartographer"
       ],
       "types": {
@@ -1817,1401 +1817,1401 @@
           "event_id": "evt-eco1tmixiwyt",
           "timestamp": "2026-03-30T01:46:01Z",
           "type": "milestone_session_end_clear",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Session ended (clear)"
         },
         {
           "event_id": "evt-4xtaqx1wncza",
           "timestamp": "2026-03-30T00:58:24Z",
           "type": "git_commit",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Commit d9c026c: docs: add living room to hero tagline\\n 1 file changed, 1 insertion(+), 1 deletion(-)\\nTo https://github"
         },
         {
           "event_id": "evt-8wd9y0qv172v",
           "timestamp": "2026-03-30T00:58:17Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-4287edty14f0",
           "timestamp": "2026-03-30T00:58:07Z",
           "type": "tool_bash",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Ran: git diff HEAD -- index.html | head -30"
         },
         {
           "event_id": "evt-b0zlszlpucxp",
           "timestamp": "2026-03-30T00:58:01Z",
           "type": "tool_bash",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Ran: git log --oneline -3"
         },
         {
           "event_id": "evt-dggczskvemd4",
           "timestamp": "2026-03-30T00:57:47Z",
           "type": "tool_bash",
-          "project": "mindbendingpixels-www",
-          "summary": "Ran: grep -n \"hero-subtitle\" /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Ran: grep -n \"hero-subtitle\" /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-sdakuj4y7sfx",
           "timestamp": "2026-03-30T00:37:32Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-de8o61aq3wpr",
           "timestamp": "2026-03-30T00:37:22Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-n9uh6qdj73tv",
           "timestamp": "2026-03-30T00:37:12Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-chrj0ae4lv3q",
           "timestamp": "2026-03-29T21:18:04Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-8522a8uq701i",
           "timestamp": "2026-03-29T21:17:56Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-7lu6mxr8j7tg",
           "timestamp": "2026-03-29T21:17:48Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-tlxxdimylyaq",
           "timestamp": "2026-03-29T21:16:56Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-skelmbar9k9r",
           "timestamp": "2026-03-29T21:16:11Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-vlkom0lvusde",
           "timestamp": "2026-03-29T21:14:16Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-ag07rzt96chj",
           "timestamp": "2026-03-29T21:08:02Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-pspbaenizsmh",
           "timestamp": "2026-03-29T21:07:50Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-v9edq3ixu93x",
           "timestamp": "2026-03-29T21:07:32Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: cp \"/home/user/Downloads/Geometric_human_brain_in_profile_view_left_hemisphere_made_of_glowing_neon_blue_circuit"
         },
         {
           "event_id": "evt-wguy0gyc77sk",
           "timestamp": "2026-03-29T20:59:45Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-zfjbsfkeh52o",
           "timestamp": "2026-03-29T20:59:38Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-qei64wnwr9un",
           "timestamp": "2026-03-29T20:59:32Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-jarybiascq1c",
           "timestamp": "2026-03-29T20:59:14Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-ivqb4f6q8d50",
           "timestamp": "2026-03-29T20:59:05Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-lg30vuw4huxa",
           "timestamp": "2026-03-29T20:56:07Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-sorp7efooizx",
           "timestamp": "2026-03-29T20:55:40Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-l5qslmk5o1h3",
           "timestamp": "2026-03-29T20:51:18Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: grep -n 'logo\\|wordmark\\|Mind Bending\\|brand' /home/user/Documents/dev/mindbendingpixels-www/index.html | head -"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: grep -n 'logo\\|wordmark\\|Mind Bending\\|brand' /home/user/Documents/dev/demo-brand-www/index.html | head -"
         },
         {
           "event_id": "evt-c4lotp50c87l",
           "timestamp": "2026-03-29T20:51:09Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mindbendingpixels logo\" --limit 10 2>&1 |"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"demo-brand logo\" --limit 10 2>&1 |"
         },
         {
           "event_id": "evt-nzjho08jkupy",
           "timestamp": "2026-03-29T20:51:04Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mind bending pixels logo design wordmark "
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"Demo Brand logo design wordmark "
         },
         {
           "event_id": "evt-ifld7u3afzip",
           "timestamp": "2026-03-29T20:50:58Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: jq -c 'select(.type == \"user\" or .type == \"assistant\") | select(.message.content | type == \"string\") | {type, times"
         },
         {
           "event_id": "evt-z2xvsy9eid20",
           "timestamp": "2026-03-29T20:50:52Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mindbendingpixels brand logo wordmark\" --"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"demo-brand brand logo wordmark\" --"
         },
         {
           "event_id": "evt-u6ivzrishko0",
           "timestamp": "2026-03-29T20:50:46Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mind bending pixels logo\" --limit 20 2>&1"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"Demo Brand logo\" --limit 20 2>&1"
         },
         {
           "event_id": "evt-eco1tmixiwyt",
           "timestamp": "2026-03-30T01:46:01Z",
           "type": "milestone_session_end_clear",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Session ended (clear)"
         },
         {
           "event_id": "evt-4xtaqx1wncza",
           "timestamp": "2026-03-30T00:58:24Z",
           "type": "git_commit",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Commit d9c026c: docs: add living room to hero tagline\\n 1 file changed, 1 insertion(+), 1 deletion(-)\\nTo https://github"
         },
         {
           "event_id": "evt-8wd9y0qv172v",
           "timestamp": "2026-03-30T00:58:17Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-4287edty14f0",
           "timestamp": "2026-03-30T00:58:07Z",
           "type": "tool_bash",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Ran: git diff HEAD -- index.html | head -30"
         },
         {
           "event_id": "evt-b0zlszlpucxp",
           "timestamp": "2026-03-30T00:58:01Z",
           "type": "tool_bash",
-          "project": "mindbendingpixels-www",
+          "project": "demo-brand-www",
           "summary": "Ran: git log --oneline -3"
         },
         {
           "event_id": "evt-dggczskvemd4",
           "timestamp": "2026-03-30T00:57:47Z",
           "type": "tool_bash",
-          "project": "mindbendingpixels-www",
-          "summary": "Ran: grep -n \"hero-subtitle\" /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Ran: grep -n \"hero-subtitle\" /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-sdakuj4y7sfx",
           "timestamp": "2026-03-30T00:37:32Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-de8o61aq3wpr",
           "timestamp": "2026-03-30T00:37:22Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-n9uh6qdj73tv",
           "timestamp": "2026-03-30T00:37:12Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/index.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/index.html"
         },
         {
           "event_id": "evt-chrj0ae4lv3q",
           "timestamp": "2026-03-29T21:18:04Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-8522a8uq701i",
           "timestamp": "2026-03-29T21:17:56Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-7lu6mxr8j7tg",
           "timestamp": "2026-03-29T21:17:48Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-tlxxdimylyaq",
           "timestamp": "2026-03-29T21:16:56Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-skelmbar9k9r",
           "timestamp": "2026-03-29T21:16:11Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-vlkom0lvusde",
           "timestamp": "2026-03-29T21:14:16Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-blocky-pixels.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-blocky-pixels.html"
         },
         {
           "event_id": "evt-ag07rzt96chj",
           "timestamp": "2026-03-29T21:08:02Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-pspbaenizsmh",
           "timestamp": "2026-03-29T21:07:50Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-v9edq3ixu93x",
           "timestamp": "2026-03-29T21:07:32Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: cp \"/home/user/Downloads/Geometric_human_brain_in_profile_view_left_hemisphere_made_of_glowing_neon_blue_circuit"
         },
         {
           "event_id": "evt-wguy0gyc77sk",
           "timestamp": "2026-03-29T20:59:45Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-zfjbsfkeh52o",
           "timestamp": "2026-03-29T20:59:38Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-qei64wnwr9un",
           "timestamp": "2026-03-29T20:59:32Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-jarybiascq1c",
           "timestamp": "2026-03-29T20:59:14Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-ivqb4f6q8d50",
           "timestamp": "2026-03-29T20:59:05Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-lg30vuw4huxa",
           "timestamp": "2026-03-29T20:56:07Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-sorp7efooizx",
           "timestamp": "2026-03-29T20:55:40Z",
           "type": "tool_file_edit",
-          "project": "mindbendingpixels-www",
-          "summary": "Modified: /home/user/Documents/dev/mindbendingpixels-www/logo-explorations.html"
+          "project": "demo-brand-www",
+          "summary": "Modified: /home/user/Documents/dev/demo-brand-www/logo-explorations.html"
         },
         {
           "event_id": "evt-l5qslmk5o1h3",
           "timestamp": "2026-03-29T20:51:18Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: grep -n 'logo\\|wordmark\\|Mind Bending\\|brand' /home/user/Documents/dev/mindbendingpixels-www/index.html | head -"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: grep -n 'logo\\|wordmark\\|Mind Bending\\|brand' /home/user/Documents/dev/demo-brand-www/index.html | head -"
         },
         {
           "event_id": "evt-c4lotp50c87l",
           "timestamp": "2026-03-29T20:51:09Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mindbendingpixels logo\" --limit 10 2>&1 |"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"demo-brand logo\" --limit 10 2>&1 |"
         },
         {
           "event_id": "evt-nzjho08jkupy",
           "timestamp": "2026-03-29T20:51:04Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mind bending pixels logo design wordmark "
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"Demo Brand logo design wordmark "
         },
         {
           "event_id": "evt-ifld7u3afzip",
           "timestamp": "2026-03-29T20:50:58Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: jq -c 'select(.type == \"user\" or .type == \"assistant\") | select(.message.content | type == \"string\") | {type, times"
         },
         {
           "event_id": "evt-z2xvsy9eid20",
           "timestamp": "2026-03-29T20:50:52Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mindbendingpixels brand logo wordmark\" --"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"demo-brand brand logo wordmark\" --"
         },
         {
           "event_id": "evt-u6ivzrishko0",
           "timestamp": "2026-03-29T20:50:46Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"mind bending pixels logo\" --limit 20 2>&1"
+          "project": "yeti-memoir-web",
+          "summary": "Ran: bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh \"Demo Brand logo\" --limit 20 2>&1"
         },
         {
           "event_id": "evt-4vuoa8jjk86j",
           "timestamp": "2026-03-29T04:25:39Z",
           "type": "git_commit",
-          "project": "sciprogfi-web",
-          "summary": "Commit 3d0b9f2: feat(typography): Phase 2 — template-level marginalia + 20-node annotation pass\\n 26 files changed, 239 "
+          "project": "yeti-memoir-web",
+          "summary": "Commit 3d0b9f2: feat(typography): Phase 2 — template-level footnote-factory + 20-node annotation pass\\n 26 files changed, 239 "
         },
         {
           "event_id": "evt-bvrgdrsx98o7",
           "timestamp": "2026-03-29T04:25:27Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: git add \\\n  _includes/layouts/media/government-notice.njk \\\n  _includes/layouts/media/intercept.njk \\\n  _includes/l"
         },
         {
           "event_id": "evt-2n5nx13u67pq",
           "timestamp": "2026-03-29T04:25:17Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
-          "summary": "Ran: grep -c 'mg-badge' /home/user/Documents/dev/sciprogfi-web/_site/stops/2032/index.html && echo \"=== God Problem ("
+          "project": "yeti-memoir-web",
+          "summary": "Ran: grep -c 'mg-badge' /home/user/Documents/dev/yeti-memoir-web/_site/stops/2032/index.html && echo \"=== God Problem ("
         },
         {
           "event_id": "evt-386a8bm1pdeq",
           "timestamp": "2026-03-29T04:25:04Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: npx @11ty/eleventy --quiet 2>&1 | tail -5"
         },
         {
           "event_id": "evt-mdw6pem6qxqo",
           "timestamp": "2026-03-29T04:24:23Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: npm run build 2>&1 | tail -20"
         },
         {
           "event_id": "evt-xj75llenxpt7",
           "timestamp": "2026-03-29T04:24:17Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/government/2031-ashpa-enforcement.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/government/2031-ashpa-enforcement.md"
         },
         {
           "event_id": "evt-02ogkfgftjhv",
           "timestamp": "2026-03-29T04:24:12Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/government/2031-ashpa-enforcement.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/government/2031-ashpa-enforcement.md"
         },
         {
           "event_id": "evt-9aggu1o73xhb",
           "timestamp": "2026-03-29T04:24:05Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/government/2031-ashpa-enforcement.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/government/2031-ashpa-enforcement.md"
         },
         {
           "event_id": "evt-d62shseyraw3",
           "timestamp": "2026-03-29T04:23:58Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/government/2031-ashpa-enforcement.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/government/2031-ashpa-enforcement.md"
         },
         {
           "event_id": "evt-cezignpq7hhu",
           "timestamp": "2026-03-29T04:23:55Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2030-drew-nsas.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2030-drew-nsas.md"
         },
         {
           "event_id": "evt-ozbedyvhxozo",
           "timestamp": "2026-03-29T04:23:51Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/government/2031-ashpa-enforcement.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/government/2031-ashpa-enforcement.md"
         },
         {
           "event_id": "evt-frmuixghuedj",
           "timestamp": "2026-03-29T04:23:48Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-8c65368svhw5",
           "timestamp": "2026-03-29T04:23:42Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-y6md35dvbplq",
           "timestamp": "2026-03-29T04:23:41Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2033-andean-companion-rights.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2033-andean-companion-rights.md"
         },
         {
           "event_id": "evt-vzevbfei3bx7",
           "timestamp": "2026-03-29T04:23:36Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-2q6xuu5dc846",
           "timestamp": "2026-03-29T04:23:36Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2033-andean-companion-rights.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2033-andean-companion-rights.md"
         },
         {
           "event_id": "evt-pkq4hrx7wmfm",
           "timestamp": "2026-03-29T04:23:32Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-cygydao9ycu2",
           "timestamp": "2026-03-29T04:23:30Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2033-andean-companion-rights.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2033-andean-companion-rights.md"
         },
         {
           "event_id": "evt-2fuzrq7qy3n5",
           "timestamp": "2026-03-29T04:23:28Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-cgtwyk59y06e",
           "timestamp": "2026-03-29T04:23:26Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2033-andean-companion-rights.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2033-andean-companion-rights.md"
         },
         {
           "event_id": "evt-lp1zebh7ltl2",
           "timestamp": "2026-03-29T04:23:24Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-2qh83egdxrro",
           "timestamp": "2026-03-29T04:23:20Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-ujfzksvlv6ei",
           "timestamp": "2026-03-29T04:23:17Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2033-andean-companion-rights.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2033-andean-companion-rights.md"
         },
         {
           "event_id": "evt-xvurzs5j19jj",
           "timestamp": "2026-03-29T04:23:15Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-5pl7yl4qz375",
           "timestamp": "2026-03-29T04:23:09Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2031-ai-census.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2031-ai-census.md"
         },
         {
           "event_id": "evt-kaok4ai6m48q",
           "timestamp": "2026-03-29T04:23:07Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-ae40wh0ygno5",
           "timestamp": "2026-03-29T04:23:03Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2031-ai-census.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2031-ai-census.md"
         },
         {
           "event_id": "evt-88wwha7qvic6",
           "timestamp": "2026-03-29T04:23:02Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-avaa8waqibke",
           "timestamp": "2026-03-29T04:22:58Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-der9qnllfwjq",
           "timestamp": "2026-03-29T04:22:55Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-cbkne9d7acld",
           "timestamp": "2026-03-29T04:22:53Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2031-ai-census.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2031-ai-census.md"
         },
         {
           "event_id": "evt-2dxhxwjskbti",
           "timestamp": "2026-03-29T04:22:47Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2029-ground-truth.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2029-ground-truth.md"
         },
         {
           "event_id": "evt-q20wsi4bn7ij",
           "timestamp": "2026-03-29T04:22:42Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2031-ai-census.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2031-ai-census.md"
         },
         {
           "event_id": "evt-ehlah3iln3rz",
           "timestamp": "2026-03-29T04:22:41Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-1o5k57kmjbgh",
           "timestamp": "2026-03-29T04:22:36Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-i8klewxh9pln",
           "timestamp": "2026-03-29T04:22:34Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2031-ai-census.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2031-ai-census.md"
         },
         {
           "event_id": "evt-bjw3q3xrk5y9",
           "timestamp": "2026-03-29T04:22:29Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-s58vnq6kd7fj",
           "timestamp": "2026-03-29T04:22:26Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2030-companion-grief-study.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2030-companion-grief-study.md"
         },
         {
           "event_id": "evt-961oig118l2y",
           "timestamp": "2026-03-29T04:22:24Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-5v669q9zpn6r",
           "timestamp": "2026-03-29T04:22:20Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2030-companion-grief-study.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2030-companion-grief-study.md"
         },
         {
           "event_id": "evt-thy2c8k2me7k",
           "timestamp": "2026-03-29T04:22:18Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-bwzau7q47ili",
           "timestamp": "2026-03-29T04:22:15Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-6klqxb2gqhd5",
           "timestamp": "2026-03-29T04:22:13Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2030-companion-grief-study.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2030-companion-grief-study.md"
         },
         {
           "event_id": "evt-y020ozbmm0bn",
           "timestamp": "2026-03-29T04:22:10Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-6oj5mtts9bn0",
           "timestamp": "2026-03-29T04:22:06Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2030-companion-grief-study.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2030-companion-grief-study.md"
         },
         {
           "event_id": "evt-n17mi92ucsaa",
           "timestamp": "2026-03-29T04:22:05Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-tl6j7f1angcq",
           "timestamp": "2026-03-29T04:21:59Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2028-flamingo-filter.md"
         },
         {
           "event_id": "evt-jd2kvk16iucw",
           "timestamp": "2026-03-29T04:21:58Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/media/news/2030-companion-grief-study.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/media/news/2030-companion-grief-study.md"
         },
         {
           "event_id": "evt-uda15721nq4k",
           "timestamp": "2026-03-29T04:21:51Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2026-oakland-node.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2026-oakland-node.md"
         },
         {
           "event_id": "evt-vzq32rnwvu15",
           "timestamp": "2026-03-29T04:21:22Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: npx @11ty/eleventy --quiet 2>&1 | tail -5"
         },
         {
           "event_id": "evt-svren2ajclzx",
           "timestamp": "2026-03-29T04:20:39Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-nd0cwa9oxc1w",
           "timestamp": "2026-03-29T04:20:35Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-0dnwwncvywi6",
           "timestamp": "2026-03-29T04:20:31Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-06482i9fjkvk",
           "timestamp": "2026-03-29T04:20:27Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-koyfctorvjtk",
           "timestamp": "2026-03-29T04:20:22Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-nykjyq1n5cv3",
           "timestamp": "2026-03-29T04:20:18Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-lb6jqpju8f6h",
           "timestamp": "2026-03-29T04:20:14Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-3kve550ynyvp",
           "timestamp": "2026-03-29T04:20:08Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-wn9suciubeqq",
           "timestamp": "2026-03-29T04:19:58Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-297mvqvenrun",
           "timestamp": "2026-03-29T04:19:48Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-g65wyoqylszb",
           "timestamp": "2026-03-29T04:19:42Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-qlxq247qm1xy",
           "timestamp": "2026-03-29T04:19:38Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-4yp4jhs8xkd4",
           "timestamp": "2026-03-29T04:19:34Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-un-vote.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-un-vote.md"
         },
         {
           "event_id": "evt-axjsls7cht16",
           "timestamp": "2026-03-29T04:19:27Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
         },
         {
           "event_id": "evt-jmyrtnt2p8wh",
           "timestamp": "2026-03-29T04:19:22Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
         },
         {
           "event_id": "evt-1gqi0c7rld5s",
           "timestamp": "2026-03-29T04:19:18Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
         },
         {
           "event_id": "evt-8749q4ku7jk6",
           "timestamp": "2026-03-29T04:19:14Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
         },
         {
           "event_id": "evt-eaanhrh0ro53",
           "timestamp": "2026-03-29T04:19:12Z",
           "type": "tool_bash",
-          "project": "sciprogfi-web",
+          "project": "yeti-memoir-web",
           "summary": "Ran: grep -n \"{% ai \\|{% endai \\|{% pidgin \\|{% endpidgin \\|{% gov \\|{% endgov \\|{% dropcap \\|{% enddropcap\" /home/user"
         },
         {
           "event_id": "evt-mhl8ryydqq1p",
           "timestamp": "2026-03-29T04:19:09Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
         },
         {
           "event_id": "evt-xgfk6oo1nd07",
           "timestamp": "2026-03-29T04:19:03Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-3hjwzxz75f30",
           "timestamp": "2026-03-29T04:19:01Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-8pl0ltbse4jy",
           "timestamp": "2026-03-29T04:18:59Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2030-lobotomy-memo.md"
         },
         {
           "event_id": "evt-3he1kmhrx19l",
           "timestamp": "2026-03-29T04:18:57Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-ylkytnp8emyp",
           "timestamp": "2026-03-29T04:18:53Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-weyu2jwn3r0h",
           "timestamp": "2026-03-29T04:18:51Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-blshm9pct0dw",
           "timestamp": "2026-03-29T04:18:50Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2033-sovereign-shield.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2033-sovereign-shield.md"
         },
         {
           "event_id": "evt-sv0hczp3occ1",
           "timestamp": "2026-03-29T04:18:50Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-oicpr4ka1dep",
           "timestamp": "2026-03-29T04:18:48Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-uaej7hyrk53u",
           "timestamp": "2026-03-29T04:18:45Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2033-sovereign-shield.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2033-sovereign-shield.md"
         },
         {
           "event_id": "evt-6m42dgqixj3t",
           "timestamp": "2026-03-29T04:18:45Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-9plxvvzk411x",
           "timestamp": "2026-03-29T04:18:42Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-v0x97aflpwye",
           "timestamp": "2026-03-29T04:18:41Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-nc0kzn7sq802",
           "timestamp": "2026-03-29T04:18:39Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-kesg1etllscl",
           "timestamp": "2026-03-29T04:18:39Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-kaph0osy4nti",
           "timestamp": "2026-03-29T04:18:37Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-m02xdltet9pt",
           "timestamp": "2026-03-29T04:18:35Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-zrnvf0il356b",
           "timestamp": "2026-03-29T04:18:34Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-458a6kj27kn5",
           "timestamp": "2026-03-29T04:18:30Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-4j4oeqehym0m",
           "timestamp": "2026-03-29T04:18:30Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-04jt313vldbx",
           "timestamp": "2026-03-29T04:18:29Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-g6heleb1kz5q",
           "timestamp": "2026-03-29T04:18:26Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-ifn5i1j4rkr6",
           "timestamp": "2026-03-29T04:18:25Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-flu8tlr7r3yo",
           "timestamp": "2026-03-29T04:18:23Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-r0hop3n1ecvk",
           "timestamp": "2026-03-29T04:18:20Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-zqyxskq5mgmf",
           "timestamp": "2026-03-29T04:18:19Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-qz3u5jyz4hyx",
           "timestamp": "2026-03-29T04:18:16Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-7krpqbpclzrd",
           "timestamp": "2026-03-29T04:18:14Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-5v39tv0pprlc",
           "timestamp": "2026-03-29T04:18:11Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-cs81s2ixw0gz",
           "timestamp": "2026-03-29T04:18:10Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-fh1qm8shvpb7",
           "timestamp": "2026-03-29T04:18:09Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-h1m9cl503duz",
           "timestamp": "2026-03-29T04:18:06Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-m6i7am13clg9",
           "timestamp": "2026-03-29T04:18:03Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-ptoc5zkfjy4m",
           "timestamp": "2026-03-29T04:18:01Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-c7spzc6v5ad3",
           "timestamp": "2026-03-29T04:17:58Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-kyzqhr3s1jx3",
           "timestamp": "2026-03-29T04:17:54Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-ie9uobpp7w5p",
           "timestamp": "2026-03-29T04:17:54Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2033-the-provenance-wars.md"
         },
         {
           "event_id": "evt-35nsvadcba54",
           "timestamp": "2026-03-29T04:17:51Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2033-tremor-test.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2033-tremor-test.md"
         },
         {
           "event_id": "evt-kcyw98bibl96",
           "timestamp": "2026-03-29T04:17:50Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/drew/2032-smoke-over-caracas.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/drew/2032-smoke-over-caracas.md"
         },
         {
           "event_id": "evt-6fow85x9eyam",
           "timestamp": "2026-03-29T04:17:49Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/dixon/2031-lagos-pivot.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/dixon/2031-lagos-pivot.md"
         },
         {
           "event_id": "evt-f74wx1k9qfee",
           "timestamp": "2026-03-29T04:17:49Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-xicqhgwqvvdc",
           "timestamp": "2026-03-29T04:17:45Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-txwg1ndfuin4",
           "timestamp": "2026-03-29T04:17:40Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2030-minal-standard.md"
         },
         {
           "event_id": "evt-1gmerute9q8d",
           "timestamp": "2026-03-29T04:17:02Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-ct8m4a263byx",
           "timestamp": "2026-03-29T04:17:01Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-9q3p6kqm2rht",
           "timestamp": "2026-03-29T04:16:59Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-sbpjg7mq898m",
           "timestamp": "2026-03-29T04:16:55Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-e3r8lxoqzaij",
           "timestamp": "2026-03-29T04:16:54Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-qdas3nyi4cl5",
           "timestamp": "2026-03-29T04:16:53Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-yanx08bgdz3e",
           "timestamp": "2026-03-29T04:16:45Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-gv3ikvxxxaub",
           "timestamp": "2026-03-29T04:16:39Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-64e2jzqok4eb",
           "timestamp": "2026-03-29T04:16:33Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-9ajzq49pbj1s",
           "timestamp": "2026-03-29T04:16:31Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-6do8p38z6mxe",
           "timestamp": "2026-03-29T04:16:22Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-3yc4w1u3mj05",
           "timestamp": "2026-03-29T04:16:20Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-e68l625jjqee",
           "timestamp": "2026-03-29T04:16:13Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-n73dnonfda2l",
           "timestamp": "2026-03-29T04:16:10Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-xn66c98kwxak",
           "timestamp": "2026-03-29T04:16:07Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-p0wo4g8h1j2u",
           "timestamp": "2026-03-29T04:16:02Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-3y19auw1fmoq",
           "timestamp": "2026-03-29T04:15:57Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/sal/2035-the-speech.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/sal/2035-the-speech.md"
         },
         {
           "event_id": "evt-blwurltfbbbv",
           "timestamp": "2026-03-29T04:15:52Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-jmwk4kyp06lt",
           "timestamp": "2026-03-29T04:15:51Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-nhrr0sg6b659",
           "timestamp": "2026-03-29T04:15:50Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-am2pzu9991b5",
           "timestamp": "2026-03-29T04:15:46Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-ztuwazhvw60y",
           "timestamp": "2026-03-29T04:15:42Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-jhlep2g20wkc",
           "timestamp": "2026-03-29T04:15:36Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-ezrhv8z1s06f",
           "timestamp": "2026-03-29T04:15:33Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-t9s22mb80cux",
           "timestamp": "2026-03-29T04:15:30Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         },
         {
           "event_id": "evt-k97lo03hyel2",
           "timestamp": "2026-03-29T04:15:26Z",
           "type": "tool_file_edit",
-          "project": "sciprogfi-web",
-          "summary": "Modified: /home/user/Documents/dev/sciprogfi-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
+          "project": "yeti-memoir-web",
+          "summary": "Modified: /home/user/Documents/dev/yeti-memoir-web/content/nodes/narrative/alejandra/2035-the-god-problem.md"
         }
       ]
     },
@@ -3251,7 +3251,7 @@
           "timestamp": "2026-03-30T01:49:10Z",
           "type": "tool_bash",
           "project": "session-cartographer",
-          "summary": "Ran: rm -f ~/.claude/briefings/dev-tools.md ~/.claude/briefings/iblipper.md ~/.claude/briefings/psychodeli+.md ~/.claude"
+          "summary": "Ran: rm -f ~/.claude/briefings/dev-tools.md ~/.claude/briefings/Haunted Spreadsheet.md ~/.claude/briefings/Turtle Surfboard+.md ~/.claude"
         },
         {
           "event_id": "evt-3bjbi2o3uy0j",
@@ -3279,7 +3279,7 @@
           "timestamp": "2026-03-30T01:49:10Z",
           "type": "tool_bash",
           "project": "session-cartographer",
-          "summary": "Ran: rm -f ~/.claude/briefings/dev-tools.md ~/.claude/briefings/iblipper.md ~/.claude/briefings/psychodeli+.md ~/.claude"
+          "summary": "Ran: rm -f ~/.claude/briefings/dev-tools.md ~/.claude/briefings/Haunted Spreadsheet.md ~/.claude/briefings/Turtle Surfboard+.md ~/.claude"
         },
         {
           "event_id": "evt-3bjbi2o3uy0j",
@@ -3292,9 +3292,9 @@
     },
     {
       "session_id": "demo-hobbit-village-0",
-      "start": "2026-03-30T15:04:09.232Z",
-      "end": "2026-03-30T18:55:56.781Z",
-      "event_count": 28,
+      "start": "2026-03-30T21:53:01.380Z",
+      "end": "2026-03-31T00:17:32.314Z",
+      "event_count": 13,
       "project": "hobbit-village",
       "projects": [
         "hobbit-village"
@@ -3305,8 +3305,8 @@
         "research_fetch": 1
       },
       "quadrants": {
-        "construct": 16,
-        "surgical": 11
+        "construct": 7,
+        "surgical": 5
       },
       "commit_types": {
         "feature": 2,
@@ -3316,14 +3316,14 @@
       "events": [
         {
           "event_id": "fake-demo-hobbit-village-0-1",
-          "timestamp": "2026-03-30T15:04:09.232Z",
+          "timestamp": "2026-03-30T21:53:01.380Z",
           "type": "git_commit",
           "project": "hobbit-village",
           "summary": "[feature] Commit abc0: Add round door hitbox detection"
         },
         {
           "event_id": "fake-demo-hobbit-village-0-2",
-          "timestamp": "2026-03-30T18:55:56.781Z",
+          "timestamp": "2026-03-31T00:17:32.314Z",
           "type": "tool_file_edit",
           "project": "hobbit-village",
           "summary": "Modified: src/hobbit-village/main.js"
@@ -3332,9 +3332,9 @@
     },
     {
       "session_id": "demo-turtle-surfboard-1",
-      "start": "2026-03-30T11:18:22.166Z",
-      "end": "2026-03-30T15:49:53.402Z",
-      "event_count": 6,
+      "start": "2026-03-30T12:41:37.626Z",
+      "end": "2026-03-30T15:37:55.658Z",
+      "event_count": 31,
       "project": "turtle-surfboard",
       "projects": [
         "turtle-surfboard"
@@ -3345,8 +3345,8 @@
         "research_fetch": 1
       },
       "quadrants": {
-        "construct": 3,
-        "surgical": 2
+        "construct": 18,
+        "surgical": 12
       },
       "commit_types": {
         "feature": 2,
@@ -3356,14 +3356,14 @@
       "events": [
         {
           "event_id": "fake-demo-turtle-surfboard-1-1",
-          "timestamp": "2026-03-30T11:18:22.166Z",
+          "timestamp": "2026-03-30T12:41:37.626Z",
           "type": "git_commit",
           "project": "turtle-surfboard",
           "summary": "[fix] Commit abc1: Wax application fails on wet shell"
         },
         {
           "event_id": "fake-demo-turtle-surfboard-1-2",
-          "timestamp": "2026-03-30T15:49:53.402Z",
+          "timestamp": "2026-03-30T15:37:55.658Z",
           "type": "tool_file_edit",
           "project": "turtle-surfboard",
           "summary": "Modified: src/turtle-surfboard/main.js"
@@ -3372,92 +3372,12 @@
     },
     {
       "session_id": "demo-haunted-spreadsheet-2",
-      "start": "2026-03-30T10:10:32.298Z",
-      "end": "2026-03-30T13:11:40.161Z",
-      "event_count": 19,
+      "start": "2026-03-30T10:04:11.884Z",
+      "end": "2026-03-30T11:26:08.341Z",
+      "event_count": 8,
       "project": "haunted-spreadsheet",
       "projects": [
         "haunted-spreadsheet"
-      ],
-      "types": {
-        "git_commit": 3,
-        "tool_file_edit": 2,
-        "research_fetch": 1
-      },
-      "quadrants": {
-        "construct": 11,
-        "surgical": 7
-      },
-      "commit_types": {
-        "feature": 2,
-        "fix": 1
-      },
-      "transcript_path": "",
-      "events": [
-        {
-          "event_id": "fake-demo-haunted-spreadsheet-2-1",
-          "timestamp": "2026-03-30T10:10:32.298Z",
-          "type": "git_commit",
-          "project": "haunted-spreadsheet",
-          "summary": "[fix] Commit abc2: Ghost cells appear in print preview"
-        },
-        {
-          "event_id": "fake-demo-haunted-spreadsheet-2-2",
-          "timestamp": "2026-03-30T13:11:40.161Z",
-          "type": "tool_file_edit",
-          "project": "haunted-spreadsheet",
-          "summary": "Modified: src/haunted-spreadsheet/main.js"
-        }
-      ]
-    },
-    {
-      "session_id": "demo-quantum-toaster-3",
-      "start": "2026-03-29T23:40:57.319Z",
-      "end": "2026-03-30T04:10:23.366Z",
-      "event_count": 24,
-      "project": "quantum-toaster",
-      "projects": [
-        "quantum-toaster"
-      ],
-      "types": {
-        "git_commit": 3,
-        "tool_file_edit": 2,
-        "research_fetch": 1
-      },
-      "quadrants": {
-        "construct": 14,
-        "surgical": 9
-      },
-      "commit_types": {
-        "feature": 2,
-        "fix": 1
-      },
-      "transcript_path": "",
-      "events": [
-        {
-          "event_id": "fake-demo-quantum-toaster-3-1",
-          "timestamp": "2026-03-29T23:40:57.319Z",
-          "type": "git_commit",
-          "project": "quantum-toaster",
-          "summary": "[feature] Commit abc0: Bread exists in superposition until observed"
-        },
-        {
-          "event_id": "fake-demo-quantum-toaster-3-2",
-          "timestamp": "2026-03-30T04:10:23.366Z",
-          "type": "tool_file_edit",
-          "project": "quantum-toaster",
-          "summary": "Modified: src/quantum-toaster/main.js"
-        }
-      ]
-    },
-    {
-      "session_id": "demo-robot-bartender-4",
-      "start": "2026-03-29T18:32:49.317Z",
-      "end": "2026-03-29T21:26:01.012Z",
-      "event_count": 8,
-      "project": "robot-bartender",
-      "projects": [
-        "robot-bartender"
       ],
       "types": {
         "git_commit": 3,
@@ -3475,15 +3395,95 @@
       "transcript_path": "",
       "events": [
         {
+          "event_id": "fake-demo-haunted-spreadsheet-2-1",
+          "timestamp": "2026-03-30T10:04:11.884Z",
+          "type": "git_commit",
+          "project": "haunted-spreadsheet",
+          "summary": "[fix] Commit abc2: Ghost cells appear in print preview"
+        },
+        {
+          "event_id": "fake-demo-haunted-spreadsheet-2-2",
+          "timestamp": "2026-03-30T11:26:08.341Z",
+          "type": "tool_file_edit",
+          "project": "haunted-spreadsheet",
+          "summary": "Modified: src/haunted-spreadsheet/main.js"
+        }
+      ]
+    },
+    {
+      "session_id": "demo-quantum-toaster-3",
+      "start": "2026-03-30T01:35:45.494Z",
+      "end": "2026-03-30T03:27:06.852Z",
+      "event_count": 26,
+      "project": "quantum-toaster",
+      "projects": [
+        "quantum-toaster"
+      ],
+      "types": {
+        "git_commit": 3,
+        "tool_file_edit": 2,
+        "research_fetch": 1
+      },
+      "quadrants": {
+        "construct": 15,
+        "surgical": 10
+      },
+      "commit_types": {
+        "feature": 2,
+        "fix": 1
+      },
+      "transcript_path": "",
+      "events": [
+        {
+          "event_id": "fake-demo-quantum-toaster-3-1",
+          "timestamp": "2026-03-30T01:35:45.494Z",
+          "type": "git_commit",
+          "project": "quantum-toaster",
+          "summary": "[feature] Commit abc0: Bread exists in superposition until observed"
+        },
+        {
+          "event_id": "fake-demo-quantum-toaster-3-2",
+          "timestamp": "2026-03-30T03:27:06.852Z",
+          "type": "tool_file_edit",
+          "project": "quantum-toaster",
+          "summary": "Modified: src/quantum-toaster/main.js"
+        }
+      ]
+    },
+    {
+      "session_id": "demo-robot-bartender-4",
+      "start": "2026-03-29T13:03:12.451Z",
+      "end": "2026-03-29T15:33:28.225Z",
+      "event_count": 36,
+      "project": "robot-bartender",
+      "projects": [
+        "robot-bartender"
+      ],
+      "types": {
+        "git_commit": 3,
+        "tool_file_edit": 2,
+        "research_fetch": 1
+      },
+      "quadrants": {
+        "construct": 21,
+        "surgical": 14
+      },
+      "commit_types": {
+        "feature": 2,
+        "fix": 1
+      },
+      "transcript_path": "",
+      "events": [
+        {
           "event_id": "fake-demo-robot-bartender-4-1",
-          "timestamp": "2026-03-29T18:32:49.317Z",
+          "timestamp": "2026-03-29T13:03:12.451Z",
           "type": "git_commit",
           "project": "robot-bartender",
           "summary": "[fix] Commit abc1: Shaker arm exceeds torque limits on margaritas"
         },
         {
           "event_id": "fake-demo-robot-bartender-4-2",
-          "timestamp": "2026-03-29T21:26:01.012Z",
+          "timestamp": "2026-03-29T15:33:28.225Z",
           "type": "tool_file_edit",
           "project": "robot-bartender",
           "summary": "Modified: src/robot-bartender/main.js"
@@ -3492,9 +3492,9 @@
     },
     {
       "session_id": "demo-hobbit-village-5",
-      "start": "2026-03-29T12:36:03.343Z",
-      "end": "2026-03-29T14:30:23.598Z",
-      "event_count": 41,
+      "start": "2026-03-29T07:17:37.467Z",
+      "end": "2026-03-29T09:23:01.751Z",
+      "event_count": 35,
       "project": "hobbit-village",
       "projects": [
         "hobbit-village"
@@ -3505,8 +3505,8 @@
         "research_fetch": 1
       },
       "quadrants": {
-        "construct": 24,
-        "surgical": 16
+        "construct": 21,
+        "surgical": 14
       },
       "commit_types": {
         "feature": 2,
@@ -3516,14 +3516,14 @@
       "events": [
         {
           "event_id": "fake-demo-hobbit-village-5-1",
-          "timestamp": "2026-03-29T12:36:03.343Z",
+          "timestamp": "2026-03-29T07:17:37.467Z",
           "type": "git_commit",
           "project": "hobbit-village",
           "summary": "[feature] Commit abc2: Shire zoning permits API"
         },
         {
           "event_id": "fake-demo-hobbit-village-5-2",
-          "timestamp": "2026-03-29T14:30:23.598Z",
+          "timestamp": "2026-03-29T09:23:01.751Z",
           "type": "tool_file_edit",
           "project": "hobbit-village",
           "summary": "Modified: src/hobbit-village/main.js"
@@ -3532,8 +3532,8 @@
     },
     {
       "session_id": "demo-turtle-surfboard-6",
-      "start": "2026-03-29T03:20:59.943Z",
-      "end": "2026-03-29T05:17:39.781Z",
+      "start": "2026-03-29T01:51:41.427Z",
+      "end": "2026-03-29T06:45:28.882Z",
       "event_count": 43,
       "project": "turtle-surfboard",
       "projects": [
@@ -3556,14 +3556,14 @@
       "events": [
         {
           "event_id": "fake-demo-turtle-surfboard-6-1",
-          "timestamp": "2026-03-29T03:20:59.943Z",
+          "timestamp": "2026-03-29T01:51:41.427Z",
           "type": "git_commit",
           "project": "turtle-surfboard",
           "summary": "[feature] Commit abc0: Fin stabilizer for hawksbill stance"
         },
         {
           "event_id": "fake-demo-turtle-surfboard-6-2",
-          "timestamp": "2026-03-29T05:17:39.781Z",
+          "timestamp": "2026-03-29T06:45:28.882Z",
           "type": "tool_file_edit",
           "project": "turtle-surfboard",
           "summary": "Modified: src/turtle-surfboard/main.js"
@@ -3572,9 +3572,9 @@
     },
     {
       "session_id": "demo-haunted-spreadsheet-7",
-      "start": "2026-03-28T15:31:00.447Z",
-      "end": "2026-03-28T19:10:07.188Z",
-      "event_count": 23,
+      "start": "2026-03-28T18:56:19.688Z",
+      "end": "2026-03-28T23:11:39.450Z",
+      "event_count": 15,
       "project": "haunted-spreadsheet",
       "projects": [
         "haunted-spreadsheet"
@@ -3585,8 +3585,8 @@
         "research_fetch": 1
       },
       "quadrants": {
-        "construct": 13,
-        "surgical": 9
+        "construct": 9,
+        "surgical": 6
       },
       "commit_types": {
         "feature": 2,
@@ -3596,14 +3596,14 @@
       "events": [
         {
           "event_id": "fake-demo-haunted-spreadsheet-7-1",
-          "timestamp": "2026-03-28T15:31:00.447Z",
+          "timestamp": "2026-03-28T18:56:19.688Z",
           "type": "git_commit",
           "project": "haunted-spreadsheet",
           "summary": "[feature] Commit abc1: Poltergeist auto-sort algorithm"
         },
         {
           "event_id": "fake-demo-haunted-spreadsheet-7-2",
-          "timestamp": "2026-03-28T19:10:07.188Z",
+          "timestamp": "2026-03-28T23:11:39.450Z",
           "type": "tool_file_edit",
           "project": "haunted-spreadsheet",
           "summary": "Modified: src/haunted-spreadsheet/main.js"
@@ -3665,7 +3665,7 @@
         "demo-quantum-toaster-3",
         "eb759329-66ae-4cf7-8ce6-b1989749296c"
       ],
-      "start": "2026-03-29T23:40:57.319Z",
+      "start": "2026-03-30T01:35:45.494Z",
       "end": "2026-03-30T01:46:01Z"
     },
     {
@@ -3679,58 +3679,66 @@
     {
       "sessions": [
         "demo-robot-bartender-4",
+        "e2ab97ba-6516-4915-8e6e-997128da3594"
+      ],
+      "start": "2026-03-29T13:03:12.451Z",
+      "end": "2026-03-29T15:00:19Z"
+    },
+    {
+      "sessions": [
+        "demo-robot-bartender-4",
         "eb759329-66ae-4cf7-8ce6-b1989749296c"
       ],
-      "start": "2026-03-29T18:32:49.317Z",
-      "end": "2026-03-29T21:26:01.012Z"
+      "start": "2026-03-29T13:03:12.451Z",
+      "end": "2026-03-29T15:33:28.225Z"
     },
     {
       "sessions": [
         "demo-hobbit-village-5",
         "e2ab97ba-6516-4915-8e6e-997128da3594"
       ],
-      "start": "2026-03-29T12:36:03.343Z",
-      "end": "2026-03-29T14:30:23.598Z"
+      "start": "2026-03-29T07:17:37.467Z",
+      "end": "2026-03-29T09:23:01.751Z"
     },
     {
       "sessions": [
         "demo-hobbit-village-5",
         "eb759329-66ae-4cf7-8ce6-b1989749296c"
       ],
-      "start": "2026-03-29T12:36:03.343Z",
-      "end": "2026-03-29T14:30:23.598Z"
+      "start": "2026-03-29T07:17:37.467Z",
+      "end": "2026-03-29T09:23:01.751Z"
     },
     {
       "sessions": [
         "demo-turtle-surfboard-6",
         "e2ab97ba-6516-4915-8e6e-997128da3594"
       ],
-      "start": "2026-03-29T03:20:59.943Z",
-      "end": "2026-03-29T05:17:39.781Z"
+      "start": "2026-03-29T01:51:41.427Z",
+      "end": "2026-03-29T06:45:28.882Z"
     },
     {
       "sessions": [
         "demo-turtle-surfboard-6",
         "eb759329-66ae-4cf7-8ce6-b1989749296c"
       ],
-      "start": "2026-03-29T03:20:59.943Z",
-      "end": "2026-03-29T05:17:39.781Z"
+      "start": "2026-03-29T03:18:18Z",
+      "end": "2026-03-29T06:45:28.882Z"
     },
     {
       "sessions": [
         "demo-haunted-spreadsheet-7",
         "e2ab97ba-6516-4915-8e6e-997128da3594"
       ],
-      "start": "2026-03-28T15:31:00.447Z",
-      "end": "2026-03-28T19:10:07.188Z"
+      "start": "2026-03-28T18:56:19.688Z",
+      "end": "2026-03-28T23:11:39.450Z"
     },
     {
       "sessions": [
         "demo-haunted-spreadsheet-7",
         "a40a6caa-a381-4f87-9df6-129c54741bc4"
       ],
-      "start": "2026-03-28T15:31:00.447Z",
-      "end": "2026-03-28T19:10:07.188Z"
+      "start": "2026-03-28T18:56:19.688Z",
+      "end": "2026-03-28T19:19:23Z"
     }
   ]
 }

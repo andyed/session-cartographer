@@ -33,7 +33,7 @@
       "session_id": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
       "project": "session-cartographer",
       "cwd": "/home/user/Documents/dev/session-cartographer",
-      "summary": "Ran: rm -f ~/.claude/briefings/dev-tools.md ~/.claude/briefings/iblipper.md ~/.claude/briefings/psychodeli+.md ~/.claude/briefings/scrutinizer.md ~/.claude/briefings/websites.md",
+      "summary": "Ran: rm -f ~/.claude/briefings/dev-tools.md ~/.claude/briefings/Haunted Spreadsheet.md ~/.claude/briefings/Turtle Surfboard+.md ~/.claude/briefings/Quantum Toaster.md ~/.claude/briefings/websites.md",
       "transcript_path": "/home/user/.claude/projects/demo-project/d95a31fd-1a23-4901-8de5-01cb4819b4e8.jsonl",
       "diff_shape": null,
       "related_ids": [],
