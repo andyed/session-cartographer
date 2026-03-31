@@ -1,0 +1,27 @@
+{
+  "query_id": "transcript-viewer",
+  "query": "transcript viewer",
+  "intent": "Find work on the Transcript Viewer enrichment feature in session-cartographer Explorer",
+
+  "sessions": {
+    "cbd1b409-539b-4465-99b7-888e2d558304": { "relevant": true, "role": "primary", "notes": "Built Phase 1 transcript viewer — token attribution, compaction markers, session summary" },
+    "fcce4294-ebb6-48b9-9a48-de0e7074ccbf": { "relevant": true, "role": "context", "notes": "Earlier Explorer work, TranscriptViewer component created" }
+  },
+
+  "events": [
+    { "rank": 1, "event_id": "evt-qsesvh6ps2qg", "relevant": true, "grade": 3, "noise": null, "why": "File edit in session-cartographer, transcript viewer work" },
+    { "rank": 2, "event_id": "evt-igmskqrlmyq7", "relevant": true, "grade": 3, "noise": null },
+    { "rank": 3, "event_id": "evt-dd6wshvqvnkc", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "claude-code-session-bridge research — matches 'viewer' from history-viewer" },
+    { "rank": 4, "event_id": "evt-p180mzofr3ij", "relevant": false, "grade": 0, "noise": "single_word_match" },
+    { "rank": 5, "event_id": "evt-7xebmvx7eexx", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "scrutinizer2025 research — unrelated" },
+    { "rank": 6, "event_id": "git-116eb76", "relevant": true, "grade": 2, "noise": null, "why": "Commit in session-cartographer, likely transcript-related" },
+    { "rank": 7, "event_id": "git-075c5ec", "relevant": true, "grade": 2, "noise": null },
+    { "rank": 8, "event_id": "git-486ed8b", "relevant": true, "grade": 3, "noise": null, "why": "Commit with transcript viewer enrichment" },
+    { "rank": 9, "event_id": "6a67415f-9c96-4455-8be4-59a07b1021d0", "relevant": true, "grade": 2, "noise": null, "why": "This session — discussing transcript viewer demo mode" },
+    { "rank": 10, "event_id": "git-6efd5bc", "relevant": true, "grade": 2, "noise": null }
+  ],
+
+  "precision_at_5": 0.4,
+  "precision_at_10": 0.7,
+  "notes": "Multi-word query where 'transcript' and 'viewer' individually match broadly. Top results are good (session-cartographer edits). Middle ranks polluted by 'history-viewer' (different project) matching 'viewer'. Semantic helps pull in relevant carto commits."
+}
