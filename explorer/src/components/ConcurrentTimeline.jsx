@@ -140,7 +140,8 @@ export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }
     if (activeFacets.types.size > 0) params.set('ft', [...activeFacets.types].join(','));
     const qs = params.toString();
     if (isActive) {
-      window.history.replaceState({ tab: 'timeline' }, '', qs ? `/?${qs}` : '/');
+      const base = import.meta.env.BASE_URL || '/';
+      window.history.replaceState({ tab: 'timeline' }, '', qs ? `${base}?${qs}` : base);
     }
   }, [days, zoom, activeFacets, isActive]);
 

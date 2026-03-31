@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { autocomplete, coterms } from '../api';
+import { autocomplete, coterms, isDemoMode } from '../api';
 
 export default function SearchInput({ value, onChange }) {
   const [suggestions, setSuggestions] = useState([]);
@@ -21,8 +21,9 @@ export default function SearchInput({ value, onChange }) {
 
     const words = text.split(/\s+/);
     const lastWord = words[words.length - 1] || '';
+    const minChars = isDemoMode ? 0 : 2;
 
-    if (lastWord.length < 2) {
+    if (lastWord.length < minChars) {
       setSuggestions([]);
       setOpen(false);
       return;
@@ -58,9 +59,10 @@ export default function SearchInput({ value, onChange }) {
   }, [value, onChange]);
 
   const applySuggestion = useCallback((term) => {
-    const words = value.split(/\s+/);
-    words[words.length - 1] = term;
-    const newValue = words.join(' ') + ' ';
+    // If the suggestion contains spaces (full query phrase), replace entire input
+    const newValue = term.includes(' ')
+      ? term
+      : (() => { const words = value.split(/\s+/); words[words.length - 1] = term; return words.join(' ') + ' '; })();
     onChange(newValue);
     setSuggestions([]);
     setOpen(false);
@@ -226,7 +228,7 @@ export default function SearchInput({ value, onChange }) {
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        onFocus={() => { if (suggestions.length > 0) setOpen(true); }}
+        onFocus={() => { if (suggestions.length > 0) setOpen(true); else if (isDemoMode) fetchSuggestions(''); }}
         placeholder="Search session history..."
         className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
         style={{ fontSize: '28px' }}

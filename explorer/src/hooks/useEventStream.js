@@ -1,4 +1,5 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef } from 'react';
+import { isDemoMode } from '../api';
 
 export function useEventStream(onEvent) {
   const sourceRef = useRef(null);
@@ -6,6 +7,9 @@ export function useEventStream(onEvent) {
   onEventRef.current = onEvent;
 
   useEffect(() => {
+    // No live streaming in demo mode
+    if (isDemoMode) return;
+
     const source = new EventSource('/api/stream');
     sourceRef.current = source;
 

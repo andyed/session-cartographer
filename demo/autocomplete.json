@@ -1,0 +1,375 @@
+{
+  "autocomplete": {
+    "di": [
+      "did",
+      "different",
+      "diff",
+      "dist",
+      "didn",
+      "directory",
+      "display",
+      "distance"
+    ],
+    "dif": [
+      "different",
+      "diff",
+      "difference",
+      "differential",
+      "differences",
+      "differs",
+      "diffusion",
+      "differ"
+    ],
+    "diff": [
+      "different",
+      "difference",
+      "differential",
+      "differences",
+      "differs",
+      "diffusion",
+      "differ",
+      "diffs"
+    ],
+    "sh": [
+      "should",
+      "show",
+      "shift",
+      "shared",
+      "shader",
+      "shaders",
+      "shell",
+      "shoudl"
+    ],
+    "sha": [
+      "shared",
+      "shader",
+      "shaders",
+      "shape",
+      "share",
+      "shadow",
+      "shadows",
+      "shadmehr"
+    ],
+    "shap": [
+      "shape",
+      "shapes",
+      "shaped",
+      "shapers",
+      "shaper",
+      "shaping"
+    ],
+    "shape": [
+      "shapes",
+      "shaped",
+      "shapers",
+      "shaper"
+    ],
+    "fa": [
+      "fast",
+      "far",
+      "fascist",
+      "false",
+      "faster",
+      "fabric",
+      "face",
+      "fallback"
+    ],
+    "fac": [
+      "face",
+      "factor",
+      "fact",
+      "factors",
+      "facets",
+      "facebook",
+      "facet",
+      "facetbar"
+    ],
+    "face": [
+      "facets",
+      "facebook",
+      "facet",
+      "facetbar",
+      "faceted",
+      "faceting",
+      "faced",
+      "faceing"
+    ],
+    "facet": [
+      "facets",
+      "facetbar",
+      "faceted",
+      "faceting"
+    ],
+    "facets": [],
+    "co": [
+      "com",
+      "commit",
+      "code",
+      "components",
+      "content",
+      "color",
+      "completed",
+      "could"
+    ],
+    "con": [
+      "content",
+      "config",
+      "contrast",
+      "context",
+      "control",
+      "congestion",
+      "controls",
+      "console"
+    ],
+    "conc": [
+      "concise",
+      "conclusions",
+      "concurrent",
+      "concept",
+      "conceptual",
+      "concisely",
+      "concerns",
+      "conclusion"
+    ],
+    "concu": [
+      "concurrent",
+      "concurrency",
+      "concult",
+      "concurrenttimeline",
+      "concurrrent",
+      "concusions"
+    ],
+    "concur": [
+      "concurrent",
+      "concurrency",
+      "concurrenttimeline",
+      "concurrrent"
+    ],
+    "concurr": [
+      "concurrent",
+      "concurrency",
+      "concurrenttimeline",
+      "concurrrent"
+    ],
+    "concurre": [
+      "concurrent",
+      "concurrency",
+      "concurrenttimeline"
+    ],
+    "concurren": [
+      "concurrent",
+      "concurrency",
+      "concurrenttimeline"
+    ],
+    "concurrent": [
+      "concurrenttimeline"
+    ],
+    "ti": [
+      "title",
+      "time",
+      "timeline",
+      "timing",
+      "titles",
+      "tier",
+      "tilt",
+      "timeout"
+    ],
+    "tim": [
+      "time",
+      "timeline",
+      "timing",
+      "timeout",
+      "times",
+      "timestamp",
+      "timer",
+      "timingmodel"
+    ],
+    "time": [
+      "timeline",
+      "timeout",
+      "times",
+      "timestamp",
+      "timer",
+      "timedeltas",
+      "timeframe",
+      "timelie"
+    ],
+    "timel": [
+      "timeline",
+      "timelie",
+      "timelien",
+      "timelime",
+      "timelinerenderer",
+      "timelines",
+      "timely"
+    ],
+    "timeli": [
+      "timeline",
+      "timelie",
+      "timelien",
+      "timelime",
+      "timelinerenderer",
+      "timelines"
+    ],
+    "timelin": [
+      "timeline",
+      "timelinerenderer",
+      "timelines"
+    ],
+    "timeline": [
+      "timelinerenderer",
+      "timelines"
+    ],
+    "fi": [
+      "files",
+      "fix",
+      "find",
+      "file",
+      "firetv",
+      "first",
+      "figma",
+      "field"
+    ],
+    "fis": [
+      "fisheye",
+      "fish",
+      "fisheying",
+      "fishy",
+      "fisrt"
+    ],
+    "fish": [
+      "fisheye",
+      "fisheying",
+      "fishy"
+    ],
+    "fishe": [
+      "fisheye",
+      "fisheying"
+    ],
+    "fishey": [
+      "fisheye",
+      "fisheying"
+    ],
+    "fisheye": [],
+    "au": [
+      "authors",
+      "audio",
+      "auto",
+      "audit",
+      "author",
+      "autocomplete",
+      "automated",
+      "automation"
+    ],
+    "aut": [
+      "authors",
+      "auto",
+      "author",
+      "autocomplete",
+      "automated",
+      "automation",
+      "auth",
+      "automate"
+    ],
+    "auto": [
+      "autocomplete",
+      "automated",
+      "automation",
+      "automate",
+      "automatic",
+      "autonomous",
+      "autoupdate",
+      "autodifference"
+    ],
+    "autoc": [
+      "autocomplete",
+      "autocomlete",
+      "autocomplile",
+      "autocorrelation"
+    ],
+    "autoco": [
+      "autocomplete",
+      "autocomlete",
+      "autocomplile",
+      "autocorrelation"
+    ],
+    "autocom": [
+      "autocomplete",
+      "autocomlete",
+      "autocomplile"
+    ],
+    "autocomp": [
+      "autocomplete",
+      "autocomplile"
+    ],
+    "autocompl": [
+      "autocomplete",
+      "autocomplile"
+    ],
+    "autocomple": [
+      "autocomplete"
+    ],
+    "autocomplet": [
+      "autocomplete"
+    ],
+    "autocomplete": []
+  },
+  "coterms": {
+    "diff": [
+      "features",
+      "tests",
+      "spec",
+      "renderer",
+      "broomy",
+      "editor"
+    ],
+    "shape": [
+      "explorer",
+      "wave",
+      "span",
+      "obscures",
+      "regions",
+      "jsx"
+    ],
+    "facets": [
+      "flush",
+      "faceting",
+      "commited",
+      "clause",
+      "concurrent",
+      "hell"
+    ],
+    "concurrent": [
+      "explorer",
+      "jsx",
+      "mcp",
+      "components",
+      "mainly",
+      "insde"
+    ],
+    "timeline": [
+      "explorer",
+      "stops",
+      "jsx",
+      "content",
+      "components",
+      "claude"
+    ],
+    "fisheye": [
+      "menu",
+      "steering",
+      "corridor",
+      "flyout",
+      "da7f73f",
+      "05c5c7a"
+    ],
+    "autocomplete": [
+      "explorer",
+      "da7f73f",
+      "05c5c7a",
+      "dimming",
+      "2526",
+      "sha"
+    ]
+  }
+}

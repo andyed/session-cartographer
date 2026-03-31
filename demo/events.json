@@ -1,0 +1,56 @@
+{
+  "events": [
+    {
+      "event_id": "evt-m1gnmu6inshs",
+      "timestamp": "2026-03-30T01:58:01Z",
+      "type": "tool_file_edit",
+      "session_id": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
+      "project": "session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Modified: /home/user/.claude/settings.json",
+      "transcript_path": "/home/user/.claude/projects/demo-project/d95a31fd-1a23-4901-8de5-01cb4819b4e8.jsonl",
+      "diff_shape": null,
+      "related_ids": [],
+      "_source": "changelog"
+    },
+    {
+      "event_id": "evt-96opeyxui3jd",
+      "timestamp": "2026-03-30T01:54:21Z",
+      "type": "tool_file_edit",
+      "session_id": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
+      "project": "session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Modified: /home/user/Documents/dev/session-cartographer/TODO.md",
+      "transcript_path": "/home/user/.claude/projects/demo-project/d95a31fd-1a23-4901-8de5-01cb4819b4e8.jsonl",
+      "diff_shape": null,
+      "related_ids": [],
+      "_source": "changelog"
+    },
+    {
+      "event_id": "evt-lj4bcbwxxwki",
+      "timestamp": "2026-03-30T01:49:10Z",
+      "type": "tool_bash",
+      "session_id": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
+      "project": "session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Ran: rm -f ~/.claude/briefings/dev-tools.md ~/.claude/briefings/Haunted Spreadsheet.md ~/.claude/briefings/Turtle Surfboard+.md ~/.claude/briefings/Quantum Toaster.md ~/.claude/briefings/websites.md",
+      "transcript_path": "/home/user/.claude/projects/demo-project/d95a31fd-1a23-4901-8de5-01cb4819b4e8.jsonl",
+      "diff_shape": null,
+      "related_ids": [],
+      "_source": "changelog"
+    },
+    {
+      "event_id": "evt-3bjbi2o3uy0j",
+      "timestamp": "2026-03-30T01:47:46Z",
+      "type": "tool_file_edit",
+      "session_id": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
+      "project": "session-cartographer",
+      "cwd": "/home/user",
+      "summary": "Modified: /home/user/Documents/dev/session-cartographer/CLAUDE.md",
+      "transcript_path": "/home/user/.claude/projects/demo-project/d95a31fd-1a23-4901-8de5-01cb4819b4e8.jsonl",
+      "diff_shape": null,
+      "related_ids": [],
+      "_source": "changelog"
+    }
+  ]
+}

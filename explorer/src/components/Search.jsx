@@ -47,7 +47,8 @@ export default function Search({ query = '', onOpenTranscript }) {
     if (activeFacets.quadrants.size > 0) params.set('fq', [...activeFacets.quadrants].join(','));
     if (activeFacets.sources.size > 0) params.set('fs', [...activeFacets.sources].join(','));
     const qs = params.toString();
-    const url = qs ? `/?${qs}` : '/';
+    const base = import.meta.env.BASE_URL || '/';
+    const url = qs ? `${base}?${qs}` : base;
     window.history.replaceState({ tab: 'search' }, '', url);
   }, [query, project, activeFacets]);
 
@@ -192,7 +193,11 @@ export default function Search({ query = '', onOpenTranscript }) {
             </div>
 
             {displayItems.length === 0 ? (
-              <div className="text-gray-500 text-center py-8">No results found.</div>
+              <div className="text-gray-500 text-center py-8">
+                {results.meta?.demo_miss
+                  ? 'This query isn\'t cached in the demo. Try one of the queries in the banner above.'
+                  : 'No results found.'}
+              </div>
             ) : (
               <>
                 <GroupedResults

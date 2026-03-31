@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const isDemo = process.env.VITE_DEMO === 'true';
+
 export default defineConfig({
   plugins: [react()],
+  base: isDemo ? '/session-cartographer/' : '/',
   server: {
     host: '127.0.0.1',
     port: 2527,

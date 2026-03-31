@@ -105,6 +105,23 @@ Cartographer is **15× faster** on average. grep session counts are inflated by 
 
 For queries that only appear in conversation text (not in indexed events), cartographer falls back to transcript search via ripgrep + BM25 — slower but still ranked.
 
+### Where grep still wins
+
+The speed numbers above compare the wrong things. grep searches raw conversation text across 2.9 GB of transcripts. Cartographer searches a 1.5 MB event index. They have different recall surfaces: grep finds anything ever said in a session; cartographer only finds what hooks captured (commits, fetches, milestones, file edits). For terms like "facets" that never appear in event logs — only in conversation — cartographer's keyword path returns nothing until the transcript fallback kicks in, which is slower than grep.
+
+Cartographer's real advantage is **ranking and deduplication**, not coverage. grep returns 73 sessions for "BM25" because the term appears in echoed CLAUDE.md content in every session — that's noise, not recall. Cartographer returns 11 sessions with ranked, deduplicated events linked to source transcripts. The hybrid path (BM25 + Qdrant semantic) adds phrase-level understanding that bag-of-words keyword search can't match: "diff shape" as a concept vs. "diff" and "shape" as independent words. [Evaluation results and phrase matching roadmap →](docs/GHPAGES_DEMO_SPEC.md#ground-truth--evaluation)
+
+### Precision evaluation (4 labeled queries)
+
+```
+          P@5    P@10   Recall   Speed
+grep       —      —      75%    28.1s
+BM25      0.40   0.33    79%    29.3s
+hybrid    0.45   0.40    79%    28.6s
+```
+
+Hybrid (BM25 + semantic) outperforms keyword-only at every k. grep has no ranking so precision isn't measurable, but its recall is competitive. The main precision gap is multi-word queries like "diff shape" (P@5=0.0) where BM25 matches each word independently. Phrase matching via ordered bigrams or positional indexing would fix this — see the [search roadmap](TODO.md#search).
+
 ## Architecture
 
 Hooks are the foundation. Everything else is a lens.
@@ -144,6 +161,8 @@ A year of event logs is ~8 MB. Your session history is the training data for you
 **Speed vs. recall:** grep scans everything (30-50s). Cartographer searches a 1.5MB index (sub-second, ranked) but only finds what hooks captured. Mitigations: `CARTOGRAPHER_LOG_TOOL_USE=true`, transcript grep fallback, Qdrant backfill.
 
 **BM25 handles Latin scripts only.** Accented characters normalized (`résumé` → `resume`). CJK/RTL needs semantic search, which is multilingual natively.
+
+**No phrase matching.** `"diff shape"` is treated as `diff OR shape`, not a phrase. Semantic search (Qdrant) handles this implicitly — the embedding captures the concept. The keyword path doesn't. Ordered bigram injection (SDM-lite) would fix this in the BM25 scorer, but with Qdrant running, semantic already provides phrase-level matching. See [phrase matching TODO](TODO.md#search).
 
 **No stemming.** `shader*` for prefix matching. See [query rewrite roadmap](docs/query_rewrite_spec.md).
 
