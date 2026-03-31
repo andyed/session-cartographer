@@ -1,0 +1,22 @@
+[
+  {
+    "id": "diff-shape",
+    "query": "diff shape",
+    "notes": "Multi-word, strong event log hits (commits + milestones). Tests BM25 on structured data."
+  },
+  {
+    "id": "facets",
+    "query": "facets",
+    "notes": "Zero event log matches — only found via transcript fallback. Tests recall when indexed events miss."
+  },
+  {
+    "id": "concurrent-timeline",
+    "query": "concurrent timeline",
+    "notes": "Recent feature work. Tests recency bias and semantic similarity."
+  },
+  {
+    "id": "fisheye-autocomplete",
+    "query": "fisheye autocomplete",
+    "notes": "Narrow/specific feature. Tests precision for rare compound terms."
+  }
+]
