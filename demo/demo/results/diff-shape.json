@@ -22,11 +22,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "obscures letter shape",
+      "display": "why is qdrant not helping for\n> \"diff shape\" is broken (P@5=0.0) — phrase matching is the #1 priority",
       "pastedContents": {},
-      "timestamp": 1774803612809,
+      "timestamp": 1774929902732,
       "project": "/home/user",
-      "sessionId": "fdaf8acc-a5a1-4bf6-98ef-d333934f67fa",
+      "sessionId": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
       "_source": "claude-history",
       "_score": 0.016129032258064516,
       "_sources": "keyword"
@@ -43,11 +43,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "halo changed shape!",
+      "display": "obscures letter shape",
       "pastedContents": {},
-      "timestamp": 1773839893909,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "7f14b28d-2be8-4fdc-ae30-63f4bc8e1916",
+      "timestamp": 1774803612809,
+      "project": "/home/user",
+      "sessionId": "fdaf8acc-a5a1-4bf6-98ef-d333934f67fa",
       "_source": "claude-history",
       "_score": 0.015873015873015872,
       "_sources": "keyword"
@@ -61,6 +61,27 @@
       "summary": "Fetched: https://doi.org/10.1017/nlp.2025.7 | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.015873015873015872,
+      "_sources": "semantic"
+    },
+    {
+      "display": "halo changed shape!",
+      "pastedContents": {},
+      "timestamp": 1773839893909,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "7f14b28d-2be8-4fdc-ae30-63f4bc8e1916",
+      "_source": "claude-history",
+      "_score": 0.015625,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-da0be121-2d63-4d47-b50f-b45b554f8962-2026-03-20T02:21:05.153Z",
+      "source": "transcript",
+      "timestamp": "2026-03-20T02:21:05.153Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
+      "summary": "Visually still very similar — the peripheral text is still quite readable. Let me run OCR to get the numbers: | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.015625,
       "_sources": "semantic"
     },
     {
@@ -84,27 +105,6 @@
       },
       "related_ids": [],
       "_source": "changelog",
-      "_score": 0.015625,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-da0be121-2d63-4d47-b50f-b45b554f8962-2026-03-20T02:21:05.153Z",
-      "source": "transcript",
-      "timestamp": "2026-03-20T02:21:05.153Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
-      "summary": "Visually still very similar — the peripheral text is still quite readable. Let me run OCR to get the numbers: | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.015625,
-      "_sources": "semantic"
-    },
-    {
-      "display": "- \"Color and Shape Down the Pyramid\"  is good -- but it really shape or is it resolution/texture?",
-      "pastedContents": {},
-      "timestamp": 1773584640615,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
-      "_source": "claude-history",
       "_score": 0.015384615384615385,
       "_sources": "keyword"
     },
@@ -120,11 +120,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "for this, i was looking for diff of diff vs 2.4",
+      "display": "- \"Color and Shape Down the Pyramid\"  is good -- but it really shape or is it resolution/texture?",
       "pastedContents": {},
-      "timestamp": 1773580313925,
+      "timestamp": 1773584640615,
       "project": "/home/user/Documents/dev",
-      "sessionId": "70c4c8f4-5876-4f58-b0f4-78cbf4c28dec",
+      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
       "_source": "claude-history",
       "_score": 0.015151515151515152,
       "_sources": "keyword"
@@ -141,11 +141,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "this i the shape i want ",
+      "display": "for this, i was looking for diff of diff vs 2.4",
       "pastedContents": {},
-      "timestamp": 1772043039246,
+      "timestamp": 1773580313925,
       "project": "/home/user/Documents/dev",
-      "sessionId": "9cfac8f4-efb7-4775-b5c8-b0ae0fe63831",
+      "sessionId": "70c4c8f4-5876-4f58-b0f4-78cbf4c28dec",
       "_source": "claude-history",
       "_score": 0.014925373134328358,
       "_sources": "keyword"
@@ -162,6 +162,27 @@
       "_sources": "semantic"
     },
     {
+      "display": "this i the shape i want ",
+      "pastedContents": {},
+      "timestamp": 1772043039246,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "9cfac8f4-efb7-4775-b5c8-b0ae0fe63831",
+      "_source": "claude-history",
+      "_score": 0.014705882352941176,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-a10d50ef-4a56-4bad-8595-6176b12d8d4b-2026-03-14T01:45:03.894Z",
+      "source": "transcript",
+      "timestamp": "2026-03-14T01:45:03.894Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
+      "summary": "Done. Image: `src/blog/images/reading-span-on-off-comparison.png`, draft updated. | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.014705882352941176,
+      "_sources": "semantic"
+    },
+    {
       "event_id": "evt-c5s1qshg1n77",
       "timestamp": "2026-03-29T22:53:43Z",
       "type": "tool_bash",
@@ -175,18 +196,18 @@
       "_source": "tool-use",
       "tool": "Bash",
       "session": "c25ff654-3c63-4895-ad62-0f61c62a962d",
-      "_score": 0.014705882352941176,
+      "_score": 0.014492753623188406,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-a10d50ef-4a56-4bad-8595-6176b12d8d4b-2026-03-14T01:45:03.894Z",
+      "event_id": "hist-a10d50ef-4a56-4bad-8595-6176b12d8d4b-2026-03-14T01:38:23.862Z",
       "source": "transcript",
-      "timestamp": "2026-03-14T01:45:03.894Z",
+      "timestamp": "2026-03-14T01:38:23.862Z",
       "project": "-Users-andyed-Documents-dev",
       "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
-      "summary": "Done. Image: `src/blog/images/reading-span-on-off-comparison.png`, draft updated. | project: -Users-andyed-Documents-dev",
+      "summary": "Now the cursor is on the lead paragraph text. Let me crop and build the comparison: | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.014705882352941176,
+      "_score": 0.014492753623188406,
       "_sources": "semantic"
     },
     {
@@ -203,18 +224,18 @@
       "_source": "tool-use",
       "tool": "Bash",
       "session": "224eaeb0-27db-4353-918b-ea6225f3e916",
-      "_score": 0.014492753623188406,
+      "_score": 0.014285714285714285,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-a10d50ef-4a56-4bad-8595-6176b12d8d4b-2026-03-14T01:38:23.862Z",
-      "source": "transcript",
-      "timestamp": "2026-03-14T01:38:23.862Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
-      "summary": "Now the cursor is on the lead paragraph text. Let me crop and build the comparison: | project: -Users-andyed-Documents-dev",
+      "event_id": "synth-toolu_01RZ4hkbNGqaXsM5Jra8ydTE",
+      "source": "tool_use",
+      "timestamp": "2026-03-28T12:46:26.511Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.014492753623188406,
+      "_score": 0.014285714285714285,
       "_sources": "semantic"
     },
     {
@@ -231,18 +252,18 @@
       "_source": "tool-use",
       "tool": "Bash",
       "session": "f7ebe8f9-114d-4198-8c46-ce8e8bc3e528",
-      "_score": 0.014285714285714285,
+      "_score": 0.014084507042253521,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01RZ4hkbNGqaXsM5Jra8ydTE",
+      "event_id": "synth-toolu_018K3UVY3qRpcMd1MYYm1ff6",
       "source": "tool_use",
-      "timestamp": "2026-03-28T12:46:26.511Z",
+      "timestamp": "2026-03-28T02:26:12.998Z",
       "project": "-Users-andyed",
       "cwd": "/home/user/Documents/dev/iblipper2025",
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.014285714285714285,
+      "_score": 0.014084507042253521,
       "_sources": "semantic"
     },
     {
@@ -259,18 +280,18 @@
       "_source": "tool-use",
       "tool": "Bash",
       "session": "eb759329-66ae-4cf7-8ce6-b1989749296c",
-      "_score": 0.014084507042253521,
+      "_score": 0.013888888888888888,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_018K3UVY3qRpcMd1MYYm1ff6",
+      "event_id": "synth-toolu_016Wiyv1wUtB7WfPFGYU2q7K",
       "source": "tool_use",
-      "timestamp": "2026-03-28T02:26:12.998Z",
+      "timestamp": "2026-03-28T01:29:38.643Z",
       "project": "-Users-andyed",
       "cwd": "/home/user/Documents/dev/iblipper2025",
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.014084507042253521,
+      "_score": 0.013888888888888888,
       "_sources": "semantic"
     },
     {
@@ -287,33 +308,6 @@
       "_source": "tool-use",
       "tool": "Bash",
       "session": "37b2b595-35b7-4405-a1c5-d54925aac0c5",
-      "_score": 0.013888888888888888,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_016Wiyv1wUtB7WfPFGYU2q7K",
-      "source": "tool_use",
-      "timestamp": "2026-03-28T01:29:38.643Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.013888888888888888,
-      "_sources": "semantic"
-    },
-    {
-      "event_id": "evt-pwcj4jdt70i4",
-      "timestamp": "2026-03-28T13:37:56Z",
-      "type": "tool_bash",
-      "session_id": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
-      "project": "psychodeli-webgl-port",
-      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "summary": "Ran: git diff --stat",
-      "transcript_path": "/home/user/.claude/projects/demo-project/353ec788-0635-46d4-9f38-a4bf33b3e5ac.jsonl",
-      "related_ids": [],
-      "_source": "tool-use",
-      "tool": "Bash",
-      "session": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
       "_score": 0.0136986301369863,
       "_sources": "keyword"
     },
@@ -329,12 +323,18 @@
       "_sources": "semantic"
     },
     {
-      "display": "try diff background images?",
-      "pastedContents": {},
-      "timestamp": 1774176835850,
-      "project": "/home/user",
-      "sessionId": "5a9739ad-4c38-47c6-86aa-cfa9c152e79d",
-      "_source": "claude-history",
+      "event_id": "evt-pwcj4jdt70i4",
+      "timestamp": "2026-03-28T13:37:56Z",
+      "type": "tool_bash",
+      "session_id": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
+      "project": "psychodeli-webgl-port",
+      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "summary": "Ran: git diff --stat",
+      "transcript_path": "/home/user/.claude/projects/demo-project/353ec788-0635-46d4-9f38-a4bf33b3e5ac.jsonl",
+      "related_ids": [],
+      "_source": "tool-use",
+      "tool": "Bash",
+      "session": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
       "_score": 0.013513513513513514,
       "_sources": "keyword"
     },
@@ -350,11 +350,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "diff project dev/fisheye-menu",
+      "display": "try diff background images?",
       "pastedContents": {},
-      "timestamp": 1774018467290,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "b1ea4290-49eb-4270-8e1b-d33db23e6443",
+      "timestamp": 1774176835850,
+      "project": "/home/user",
+      "sessionId": "5a9739ad-4c38-47c6-86aa-cfa9c152e79d",
       "_source": "claude-history",
       "_score": 0.013333333333333334,
       "_sources": "keyword"
@@ -371,11 +371,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "also, that doc is mising a wave shape section.",
+      "display": "diff project dev/fisheye-menu",
       "pastedContents": {},
-      "timestamp": 1773985260818,
+      "timestamp": 1774018467290,
       "project": "/home/user/Documents/dev",
-      "sessionId": "602e27c0-81bb-489c-8648-6b089ed962eb",
+      "sessionId": "b1ea4290-49eb-4270-8e1b-d33db23e6443",
       "_source": "claude-history",
       "_score": 0.013157894736842105,
       "_sources": "keyword"
@@ -392,11 +392,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "run it on a diff port?",
+      "display": "also, that doc is mising a wave shape section.",
       "pastedContents": {},
-      "timestamp": 1774491303576,
-      "project": "/home/user",
-      "sessionId": "81ee4a83-96e0-446f-9df9-1d05d85017e0",
+      "timestamp": 1773985260818,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "602e27c0-81bb-489c-8648-6b089ed962eb",
       "_source": "claude-history",
       "_score": 0.012987012987012988,
       "_sources": "keyword"
@@ -413,11 +413,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "I think we're in good shape re:B, audit?",
+      "display": "run it on a diff port?",
       "pastedContents": {},
-      "timestamp": 1774528539063,
+      "timestamp": 1774491303576,
       "project": "/home/user",
-      "sessionId": "fcce4294-ebb6-48b9-9a48-de0e7074ccbf",
+      "sessionId": "81ee4a83-96e0-446f-9df9-1d05d85017e0",
       "_source": "claude-history",
       "_score": 0.01282051282051282,
       "_sources": "keyword"
@@ -434,11 +434,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "i didn't realize there were two wave shape params!",
+      "display": "I think we're in good shape re:B, audit?",
       "pastedContents": {},
-      "timestamp": 1773793664886,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "6d88f841-43d4-41de-9f4c-8294ec0f7f95",
+      "timestamp": 1774528539063,
+      "project": "/home/user",
+      "sessionId": "fcce4294-ebb6-48b9-9a48-de0e7074ccbf",
       "_source": "claude-history",
       "_score": 0.012658227848101266,
       "_sources": "keyword"
@@ -455,18 +455,12 @@
       "_sources": "semantic"
     },
     {
-      "event_id": "evt-gfmbb10en6ko",
-      "timestamp": "2026-03-28T19:19:52Z",
-      "type": "tool_bash",
-      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
-      "project": "session-cartographer",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
-      "summary": "Ran: git diff HEAD~1 --name-only",
-      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
-      "related_ids": [],
-      "_source": "tool-use",
-      "tool": "Bash",
-      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "display": "i didn't realize there were two wave shape params!",
+      "pastedContents": {},
+      "timestamp": 1773793664886,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "6d88f841-43d4-41de-9f4c-8294ec0f7f95",
+      "_source": "claude-history",
       "_score": 0.0125,
       "_sources": "keyword"
     },
@@ -482,12 +476,18 @@
       "_sources": "semantic"
     },
     {
-      "display": "lets try a diff approach -- start with sprialPitch * r, then s*r + sin, then the whole thing? use a diff page",
-      "pastedContents": {},
-      "timestamp": 1772421887710,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "011c8ada-a408-4564-98c4-50fab5c379e1",
-      "_source": "claude-history",
+      "event_id": "evt-gfmbb10en6ko",
+      "timestamp": "2026-03-28T19:19:52Z",
+      "type": "tool_bash",
+      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "project": "session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Ran: git diff HEAD~1 --name-only",
+      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
+      "related_ids": [],
+      "_source": "tool-use",
+      "tool": "Bash",
+      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
       "_score": 0.012345679012345678,
       "_sources": "keyword"
     },
@@ -503,13 +503,12 @@
       "_sources": "semantic"
     },
     {
-      "timestamp": "2026-03-13T22:13:54Z",
-      "type": "search",
-      "query": "Rayner perceptual span reading eye movements asymmetric attentional window shape degrees",
-      "project": "scrutinizer-www",
-      "session": "9ada2051-e491-4805-8d6d-9f316d91d9dc",
-      "transcript_path": "/home/user/.claude/projects/demo-project/9ada2051-e491-4805-8d6d-9f316d91d9dc.jsonl",
-      "_source": "research",
+      "display": "lets try a diff approach -- start with sprialPitch * r, then s*r + sin, then the whole thing? use a diff page",
+      "pastedContents": {},
+      "timestamp": 1772421887710,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "011c8ada-a408-4564-98c4-50fab5c379e1",
+      "_source": "claude-history",
       "_score": 0.012195121951219513,
       "_sources": "keyword"
     },
@@ -525,12 +524,13 @@
       "_sources": "semantic"
     },
     {
-      "display": "check the figma dom handling, that's diff",
-      "pastedContents": {},
-      "timestamp": 1774832644255,
-      "project": "/home/user",
-      "sessionId": "d7d2ccc6-995b-4fd3-a29f-9cf6b8eb02a8",
-      "_source": "claude-history",
+      "timestamp": "2026-03-13T22:13:54Z",
+      "type": "search",
+      "query": "Rayner perceptual span reading eye movements asymmetric attentional window shape degrees",
+      "project": "scrutinizer-www",
+      "session": "9ada2051-e491-4805-8d6d-9f316d91d9dc",
+      "transcript_path": "/home/user/.claude/projects/demo-project/9ada2051-e491-4805-8d6d-9f316d91d9dc.jsonl",
+      "_source": "research",
       "_score": 0.012048192771084338,
       "_sources": "keyword"
     },
@@ -543,6 +543,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
       "_score": 0.012048192771084338,
+      "_sources": "semantic"
+    },
+    {
+      "display": "check the figma dom handling, that's diff",
+      "pastedContents": {},
+      "timestamp": 1774832644255,
+      "project": "/home/user",
+      "sessionId": "d7d2ccc6-995b-4fd3-a29f-9cf6b8eb02a8",
+      "_source": "claude-history",
+      "_score": 0.011904761904761904,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01G4F4DzrwJbX3z71BA75KvC",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T04:02:20.338Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.011904761904761904,
       "_sources": "semantic"
     },
     {
@@ -559,27 +580,6 @@
       "_source": "tool-use",
       "tool": "Bash",
       "session": "eb759329-66ae-4cf7-8ce6-b1989749296c",
-      "_score": 0.011904761904761904,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01G4F4DzrwJbX3z71BA75KvC",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T04:02:20.338Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.011904761904761904,
-      "_sources": "semantic"
-    },
-    {
-      "display": "WILDFLOWERS — BIGGER + works, give me some diff backgorunds",
-      "pastedContents": {},
-      "timestamp": 1774176769379,
-      "project": "/home/user",
-      "sessionId": "5a9739ad-4c38-47c6-86aa-cfa9c152e79d",
-      "_source": "claude-history",
       "_score": 0.011764705882352941,
       "_sources": "keyword"
     },
@@ -595,11 +595,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "when do we compute the checkin shape? do we need to backfill?",
+      "display": "WILDFLOWERS — BIGGER + works, give me some diff backgorunds",
       "pastedContents": {},
-      "timestamp": 1774728477619,
+      "timestamp": 1774176769379,
       "project": "/home/user",
-      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
+      "sessionId": "5a9739ad-4c38-47c6-86aa-cfa9c152e79d",
       "_source": "claude-history",
       "_score": 0.011627906976744186,
       "_sources": "keyword"
@@ -616,11 +616,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "i guess we need a new menu item for wave shape tho",
+      "display": "when do we compute the checkin shape? do we need to backfill?",
       "pastedContents": {},
-      "timestamp": 1773673023914,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "6fbf51be-d5a1-432d-98b4-c084387d3ce0",
+      "timestamp": 1774728477619,
+      "project": "/home/user",
+      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
       "_source": "claude-history",
       "_score": 0.011494252873563218,
       "_sources": "keyword"
@@ -637,11 +637,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "not sure why i'd want a diff one?",
+      "display": "i guess we need a new menu item for wave shape tho",
       "pastedContents": {},
-      "timestamp": 1774297350926,
-      "project": "/home/user",
-      "sessionId": "f54526ba-c8a9-48c9-b8e6-42e9b708a59e",
+      "timestamp": 1773673023914,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "6fbf51be-d5a1-432d-98b4-c084387d3ce0",
       "_source": "claude-history",
       "_score": 0.011363636363636364,
       "_sources": "keyword"
@@ -658,17 +658,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "needs diff html, merge [Pasted text #3 +47 lines]",
-      "pastedContents": {
-        "3": {
-          "id": 3,
-          "type": "text",
-          "contentHash": "521de4eee593523d"
-        }
-      },
-      "timestamp": 1773968405000,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "23c0a23b-a4cf-4860-ad02-6c70bc14ae50",
+      "display": "not sure why i'd want a diff one?",
+      "pastedContents": {},
+      "timestamp": 1774297350926,
+      "project": "/home/user",
+      "sessionId": "f54526ba-c8a9-48c9-b8e6-42e9b708a59e",
       "_source": "claude-history",
       "_score": 0.011235955056179775,
       "_sources": "keyword"
@@ -685,11 +679,17 @@
       "_sources": "semantic"
     },
     {
-      "display": "is our charter sufficinetly prepared for thge container shape and some basic UI?",
-      "pastedContents": {},
-      "timestamp": 1771035591900,
-      "project": "/home/user/Documents/dev/liquid-light-warp",
-      "sessionId": "e040a919-2144-4613-94ba-f60558c5034e",
+      "display": "needs diff html, merge [Pasted text #3 +47 lines]",
+      "pastedContents": {
+        "3": {
+          "id": 3,
+          "type": "text",
+          "contentHash": "521de4eee593523d"
+        }
+      },
+      "timestamp": 1773968405000,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "23c0a23b-a4cf-4860-ad02-6c70bc14ae50",
       "_source": "claude-history",
       "_score": 0.011111111111111112,
       "_sources": "keyword"
@@ -706,11 +706,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "ok, could we create a git repo for \"something typography\" that makes our callout strategy easy to deploy?  what shape would such a technology take?  i can even imagine a browser extension that takes the url and chooses the callouts as a way of summarization (diff idea, but consideration for platform requirements)",
+      "display": "is our charter sufficinetly prepared for thge container shape and some basic UI?",
       "pastedContents": {},
-      "timestamp": 1772672550891,
-      "project": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "sessionId": "86fc3c77-c2b2-4f17-ac74-2b39751238ef",
+      "timestamp": 1771035591900,
+      "project": "/home/user/Documents/dev/liquid-light-warp",
+      "sessionId": "e040a919-2144-4613-94ba-f60558c5034e",
       "_source": "claude-history",
       "_score": 0.01098901098901099,
       "_sources": "keyword"
@@ -727,11 +727,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "a bit smaller and can we make it always the right shape not stretched?",
+      "display": "ok, could we create a git repo for \"something typography\" that makes our callout strategy easy to deploy?  what shape would such a technology take?  i can even imagine a browser extension that takes the url and chooses the callouts as a way of summarization (diff idea, but consideration for platform requirements)",
       "pastedContents": {},
-      "timestamp": 1774828921882,
-      "project": "/home/user",
-      "sessionId": "d7d2ccc6-995b-4fd3-a29f-9cf6b8eb02a8",
+      "timestamp": 1772672550891,
+      "project": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "sessionId": "86fc3c77-c2b2-4f17-ac74-2b39751238ef",
       "_source": "claude-history",
       "_score": 0.010869565217391304,
       "_sources": "keyword"
@@ -748,11 +748,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "we can p2 container shape. depth or curvature more interesting.  and yes update charter",
+      "display": "a bit smaller and can we make it always the right shape not stretched?",
       "pastedContents": {},
-      "timestamp": 1771035669173,
-      "project": "/home/user/Documents/dev/liquid-light-warp",
-      "sessionId": "e040a919-2144-4613-94ba-f60558c5034e",
+      "timestamp": 1774828921882,
+      "project": "/home/user",
+      "sessionId": "d7d2ccc6-995b-4fd3-a29f-9cf6b8eb02a8",
       "_source": "claude-history",
       "_score": 0.010752688172043012,
       "_sources": "keyword"
@@ -766,6 +766,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
       "_score": 0.010752688172043012,
+      "_sources": "semantic"
+    },
+    {
+      "display": "we can p2 container shape. depth or curvature more interesting.  and yes update charter",
+      "pastedContents": {},
+      "timestamp": 1771035669173,
+      "project": "/home/user/Documents/dev/liquid-light-warp",
+      "sessionId": "e040a919-2144-4613-94ba-f60558c5034e",
+      "_source": "claude-history",
+      "_score": 0.010638297872340425,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01YP2B64xHKrwW3G3hzABoBn",
+      "source": "tool_use",
+      "timestamp": "2026-03-28T12:34:10.884Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.010638297872340425,
       "_sources": "semantic"
     },
     {
@@ -789,27 +810,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.010638297872340425,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01YP2B64xHKrwW3G3hzABoBn",
-      "source": "tool_use",
-      "timestamp": "2026-03-28T12:34:10.884Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.010638297872340425,
-      "_sources": "semantic"
-    },
-    {
-      "display": "neutral is too fat with the border not a diff color",
-      "pastedContents": {},
-      "timestamp": 1774803607122,
-      "project": "/home/user",
-      "sessionId": "fdaf8acc-a5a1-4bf6-98ef-d333934f67fa",
-      "_source": "claude-history",
       "_score": 0.010526315789473684,
       "_sources": "keyword"
     },
@@ -825,11 +825,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "cehck the git diff to make sure everything is accounted for",
+      "display": "neutral is too fat with the border not a diff color",
       "pastedContents": {},
-      "timestamp": 1773607834806,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
+      "timestamp": 1774803607122,
+      "project": "/home/user",
+      "sessionId": "fdaf8acc-a5a1-4bf6-98ef-d333934f67fa",
       "_source": "claude-history",
       "_score": 0.010416666666666666,
       "_sources": "keyword"
@@ -846,17 +846,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "in other thread (see git diff) [Pasted text #11 +5 lines]",
-      "pastedContents": {
-        "11": {
-          "id": 11,
-          "type": "text",
-          "content": "⏺ Legacy shader now matches. Both shaders have:\n  - sampleSourceLod helper\n  - Coordinate system fix (diff_scaled with u_fovea_aspect_ratio)\n  - fovea_aspect_ratio undo in UV reconstruction\n  - ef=1.03 in both computePolarSector and V4 neighbor computation\n  - Sector-area MIP sampling with resolution-derived maxMip cap"
-        }
-      },
-      "timestamp": 1772854782879,
+      "display": "cehck the git diff to make sure everything is accounted for",
+      "pastedContents": {},
+      "timestamp": 1773607834806,
       "project": "/home/user/Documents/dev",
-      "sessionId": "3fbaf165-6a6f-49ae-8d02-4c46c93d3ea4",
+      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
       "_source": "claude-history",
       "_score": 0.010309278350515464,
       "_sources": "keyword"
@@ -873,11 +867,17 @@
       "_sources": "semantic"
     },
     {
-      "display": "its really bad because you're leaving 100% sat on borders which obscures letter shape",
-      "pastedContents": {},
-      "timestamp": 1774792312544,
-      "project": "/home/user",
-      "sessionId": "85b90759-06e4-418e-9990-cc940f162801",
+      "display": "in other thread (see git diff) [Pasted text #11 +5 lines]",
+      "pastedContents": {
+        "11": {
+          "id": 11,
+          "type": "text",
+          "content": "⏺ Legacy shader now matches. Both shaders have:\n  - sampleSourceLod helper\n  - Coordinate system fix (diff_scaled with u_fovea_aspect_ratio)\n  - fovea_aspect_ratio undo in UV reconstruction\n  - ef=1.03 in both computePolarSector and V4 neighbor computation\n  - Sector-area MIP sampling with resolution-derived maxMip cap"
+        }
+      },
+      "timestamp": 1772854782879,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "3fbaf165-6a6f-49ae-8d02-4c46c93d3ea4",
       "_source": "claude-history",
       "_score": 0.01020408163265306,
       "_sources": "keyword"
@@ -891,6 +891,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
       "_score": 0.01020408163265306,
+      "_sources": "semantic"
+    },
+    {
+      "display": "its really bad because you're leaving 100% sat on borders which obscures letter shape",
+      "pastedContents": {},
+      "timestamp": 1774792312544,
+      "project": "/home/user",
+      "sessionId": "85b90759-06e4-418e-9990-cc940f162801",
+      "_source": "claude-history",
+      "_score": 0.010101010101010102,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01TN6QjfJsx3t2BTCoNVwCSd",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T16:45:48.521Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.010101010101010102,
       "_sources": "semantic"
     },
     {
@@ -914,27 +935,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.010101010101010102,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01TN6QjfJsx3t2BTCoNVwCSd",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T16:45:48.521Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.010101010101010102,
-      "_sources": "semantic"
-    },
-    {
-      "display": "nope, diff app on port. ... you can also use http://localhost:8396",
-      "pastedContents": {},
-      "timestamp": 1772209089978,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "f996faba-8d46-41eb-a8ae-292a5282cf60",
-      "_source": "claude-history",
       "_score": 0.01,
       "_sources": "keyword"
     },
@@ -947,6 +947,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
       "_score": 0.01,
+      "_sources": "semantic"
+    },
+    {
+      "display": "nope, diff app on port. ... you can also use http://localhost:8396",
+      "pastedContents": {},
+      "timestamp": 1772209089978,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "f996faba-8d46-41eb-a8ae-292a5282cf60",
+      "_source": "claude-history",
+      "_score": 0.009900990099009901,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01CxXPFcKmfaQS9PiAKteucu",
+      "source": "tool_use",
+      "timestamp": "2026-03-28T02:15:31.193Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.009900990099009901,
       "_sources": "semantic"
     },
     {
@@ -970,27 +991,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.009900990099009901,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01CxXPFcKmfaQS9PiAKteucu",
-      "source": "tool_use",
-      "timestamp": "2026-03-28T02:15:31.193Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.009900990099009901,
-      "_sources": "semantic"
-    },
-    {
-      "display": "i'm really just looking for a sublte increas in \"3d shape change\" as the first step",
-      "pastedContents": {},
-      "timestamp": 1774533357561,
-      "project": "/home/user",
-      "sessionId": "89f4a883-2da6-4129-aba2-fe6f7b2f5e87",
-      "_source": "claude-history",
       "_score": 0.00980392156862745,
       "_sources": "keyword"
     },
@@ -1006,11 +1006,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "this doesn't look like snake skin  but diff params could get it there",
+      "display": "i'm really just looking for a sublte increas in \"3d shape change\" as the first step",
       "pastedContents": {},
-      "timestamp": 1772210577348,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "f996faba-8d46-41eb-a8ae-292a5282cf60",
+      "timestamp": 1774533357561,
+      "project": "/home/user",
+      "sessionId": "89f4a883-2da6-4129-aba2-fe6f7b2f5e87",
       "_source": "claude-history",
       "_score": 0.009708737864077669,
       "_sources": "keyword"
@@ -1027,11 +1027,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "let's jump to psychodeli-webgl-port, we have pending item to add wave shape to our electron menus",
+      "display": "this doesn't look like snake skin  but diff params could get it there",
       "pastedContents": {},
-      "timestamp": 1773792760631,
+      "timestamp": 1772210577348,
       "project": "/home/user/Documents/dev",
-      "sessionId": "6d88f841-43d4-41de-9f4c-8294ec0f7f95",
+      "sessionId": "f996faba-8d46-41eb-a8ae-292a5282cf60",
       "_source": "claude-history",
       "_score": 0.009615384615384616,
       "_sources": "keyword"
@@ -1048,11 +1048,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "ok, le'ts stress the title -- colorful pyramids of comppressoin?  (inspirational not a a candidate, mention color and shape)",
+      "display": "let's jump to psychodeli-webgl-port, we have pending item to add wave shape to our electron menus",
       "pastedContents": {},
-      "timestamp": 1773584577973,
+      "timestamp": 1773792760631,
       "project": "/home/user/Documents/dev",
-      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
+      "sessionId": "6d88f841-43d4-41de-9f4c-8294ec0f7f95",
       "_source": "claude-history",
       "_score": 0.009523809523809525,
       "_sources": "keyword"
@@ -1069,11 +1069,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "can we make all of the callouts the same shape, and watch the margins? maybe css-transform zoom down? ",
+      "display": "ok, le'ts stress the title -- colorful pyramids of comppressoin?  (inspirational not a a candidate, mention color and shape)",
       "pastedContents": {},
-      "timestamp": 1772043020284,
+      "timestamp": 1773584577973,
       "project": "/home/user/Documents/dev",
-      "sessionId": "9cfac8f4-efb7-4775-b5c8-b0ae0fe63831",
+      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
       "_source": "claude-history",
       "_score": 0.009433962264150943,
       "_sources": "keyword"
@@ -1090,11 +1090,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "i want to use a diff terminal -- can i just paste all 3 commands above?",
+      "display": "can we make all of the callouts the same shape, and watch the margins? maybe css-transform zoom down? ",
       "pastedContents": {},
-      "timestamp": 1774190777220,
-      "project": "/home/user",
-      "sessionId": "32140272-ad92-49cb-83d9-cc7760e73c81",
+      "timestamp": 1772043020284,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "9cfac8f4-efb7-4775-b5c8-b0ae0fe63831",
       "_source": "claude-history",
       "_score": 0.009345794392523364,
       "_sources": "keyword"
@@ -1111,11 +1111,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "not seeing any diff.  are you sure your wall plan is well thought out\n\n/model opus",
+      "display": "i want to use a diff terminal -- can i just paste all 3 commands above?",
       "pastedContents": {},
-      "timestamp": 1771034436229,
-      "project": "/home/user/Documents/dev/liquid-light-warp",
-      "sessionId": "e040a919-2144-4613-94ba-f60558c5034e",
+      "timestamp": 1774190777220,
+      "project": "/home/user",
+      "sessionId": "32140272-ad92-49cb-83d9-cc7760e73c81",
       "_source": "claude-history",
       "_score": 0.009259259259259259,
       "_sources": "keyword"
@@ -1129,6 +1129,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed",
       "session": "",
       "_score": 0.009259259259259259,
+      "_sources": "semantic"
+    },
+    {
+      "display": "not seeing any diff.  are you sure your wall plan is well thought out\n\n/model opus",
+      "pastedContents": {},
+      "timestamp": 1771034436229,
+      "project": "/home/user/Documents/dev/liquid-light-warp",
+      "sessionId": "e040a919-2144-4613-94ba-f60558c5034e",
+      "_source": "claude-history",
+      "_score": 0.009174311926605505,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-5f02cdf3-fbb9-4f01-9ad8-8cf4ae319b36-2026-03-04T18:13:28.722Z",
+      "source": "transcript",
+      "timestamp": "2026-03-04T18:13:28.722Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer-www",
+      "summary": "Now I have a clear picture. The structure map density already differentiates crowded (~0.53) from isolated (~0.44) text, but the difference is small. The science agent's sigmoid recommendation is sound. Let me also check if `peripheral2.frag` has the same V1 structure. | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.009174311926605505,
       "_sources": "semantic"
     },
     {
@@ -1152,27 +1173,6 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.009174311926605505,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-5f02cdf3-fbb9-4f01-9ad8-8cf4ae319b36-2026-03-04T18:13:28.722Z",
-      "source": "transcript",
-      "timestamp": "2026-03-04T18:13:28.722Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer-www",
-      "summary": "Now I have a clear picture. The structure map density already differentiates crowded (~0.53) from isolated (~0.44) text, but the difference is small. The science agent's sigmoid recommendation is sound. Let me also check if `peripheral2.frag` has the same V1 structure. | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.009174311926605505,
-      "_sources": "semantic"
-    },
-    {
-      "display": "are we locking the right thign for electron? seems like a diff browser/agent from desktop, mobile",
-      "pastedContents": {},
-      "timestamp": 1774714464599,
-      "project": "/home/user",
-      "sessionId": "1217c9a5-1f69-45b4-9395-197a4e43a849",
-      "_source": "claude-history",
       "_score": 0.00909090909090909,
       "_sources": "keyword"
     },
@@ -1188,11 +1188,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "you need to be in diff menu, behavior->research to toggle to iso mode 13, already done",
+      "display": "are we locking the right thign for electron? seems like a diff browser/agent from desktop, mobile",
       "pastedContents": {},
-      "timestamp": 1773594152042,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
+      "timestamp": 1774714464599,
+      "project": "/home/user",
+      "sessionId": "1217c9a5-1f69-45b4-9395-197a4e43a849",
       "_source": "claude-history",
       "_score": 0.009009009009009009,
       "_sources": "keyword"
@@ -1209,11 +1209,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "scrutinizer has an experimental branch that was super compelling -- take a look and analyze what's diff?",
+      "display": "you need to be in diff menu, behavior->research to toggle to iso mode 13, already done",
       "pastedContents": {},
-      "timestamp": 1773273649659,
+      "timestamp": 1773594152042,
       "project": "/home/user/Documents/dev",
-      "sessionId": "efb175fd-2d3a-4636-b2b8-3a979f9de03c",
+      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
       "_source": "claude-history",
       "_score": 0.008928571428571428,
       "_sources": "keyword"
@@ -1230,11 +1230,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "hmm, we didn't get source for heuristic review and card sort? are those in diff projects?",
+      "display": "scrutinizer has an experimental branch that was super compelling -- take a look and analyze what's diff?",
       "pastedContents": {},
-      "timestamp": 1771776293702,
+      "timestamp": 1773273649659,
       "project": "/home/user/Documents/dev",
-      "sessionId": "0252a429-2264-4167-bf93-851d25d8aa0e",
+      "sessionId": "efb175fd-2d3a-4636-b2b8-3a979f9de03c",
       "_source": "claude-history",
       "_score": 0.008849557522123894,
       "_sources": "keyword"
@@ -1248,6 +1248,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.008849557522123894,
+      "_sources": "semantic"
+    },
+    {
+      "display": "hmm, we didn't get source for heuristic review and card sort? are those in diff projects?",
+      "pastedContents": {},
+      "timestamp": 1771776293702,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "0252a429-2264-4167-bf93-851d25d8aa0e",
+      "_source": "claude-history",
+      "_score": 0.008771929824561403,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01JiwBCmoefuyjFQZjC6CAnE",
+      "source": "tool_use",
+      "timestamp": "2026-02-28T20:23:50.667Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.008771929824561403,
       "_sources": "semantic"
     },
     {
@@ -1271,18 +1292,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.008771929824561403,
+      "_score": 0.008695652173913044,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01JiwBCmoefuyjFQZjC6CAnE",
+      "event_id": "synth-toolu_01QR3Q2GnpMnquEuVpM7bGTF",
       "source": "tool_use",
-      "timestamp": "2026-02-28T20:23:50.667Z",
+      "timestamp": "2026-02-28T20:23:59.063Z",
       "project": "-Users-andyed-Documents-dev",
       "cwd": "/home/user/Documents/dev/iblipper2025",
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.008771929824561403,
+      "_score": 0.008695652173913044,
       "_sources": "semantic"
     },
     {
@@ -1300,33 +1321,6 @@
       "prompt": "Extract the full technical details about CSS Regions and CSS Exclusions. What exactly did they allow? How did text flow between regions work? What was the shape-outside/shape-inside distinction? What got abandoned vs what survived into modern CSS? Include any code examples.",
       "category": "other",
       "session": "38d76819-2011-4dca-a048-f1a9de0b1495",
-      "_score": 0.008695652173913044,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01QR3Q2GnpMnquEuVpM7bGTF",
-      "source": "tool_use",
-      "timestamp": "2026-02-28T20:23:59.063Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008695652173913044,
-      "_sources": "semantic"
-    },
-    {
-      "event_id": "evt-qri1pahxz2aw",
-      "timestamp": "2026-03-28T14:02:24Z",
-      "type": "tool_bash",
-      "session_id": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
-      "project": "psychodeli-webgl-port",
-      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "summary": "Ran: git diff js/audio-reactive-speed.js js/commands/speed-control.js js/lib/hierarchical-node-choreographer.js",
-      "transcript_path": "/home/user/.claude/projects/demo-project/353ec788-0635-46d4-9f38-a4bf33b3e5ac.jsonl",
-      "related_ids": [],
-      "_source": "tool-use",
-      "tool": "Bash",
-      "session": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
       "_score": 0.008620689655172414,
       "_sources": "keyword"
     },
@@ -1342,12 +1336,18 @@
       "_sources": "semantic"
     },
     {
-      "display": "ahh, i see, our header should have the smae code for the wordmark but different tabs have diff implementations",
-      "pastedContents": {},
-      "timestamp": 1774190013365,
-      "project": "/home/user",
-      "sessionId": "f54526ba-c8a9-48c9-b8e6-42e9b708a59e",
-      "_source": "claude-history",
+      "event_id": "evt-qri1pahxz2aw",
+      "timestamp": "2026-03-28T14:02:24Z",
+      "type": "tool_bash",
+      "session_id": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
+      "project": "psychodeli-webgl-port",
+      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "summary": "Ran: git diff js/audio-reactive-speed.js js/commands/speed-control.js js/lib/hierarchical-node-choreographer.js",
+      "transcript_path": "/home/user/.claude/projects/demo-project/353ec788-0635-46d4-9f38-a4bf33b3e5ac.jsonl",
+      "related_ids": [],
+      "_source": "tool-use",
+      "tool": "Bash",
+      "session": "353ec788-0635-46d4-9f38-a4bf33b3e5ac",
       "_score": 0.008547008547008548,
       "_sources": "keyword"
     },
@@ -1360,6 +1360,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.008547008547008548,
+      "_sources": "semantic"
+    },
+    {
+      "display": "ahh, i see, our header should have the smae code for the wordmark but different tabs have diff implementations",
+      "pastedContents": {},
+      "timestamp": 1774190013365,
+      "project": "/home/user",
+      "sessionId": "f54526ba-c8a9-48c9-b8e6-42e9b708a59e",
+      "_source": "claude-history",
+      "_score": 0.00847457627118644,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01AFjsQeTniQWmgaRxDewzhN",
+      "source": "tool_use",
+      "timestamp": "2026-03-01T01:12:06.083Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.00847457627118644,
       "_sources": "semantic"
     },
     {
@@ -1383,18 +1404,18 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.00847457627118644,
+      "_score": 0.008403361344537815,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01AFjsQeTniQWmgaRxDewzhN",
+      "event_id": "synth-toolu_01ByJXPoywacXvikDFDJsKN9",
       "source": "tool_use",
-      "timestamp": "2026-03-01T01:12:06.083Z",
+      "timestamp": "2026-03-01T01:11:49.442Z",
       "project": "-Users-andyed-Documents-dev",
       "cwd": "/home/user/Documents/dev/iblipper2025",
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.00847457627118644,
+      "_score": 0.008403361344537815,
       "_sources": "semantic"
     },
     {
@@ -1418,18 +1439,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.008403361344537815,
+      "_score": 0.008333333333333333,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01ByJXPoywacXvikDFDJsKN9",
+      "event_id": "synth-toolu_011YhgrdPbb2BqUeMLMKEoEc",
       "source": "tool_use",
-      "timestamp": "2026-03-01T01:11:49.442Z",
+      "timestamp": "2026-02-28T20:06:36.698Z",
       "project": "-Users-andyed-Documents-dev",
       "cwd": "/home/user/Documents/dev/iblipper2025",
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.008403361344537815,
+      "_score": 0.008333333333333333,
       "_sources": "semantic"
     },
     {
@@ -1453,27 +1474,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.008333333333333333,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_011YhgrdPbb2BqUeMLMKEoEc",
-      "source": "tool_use",
-      "timestamp": "2026-02-28T20:06:36.698Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008333333333333333,
-      "_sources": "semantic"
-    },
-    {
-      "display": "and make this a todo? \n>ClickSense currently captures temporal dynamics (veloci\n          +ty, deceleration) but not trajectory types. Adding shape classification would give both views.\n      219 +",
-      "pastedContents": {},
-      "timestamp": 1774401575933,
-      "project": "/home/user",
-      "sessionId": "2a0d7416-f48f-469c-85cd-8f211eb14daf",
-      "_source": "claude-history",
       "_score": 0.008264462809917356,
       "_sources": "keyword"
     },
@@ -1489,11 +1489,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "feels ok, the google button on upper right is a bit odd -- blue pixels dispersed over a greyish butotn shape in far periphery?  science agent?",
+      "display": "and make this a todo? \n>ClickSense currently captures temporal dynamics (veloci\n          +ty, deceleration) but not trajectory types. Adding shape classification would give both views.\n      219 +",
       "pastedContents": {},
-      "timestamp": 1773764262887,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
+      "timestamp": 1774401575933,
+      "project": "/home/user",
+      "sessionId": "2a0d7416-f48f-469c-85cd-8f211eb14daf",
       "_source": "claude-history",
       "_score": 0.00819672131147541,
       "_sources": "keyword"
@@ -1510,11 +1510,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "waht did you figure out about our agents?  we have different ones in diff projects, some of thats sane some not",
+      "display": "feels ok, the google button on upper right is a bit odd -- blue pixels dispersed over a greyish butotn shape in far periphery?  science agent?",
       "pastedContents": {},
-      "timestamp": 1772505825755,
+      "timestamp": 1773764262887,
       "project": "/home/user/Documents/dev",
-      "sessionId": "36d8169b-3a75-44cf-93e3-85ee0bf82c27",
+      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
       "_source": "claude-history",
       "_score": 0.008130081300813009,
       "_sources": "keyword"
@@ -1528,6 +1528,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.008130081300813009,
+      "_sources": "semantic"
+    },
+    {
+      "display": "waht did you figure out about our agents?  we have different ones in diff projects, some of thats sane some not",
+      "pastedContents": {},
+      "timestamp": 1772505825755,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "36d8169b-3a75-44cf-93e3-85ee0bf82c27",
+      "_source": "claude-history",
+      "_score": 0.008064516129032258,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01EsFejDKsxsCZQZ5n23ZLxW",
+      "source": "tool_use",
+      "timestamp": "2026-02-28T20:23:46.410Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.008064516129032258,
       "_sources": "semantic"
     },
     {
@@ -1551,18 +1572,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.008064516129032258,
+      "_score": 0.008,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01EsFejDKsxsCZQZ5n23ZLxW",
+      "event_id": "synth-toolu_01TDAYSqjXAcD67eskn7fzD6",
       "source": "tool_use",
-      "timestamp": "2026-02-28T20:23:46.410Z",
+      "timestamp": "2026-02-28T22:10:10.059Z",
       "project": "-Users-andyed-Documents-dev",
       "cwd": "/home/user/Documents/dev/iblipper2025",
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.008064516129032258,
+      "_score": 0.008,
       "_sources": "semantic"
     },
     {
@@ -1586,27 +1607,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.008,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01TDAYSqjXAcD67eskn7fzD6",
-      "source": "tool_use",
-      "timestamp": "2026-02-28T22:10:10.059Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008,
-      "_sources": "semantic"
-    },
-    {
-      "display": "lets tidy up from here and make sure the path forward is documented. i want to dogfood on a diff machine",
-      "pastedContents": {},
-      "timestamp": 1769532318075,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "19c8bb16-fb29-46a6-936a-f1885117253b",
-      "_source": "claude-history",
       "_score": 0.007936507936507936,
       "_sources": "keyword"
     },
@@ -1619,6 +1619,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.007936507936507936,
+      "_sources": "semantic"
+    },
+    {
+      "display": "lets tidy up from here and make sure the path forward is documented. i want to dogfood on a diff machine",
+      "pastedContents": {},
+      "timestamp": 1769532318075,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "19c8bb16-fb29-46a6-936a-f1885117253b",
+      "_source": "claude-history",
+      "_score": 0.007874015748031496,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01Hv4sedNkZpLUbKVdgAfU8Q",
+      "source": "tool_use",
+      "timestamp": "2026-02-28T19:26:37.302Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.007874015748031496,
       "_sources": "semantic"
     },
     {
@@ -1642,27 +1663,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007874015748031496,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01Hv4sedNkZpLUbKVdgAfU8Q",
-      "source": "tool_use",
-      "timestamp": "2026-02-28T19:26:37.302Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.007874015748031496,
-      "_sources": "semantic"
-    },
-    {
-      "display": "no we need to usea diff color than cyverpunk, tthe iframe alraedy has a alt colr scheme in that section. pay attention!",
-      "pastedContents": {},
-      "timestamp": 1774066431075,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "72ceb2a0-b059-4d03-b4cb-bfb8cf9c7822",
-      "_source": "claude-history",
       "_score": 0.0078125,
       "_sources": "keyword"
     },
@@ -1675,6 +1675,27 @@
       "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.0078125,
+      "_sources": "semantic"
+    },
+    {
+      "display": "no we need to usea diff color than cyverpunk, tthe iframe alraedy has a alt colr scheme in that section. pay attention!",
+      "pastedContents": {},
+      "timestamp": 1774066431075,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "72ceb2a0-b059-4d03-b4cb-bfb8cf9c7822",
+      "_source": "claude-history",
+      "_score": 0.007751937984496124,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01AE8XCZ2zDrBqp9VoguUUDS",
+      "source": "tool_use",
+      "timestamp": "2026-03-01T01:13:05.776Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/iblipper2025",
+      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.007751937984496124,
       "_sources": "semantic"
     },
     {
@@ -1698,18 +1719,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007751937984496124,
+      "_score": 0.007692307692307693,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01AE8XCZ2zDrBqp9VoguUUDS",
-      "source": "tool_use",
-      "timestamp": "2026-03-01T01:13:05.776Z",
+      "event_id": "hist-efb175fd-2d3a-4636-b2b8-3a979f9de03c-2026-03-10T14:24:41.166Z",
+      "source": "transcript",
+      "timestamp": "2026-03-10T14:24:41.166Z",
       "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/iblipper2025",
-      "summary": "Edit: /home/user/Documents/dev/iblipper2025/src/visuals/NuanceText.tsx | project: -Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
+      "summary": "Both captured. Now generate the side-by-side and diff. | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.007751937984496124,
+      "_score": 0.007692307692307693,
       "_sources": "semantic"
     },
     {
@@ -1726,27 +1747,6 @@
       "_source": "tool-use",
       "tool": "Bash",
       "session": "9530acfd-dde4-44e8-9070-475c08887ab5",
-      "_score": 0.007692307692307693,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-efb175fd-2d3a-4636-b2b8-3a979f9de03c-2026-03-10T14:24:41.166Z",
-      "source": "transcript",
-      "timestamp": "2026-03-10T14:24:41.166Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
-      "summary": "Both captured. Now generate the side-by-side and diff. | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.007692307692307693,
-      "_sources": "semantic"
-    },
-    {
-      "display": " but dont we have some magic to map our mips interpolate to the non rect shape?  i feel like we shoudl be able to get a plausbility gane out of this",
-      "pastedContents": {},
-      "timestamp": 1773616857267,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
-      "_source": "claude-history",
       "_score": 0.007633587786259542,
       "_sources": "keyword"
     },
@@ -1762,18 +1762,12 @@
       "_sources": "semantic"
     },
     {
-      "event_id": "evt-ktkow3l86uml",
-      "timestamp": "2026-03-28T15:35:07Z",
-      "type": "tool_bash",
-      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
-      "project": "session-cartographer",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
-      "summary": "Ran: # Check if the symlinked version matches the source\ndiff ~/Documents/dev/session-cartographer/extras/briefings/compile-briefing.sh ~/Documents/dev/session-cartographer/plugins/session-cartographer/hoo",
-      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
-      "related_ids": [],
-      "_source": "tool-use",
-      "tool": "Bash",
-      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "display": " but dont we have some magic to map our mips interpolate to the non rect shape?  i feel like we shoudl be able to get a plausbility gane out of this",
+      "pastedContents": {},
+      "timestamp": 1773616857267,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
+      "_source": "claude-history",
       "_score": 0.007575757575757576,
       "_sources": "keyword"
     },
@@ -1786,6 +1780,33 @@
       "url": "https://api.crossref.org/works?query=Expectation+based+syntactic+comprehension+Levy+2008+Cognition&rows=3",
       "transcript_path": "/home/user/.claude/projects/demo-project/2a0d7416-f48f-469c-85cd-8f211eb14daf.jsonl",
       "_score": 0.007575757575757576,
+      "_sources": "semantic"
+    },
+    {
+      "event_id": "evt-ktkow3l86uml",
+      "timestamp": "2026-03-28T15:35:07Z",
+      "type": "tool_bash",
+      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "project": "session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Ran: # Check if the symlinked version matches the source\ndiff ~/Documents/dev/session-cartographer/extras/briefings/compile-briefing.sh ~/Documents/dev/session-cartographer/plugins/session-cartographer/hoo",
+      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
+      "related_ids": [],
+      "_source": "tool-use",
+      "tool": "Bash",
+      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "_score": 0.007518796992481203,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-70c4c8f4-5876-4f58-b0f4-78cbf4c28dec-2026-03-15T13:11:22.910Z",
+      "source": "transcript",
+      "timestamp": "2026-03-15T13:11:22.910Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer-www",
+      "summary": "Now let me read the rest of the caption and find the table with links. | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.007518796992481203,
       "_sources": "semantic"
     },
     {
@@ -1809,18 +1830,18 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.007518796992481203,
+      "_score": 0.007462686567164179,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-70c4c8f4-5876-4f58-b0f4-78cbf4c28dec-2026-03-15T13:11:22.910Z",
+      "event_id": "hist-0252a429-2264-4167-bf93-851d25d8aa0e-2026-02-22T15:56:43.951Z",
       "source": "transcript",
-      "timestamp": "2026-03-15T13:11:22.910Z",
+      "timestamp": "2026-02-22T15:56:43.951Z",
       "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer-www",
-      "summary": "Now let me read the rest of the caption and find the table with links. | project: -Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "summary": "Let me clean up the Wayback comment at the bottom and grab the two images. | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.007518796992481203,
+      "_score": 0.007462686567164179,
       "_sources": "semantic"
     },
     {
@@ -1844,27 +1865,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007462686567164179,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-0252a429-2264-4167-bf93-851d25d8aa0e-2026-02-22T15:56:43.951Z",
-      "source": "transcript",
-      "timestamp": "2026-02-22T15:56:43.951Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "summary": "Let me clean up the Wayback comment at the bottom and grab the two images. | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.007462686567164179,
-      "_sources": "semantic"
-    },
-    {
-      "display": "science agent -- i think this orthogonal to oour prior plan with an unsuccessful branch. as i understanding it, two big objectives -- move all of our code to an isotropic mip shape and improve color desat.  does that jive?",
-      "pastedContents": {},
-      "timestamp": 1773537487298,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "daa85b24-4773-433d-a706-ce227e2c4997",
-      "_source": "claude-history",
       "_score": 0.007407407407407408,
       "_sources": "keyword"
     },
@@ -1877,6 +1877,26 @@
       "summary": "Most matches are in structured content (arrays, not plain strings). Let me search deeper. | project: -Users-andyed",
       "session": "",
       "_score": 0.007407407407407408,
+      "_sources": "semantic"
+    },
+    {
+      "display": "science agent -- i think this orthogonal to oour prior plan with an unsuccessful branch. as i understanding it, two big objectives -- move all of our code to an isotropic mip shape and improve color desat.  does that jive?",
+      "pastedContents": {},
+      "timestamp": 1773537487298,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "daa85b24-4773-433d-a706-ce227e2c4997",
+      "_source": "claude-history",
+      "_score": 0.007352941176470588,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "evt-fsgbfzcvs8om",
+      "source": "changelog",
+      "timestamp": "2026-03-25T01:22:32Z",
+      "type": "research_fetch",
+      "project": "andyed",
+      "summary": "Fetched: https://api.crossref.org/works?query=Hale+probabilistic+Earley+parser+psycholinguistic+model+NAACL+2001&rows=3",
+      "_score": 0.007352941176470588,
       "_sources": "semantic"
     },
     {
@@ -1900,26 +1920,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007352941176470588,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "evt-fsgbfzcvs8om",
-      "source": "changelog",
-      "timestamp": "2026-03-25T01:22:32Z",
-      "type": "research_fetch",
-      "project": "andyed",
-      "summary": "Fetched: https://api.crossref.org/works?query=Hale+probabilistic+Earley+parser+psycholinguistic+model+NAACL+2001&rows=3",
-      "_score": 0.007352941176470588,
-      "_sources": "semantic"
-    },
-    {
-      "display": "ok, but ⏺ They were committed in c12225a. Let me verify they're current:\n\n⏺ Bash(git diff HEAD -- scripts/capture-smoke.js scripts/lib/capture-manifest.js scripts/lib/capture-runner.js main.js .gitignore | head -5)",
-      "pastedContents": {},
-      "timestamp": 1773610563312,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
-      "_source": "claude-history",
       "_score": 0.0072992700729927005,
       "_sources": "keyword"
     },
@@ -1935,11 +1935,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "so mip limits are a bit of a limitation for scrutinizer?  science agent? responding to \"the GPU’s MIP chain provides the same spatially varying pooling via texture LOD\" -- first yes this is diff mechanism.  pro/con",
+      "display": "ok, but ⏺ They were committed in c12225a. Let me verify they're current:\n\n⏺ Bash(git diff HEAD -- scripts/capture-smoke.js scripts/lib/capture-manifest.js scripts/lib/capture-runner.js main.js .gitignore | head -5)",
       "pastedContents": {},
-      "timestamp": 1773582455244,
+      "timestamp": 1773610563312,
       "project": "/home/user/Documents/dev",
-      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
+      "sessionId": "f21aa793-b6ff-45ed-9950-3c3960ef4a4c",
       "_source": "claude-history",
       "_score": 0.007246376811594203,
       "_sources": "keyword"
@@ -1953,6 +1953,27 @@
       "summary": "820px column + 1.05rem body text. The prose stays ~75 characters per line (readable range), and the side-by-side images have room to breathe. Refresh. | project: -Users-andyed",
       "session": "",
       "_score": 0.007246376811594203,
+      "_sources": "semantic"
+    },
+    {
+      "display": "so mip limits are a bit of a limitation for scrutinizer?  science agent? responding to \"the GPU’s MIP chain provides the same spatially varying pooling via texture LOD\" -- first yes this is diff mechanism.  pro/con",
+      "pastedContents": {},
+      "timestamp": 1773582455244,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
+      "_source": "claude-history",
+      "_score": 0.007194244604316547,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-a10d50ef-4a56-4bad-8595-6176b12d8d4b-2026-03-14T01:44:36.210Z",
+      "source": "transcript",
+      "timestamp": "2026-03-14T01:44:36.210Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
+      "summary": "Image is at `src/blog/images/v24_reading_span_comparison.png` and referenced in the draft. You were about to tell me what to rename it to? | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.007194244604316547,
       "_sources": "semantic"
     },
     {
@@ -1976,18 +1997,18 @@
         "commit_type": "fix"
       },
       "_source": "changelog",
-      "_score": 0.007194244604316547,
+      "_score": 0.007142857142857143,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-a10d50ef-4a56-4bad-8595-6176b12d8d4b-2026-03-14T01:44:36.210Z",
-      "source": "transcript",
-      "timestamp": "2026-03-14T01:44:36.210Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
-      "summary": "Image is at `src/blog/images/v24_reading_span_comparison.png` and referenced in the draft. You were about to tell me what to rename it to? | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.007194244604316547,
+      "event_id": "git-6e20127",
+      "source": "changelog",
+      "timestamp": "2026-03-26T19:06:23-07:00",
+      "type": "git_commit",
+      "project": "session-cartographer",
+      "summary": "Commit 6e20127: Multi-word AND fallback when phrase match has low recall | files: scripts/cartographer-search.sh",
+      "url": "https://github.com/andyed/session-cartographer/commit/6e20127cd3710294240e8b5e3baa07bfa587e760",
+      "_score": 0.007142857142857143,
       "_sources": "semantic"
     },
     {
@@ -2011,18 +2032,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007142857142857143,
+      "_score": 0.0070921985815602835,
       "_sources": "keyword"
     },
     {
-      "event_id": "git-6e20127",
-      "source": "changelog",
-      "timestamp": "2026-03-26T19:06:23-07:00",
-      "type": "git_commit",
-      "project": "session-cartographer",
-      "summary": "Commit 6e20127: Multi-word AND fallback when phrase match has low recall | files: scripts/cartographer-search.sh",
-      "url": "https://github.com/andyed/session-cartographer/commit/6e20127cd3710294240e8b5e3baa07bfa587e760",
-      "_score": 0.007142857142857143,
+      "event_id": "hist-efb175fd-2d3a-4636-b2b8-3a979f9de03c-2026-03-10T03:15:59.686Z",
+      "source": "transcript",
+      "timestamp": "2026-03-10T03:15:59.686Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
+      "summary": "Now let me also update the diff figure to use the table diff (which is far more compelling than the Gabor diff for a UI-focused audience): | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.0070921985815602835,
       "_sources": "semantic"
     },
     {
@@ -2046,27 +2067,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.0070921985815602835,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-efb175fd-2d3a-4636-b2b8-3a979f9de03c-2026-03-10T03:15:59.686Z",
-      "source": "transcript",
-      "timestamp": "2026-03-10T03:15:59.686Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
-      "summary": "Now let me also update the diff figure to use the table diff (which is far more compelling than the Gabor diff for a UI-focused audience): | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.0070921985815602835,
-      "_sources": "semantic"
-    },
-    {
-      "display": "yeah, i was imaging more holistic 3d space... but i do like the action we're already getting in more isolated effects.... we should be albe to get AE to manipualte 3d space in lots of diff ways tho eh?",
-      "pastedContents": {},
-      "timestamp": 1774533295644,
-      "project": "/home/user",
-      "sessionId": "89f4a883-2da6-4129-aba2-fe6f7b2f5e87",
-      "_source": "claude-history",
       "_score": 0.007042253521126761,
       "_sources": "keyword"
     },
@@ -2082,11 +2082,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "before we look the tvos app, can we move the panel up the screen, it's in the bottom 1/3 now and its just not enough space. can we do a curved shape for the menu to allow more of the aniation behinds it to show through?",
+      "display": "yeah, i was imaging more holistic 3d space... but i do like the action we're already getting in more isolated effects.... we should be albe to get AE to manipualte 3d space in lots of diff ways tho eh?",
       "pastedContents": {},
-      "timestamp": 1774138439542,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "e05095ea-fc86-4ea5-8483-3a4b0a17977b",
+      "timestamp": 1774533295644,
+      "project": "/home/user",
+      "sessionId": "89f4a883-2da6-4129-aba2-fe6f7b2f5e87",
       "_source": "claude-history",
       "_score": 0.006993006993006993,
       "_sources": "keyword"
@@ -2100,6 +2100,27 @@
       "summary": "Now I'll rewrite it to use relative character recognition rate against a baseline. | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.006993006993006993,
+      "_sources": "semantic"
+    },
+    {
+      "display": "before we look the tvos app, can we move the panel up the screen, it's in the bottom 1/3 now and its just not enough space. can we do a curved shape for the menu to allow more of the aniation behinds it to show through?",
+      "pastedContents": {},
+      "timestamp": 1774138439542,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "e05095ea-fc86-4ea5-8483-3a4b0a17977b",
+      "_source": "claude-history",
+      "_score": 0.006944444444444444,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-d4983a10-a95f-463f-bd83-30b449d50a01-2026-03-28T00:30:53.714Z",
+      "source": "transcript",
+      "timestamp": "2026-03-28T00:30:53.714Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer-www",
+      "summary": "i was thinking of the duplicate flavor of all out .... with bigger not smaller font and repeat the body test | project: -Users-andyed",
+      "session": "",
+      "_score": 0.006944444444444444,
       "_sources": "semantic"
     },
     {
@@ -2123,27 +2144,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.006944444444444444,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-d4983a10-a95f-463f-bd83-30b449d50a01-2026-03-28T00:30:53.714Z",
-      "source": "transcript",
-      "timestamp": "2026-03-28T00:30:53.714Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer-www",
-      "summary": "i was thinking of the duplicate flavor of all out .... with bigger not smaller font and repeat the body test | project: -Users-andyed",
-      "session": "",
-      "_score": 0.006944444444444444,
-      "_sources": "semantic"
-    },
-    {
-      "display": "i was imaging we'd deploy one of our square vs isotropic visuals on the MIP explainer.  we also should talk about the geometry hack for mip shape.  we cna probably get away with only one cat example... science agent - recommended flow?  actual MIP pixel sizes by eccentricity is desirable",
-      "pastedContents": {},
-      "timestamp": 1774008748728,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "fd0c187e-1571-4b64-8849-11547eae33b1",
-      "_source": "claude-history",
       "_score": 0.006896551724137931,
       "_sources": "keyword"
     },
@@ -2194,6 +2194,27 @@
       "_sources": "semantic"
     },
     {
+      "display": "i was imaging we'd deploy one of our square vs isotropic visuals on the MIP explainer.  we also should talk about the geometry hack for mip shape.  we cna probably get away with only one cat example... science agent - recommended flow?  actual MIP pixel sizes by eccentricity is desirable",
+      "pastedContents": {},
+      "timestamp": 1774008748728,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "fd0c187e-1571-4b64-8849-11547eae33b1",
+      "_source": "claude-history",
+      "_score": 0.006802721088435374,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-afb11b29-7c45-4f32-93d5-a4556bcf79f7-2026-02-28T13:17:15.711Z",
+      "source": "transcript",
+      "timestamp": "2026-02-28T13:17:15.711Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
+      "summary": "text in the periphery seems to readable,  | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.006802721088435374,
+      "_sources": "semantic"
+    },
+    {
       "event_id": "git-006817c",
       "timestamp": "2026-02-23T21:33:13-08:00",
       "type": "git_commit",
@@ -2212,41 +2233,6 @@
         "lines_removed": 945,
         "quadrant": "rework",
         "commit_type": null
-      },
-      "_source": "changelog",
-      "_score": 0.006802721088435374,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-afb11b29-7c45-4f32-93d5-a4556bcf79f7-2026-02-28T13:17:15.711Z",
-      "source": "transcript",
-      "timestamp": "2026-02-28T13:17:15.711Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer2025",
-      "summary": "text in the periphery seems to readable,  | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.006802721088435374,
-      "_sources": "semantic"
-    },
-    {
-      "event_id": "git-e172cff",
-      "timestamp": "2026-02-23T18:35:54-08:00",
-      "type": "git_commit",
-      "project": "psychodeli-webgl-port",
-      "summary": "Commit e172cff: feat: implement Micro-Formations shape blending, fix emoji display and palette tap | files: index.html,js/algorithmic-exploration.js,js/lib/head-bob-detector.js,js/lib/hierarchical-node-choreographer.js,js/quick-tap-handler.js,js/ui-updater.js",
-      "commit_hash": "e172cff5da41015a5ca8b262a9937f91d16c8782",
-      "author": "Andy Edmonds",
-      "url": "https://github.com/andyed/psychodeli-webgl-port/commit/e172cff5da41015a5ca8b262a9937f91d16c8782",
-      "files_changed": "index.html,js/algorithmic-exploration.js,js/lib/head-bob-detector.js,js/lib/hierarchical-node-choreographer.js,js/quick-tap-handler.js,js/ui-updater.js",
-      "related_ids": [],
-      "diff_shape": {
-        "files_new": 0,
-        "files_modified": 6,
-        "files_deleted": 0,
-        "lines_added": 134,
-        "lines_removed": 93,
-        "quadrant": "rework",
-        "commit_type": "feat"
       },
       "_source": "changelog",
       "_score": 0.006756756756756757,
@@ -2285,6 +2271,40 @@
       "_sources": "semantic"
     },
     {
+      "event_id": "git-e172cff",
+      "timestamp": "2026-02-23T18:35:54-08:00",
+      "type": "git_commit",
+      "project": "psychodeli-webgl-port",
+      "summary": "Commit e172cff: feat: implement Micro-Formations shape blending, fix emoji display and palette tap | files: index.html,js/algorithmic-exploration.js,js/lib/head-bob-detector.js,js/lib/hierarchical-node-choreographer.js,js/quick-tap-handler.js,js/ui-updater.js",
+      "commit_hash": "e172cff5da41015a5ca8b262a9937f91d16c8782",
+      "author": "Andy Edmonds",
+      "url": "https://github.com/andyed/psychodeli-webgl-port/commit/e172cff5da41015a5ca8b262a9937f91d16c8782",
+      "files_changed": "index.html,js/algorithmic-exploration.js,js/lib/head-bob-detector.js,js/lib/hierarchical-node-choreographer.js,js/quick-tap-handler.js,js/ui-updater.js",
+      "related_ids": [],
+      "diff_shape": {
+        "files_new": 0,
+        "files_modified": 6,
+        "files_deleted": 0,
+        "lines_added": 134,
+        "lines_removed": 93,
+        "quadrant": "rework",
+        "commit_type": "feat"
+      },
+      "_source": "changelog",
+      "_score": 0.006666666666666667,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "evt-w6bko72v4g0b",
+      "source": "changelog",
+      "timestamp": "2026-03-25T21:48:06Z",
+      "type": "research_fetch",
+      "project": "reference-hallucination-benchmark",
+      "summary": "Fetched: https://huggingface.co/datasets/bethgelab/CiteME",
+      "_score": 0.006666666666666667,
+      "_sources": "semantic"
+    },
+    {
       "event_id": "git-4ff2ae5",
       "timestamp": "2026-03-01T17:46:21-08:00",
       "type": "git_commit",
@@ -2305,26 +2325,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.006666666666666667,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "evt-w6bko72v4g0b",
-      "source": "changelog",
-      "timestamp": "2026-03-25T21:48:06Z",
-      "type": "research_fetch",
-      "project": "reference-hallucination-benchmark",
-      "summary": "Fetched: https://huggingface.co/datasets/bethgelab/CiteME",
-      "_score": 0.006666666666666667,
-      "_sources": "semantic"
-    },
-    {
-      "display": "this needs to read more like me dancing on the edge or surfing the wave of growth vs consolidation, > By September, the AudioReactivityBus snapped into shape — a pub/sub layer that decoupled analyzers from visuals. The architecture had been there the whole time, compressed inside the experiments. It just needed enough of them to unfold.",
-      "pastedContents": {},
-      "timestamp": 1771684868484,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "6456a2c4-07a1-40a6-b158-66063d6f3cdf",
-      "_source": "claude-history",
       "_score": 0.006622516556291391,
       "_sources": "keyword"
     },
@@ -2337,6 +2337,27 @@
       "summary": "Great idea. The compression should be *felt* by the reader, not explained. Let me weave progressively shorter Drew/Cyc conversations into existing nodes, then write one showcase piece that makes the pattern undeniable. | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.006622516556291391,
+      "_sources": "semantic"
+    },
+    {
+      "display": "this needs to read more like me dancing on the edge or surfing the wave of growth vs consolidation, > By September, the AudioReactivityBus snapped into shape — a pub/sub layer that decoupled analyzers from visuals. The architecture had been there the whole time, compressed inside the experiments. It just needed enough of them to unfold.",
+      "pastedContents": {},
+      "timestamp": 1771684868484,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "6456a2c4-07a1-40a6-b158-66063d6f3cdf",
+      "_source": "claude-history",
+      "_score": 0.006578947368421052,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-60db6ce4-83a6-43c6-bd0f-55b1fd9e757f-2026-03-25T22:25:25.536Z",
+      "source": "transcript",
+      "timestamp": "2026-03-25T22:25:25.536Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/science-agent",
+      "summary": "Also fix the title similarity to handle CrossRef's abbreviated titles — if the claimed title contains all words of the CrossRef title, it's a match even if similarity is low. | project: -Users-andyed",
+      "session": "",
+      "_score": 0.006578947368421052,
       "_sources": "semantic"
     },
     {
@@ -2360,18 +2381,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.006578947368421052,
+      "_score": 0.006535947712418301,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-60db6ce4-83a6-43c6-bd0f-55b1fd9e757f-2026-03-25T22:25:25.536Z",
+      "event_id": "hist-01ba1d37-52b3-4649-897c-f023c69a9548-2026-03-22T02:19:19.734Z",
       "source": "transcript",
-      "timestamp": "2026-03-25T22:25:25.536Z",
+      "timestamp": "2026-03-22T02:19:19.734Z",
       "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/science-agent",
-      "summary": "Also fix the title similarity to handle CrossRef's abbreviated titles — if the claimed title contains all words of the CrossRef title, it's a match even if similarity is low. | project: -Users-andyed",
+      "cwd": "/home/user/Documents/dev/interests/interests2025",
+      "summary": "Rerunning. This time segmentation and selection should parse correctly and produce multiple themed articles from those 145 items. I'll check back when it finishes. | project: -Users-andyed",
       "session": "",
-      "_score": 0.006578947368421052,
+      "_score": 0.006535947712418301,
       "_sources": "semantic"
     },
     {
@@ -2395,27 +2416,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.006535947712418301,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-01ba1d37-52b3-4649-897c-f023c69a9548-2026-03-22T02:19:19.734Z",
-      "source": "transcript",
-      "timestamp": "2026-03-22T02:19:19.734Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/interests/interests2025",
-      "summary": "Rerunning. This time segmentation and selection should parse correctly and produce multiple themed articles from those 145 items. I'll check back when it finishes. | project: -Users-andyed",
-      "session": "",
-      "_score": 0.006535947712418301,
-      "_sources": "semantic"
-    },
-    {
-      "display": "yeah, ok, working in a diff browser. we're out of credits, so gonna switch bots. tidy everything up for hte next guy and give a critical eye to our forward scope.  lots of interesting UI decisions for OS level  controls and maybe new windows instead of overlays for our debug layers?",
-      "pastedContents": {},
-      "timestamp": 1770387687958,
-      "project": "/home/user",
-      "sessionId": "e0b66a71-f922-4b10-a4d0-14e709765d6f",
-      "_source": "claude-history",
       "_score": 0.006493506493506494,
       "_sources": "keyword"
     },
@@ -2431,11 +2431,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "for this visual http://localhost:8070/blog/mip-chain-explainer.html -- we should use DoG not DOG given it's a picture of a cat.  could we use a diff highlight color and text color for each of the sizes to make it more visible and interesting (grey on grey is low contrast)",
+      "display": "yeah, ok, working in a diff browser. we're out of credits, so gonna switch bots. tidy everything up for hte next guy and give a critical eye to our forward scope.  lots of interesting UI decisions for OS level  controls and maybe new windows instead of overlays for our debug layers?",
       "pastedContents": {},
-      "timestamp": 1772508428464,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "36d8169b-3a75-44cf-93e3-85ee0bf82c27",
+      "timestamp": 1770387687958,
+      "project": "/home/user",
+      "sessionId": "e0b66a71-f922-4b10-a4d0-14e709765d6f",
       "_source": "claude-history",
       "_score": 0.0064516129032258064,
       "_sources": "keyword"
@@ -2451,15 +2451,12 @@
       "_sources": "semantic"
     },
     {
-      "timestamp": "2026-03-06T19:21:20Z",
-      "type": "fetch",
-      "url": "https://raw.githubusercontent.com/ProgramofComputerGraphics/PooledStatisticsMetamers/main/poolstatmetamer/poolingregions.py",
-      "prompt": "Extract the complete source code. I need: 1) How pooling regions are defined and computed, 2) How they scale with eccentricity in gaze-centric mode, 3) The geometry of pooling regions (shape, overlap), 4) Key parameters controlling region size, 5) The relationship between visual angle and region size, 6) Any Freeman/Simoncelli or Rosenholtz-style pooling region definitions.",
-      "category": "other",
-      "project": "fovi",
-      "session": "809d0483-8b86-445c-b9c9-8f6657eb7078",
-      "transcript_path": "/home/user/.claude/projects/demo-project/809d0483-8b86-445c-b9c9-8f6657eb7078.jsonl",
-      "_source": "research",
+      "display": "for this visual http://localhost:8070/blog/mip-chain-explainer.html -- we should use DoG not DOG given it's a picture of a cat.  could we use a diff highlight color and text color for each of the sizes to make it more visible and interesting (grey on grey is low contrast)",
+      "pastedContents": {},
+      "timestamp": 1772508428464,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "36d8169b-3a75-44cf-93e3-85ee0bf82c27",
+      "_source": "claude-history",
       "_score": 0.00641025641025641,
       "_sources": "keyword"
     },
@@ -2475,14 +2472,14 @@
       "_sources": "semantic"
     },
     {
-      "timestamp": "2026-03-07T03:15:14Z",
+      "timestamp": "2026-03-06T19:21:20Z",
       "type": "fetch",
-      "url": "https://persci.mit.edu/mongrels/about.html",
-      "prompt": "Extract all details about: 1) How pooling regions work - are they overlapping? What shape? How do they tile? 2) What summary statistics are computed within each pooling region? List them all. 3) How are mongrel images synthesized from these statistics? 4) What do mongrel images look like compared to the original? 5) Any details about hard vs soft boundaries between pooling regions.",
+      "url": "https://raw.githubusercontent.com/ProgramofComputerGraphics/PooledStatisticsMetamers/main/poolstatmetamer/poolingregions.py",
+      "prompt": "Extract the complete source code. I need: 1) How pooling regions are defined and computed, 2) How they scale with eccentricity in gaze-centric mode, 3) The geometry of pooling regions (shape, overlap), 4) Key parameters controlling region size, 5) The relationship between visual angle and region size, 6) Any Freeman/Simoncelli or Rosenholtz-style pooling region definitions.",
       "category": "other",
-      "project": "dev",
-      "session": "49683db4-d92b-4582-8254-c6533e2a5844",
-      "transcript_path": "/home/user/.claude/projects/demo-project/49683db4-d92b-4582-8254-c6533e2a5844.jsonl",
+      "project": "fovi",
+      "session": "809d0483-8b86-445c-b9c9-8f6657eb7078",
+      "transcript_path": "/home/user/.claude/projects/demo-project/809d0483-8b86-445c-b9c9-8f6657eb7078.jsonl",
       "_source": "research",
       "_score": 0.006369426751592357,
       "_sources": "keyword"
@@ -2499,12 +2496,15 @@
       "_sources": "semantic"
     },
     {
-      "display": "this isn't convincing, Bottom: Saliency protection. The face region (lower-left) retains detail under foveated filtering when\nsaliency modulation is active, while the empty right half degrades uniformly. Protection ratios: face 0.283, luminance\nsingleton 0.708, color singleton 0.987, control 0.990 (Table 4). -- the multi stimulus canvas makes the face example inscrutable. diff example or crop just to face?",
-      "pastedContents": {},
-      "timestamp": 1772983849638,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "77b88d5f-4021-44ec-b8a8-3eab7c20073c",
-      "_source": "claude-history",
+      "timestamp": "2026-03-07T03:15:14Z",
+      "type": "fetch",
+      "url": "https://persci.mit.edu/mongrels/about.html",
+      "prompt": "Extract all details about: 1) How pooling regions work - are they overlapping? What shape? How do they tile? 2) What summary statistics are computed within each pooling region? List them all. 3) How are mongrel images synthesized from these statistics? 4) What do mongrel images look like compared to the original? 5) Any details about hard vs soft boundaries between pooling regions.",
+      "category": "other",
+      "project": "dev",
+      "session": "49683db4-d92b-4582-8254-c6533e2a5844",
+      "transcript_path": "/home/user/.claude/projects/demo-project/49683db4-d92b-4582-8254-c6533e2a5844.jsonl",
+      "_source": "research",
       "_score": 0.006329113924050633,
       "_sources": "keyword"
     },
@@ -2520,11 +2520,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "now that the fovea is sized correctly, reading is harder. we know that the attentional gaze changes shape durcing reading (Rayner IIRC) -- I think we're going to need a comfort/experimental-toggle that lessens distortaion when there' horizontal motion across text content in the rayner wider fovea (though this shouldn't extend outside of text)\n\na key elarning from today's meeting is that fovea-parafovea is more of a difference in degree than categorical",
+      "display": "this isn't convincing, Bottom: Saliency protection. The face region (lower-left) retains detail under foveated filtering when\nsaliency modulation is active, while the empty right half degrades uniformly. Protection ratios: face 0.283, luminance\nsingleton 0.708, color singleton 0.987, control 0.990 (Table 4). -- the multi stimulus canvas makes the face example inscrutable. diff example or crop just to face?",
       "pastedContents": {},
-      "timestamp": 1773439998255,
+      "timestamp": 1772983849638,
       "project": "/home/user/Documents/dev",
-      "sessionId": "9ada2051-e491-4805-8d6d-9f316d91d9dc",
+      "sessionId": "77b88d5f-4021-44ec-b8a8-3eab7c20073c",
       "_source": "claude-history",
       "_score": 0.006289308176100629,
       "_sources": "keyword"
@@ -2541,15 +2541,12 @@
       "_sources": "semantic"
     },
     {
-      "timestamp": "2026-03-13T22:14:12Z",
-      "type": "fetch",
-      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3075059/",
-      "prompt": "Extract the key findings about: 1) The exact size and shape of the perceptual span during reading (in degrees and characters), 2) How the span changes with reading difficulty or task, 3) Any evidence that the span is attentionally driven rather than purely acuity-driven, 4) The distinction between the \"word identification span\" (smaller) and the \"total perceptual span\" (larger), 5) Any mention of how the span relates to saccade planning or horizontal motion",
-      "category": "research",
-      "project": "scrutinizer-www",
-      "session": "9ada2051-e491-4805-8d6d-9f316d91d9dc",
-      "transcript_path": "/home/user/.claude/projects/demo-project/9ada2051-e491-4805-8d6d-9f316d91d9dc.jsonl",
-      "_source": "research",
+      "display": "now that the fovea is sized correctly, reading is harder. we know that the attentional gaze changes shape durcing reading (Rayner IIRC) -- I think we're going to need a comfort/experimental-toggle that lessens distortaion when there' horizontal motion across text content in the rayner wider fovea (though this shouldn't extend outside of text)\n\na key elarning from today's meeting is that fovea-parafovea is more of a difference in degree than categorical",
+      "pastedContents": {},
+      "timestamp": 1773439998255,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "9ada2051-e491-4805-8d6d-9f316d91d9dc",
+      "_source": "claude-history",
       "_score": 0.00625,
       "_sources": "keyword"
     },
@@ -2562,6 +2559,29 @@
       "url": "https://api.crossref.org/works?query=probabilistic+Earley+parser+psycholinguistic+model+Hale+2001+NAACL&rows=3",
       "transcript_path": "/home/user/.claude/projects/demo-project/2a0d7416-f48f-469c-85cd-8f211eb14daf.jsonl",
       "_score": 0.00625,
+      "_sources": "semantic"
+    },
+    {
+      "timestamp": "2026-03-13T22:14:12Z",
+      "type": "fetch",
+      "url": "https://pmc.ncbi.nlm.nih.gov/articles/PMC3075059/",
+      "prompt": "Extract the key findings about: 1) The exact size and shape of the perceptual span during reading (in degrees and characters), 2) How the span changes with reading difficulty or task, 3) Any evidence that the span is attentionally driven rather than purely acuity-driven, 4) The distinction between the \"word identification span\" (smaller) and the \"total perceptual span\" (larger), 5) Any mention of how the span relates to saccade planning or horizontal motion",
+      "category": "research",
+      "project": "scrutinizer-www",
+      "session": "9ada2051-e491-4805-8d6d-9f316d91d9dc",
+      "transcript_path": "/home/user/.claude/projects/demo-project/9ada2051-e491-4805-8d6d-9f316d91d9dc.jsonl",
+      "_source": "research",
+      "_score": 0.006211180124223602,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "evt-usnyuk6dx40r",
+      "source": "changelog",
+      "timestamp": "2026-03-25T01:22:26Z",
+      "type": "research_fetch",
+      "project": "andyed",
+      "summary": "Fetched: https://api.crossref.org/works?query=Levy+expectation+based+syntactic+comprehension+cognition+2008&rows=3",
+      "_score": 0.006211180124223602,
       "_sources": "semantic"
     },
     {
@@ -2585,26 +2605,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.006211180124223602,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "evt-usnyuk6dx40r",
-      "source": "changelog",
-      "timestamp": "2026-03-25T01:22:26Z",
-      "type": "research_fetch",
-      "project": "andyed",
-      "summary": "Fetched: https://api.crossref.org/works?query=Levy+expectation+based+syntactic+comprehension+cognition+2008&rows=3",
-      "_score": 0.006211180124223602,
-      "_sources": "semantic"
-    },
-    {
-      "display": "Scrutinizer now models this. -- Building on existing mouse input smarts (enabling saccadic blindness) and the real time DOM map exposing the exact text shape we were able to add with not much code. (check the commit, could be a stat)\n\ni really want the visual above the fold, maybe a right crop and right align it at very beginning of body text?  we could also make the first two paragraphs tighter?  \n\nalternatively we could draw the reading window for static viewing vs active reading as a top of page side bar graphic",
-      "pastedContents": {},
-      "timestamp": 1773583457277,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
-      "_source": "claude-history",
       "_score": 0.006172839506172839,
       "_sources": "keyword"
     },
@@ -2620,15 +2620,12 @@
       "_sources": "semantic"
     },
     {
-      "timestamp": "2026-03-13T21:12:07Z",
-      "type": "fetch",
-      "url": "https://raw.githubusercontent.com/nblauch/fovi/main/fovi/sensing/coords.py",
-      "prompt": "Focus specifically on the _compute_isotropic_r_and_num_theta function. Extract:\n1. How radius_diff is computed — exact code lines\n2. How n_angles is computed — exact code lines  \n3. What the default value of cmf_a is if any\n4. Whether it uses (r[i+1]-r[i-1])/2 or some other formulation for radial spacing\n5. Any comments about the complex log mapping w=log(z+a)",
-      "category": "other",
-      "project": "scrutinizer2025",
-      "session": "7a3dd86e-9787-4fc6-a3f3-c30dceecac63",
-      "transcript_path": "/home/user/.claude/projects/demo-project/7a3dd86e-9787-4fc6-a3f3-c30dceecac63.jsonl",
-      "_source": "research",
+      "display": "Scrutinizer now models this. -- Building on existing mouse input smarts (enabling saccadic blindness) and the real time DOM map exposing the exact text shape we were able to add with not much code. (check the commit, could be a stat)\n\ni really want the visual above the fold, maybe a right crop and right align it at very beginning of body text?  we could also make the first two paragraphs tighter?  \n\nalternatively we could draw the reading window for static viewing vs active reading as a top of page side bar graphic",
+      "pastedContents": {},
+      "timestamp": 1773583457277,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "32bbbac6-1426-4ec1-89bf-6c3b50d2b4aa",
+      "_source": "claude-history",
       "_score": 0.006134969325153374,
       "_sources": "keyword"
     },
@@ -2644,12 +2641,15 @@
       "_sources": "semantic"
     },
     {
-      "display": "we still never defined \"throw distacne\" eh?  Bender frequency scales inversely with sector extent. Near the fovea (~7px sectors), noise is fine-grained. At 15° (~52px sectors), noise wavelength grows to feature scale.\nCutter cell size tracks sector extent (floored at 8px, capped at 16px). The floor preserves foveal legibility; the cap prevents visible grid artifacts.\nThrow distance is bounded by sector width, with 2:1 radial bias (Toet & Levi 1992).\n\nI'd still love to have a simpe SVG rendering of a shape going through each transform in isolation and in sequence erhaps",
-      "pastedContents": {},
-      "timestamp": 1774100972150,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "23c0a23b-a4cf-4860-ad02-6c70bc14ae50",
-      "_source": "claude-history",
+      "timestamp": "2026-03-13T21:12:07Z",
+      "type": "fetch",
+      "url": "https://raw.githubusercontent.com/nblauch/fovi/main/fovi/sensing/coords.py",
+      "prompt": "Focus specifically on the _compute_isotropic_r_and_num_theta function. Extract:\n1. How radius_diff is computed — exact code lines\n2. How n_angles is computed — exact code lines  \n3. What the default value of cmf_a is if any\n4. Whether it uses (r[i+1]-r[i-1])/2 or some other formulation for radial spacing\n5. Any comments about the complex log mapping w=log(z+a)",
+      "category": "other",
+      "project": "scrutinizer2025",
+      "session": "7a3dd86e-9787-4fc6-a3f3-c30dceecac63",
+      "transcript_path": "/home/user/.claude/projects/demo-project/7a3dd86e-9787-4fc6-a3f3-c30dceecac63.jsonl",
+      "_source": "research",
       "_score": 0.006097560975609756,
       "_sources": "keyword"
     },
@@ -2665,11 +2665,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "I'm considering a fireox tv app \"No Kings Blipper\" that uses the kind of AI mode of iblipper that shows messages in a bunch of densitis and configurations.  we'd want the user to be able to choose a single message, or have a rnadom roation from which they could choose their own subset.\n\nwe'd want tone downed animation configs (hurry, etc) with no risk of triggger motion sensitive humans\n\nit'd be free, no movie export, sharing or message changing (we'll ship a diff app for that)",
+      "display": "we still never defined \"throw distacne\" eh?  Bender frequency scales inversely with sector extent. Near the fovea (~7px sectors), noise is fine-grained. At 15° (~52px sectors), noise wavelength grows to feature scale.\nCutter cell size tracks sector extent (floored at 8px, capped at 16px). The floor preserves foveal legibility; the cap prevents visible grid artifacts.\nThrow distance is bounded by sector width, with 2:1 radial bias (Toet & Levi 1992).\n\nI'd still love to have a simpe SVG rendering of a shape going through each transform in isolation and in sequence erhaps",
       "pastedContents": {},
-      "timestamp": 1774730832958,
-      "project": "/home/user",
-      "sessionId": "4ad20182-6fe1-471c-a17d-7e06c531a8a0",
+      "timestamp": 1774100972150,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "23c0a23b-a4cf-4860-ad02-6c70bc14ae50",
       "_source": "claude-history",
       "_score": 0.006060606060606061,
       "_sources": "keyword"
@@ -2684,6 +2684,16 @@
       "session": "",
       "_score": 0.006060606060606061,
       "_sources": "semantic"
+    },
+    {
+      "display": "I'm considering a fireox tv app \"No Kings Blipper\" that uses the kind of AI mode of iblipper that shows messages in a bunch of densitis and configurations.  we'd want the user to be able to choose a single message, or have a rnadom roation from which they could choose their own subset.\n\nwe'd want tone downed animation configs (hurry, etc) with no risk of triggger motion sensitive humans\n\nit'd be free, no movie export, sharing or message changing (we'll ship a diff app for that)",
+      "pastedContents": {},
+      "timestamp": 1774730832958,
+      "project": "/home/user",
+      "sessionId": "4ad20182-6fe1-471c-a17d-7e06c531a8a0",
+      "_source": "claude-history",
+      "_score": 0.006024096385542169,
+      "_sources": "keyword"
     },
     {
       "event_id": "hist-2fce8906-1e10-4968-9ff5-e3b029c9e4fe-2026-03-13T02:11:10.426Z",
@@ -5857,17 +5867,6 @@
       "session": "",
       "_score": 0.0022026431718061676,
       "_sources": "semantic"
-    },
-    {
-      "event_id": "hist-d7d2ccc6-995b-4fd3-a29f-9cf6b8eb02a8-2026-03-30T01:04:06.497Z",
-      "source": "transcript",
-      "timestamp": "2026-03-30T01:04:06.497Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/scrutinizer-repo/scrutinizer-figma",
-      "summary": "check the figma dom handling, that's diff | project: -Users-andyed",
-      "session": "",
-      "_score": 0.002197802197802198,
-      "_sources": "semantic"
     }
   ],
   "facets": {
@@ -5878,7 +5877,7 @@
       },
       {
         "name": "-Users-andyed",
-        "count": 139
+        "count": 138
       },
       {
         "name": "/home/user/Documents/dev",
@@ -5886,7 +5885,7 @@
       },
       {
         "name": "/home/user",
-        "count": 21
+        "count": 22
       },
       {
         "name": "broomy",
@@ -5932,16 +5931,16 @@
     "sources": [
       {
         "name": "semantic",
-        "count": 395
+        "count": 394
       },
       {
         "name": "keyword",
-        "count": 105
+        "count": 106
       }
     ],
     "time": {
       "oldest": "2026-01-10",
-      "newest": "2026-03-30",
+      "newest": "2026-03-31",
       "months": [
         {
           "name": "2026-03",
@@ -5958,8 +5957,12 @@
       ],
       "days": [
         {
+          "name": "2026-03-31",
+          "count": 1
+        },
+        {
           "name": "2026-03-30",
-          "count": 18
+          "count": 17
         },
         {
           "name": "2026-03-29",
@@ -5980,20 +5983,16 @@
         {
           "name": "2026-03-25",
           "count": 18
-        },
-        {
-          "name": "2026-03-24",
-          "count": 3
         }
       ]
     }
   },
   "meta": {
     "query": "diff shape",
-    "keyword_count": 105,
+    "keyword_count": 106,
     "semantic_count": 500,
     "fused_count": 500,
-    "total_matches": 105,
-    "duration_ms": 71
+    "total_matches": 106,
+    "duration_ms": 43
   }
 }

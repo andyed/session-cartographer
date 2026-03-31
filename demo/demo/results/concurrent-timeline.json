@@ -342,6 +342,27 @@
       "_sources": "semantic"
     },
     {
+      "display": "timeline doesn't do anything, remove. rename interactive to interactives",
+      "pastedContents": {},
+      "timestamp": 1774187403145,
+      "project": "/home/user",
+      "sessionId": "f54526ba-c8a9-48c9-b8e6-42e9b708a59e",
+      "_source": "claude-history",
+      "_score": 0.0136986301369863,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01TYUrjbvL3USox5T2nDoxqF",
+      "source": "tool_use",
+      "timestamp": "2026-02-26T21:22:49.107Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev",
+      "summary": "Edit: /home/user/Documents/dev/sciprogfi-web/_data/timeline.json | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.0136986301369863,
+      "_sources": "semantic"
+    },
+    {
       "event_id": "git-db06c36",
       "timestamp": "2026-03-26T21:10:40-07:00",
       "type": "git_commit",
@@ -362,29 +383,8 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.01378490790255496,
+      "_score": 0.013514454893765238,
       "_sources": "keyword+semantic"
-    },
-    {
-      "display": "timeline doesn't do anything, remove. rename interactive to interactives",
-      "pastedContents": {},
-      "timestamp": 1774187403145,
-      "project": "/home/user",
-      "sessionId": "f54526ba-c8a9-48c9-b8e6-42e9b708a59e",
-      "_source": "claude-history",
-      "_score": 0.0136986301369863,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01TYUrjbvL3USox5T2nDoxqF",
-      "source": "tool_use",
-      "timestamp": "2026-02-26T21:22:49.107Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev",
-      "summary": "Edit: /home/user/Documents/dev/sciprogfi-web/_data/timeline.json | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.0136986301369863,
-      "_sources": "semantic"
     },
     {
       "display": "maybe you could put midi on the timeline? check git?",
@@ -546,30 +546,6 @@
       "_sources": "semantic"
     },
     {
-      "event_id": "git-642de64",
-      "timestamp": "2026-03-09T08:19:21-07:00",
-      "type": "git_commit",
-      "project": "sciprogfi-web",
-      "summary": "Commit 642de64: Add Threshold node, timeline/skim CSS refinements, navigation spec | files: _includes/components/timeline.njk,content/nodes/narrative/world/2023-the-threshold.md,docs/navigation-spec.md,static/css/components.css,static/css/eras/2024-2026.css,static/css/eras/2027-2028.css,static/css/eras/2029-2030.css,static/css/eras/2031-2032.css,static/css/eras/2033-2034.css,static/css/eras/2035.css,static/css/skim.css,static/css/timeline.css,static/image/skim-2023-the-threshold.png",
-      "commit_hash": "642de64a17eff5dd219eff9bc5c9865b66d4a605",
-      "author": "Andy Edmonds",
-      "url": "https://github.com/andyed/sciprogfi-web/commit/642de64a17eff5dd219eff9bc5c9865b66d4a605",
-      "files_changed": "_includes/components/timeline.njk,content/nodes/narrative/world/2023-the-threshold.md,docs/navigation-spec.md,static/css/components.css,static/css/eras/2024-2026.css,static/css/eras/2027-2028.css,static/css/eras/2029-2030.css,static/css/eras/2031-2032.css,static/css/eras/2033-2034.css,static/css/eras/2035.css,static/css/skim.css,static/css/timeline.css,static/image/skim-2023-the-threshold.png",
-      "related_ids": [],
-      "diff_shape": {
-        "files_new": 3,
-        "files_modified": 10,
-        "files_deleted": 0,
-        "lines_added": 798,
-        "lines_removed": 224,
-        "quadrant": "construct",
-        "commit_type": null
-      },
-      "_source": "changelog",
-      "_score": 0.012132196162046908,
-      "_sources": "keyword+semantic"
-    },
-    {
       "timestamp": "2026-03-04T06:17:47Z",
       "type": "search",
       "query": "fusion energy startups commercial timeline 2028 2029 2030 Commonwealth Fusion TAE Helion",
@@ -592,11 +568,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "agreed on those 2 points -- our timeline is still not great, take inspiration?",
+      "display": "what's a js command to show the history timeline in psychodeli",
       "pastedContents": {},
-      "timestamp": 1772955043938,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "d194d5ef-0ccd-46e9-94d2-9c781b9d5220",
+      "timestamp": 1774921803207,
+      "project": "/home/user",
+      "sessionId": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
       "_source": "claude-history",
       "_score": 0.011904761904761904,
       "_sources": "keyword"
@@ -613,6 +589,40 @@
       "_sources": "semantic"
     },
     {
+      "event_id": "git-642de64",
+      "timestamp": "2026-03-09T08:19:21-07:00",
+      "type": "git_commit",
+      "project": "sciprogfi-web",
+      "summary": "Commit 642de64: Add Threshold node, timeline/skim CSS refinements, navigation spec | files: _includes/components/timeline.njk,content/nodes/narrative/world/2023-the-threshold.md,docs/navigation-spec.md,static/css/components.css,static/css/eras/2024-2026.css,static/css/eras/2027-2028.css,static/css/eras/2029-2030.css,static/css/eras/2031-2032.css,static/css/eras/2033-2034.css,static/css/eras/2035.css,static/css/skim.css,static/css/timeline.css,static/image/skim-2023-the-threshold.png",
+      "commit_hash": "642de64a17eff5dd219eff9bc5c9865b66d4a605",
+      "author": "Andy Edmonds",
+      "url": "https://github.com/andyed/sciprogfi-web/commit/642de64a17eff5dd219eff9bc5c9865b66d4a605",
+      "files_changed": "_includes/components/timeline.njk,content/nodes/narrative/world/2023-the-threshold.md,docs/navigation-spec.md,static/css/components.css,static/css/eras/2024-2026.css,static/css/eras/2027-2028.css,static/css/eras/2029-2030.css,static/css/eras/2031-2032.css,static/css/eras/2033-2034.css,static/css/eras/2035.css,static/css/skim.css,static/css/timeline.css,static/image/skim-2023-the-threshold.png",
+      "related_ids": [],
+      "diff_shape": {
+        "files_new": 3,
+        "files_modified": 10,
+        "files_deleted": 0,
+        "lines_added": 798,
+        "lines_removed": 224,
+        "quadrant": "construct",
+        "commit_type": null
+      },
+      "_source": "changelog",
+      "_score": 0.011840934026124577,
+      "_sources": "keyword+semantic"
+    },
+    {
+      "display": "❯ what's a js command to show the history timeline in psychodeli",
+      "pastedContents": {},
+      "timestamp": 1774921847248,
+      "project": "/home/user",
+      "sessionId": "0e1fcdce-3354-439e-b43f-94f15eabbd44",
+      "_source": "claude-history",
+      "_score": 0.011764705882352941,
+      "_sources": "keyword"
+    },
+    {
       "event_id": "synth-toolu_01UzxA4vfpuyAamKTGct1gCg",
       "source": "tool_use",
       "timestamp": "2026-03-06T03:14:24.615Z",
@@ -624,11 +634,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "we shoudl also invest in our timeline for technology progress.  do we have lightsabers?",
+      "display": "agreed on those 2 points -- our timeline is still not great, take inspiration?",
       "pastedContents": {},
-      "timestamp": 1768827620046,
+      "timestamp": 1772955043938,
       "project": "/home/user/Documents/dev",
-      "sessionId": "d9833284-8019-415e-90cd-5852f5c4f24e",
+      "sessionId": "d194d5ef-0ccd-46e9-94d2-9c781b9d5220",
       "_source": "claude-history",
       "_score": 0.011627906976744186,
       "_sources": "keyword"
@@ -645,16 +655,6 @@
       "_sources": "semantic"
     },
     {
-      "display": "oh, and the result type is still dominating the timeline sparkline, your fix didn't work",
-      "pastedContents": {},
-      "timestamp": 1774709290052,
-      "project": "/home/user",
-      "sessionId": "e2ab97ba-6516-4915-8e6e-997128da3594",
-      "_source": "claude-history",
-      "_score": 0.011494252873563218,
-      "_sources": "keyword"
-    },
-    {
       "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-28T14:56:43.542Z",
       "source": "transcript",
       "timestamp": "2026-03-28T14:56:43.542Z",
@@ -666,11 +666,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "sorry, go head -- how soon is drew getting his implant in bolivia in the new timeline?",
+      "display": "we shoudl also invest in our timeline for technology progress.  do we have lightsabers?",
       "pastedContents": {},
-      "timestamp": 1772166990133,
-      "project": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "sessionId": "f53a8b5f-69b7-454b-945f-33c8f1a28543",
+      "timestamp": 1768827620046,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "d9833284-8019-415e-90cd-5852f5c4f24e",
       "_source": "claude-history",
       "_score": 0.011363636363636364,
       "_sources": "keyword"
@@ -684,6 +684,48 @@
       "summary": "alignment on the timeline is all over the place, but most critically, how do i get to skim mode? | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.011363636363636364,
+      "_sources": "semantic"
+    },
+    {
+      "display": "the demo has all of my sessiosn in the concurrent viewer (and presumably other views).  we need to filter all the deata in the demo down to just a sample and for carto",
+      "pastedContents": {},
+      "timestamp": 1774930806359,
+      "project": "/home/user",
+      "sessionId": "d95a31fd-1a23-4901-8de5-01cb4819b4e8",
+      "_source": "claude-history",
+      "_score": 0.011235955056179775,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-0588ed66-9560-42e6-9667-3ebd4a2886b1-2026-02-26T21:22:23.979Z",
+      "source": "transcript",
+      "timestamp": "2026-02-26T21:22:23.979Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev",
+      "summary": "Now update `timeline.json` to add the 4 new stops and extend the range to include 2022. | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.011235955056179775,
+      "_sources": "semantic"
+    },
+    {
+      "display": "oh, and the result type is still dominating the timeline sparkline, your fix didn't work",
+      "pastedContents": {},
+      "timestamp": 1774709290052,
+      "project": "/home/user",
+      "sessionId": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "_source": "claude-history",
+      "_score": 0.011111111111111112,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-28T15:16:25.497Z",
+      "source": "transcript",
+      "timestamp": "2026-03-28T15:16:25.497Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Now wire it into Timeline.jsx: | project: -Users-andyed",
+      "session": "",
+      "_score": 0.011111111111111112,
       "_sources": "semantic"
     },
     {
@@ -707,8 +749,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.011253319402725174,
+      "_score": 0.011028398125172319,
       "_sources": "keyword+semantic"
+    },
+    {
+      "display": "sorry, go head -- how soon is drew getting his implant in bolivia in the new timeline?",
+      "pastedContents": {},
+      "timestamp": 1772166990133,
+      "project": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "sessionId": "f53a8b5f-69b7-454b-945f-33c8f1a28543",
+      "_source": "claude-history",
+      "_score": 0.01098901098901099,
+      "_sources": "keyword"
     },
     {
       "display": "here's an idea for fitting the timeline in smaller displays and getting font size boosts",
@@ -716,58 +768,6 @@
       "timestamp": 1771716689650,
       "project": "/home/user/Documents/dev",
       "sessionId": "403964c4-c71b-4f5e-9dec-ac326f27b972",
-      "_source": "claude-history",
-      "_score": 0.011235955056179775,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-0588ed66-9560-42e6-9667-3ebd4a2886b1-2026-02-26T21:22:23.979Z",
-      "source": "transcript",
-      "timestamp": "2026-02-26T21:22:23.979Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev",
-      "summary": "Now update `timeline.json` to add the 4 new stops and extend the range to include 2022. | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.011235955056179775,
-      "_sources": "semantic"
-    },
-    {
-      "display": "i think we also need the superAIagent who can chime in with intellection proportional to the timeline",
-      "pastedContents": {},
-      "timestamp": 1772604131381,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
-      "_source": "claude-history",
-      "_score": 0.011111111111111112,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-28T15:16:25.497Z",
-      "source": "transcript",
-      "timestamp": "2026-03-28T15:16:25.497Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Now wire it into Timeline.jsx: | project: -Users-andyed",
-      "session": "",
-      "_score": 0.011111111111111112,
-      "_sources": "semantic"
-    },
-    {
-      "display": "take a look at our updates to the timeline / sessions view.  brushing is next, help with a spec?",
-      "pastedContents": {},
-      "timestamp": 1769530358504,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "19c8bb16-fb29-46a6-936a-f1885117253b",
-      "_source": "claude-history",
-      "_score": 0.01098901098901099,
-      "_sources": "keyword"
-    },
-    {
-      "display": "alignment on the timeline is all over the place, but most critically, how do i get to skim mode?",
-      "pastedContents": {},
-      "timestamp": 1772954739729,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "d194d5ef-0ccd-46e9-94d2-9c781b9d5220",
       "_source": "claude-history",
       "_score": 0.010869565217391304,
       "_sources": "keyword"
@@ -784,11 +784,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "we're close to sharing/tweeting.... the timeline has a lot of low signal entreis (but isn't workign ATM)",
+      "display": "i think we also need the superAIagent who can chime in with intellection proportional to the timeline",
       "pastedContents": {},
-      "timestamp": 1774583214993,
-      "project": "/home/user",
-      "sessionId": "fcce4294-ebb6-48b9-9a48-de0e7074ccbf",
+      "timestamp": 1772604131381,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
       "_source": "claude-history",
       "_score": 0.010752688172043012,
       "_sources": "keyword"
@@ -802,6 +802,90 @@
       "summary": "Good data. 14k events, 112 active sessions, 88 overlapping pairs in recent week. Each event has `session_id`, `timestamp`, `project`, `type`. Now let me design the concurrent session view. | project: -Users-andyed",
       "session": "",
       "_score": 0.010752688172043012,
+      "_sources": "semantic"
+    },
+    {
+      "display": "take a look at our updates to the timeline / sessions view.  brushing is next, help with a spec?",
+      "pastedContents": {},
+      "timestamp": 1769530358504,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "19c8bb16-fb29-46a6-936a-f1885117253b",
+      "_source": "claude-history",
+      "_score": 0.010638297872340425,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-28T19:53:52.942Z",
+      "source": "transcript",
+      "timestamp": "2026-03-28T19:53:52.942Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Now add `session-bar` and `swim-lanes` classes to the concurrent timeline: | project: -Users-andyed",
+      "session": "",
+      "_score": 0.010638297872340425,
+      "_sources": "semantic"
+    },
+    {
+      "display": "alignment on the timeline is all over the place, but most critically, how do i get to skim mode?",
+      "pastedContents": {},
+      "timestamp": 1772954739729,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "d194d5ef-0ccd-46e9-94d2-9c781b9d5220",
+      "_source": "claude-history",
+      "_score": 0.010526315789473684,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-29T03:06:31.316Z",
+      "source": "transcript",
+      "timestamp": "2026-03-29T03:06:31.316Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Now add the permalink. The concurrent view should be reachable via URL so Timeline.jsx needs to read `?view=concurrent` on init: | project: -Users-andyed",
+      "session": "",
+      "_score": 0.010526315789473684,
+      "_sources": "semantic"
+    },
+    {
+      "display": "we're close to sharing/tweeting.... the timeline has a lot of low signal entreis (but isn't workign ATM)",
+      "pastedContents": {},
+      "timestamp": 1774583214993,
+      "project": "/home/user",
+      "sessionId": "fcce4294-ebb6-48b9-9a48-de0e7074ccbf",
+      "_source": "claude-history",
+      "_score": 0.010416666666666666,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-29T00:59:40.032Z",
+      "source": "transcript",
+      "timestamp": "2026-03-29T00:59:40.032Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Now wire it back into Timeline.jsx: | project: -Users-andyed",
+      "session": "",
+      "_score": 0.010416666666666666,
+      "_sources": "semantic"
+    },
+    {
+      "display": "can you do a histogram on the timeline of # of lines of code by checkign github? or is that really expensive...",
+      "pastedContents": {},
+      "timestamp": 1771645842097,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "6caaaa31-4a20-46cd-ae94-d5ef4800f586",
+      "_source": "claude-history",
+      "_score": 0.010309278350515464,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01VnoKt5phmf1pKLTSAHKXiM",
+      "source": "tool_use",
+      "timestamp": "2026-03-08T07:31:28.058Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/sciprogfi-web",
+      "summary": "Write: /home/user/Documents/dev/sciprogfi-web/_includes/components/timeline.njk | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.010309278350515464,
       "_sources": "semantic"
     },
     {
@@ -825,39 +909,18 @@
         "commit_type": "fix"
       },
       "_source": "changelog",
-      "_score": 0.010638297872340425,
+      "_score": 0.01020408163265306,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-28T19:53:52.942Z",
+      "event_id": "hist-2caa82c2-68f3-4157-8801-fb785d710598-2026-03-07T23:23:23.007Z",
       "source": "transcript",
-      "timestamp": "2026-03-28T19:53:52.942Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Now add `session-bar` and `swim-lanes` classes to the concurrent timeline: | project: -Users-andyed",
+      "timestamp": "2026-03-07T23:23:23.007Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/sciprogfi-web",
+      "summary": "Let me check the timeline around the convergence point and existing stops. | project: -Users-andyed-Documents-dev",
       "session": "",
-      "_score": 0.010638297872340425,
-      "_sources": "semantic"
-    },
-    {
-      "display": "can you do a histogram on the timeline of # of lines of code by checkign github? or is that really expensive...",
-      "pastedContents": {},
-      "timestamp": 1771645842097,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "6caaaa31-4a20-46cd-ae94-d5ef4800f586",
-      "_source": "claude-history",
-      "_score": 0.010526315789473684,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-29T03:06:31.316Z",
-      "source": "transcript",
-      "timestamp": "2026-03-29T03:06:31.316Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Now add the permalink. The concurrent view should be reachable via URL so Timeline.jsx needs to read `?view=concurrent` on init: | project: -Users-andyed",
-      "session": "",
-      "_score": 0.010526315789473684,
+      "_score": 0.01020408163265306,
       "_sources": "semantic"
     },
     {
@@ -881,39 +944,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.010416666666666666,
+      "_score": 0.010101010101010102,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-a40a6caa-a381-4f87-9df6-129c54741bc4-2026-03-29T00:59:40.032Z",
+      "event_id": "hist-f53a8b5f-69b7-454b-945f-33c8f1a28543-2026-02-27T04:14:01.839Z",
       "source": "transcript",
-      "timestamp": "2026-03-29T00:59:40.032Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Now wire it back into Timeline.jsx: | project: -Users-andyed",
+      "timestamp": "2026-02-27T04:14:01.839Z",
+      "project": "-Users-andyed-Documents-dev-psychodeli-webgl-port",
+      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "summary": "The timeline audit is done. You were riffing on some great story seeds — let me capture those before they evaporate. | project: -Users-andyed-Documents-dev-psychodeli-webgl-port",
       "session": "",
-      "_score": 0.010416666666666666,
-      "_sources": "semantic"
-    },
-    {
-      "display": "maybe we do two rows of the timeline, so one row shows the distirbution, a reflection row on top shows the viewpoert matches",
-      "pastedContents": {},
-      "timestamp": 1774709577851,
-      "project": "/home/user",
-      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
-      "_source": "claude-history",
-      "_score": 0.010309278350515464,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01VnoKt5phmf1pKLTSAHKXiM",
-      "source": "tool_use",
-      "timestamp": "2026-03-08T07:31:28.058Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/sciprogfi-web",
-      "summary": "Write: /home/user/Documents/dev/sciprogfi-web/_includes/components/timeline.njk | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.010309278350515464,
+      "_score": 0.010101010101010102,
       "_sources": "semantic"
     },
     {
@@ -937,8 +979,29 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.010231821392640793,
+      "_score": 0.010075408462505236,
       "_sources": "keyword+semantic"
+    },
+    {
+      "display": "maybe we do two rows of the timeline, so one row shows the distirbution, a reflection row on top shows the viewpoert matches",
+      "pastedContents": {},
+      "timestamp": 1774709577851,
+      "project": "/home/user",
+      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
+      "_source": "claude-history",
+      "_score": 0.01,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01QYzmy7xDPs73KfjiJ3jLxQ",
+      "source": "tool_use",
+      "timestamp": "2026-03-28T15:16:56.977Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.01,
+      "_sources": "semantic"
     },
     {
       "display": "ooh, a nice timeline at the top would be cool . https://en.wikipedia.org/wiki/After_Dark_(software)  -- we should definitely link this",
@@ -947,18 +1010,18 @@
       "project": "/home/user/Documents/dev",
       "sessionId": "6caaaa31-4a20-46cd-ae94-d5ef4800f586",
       "_source": "claude-history",
-      "_score": 0.01020408163265306,
+      "_score": 0.009900990099009901,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-2caa82c2-68f3-4157-8801-fb785d710598-2026-03-07T23:23:23.007Z",
-      "source": "transcript",
-      "timestamp": "2026-03-07T23:23:23.007Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/sciprogfi-web",
-      "summary": "Let me check the timeline around the convergence point and existing stops. | project: -Users-andyed-Documents-dev",
+      "event_id": "synth-toolu_01URwDLWhnQiSmGnhTb4wvBj",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T01:00:24.177Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.01020408163265306,
+      "_score": 0.009900990099009901,
       "_sources": "semantic"
     },
     {
@@ -982,29 +1045,29 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.010101010101010102,
+      "_score": 0.00980392156862745,
       "_sources": "keyword"
     },
     {
-      "event_id": "hist-f53a8b5f-69b7-454b-945f-33c8f1a28543-2026-02-27T04:14:01.839Z",
-      "source": "transcript",
-      "timestamp": "2026-02-27T04:14:01.839Z",
-      "project": "-Users-andyed-Documents-dev-psychodeli-webgl-port",
-      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "summary": "The timeline audit is done. You were riffing on some great story seeds — let me capture those before they evaporate. | project: -Users-andyed-Documents-dev-psychodeli-webgl-port",
-      "session": "",
-      "_score": 0.010101010101010102,
-      "_sources": "semantic"
-    },
-    {
-      "event_id": "synth-toolu_01QYzmy7xDPs73KfjiJ3jLxQ",
+      "event_id": "synth-toolu_01JYYkDaoBdf6hxr8t3BM342",
       "source": "tool_use",
-      "timestamp": "2026-03-28T15:16:56.977Z",
+      "timestamp": "2026-03-29T00:59:47.033Z",
       "project": "-Users-andyed",
       "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.01,
+      "_score": 0.00980392156862745,
+      "_sources": "semantic"
+    },
+    {
+      "event_id": "synth-toolu_017LSNFgzJRNrSiFvA8ZR5rD",
+      "source": "tool_use",
+      "timestamp": "2026-03-28T15:12:04.837Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.009708737864077669,
       "_sources": "semantic"
     },
     {
@@ -1028,18 +1091,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.009900990099009901,
+      "_score": 0.009615384615384616,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01URwDLWhnQiSmGnhTb4wvBj",
+      "event_id": "synth-toolu_0188RSNpVx1ZYRmsyoitiRuS",
       "source": "tool_use",
-      "timestamp": "2026-03-29T01:00:24.177Z",
+      "timestamp": "2026-03-27T03:35:12.317Z",
       "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.009900990099009901,
+      "_score": 0.009615384615384616,
       "_sources": "semantic"
     },
     {
@@ -1063,69 +1126,6 @@
         "commit_type": "docs"
       },
       "_source": "changelog",
-      "_score": 0.00980392156862745,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01JYYkDaoBdf6hxr8t3BM342",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T00:59:47.033Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.00980392156862745,
-      "_sources": "semantic"
-    },
-    {
-      "display": "hmm, \"who taught it to hear\" goes after lorenz in the actual timeline... i think we should make that change -- any story arc alignment we should do>?",
-      "pastedContents": {},
-      "timestamp": 1771686751353,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "6456a2c4-07a1-40a6-b158-66063d6f3cdf",
-      "_source": "claude-history",
-      "_score": 0.009708737864077669,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_017LSNFgzJRNrSiFvA8ZR5rD",
-      "source": "tool_use",
-      "timestamp": "2026-03-28T15:12:04.837Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.009708737864077669,
-      "_sources": "semantic"
-    },
-    {
-      "display": "so we gotta do the wave mode section -- maybe even a timeline entry.  eric and i were basic trawling wikipedia for fancy math to throw at claude",
-      "pastedContents": {},
-      "timestamp": 1771645992394,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "6caaaa31-4a20-46cd-ae94-d5ef4800f586",
-      "_source": "claude-history",
-      "_score": 0.009615384615384616,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_0188RSNpVx1ZYRmsyoitiRuS",
-      "source": "tool_use",
-      "timestamp": "2026-03-27T03:35:12.317Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.009615384615384616,
-      "_sources": "semantic"
-    },
-    {
-      "display": "lets cpature screeshots as 1280x7... for each of the carto web app modes (timeline, search) -- filter it to matches to \"remember\" in any case to avoid sensitive data",
-      "pastedContents": {},
-      "timestamp": 1774716604232,
-      "project": "/home/user",
-      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
-      "_source": "claude-history",
       "_score": 0.009523809523809525,
       "_sources": "keyword"
     },
@@ -1141,11 +1141,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "it would be usful to visually distinguish results with URLs from not (or generally event type the timeline) showing the URL as icon for hover address inspection a bonus",
+      "display": "hmm, \"who taught it to hear\" goes after lorenz in the actual timeline... i think we should make that change -- any story arc alignment we should do>?",
       "pastedContents": {},
-      "timestamp": 1774583477921,
-      "project": "/home/user",
-      "sessionId": "fcce4294-ebb6-48b9-9a48-de0e7074ccbf",
+      "timestamp": 1771686751353,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "6456a2c4-07a1-40a6-b158-66063d6f3cdf",
       "_source": "claude-history",
       "_score": 0.009433962264150943,
       "_sources": "keyword"
@@ -1162,11 +1162,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "great, do we have readmes in the two sciprogfi folders for you to get up to speed faster?  might be worth noting the documents originally had a slower timeline",
+      "display": "so we gotta do the wave mode section -- maybe even a timeline entry.  eric and i were basic trawling wikipedia for fancy math to throw at claude",
       "pastedContents": {},
-      "timestamp": 1772636191418,
+      "timestamp": 1771645992394,
       "project": "/home/user/Documents/dev",
-      "sessionId": "80bd1e99-b417-4144-9e92-a8bdeb0a68e4",
+      "sessionId": "6caaaa31-4a20-46cd-ae94-d5ef4800f586",
       "_source": "claude-history",
       "_score": 0.009345794392523364,
       "_sources": "keyword"
@@ -1183,17 +1183,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "on this question, selling the downfall of the US is one of our most challening arcs... we have to let that dictate the timeline [Pasted text #2 +3 lines]",
-      "pastedContents": {
-        "2": {
-          "id": 2,
-          "type": "text",
-          "content": "  1. Move the memo to 2029 (late 2029, after Ground Truth launches). ASHPA passes earlier (~2027-2028, which fits the Crumble era). The compression makes the sequence tighter: Sal pitches VCs, builds open, immediately\n  faces the hammer. He packs faster. The Descent and Crossing happen sooner.\n  2. Keep 2030 but add an earlier warning shot — a 2028 or early 2029 node where Columbia first raises concerns about Calliope informally. A \"friendly\" conversation with the department chair. Sal dismisses it. Then the\n   2030 memo lands as the formal kill shot, and the delay reads as institutional slowness, not narrative slack."
-        }
-      },
-      "timestamp": 1772607922928,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "80bd1e99-b417-4144-9e92-a8bdeb0a68e4",
+      "display": "lets cpature screeshots as 1280x7... for each of the carto web app modes (timeline, search) -- filter it to matches to \"remember\" in any case to avoid sensitive data",
+      "pastedContents": {},
+      "timestamp": 1774716604232,
+      "project": "/home/user",
+      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
       "_source": "claude-history",
       "_score": 0.009259259259259259,
       "_sources": "keyword"
@@ -1210,11 +1204,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "lets invest in sciprogfi and the web app version.... i need an index of all contents populated by timeline and then a recently added section (n=10 with dates)",
+      "display": "it would be usful to visually distinguish results with URLs from not (or generally event type the timeline) showing the URL as icon for hover address inspection a bonus",
       "pastedContents": {},
-      "timestamp": 1772604034847,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
+      "timestamp": 1774583477921,
+      "project": "/home/user",
+      "sessionId": "fcce4294-ebb6-48b9-9a48-de0e7074ccbf",
       "_source": "claude-history",
       "_score": 0.009174311926605505,
       "_sources": "keyword"
@@ -1231,11 +1225,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "can we do a sunrise/sunset motif with the color palette in the timeline on that page.  keep it dark mode but try to get day/nigght, directional in betweens",
+      "display": "great, do we have readmes in the two sciprogfi folders for you to get up to speed faster?  might be worth noting the documents originally had a slower timeline",
       "pastedContents": {},
-      "timestamp": 1774753756464,
-      "project": "/home/user",
-      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
+      "timestamp": 1772636191418,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "80bd1e99-b417-4144-9e92-a8bdeb0a68e4",
       "_source": "claude-history",
       "_score": 0.00909090909090909,
       "_sources": "keyword"
@@ -1252,11 +1246,17 @@
       "_sources": "semantic"
     },
     {
-      "display": "if we dont scroll awy the timeline we need to have it hightlight the items visible on the page. the mouseover toolitip is super elegant, but not really useful alas",
-      "pastedContents": {},
-      "timestamp": 1774709245727,
-      "project": "/home/user",
-      "sessionId": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "display": "on this question, selling the downfall of the US is one of our most challening arcs... we have to let that dictate the timeline [Pasted text #2 +3 lines]",
+      "pastedContents": {
+        "2": {
+          "id": 2,
+          "type": "text",
+          "content": "  1. Move the memo to 2029 (late 2029, after Ground Truth launches). ASHPA passes earlier (~2027-2028, which fits the Crumble era). The compression makes the sequence tighter: Sal pitches VCs, builds open, immediately\n  faces the hammer. He packs faster. The Descent and Crossing happen sooner.\n  2. Keep 2030 but add an earlier warning shot — a 2028 or early 2029 node where Columbia first raises concerns about Calliope informally. A \"friendly\" conversation with the department chair. Sal dismisses it. Then the\n   2030 memo lands as the formal kill shot, and the delay reads as institutional slowness, not narrative slack."
+        }
+      },
+      "timestamp": 1772607922928,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "80bd1e99-b417-4144-9e92-a8bdeb0a68e4",
       "_source": "claude-history",
       "_score": 0.009009009009009009,
       "_sources": "keyword"
@@ -1273,11 +1273,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "dev/sciprogfi-web (and sciprogfi) -- let's project out advancements in genetics, consumer technology, services, etc over our timeline and look for integration points *within* existing story nodes. also outside.",
+      "display": "lets invest in sciprogfi and the web app version.... i need an index of all contents populated by timeline and then a recently added section (n=10 with dates)",
       "pastedContents": {},
-      "timestamp": 1773202856419,
+      "timestamp": 1772604034847,
       "project": "/home/user/Documents/dev",
-      "sessionId": "366e8001-12f3-450d-b888-d6b8ae04fa60",
+      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
       "_source": "claude-history",
       "_score": 0.008928571428571428,
       "_sources": "keyword"
@@ -1294,18 +1294,12 @@
       "_sources": "semantic"
     },
     {
-      "event_id": "evt-afrayj9qq4nt",
-      "timestamp": "2026-03-28T15:15:42Z",
-      "type": "tool_bash",
-      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
-      "project": "session-cartographer",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
-      "summary": "Ran: git add README.md TODO.md docs/CHANGELOG_SPEC.md explorer/package.json explorer/package-lock.json explorer/src/api.js explorer/src/components/Timeline.jsx explorer/src/components/TranscriptViewer.jsx",
-      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
-      "related_ids": [],
-      "_source": "tool-use",
-      "tool": "Bash",
-      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "display": "can we do a sunrise/sunset motif with the color palette in the timeline on that page.  keep it dark mode but try to get day/nigght, directional in betweens",
+      "pastedContents": {},
+      "timestamp": 1774753756464,
+      "project": "/home/user",
+      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
+      "_source": "claude-history",
       "_score": 0.008849557522123894,
       "_sources": "keyword"
     },
@@ -1321,6 +1315,16 @@
       "_sources": "semantic"
     },
     {
+      "display": "if we dont scroll awy the timeline we need to have it hightlight the items visible on the page. the mouseover toolitip is super elegant, but not really useful alas",
+      "pastedContents": {},
+      "timestamp": 1774709245727,
+      "project": "/home/user",
+      "sessionId": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "_source": "claude-history",
+      "_score": 0.008771929824561403,
+      "_sources": "keyword"
+    },
+    {
       "event_id": "hist-2a0d7416-f48f-469c-85cd-8f211eb14daf-2026-03-21T22:44:25.219Z",
       "source": "transcript",
       "timestamp": "2026-03-21T22:44:25.219Z",
@@ -1329,6 +1333,65 @@
       "summary": "Got it — running from `~/` going forward so history search works. I'll save that. | project: -Users-andyed",
       "session": "",
       "_score": 0.008771929824561403,
+      "_sources": "semantic"
+    },
+    {
+      "display": "dev/sciprogfi-web (and sciprogfi) -- let's project out advancements in genetics, consumer technology, services, etc over our timeline and look for integration points *within* existing story nodes. also outside.",
+      "pastedContents": {},
+      "timestamp": 1773202856419,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "366e8001-12f3-450d-b888-d6b8ae04fa60",
+      "_source": "claude-history",
+      "_score": 0.008695652173913044,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-19c8bb16-fb29-46a6-936a-f1885117253b-2026-01-27T16:12:38.573Z",
+      "source": "transcript",
+      "timestamp": "2026-01-27T16:12:38.573Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/claude-code-history-viewer",
+      "summary": "take a look at our updates to the timeline / sessions view.  brushing is next, help with a spec? | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.008695652173913044,
+      "_sources": "semantic"
+    },
+    {
+      "event_id": "evt-afrayj9qq4nt",
+      "timestamp": "2026-03-28T15:15:42Z",
+      "type": "tool_bash",
+      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "project": "session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Ran: git add README.md TODO.md docs/CHANGELOG_SPEC.md explorer/package.json explorer/package-lock.json explorer/src/api.js explorer/src/components/Timeline.jsx explorer/src/components/TranscriptViewer.jsx",
+      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
+      "related_ids": [],
+      "_source": "tool-use",
+      "tool": "Bash",
+      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "_score": 0.008620689655172414,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01K12EQoUF8rAUepFRRqqY6S",
+      "source": "tool_use",
+      "timestamp": "2026-03-03T05:05:36.220Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev",
+      "summary": "Edit: /home/user/Documents/dev/psychodeli-webgl-port/js/lib/history-timeline-buffer.js | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.008620689655172414,
+      "_sources": "semantic"
+    },
+    {
+      "event_id": "synth-toolu_01NsehndD6ACD8s5LaPf4B6P",
+      "source": "tool_use",
+      "timestamp": "2026-03-02T14:47:03.920Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/fascist-language-analyzer/web",
+      "summary": "Edit: /home/user/Documents/dev/psychodeli-webgl-port/js/lib/history-timeline-buffer.js | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.008547008547008548,
       "_sources": "semantic"
     },
     {
@@ -1352,69 +1415,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.008695652173913044,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-19c8bb16-fb29-46a6-936a-f1885117253b-2026-01-27T16:12:38.573Z",
-      "source": "transcript",
-      "timestamp": "2026-01-27T16:12:38.573Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/claude-code-history-viewer",
-      "summary": "take a look at our updates to the timeline / sessions view.  brushing is next, help with a spec? | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008695652173913044,
-      "_sources": "semantic"
-    },
-    {
-      "display": "no, lets /plan updating exiting assets with Arwes and creating a set of patterns for re-use.  at some point we'll need to invest in our timeline UX, not sure that time is now?",
-      "pastedContents": {},
-      "timestamp": 1772606187951,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
-      "_source": "claude-history",
-      "_score": 0.008620689655172414,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01K12EQoUF8rAUepFRRqqY6S",
-      "source": "tool_use",
-      "timestamp": "2026-03-03T05:05:36.220Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev",
-      "summary": "Edit: /home/user/Documents/dev/psychodeli-webgl-port/js/lib/history-timeline-buffer.js | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008620689655172414,
-      "_sources": "semantic"
-    },
-    {
-      "display": "write up a spec for our 3 layer display system (timeline, card, narrative) and cross linking, index, and map structure.  document all user paths and clickable elements. be agnostic to framework but include requirements like permalinks",
-      "pastedContents": {},
-      "timestamp": 1772954196742,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "d194d5ef-0ccd-46e9-94d2-9c781b9d5220",
-      "_source": "claude-history",
-      "_score": 0.008547008547008548,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01NsehndD6ACD8s5LaPf4B6P",
-      "source": "tool_use",
-      "timestamp": "2026-03-02T14:47:03.920Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/fascist-language-analyzer/web",
-      "summary": "Edit: /home/user/Documents/dev/psychodeli-webgl-port/js/lib/history-timeline-buffer.js | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008547008547008548,
-      "_sources": "semantic"
-    },
-    {
-      "display": "can we add a localstorage system that remembers what content you've seen.  add a subtle and unique footer placement with\nentry point to a visual D3 map with the timeline and swimlanes for drew,sal, world, etc /plan",
-      "pastedContents": {},
-      "timestamp": 1772887987424,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "f63d088d-4dc6-4df5-9733-4963bb5a07d0",
-      "_source": "claude-history",
       "_score": 0.00847457627118644,
       "_sources": "keyword"
     },
@@ -1430,11 +1430,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "can we add a localstorage system that remembers what content you've seen.  add a subtle and unique footer placement with entry point to a visual D3 map with the timeline and swimlanes for drew,sal, world, etc /plan",
+      "display": "no, lets /plan updating exiting assets with Arwes and creating a set of patterns for re-use.  at some point we'll need to invest in our timeline UX, not sure that time is now?",
       "pastedContents": {},
-      "timestamp": 1772887972233,
+      "timestamp": 1772606187951,
       "project": "/home/user/Documents/dev",
-      "sessionId": "d77b5e52-8d21-4532-b6ae-039544743e6f",
+      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
       "_source": "claude-history",
       "_score": 0.008403361344537815,
       "_sources": "keyword"
@@ -1451,11 +1451,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "we need milestones between '26 and '31!  but maybe not now.  can we weave sal's arc and the VC journy in now to make sure our timeline holds water.  see the complicity doc in sciprogfi for VC inspiration",
+      "display": "write up a spec for our 3 layer display system (timeline, card, narrative) and cross linking, index, and map structure.  document all user paths and clickable elements. be agnostic to framework but include requirements like permalinks",
       "pastedContents": {},
-      "timestamp": 1772165325934,
-      "project": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "sessionId": "f53a8b5f-69b7-454b-945f-33c8f1a28543",
+      "timestamp": 1772954196742,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "d194d5ef-0ccd-46e9-94d2-9c781b9d5220",
       "_source": "claude-history",
       "_score": 0.008333333333333333,
       "_sources": "keyword"
@@ -1472,11 +1472,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "ok, that's commited -- lets turn our attention to timeline. i made a contribution to clause history viewer with a session view that had semantic zooming and brushing.  with facets now i'd like to do a similar thing ehre",
+      "display": "can we add a localstorage system that remembers what content you've seen.  add a subtle and unique footer placement with\nentry point to a visual D3 map with the timeline and swimlanes for drew,sal, world, etc /plan",
       "pastedContents": {},
-      "timestamp": 1774709796751,
-      "project": "/home/user",
-      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
+      "timestamp": 1772887987424,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "f63d088d-4dc6-4df5-9733-4963bb5a07d0",
       "_source": "claude-history",
       "_score": 0.008264462809917356,
       "_sources": "keyword"
@@ -1490,6 +1490,69 @@
       "summary": "Write: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
       "session": "",
       "_score": 0.008264462809917356,
+      "_sources": "semantic"
+    },
+    {
+      "display": "can we add a localstorage system that remembers what content you've seen.  add a subtle and unique footer placement with entry point to a visual D3 map with the timeline and swimlanes for drew,sal, world, etc /plan",
+      "pastedContents": {},
+      "timestamp": 1772887972233,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "d77b5e52-8d21-4532-b6ae-039544743e6f",
+      "_source": "claude-history",
+      "_score": 0.00819672131147541,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01HadZTb2c5BNz7PsAy5qR2H",
+      "source": "tool_use",
+      "timestamp": "2026-03-27T03:29:13.345Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Write: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.00819672131147541,
+      "_sources": "semantic"
+    },
+    {
+      "display": "we need milestones between '26 and '31!  but maybe not now.  can we weave sal's arc and the VC journy in now to make sure our timeline holds water.  see the complicity doc in sciprogfi for VC inspiration",
+      "pastedContents": {},
+      "timestamp": 1772165325934,
+      "project": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "sessionId": "f53a8b5f-69b7-454b-945f-33c8f1a28543",
+      "_source": "claude-history",
+      "_score": 0.008130081300813009,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-6d88f841-43d4-41de-9f4c-8294ec0f7f95-2026-03-18T01:15:23.810Z",
+      "source": "transcript",
+      "timestamp": "2026-03-18T01:15:23.810Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "summary": "Now check what `now` is in that context: | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.008130081300813009,
+      "_sources": "semantic"
+    },
+    {
+      "display": "ok, that's commited -- lets turn our attention to timeline. i made a contribution to clause history viewer with a session view that had semantic zooming and brushing.  with facets now i'd like to do a similar thing ehre",
+      "pastedContents": {},
+      "timestamp": 1774709796751,
+      "project": "/home/user",
+      "sessionId": "a40a6caa-a381-4f87-9df6-129c54741bc4",
+      "_source": "claude-history",
+      "_score": 0.008064516129032258,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "hist-6fbf51be-d5a1-432d-98b4-c084387d3ce0-2026-03-15T23:55:53.006Z",
+      "source": "transcript",
+      "timestamp": "2026-03-15T23:55:53.006Z",
+      "project": "-Users-andyed-Documents-dev",
+      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
+      "summary": "Let me check the capture while this continues — I'll do both in parallel. | project: -Users-andyed-Documents-dev",
+      "session": "",
+      "_score": 0.008064516129032258,
       "_sources": "semantic"
     },
     {
@@ -1513,69 +1576,6 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.00819672131147541,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01HadZTb2c5BNz7PsAy5qR2H",
-      "source": "tool_use",
-      "timestamp": "2026-03-27T03:29:13.345Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Write: /home/user/Documents/dev/session-cartographer/explorer/src/components/Timeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.00819672131147541,
-      "_sources": "semantic"
-    },
-    {
-      "display": "so we should express a passion for experimentation and learning from experimenttation. those abandoned branches brought learnings and allowed for gradual architectural patterns to emerge (ex. audio bus)... that woudl be fun to position in the timeline if we're missing an annotation",
-      "pastedContents": {},
-      "timestamp": 1771684465633,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "6456a2c4-07a1-40a6-b158-66063d6f3cdf",
-      "_source": "claude-history",
-      "_score": 0.008130081300813009,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-6d88f841-43d4-41de-9f4c-8294ec0f7f95-2026-03-18T01:15:23.810Z",
-      "source": "transcript",
-      "timestamp": "2026-03-18T01:15:23.810Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "summary": "Now check what `now` is in that context: | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008130081300813009,
-      "_sources": "semantic"
-    },
-    {
-      "display": "wow, i think we're getting a lot more signal now -- with the custom mic mode turning off nanny phone features, the history timeline is clicked for energy.  what do you recommend? how do we assess, vis seems comparable still with light testing",
-      "pastedContents": {},
-      "timestamp": 1770417925339,
-      "project": "/home/user",
-      "sessionId": "5ce2d023-2619-41d0-8e4c-be36086a669a",
-      "_source": "claude-history",
-      "_score": 0.008064516129032258,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "hist-6fbf51be-d5a1-432d-98b4-c084387d3ce0-2026-03-15T23:55:53.006Z",
-      "source": "transcript",
-      "timestamp": "2026-03-15T23:55:53.006Z",
-      "project": "-Users-andyed-Documents-dev",
-      "cwd": "/home/user/Documents/dev/psychodeli-webgl-port",
-      "summary": "Let me check the capture while this continues — I'll do both in parallel. | project: -Users-andyed-Documents-dev",
-      "session": "",
-      "_score": 0.008064516129032258,
-      "_sources": "semantic"
-    },
-    {
-      "display": "also, Trump started a war with Iran, destabilizing the middle east.  we shoudl weave ongoing war in the middle east into the demise of the US, ironically making Trumps unwinding of the electric car transition a key weak point. weave into our commercial/ad/news timeline",
-      "pastedContents": {},
-      "timestamp": 1772755804864,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "9854837f-1c7f-49d2-b6d7-3aa0bf0f438f",
-      "_source": "claude-history",
       "_score": 0.008,
       "_sources": "keyword"
     },
@@ -1588,6 +1588,69 @@
       "summary": "Let me find the most recent captures by timestamp. | project: -Users-andyed-Documents-dev",
       "session": "",
       "_score": 0.008,
+      "_sources": "semantic"
+    },
+    {
+      "display": "so we should express a passion for experimentation and learning from experimenttation. those abandoned branches brought learnings and allowed for gradual architectural patterns to emerge (ex. audio bus)... that woudl be fun to position in the timeline if we're missing an annotation",
+      "pastedContents": {},
+      "timestamp": 1771684465633,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "6456a2c4-07a1-40a6-b158-66063d6f3cdf",
+      "_source": "claude-history",
+      "_score": 0.007936507936507936,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01XqRqDXbdcAEXJhosWzTS9o",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T03:47:10.863Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.007936507936507936,
+      "_sources": "semantic"
+    },
+    {
+      "display": "wow, i think we're getting a lot more signal now -- with the custom mic mode turning off nanny phone features, the history timeline is clicked for energy.  what do you recommend? how do we assess, vis seems comparable still with light testing",
+      "pastedContents": {},
+      "timestamp": 1770417925339,
+      "project": "/home/user",
+      "sessionId": "5ce2d023-2619-41d0-8e4c-be36086a669a",
+      "_source": "claude-history",
+      "_score": 0.007874015748031496,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01QWUNdwhYwwunAUZ8byy9Ss",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T03:08:05.769Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.007874015748031496,
+      "_sources": "semantic"
+    },
+    {
+      "display": "also, Trump started a war with Iran, destabilizing the middle east.  we shoudl weave ongoing war in the middle east into the demise of the US, ironically making Trumps unwinding of the electric car transition a key weak point. weave into our commercial/ad/news timeline",
+      "pastedContents": {},
+      "timestamp": 1772755804864,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "9854837f-1c7f-49d2-b6d7-3aa0bf0f438f",
+      "_source": "claude-history",
+      "_score": 0.0078125,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_0122TwHArhJMPw2E1h7T8EmB",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T03:09:56.692Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.0078125,
       "_sources": "semantic"
     },
     {
@@ -1611,18 +1674,18 @@
       },
       "related_ids": [],
       "_source": "changelog",
-      "_score": 0.007936507936507936,
+      "_score": 0.007751937984496124,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01XqRqDXbdcAEXJhosWzTS9o",
+      "event_id": "synth-toolu_01UUPmqbYH8MJd8ssAkbh82n",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:47:10.863Z",
+      "timestamp": "2026-03-29T03:08:25.785Z",
       "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007936507936507936,
+      "_score": 0.007751937984496124,
       "_sources": "semantic"
     },
     {
@@ -1646,75 +1709,6 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007874015748031496,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01QWUNdwhYwwunAUZ8byy9Ss",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T03:08:05.769Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.007874015748031496,
-      "_sources": "semantic"
-    },
-    {
-      "display": "SO think hard a bout a layer above the story, a flip card version that cherry picks a few lines of represenative content, offers links to dive in, and flips forward (or at least laterally in time).  think of it as in interim layer between the timeline and the full narrative /plan",
-      "pastedContents": {},
-      "timestamp": 1772928926691,
-      "project": "/home/user/Documents/dev",
-      "sessionId": "2caa82c2-68f3-4157-8801-fb785d710598",
-      "_source": "claude-history",
-      "_score": 0.0078125,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_0122TwHArhJMPw2E1h7T8EmB",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T03:09:56.692Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.0078125,
-      "_sources": "semantic"
-    },
-    {
-      "event_id": "evt-r1qlp15vuqmq",
-      "timestamp": "2026-03-28T15:15:49Z",
-      "type": "git_commit",
-      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
-      "project": "session-cartographer",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
-      "summary": "Commit aafe1e4: Polish for dogfooding: README rewrite, error handling, docs accuracy\\n 8 files changed, 170 insertions(+), 131 deletions(-)\\n create mode 100644 TODO.md\", | files: README.md,TODO.md,docs/CHANGELOG_SPEC.md,explorer/package-lock.json,explorer/package.json,explorer/src/api.js,explorer/src/components/Timeline.jsx,explorer/src/components/TranscriptViewer.jsx",
-      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
-      "related_ids": [],
-      "_source": "tool-use",
-      "tool": "Bash",
-      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
-      "_score": 0.007751937984496124,
-      "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01UUPmqbYH8MJd8ssAkbh82n",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T03:08:25.785Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.007751937984496124,
-      "_sources": "semantic"
-    },
-    {
-      "display": "ok, let's move earch box flush left top, pushing \"session cartographer\" timeline and search to right flush top row.\n\nMove date range to a separate line and visualize -- line with dots we alreay have is awesome.\n\nThen bump the font size on the facets and icnrease visibilty of selected filters, add X in pill box to remove",
-      "pastedContents": {},
-      "timestamp": 1774707274264,
-      "project": "/home/user",
-      "sessionId": "e2ab97ba-6516-4915-8e6e-997128da3594",
-      "_source": "claude-history",
       "_score": 0.007692307692307693,
       "_sources": "keyword"
     },
@@ -1730,11 +1724,11 @@
       "_sources": "semantic"
     },
     {
-      "display": "i'm excited to tell the timeline of technology progress and the OHC -- we'd written up a lot on this -- some of the conten may be in some other repos (actually obsidian vaults) i should give you access to for inspriation. survey what we've got and go ddep on the rare earth minerals front and the recycleing/hackin 2020s hardware exported to south america.  ",
+      "display": "SO think hard a bout a layer above the story, a flip card version that cherry picks a few lines of represenative content, offers links to dive in, and flips forward (or at least laterally in time).  think of it as in interim layer between the timeline and the full narrative /plan",
       "pastedContents": {},
-      "timestamp": 1772604945862,
+      "timestamp": 1772928926691,
       "project": "/home/user/Documents/dev",
-      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
+      "sessionId": "2caa82c2-68f3-4157-8801-fb785d710598",
       "_source": "claude-history",
       "_score": 0.007633587786259542,
       "_sources": "keyword"
@@ -1748,6 +1742,75 @@
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
       "_score": 0.007633587786259542,
+      "_sources": "semantic"
+    },
+    {
+      "event_id": "evt-r1qlp15vuqmq",
+      "timestamp": "2026-03-28T15:15:49Z",
+      "type": "git_commit",
+      "session_id": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "project": "session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "summary": "Commit aafe1e4: Polish for dogfooding: README rewrite, error handling, docs accuracy\\n 8 files changed, 170 insertions(+), 131 deletions(-)\\n create mode 100644 TODO.md\", | files: README.md,TODO.md,docs/CHANGELOG_SPEC.md,explorer/package-lock.json,explorer/package.json,explorer/src/api.js,explorer/src/components/Timeline.jsx,explorer/src/components/TranscriptViewer.jsx",
+      "transcript_path": "/home/user/.claude/projects/demo-project/e2ab97ba-6516-4915-8e6e-997128da3594.jsonl",
+      "related_ids": [],
+      "_source": "tool-use",
+      "tool": "Bash",
+      "session": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "_score": 0.007575757575757576,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01PuwvZxRmmLv9vYDP5Fe61P",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T03:05:23.155Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.007575757575757576,
+      "_sources": "semantic"
+    },
+    {
+      "display": "ok, let's move earch box flush left top, pushing \"session cartographer\" timeline and search to right flush top row.\n\nMove date range to a separate line and visualize -- line with dots we alreay have is awesome.\n\nThen bump the font size on the facets and icnrease visibilty of selected filters, add X in pill box to remove",
+      "pastedContents": {},
+      "timestamp": 1774707274264,
+      "project": "/home/user",
+      "sessionId": "e2ab97ba-6516-4915-8e6e-997128da3594",
+      "_source": "claude-history",
+      "_score": 0.007518796992481203,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_01M2sQUAQWkCC3cbhgLVEzq4",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T03:05:14.768Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.007518796992481203,
+      "_sources": "semantic"
+    },
+    {
+      "display": "i'm excited to tell the timeline of technology progress and the OHC -- we'd written up a lot on this -- some of the conten may be in some other repos (actually obsidian vaults) i should give you access to for inspriation. survey what we've got and go ddep on the rare earth minerals front and the recycleing/hackin 2020s hardware exported to south america.  ",
+      "pastedContents": {},
+      "timestamp": 1772604945862,
+      "project": "/home/user/Documents/dev",
+      "sessionId": "9f161e33-b9c2-40c8-af28-2d352f78f13c",
+      "_source": "claude-history",
+      "_score": 0.007462686567164179,
+      "_sources": "keyword"
+    },
+    {
+      "event_id": "synth-toolu_011EK8LTJ2bbGS8rwDo7ivgd",
+      "source": "tool_use",
+      "timestamp": "2026-03-29T03:05:33.189Z",
+      "project": "-Users-andyed",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
+      "session": "",
+      "_score": 0.007462686567164179,
       "_sources": "semantic"
     },
     {
@@ -1771,18 +1834,18 @@
       },
       "related_ids": [],
       "_source": "changelog",
-      "_score": 0.007575757575757576,
+      "_score": 0.007407407407407408,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01PuwvZxRmmLv9vYDP5Fe61P",
+      "event_id": "synth-toolu_01TBTFJbJSQD6vwzm2D3syHi",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:05:23.155Z",
+      "timestamp": "2026-03-29T03:06:25.631Z",
       "project": "-Users-andyed",
       "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007575757575757576,
+      "_score": 0.007407407407407408,
       "_sources": "semantic"
     },
     {
@@ -1806,18 +1869,18 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007518796992481203,
+      "_score": 0.007352941176470588,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01M2sQUAQWkCC3cbhgLVEzq4",
+      "event_id": "synth-toolu_019kQm3286JANRPcyC3NFBkL",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:05:14.768Z",
+      "timestamp": "2026-03-29T03:09:39.478Z",
       "project": "-Users-andyed",
       "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007518796992481203,
+      "_score": 0.007352941176470588,
       "_sources": "semantic"
     },
     {
@@ -1841,18 +1904,18 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.007462686567164179,
+      "_score": 0.0072992700729927005,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_011EK8LTJ2bbGS8rwDo7ivgd",
+      "event_id": "synth-toolu_01MkLGxtMS2C8iNrYpMVa8P9",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:05:33.189Z",
+      "timestamp": "2026-03-29T03:09:48.937Z",
       "project": "-Users-andyed",
       "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007462686567164179,
+      "_score": 0.0072992700729927005,
       "_sources": "semantic"
     },
     {
@@ -1876,18 +1939,18 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.007407407407407408,
+      "_score": 0.007246376811594203,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01TBTFJbJSQD6vwzm2D3syHi",
+      "event_id": "synth-toolu_01CnBgFDiFhC1BqAgw6CBRzT",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:06:25.631Z",
+      "timestamp": "2026-03-29T03:47:40.410Z",
       "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007407407407407408,
+      "_score": 0.007246376811594203,
       "_sources": "semantic"
     },
     {
@@ -1911,29 +1974,29 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007352941176470588,
+      "_score": 0.007194244604316547,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_019kQm3286JANRPcyC3NFBkL",
+      "event_id": "synth-toolu_01YR4qe873zq1HBYThqDssXJ",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:09:39.478Z",
+      "timestamp": "2026-03-29T03:47:16.848Z",
       "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
+      "cwd": "/home/user/Documents/dev/session-cartographer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007352941176470588,
+      "_score": 0.007194244604316547,
       "_sources": "semantic"
     },
     {
-      "event_id": "synth-toolu_01MkLGxtMS2C8iNrYpMVa8P9",
+      "event_id": "synth-toolu_01NDnE4gZ2KQkLpzx9AMPUVF",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:09:48.937Z",
+      "timestamp": "2026-03-29T03:05:48.598Z",
       "project": "-Users-andyed",
       "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.0072992700729927005,
+      "_score": 0.007142857142857143,
       "_sources": "semantic"
     },
     {
@@ -1957,18 +2020,18 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.007246376811594203,
+      "_score": 0.0070921985815602835,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01CnBgFDiFhC1BqAgw6CBRzT",
+      "event_id": "synth-toolu_01ToZGGgX18vjFkKx6gXJkko",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:47:40.410Z",
+      "timestamp": "2026-03-29T03:07:43.148Z",
       "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007246376811594203,
+      "_score": 0.0070921985815602835,
       "_sources": "semantic"
     },
     {
@@ -1992,18 +2055,18 @@
         "commit_type": "feat"
       },
       "_source": "changelog",
-      "_score": 0.007194244604316547,
+      "_score": 0.007042253521126761,
       "_sources": "keyword"
     },
     {
-      "event_id": "synth-toolu_01YR4qe873zq1HBYThqDssXJ",
+      "event_id": "synth-toolu_01B1jH57zXDrNRTfkfRvxqq8",
       "source": "tool_use",
-      "timestamp": "2026-03-29T03:47:16.848Z",
+      "timestamp": "2026-03-29T03:07:52.176Z",
       "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer",
+      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
       "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
       "session": "",
-      "_score": 0.007194244604316547,
+      "_score": 0.007042253521126761,
       "_sources": "semantic"
     },
     {
@@ -2027,41 +2090,8 @@
         "commit_type": null
       },
       "_source": "changelog",
-      "_score": 0.007142857142857143,
+      "_score": 0.006993006993006993,
       "_sources": "keyword"
-    },
-    {
-      "event_id": "synth-toolu_01NDnE4gZ2KQkLpzx9AMPUVF",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T03:05:48.598Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.007142857142857143,
-      "_sources": "semantic"
-    },
-    {
-      "event_id": "synth-toolu_01ToZGGgX18vjFkKx6gXJkko",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T03:07:43.148Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.0070921985815602835,
-      "_sources": "semantic"
-    },
-    {
-      "event_id": "synth-toolu_01B1jH57zXDrNRTfkfRvxqq8",
-      "source": "tool_use",
-      "timestamp": "2026-03-29T03:07:52.176Z",
-      "project": "-Users-andyed",
-      "cwd": "/home/user/Documents/dev/session-cartographer/explorer",
-      "summary": "Edit: /home/user/Documents/dev/session-cartographer/explorer/src/components/ConcurrentTimeline.jsx | project: -Users-andyed",
-      "session": "",
-      "_score": 0.007042253521126761,
-      "_sources": "semantic"
     },
     {
       "event_id": "synth-toolu_01FXDedsLs6CHdBJFJ4wrFV4",
@@ -5103,7 +5133,7 @@
       },
       {
         "name": "/home/user",
-        "count": 19
+        "count": 22
       },
       {
         "name": "session-cartographer",
@@ -5149,16 +5179,16 @@
       },
       {
         "name": "keyword",
-        "count": 80
+        "count": 83
       }
     ],
     "time": {
       "oldest": "2026-01-05",
-      "newest": "2026-03-30",
+      "newest": "2026-03-31",
       "months": [
         {
           "name": "2026-03",
-          "count": 374
+          "count": 377
         },
         {
           "name": "2026-02",
@@ -5170,6 +5200,10 @@
         }
       ],
       "days": [
+        {
+          "name": "2026-03-31",
+          "count": 3
+        },
         {
           "name": "2026-03-30",
           "count": 9
@@ -5193,20 +5227,16 @@
         {
           "name": "2026-03-25",
           "count": 14
-        },
-        {
-          "name": "2026-03-24",
-          "count": 9
         }
       ]
     }
   },
   "meta": {
     "query": "concurrent timeline",
-    "keyword_count": 80,
+    "keyword_count": 83,
     "semantic_count": 500,
-    "fused_count": 436,
-    "total_matches": 80,
-    "duration_ms": 55
+    "fused_count": 439,
+    "total_matches": 83,
+    "duration_ms": 35
   }
 }
