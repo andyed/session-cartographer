@@ -1,0 +1,37 @@
+{
+  "query_id": "concurrent-timeline",
+  "query": "concurrent timeline",
+  "intent": "Find work on the concurrent session timeline visualization in Explorer",
+
+  "sessions": {
+    "a40a6caa-a381-4f87-9df6-129c54741bc4": { "relevant": true, "role": "primary", "notes": "Built the concurrent timeline component" },
+    "e2ab97ba-6516-4915-8e6e-997128da3594": { "relevant": true, "role": "primary", "notes": "Earlier Explorer work, laid groundwork" }
+  },
+
+  "events": [
+    { "rank": 1, "summary": "Commit 57ee5c2: feat: Concurrent timeline, diff shape (Tier 3)...", "relevant": true, "grade": 3, "noise": null, "why": "The shipping commit" },
+    { "rank": 2, "summary": "Modified: ConcurrentTimeline.jsx", "relevant": true, "grade": 3, "noise": null },
+    { "rank": 3, "summary": "Modified: ConcurrentTimeline.jsx (2nd edit)", "relevant": true, "grade": 3, "noise": null },
+    { "rank": 4, "summary": "Commit bf66111: Fix timeline: remove dead stop links...", "relevant": false, "grade": 1, "noise": null, "why": "sciprogfi-web timeline, not carto — tangential" },
+    { "rank": 5, "summary": "Search: claude code session visualization timeline...", "relevant": true, "grade": 2, "noise": null, "why": "Research for the feature" },
+    { "rank": 6, "summary": "search facets done for now, /plan concurrent session timeline", "relevant": true, "grade": 3, "noise": null, "why": "Planning the feature" },
+    { "rank": 7, "summary": "Now let me check the timeline data...", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "sciprogfi-web timeline work" },
+    { "rank": 8, "summary": "concurrent needs a permalink entry", "relevant": true, "grade": 2, "noise": null },
+    { "rank": 9, "summary": "concurrent doesn't have commit type facets", "relevant": true, "grade": 2, "noise": null },
+    { "rank": 10, "summary": "Now let me read the rest of the caption...", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 11, "summary": "goal is to show concurrent sessions mainly...", "relevant": true, "grade": 3, "noise": null, "why": "Design intent for the feature" },
+    { "rank": 12, "summary": "legends for timeline", "relevant": true, "grade": 2, "noise": null },
+    { "rank": 13, "summary": "legends for timeline (dup)", "relevant": true, "grade": 2, "noise": "compaction_parrot" },
+    { "rank": 14, "summary": "d3 timeline is fine, the header timeline needs help", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "sciprogfi-web timeline" },
+    { "rank": 15, "summary": "Now I have the full picture... make the updates", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 16, "summary": "legends for timeline (3rd)", "relevant": true, "grade": 2, "noise": "compaction_parrot" },
+    { "rank": 17, "summary": "invest in sciprogfi and the web app version", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 18, "summary": "Edit: sciprogfi-web/_data/timeline.json", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "Different project's timeline data" },
+    { "rank": 19, "summary": "link to the timeline d3 is in an unreadable green font", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "sciprogfi-web timeline styling" },
+    { "rank": 20, "summary": "Edit: sciprogfi-web/_data/timeline.json (2nd)", "relevant": false, "grade": 0, "noise": "single_word_match" }
+  ],
+
+  "precision_at_5": 0.8,
+  "precision_at_10": 0.7,
+  "notes": "Good precision at top (keyword+semantic fusion helps). 'timeline' alone pulls in sciprogfi-web timeline work (different project). Project filter --project session-cartographer would fix most noise. Demonstrates value of multi-word query matching."
+}
