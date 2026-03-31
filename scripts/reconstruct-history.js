@@ -52,10 +52,20 @@ function sendToQdrant(payload) {
     }
 }
 
+// Derive project name from a cwd path — last component under ~/Documents/dev/
+function projectFromCwd(cwd) {
+    if (!cwd) return '';
+    const devPrefix = path.join(process.env.HOME, 'Documents/dev/');
+    if (!cwd.startsWith(devPrefix)) return '';
+    const rel = cwd.slice(devPrefix.length);
+    // Take first path component (the repo directory)
+    return rel.split('/')[0] || '';
+}
+
 async function processTranscript(filePath) {
     const projectDir = path.basename(path.dirname(filePath));
     const sessionId = path.basename(filePath, '.jsonl');
-    
+
     console.log(`Analyzing session: ${sessionId} (${projectDir})`);
 
     const fileStream = fs.createReadStream(filePath);
@@ -64,17 +74,24 @@ async function processTranscript(filePath) {
     let firstTimestamp = null;
     let lastTimestamp = null;
     let eventCount = 0;
+    const cwdCounts = new Map(); // track cwd-derived projects
 
     for await (const line of rl) {
         if (!line.trim()) continue;
-        
+
         try {
             const entry = JSON.parse(line);
-            
+
             // Track session boundaries
             if (entry.timestamp) {
                 if (!firstTimestamp) firstTimestamp = entry.timestamp;
                 lastTimestamp = entry.timestamp;
+            }
+
+            // Track cwd for project resolution
+            if (entry.cwd) {
+                const p = projectFromCwd(entry.cwd);
+                if (p) cwdCounts.set(p, (cwdCounts.get(p) || 0) + 1);
             }
 
             // General Transcript text
@@ -91,7 +108,7 @@ async function processTranscript(filePath) {
                     sendToQdrant({
                         event_id: `hist-${sessionId}-${entry.timestamp || Date.now()}`,
                         timestamp: entry.timestamp,
-                        project: projectDir,
+                        project: projectFromCwd(entry.cwd) || projectDir,
                         cwd: entry.cwd || '',
                         type: 'transcript',
                         summary: textContent,
@@ -133,7 +150,7 @@ async function processTranscript(filePath) {
                             sendToQdrant({
                                 event_id: `synth-${block.id || Date.now()}`,
                                 timestamp: entry.timestamp,
-                                project: projectDir,
+                                project: projectFromCwd(entry.cwd) || projectDir,
                                 cwd: entry.cwd || '',
                                 type: eventType,
                                 summary: summary,
@@ -151,6 +168,11 @@ async function processTranscript(filePath) {
         }
     }
 
+    // Resolve session project from cwd frequency, fall back to transcript dir
+    const resolvedProject = cwdCounts.size > 0
+        ? [...cwdCounts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+        : projectDir;
+
     // Synthesize the Session Boundary Milestone
     if (firstTimestamp && lastTimestamp && firstTimestamp !== lastTimestamp) {
         const durationMs = new Date(lastTimestamp) - new Date(firstTimestamp);
@@ -159,7 +181,7 @@ async function processTranscript(filePath) {
             const milestonePayload = {
                 event_id: `session-bound-${sessionId}`,
                 timestamp: lastTimestamp,
-                project: projectDir,
+                project: resolvedProject,
                 type: 'session_milestone',
                 summary: `Session Concluded (Duration: ${durationHours} hours). ${eventCount} actions.`,
                 transcript_path: filePath
