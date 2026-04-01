@@ -4,6 +4,8 @@ Searchable memory for Claude Code. Hooks capture every URL fetched, file edited,
 
 ![/remember in action](docs/remember_remember_skill.png)
 
+**[Live demo →](https://andyed.github.io/session-cartographer/)** — Explorer running against a test set from building Session Cartographer with Claude Code. Try the example queries.
+
 ## What you get
 
 - **`/remember`** — Ask Claude to recall past decisions, research, fixes. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
@@ -170,6 +172,23 @@ A year of event logs is ~8 MB. Your session history is the training data for you
 
 Hooks write [`claude-history://`](docs/PERMALINK_SPEC.md) URIs into every event — stable references into Claude Code session transcripts. The Explorer resolves these natively. Fragment references for anchoring into specific conversation moments are on the [roadmap](docs/PERMALINK_SPEC.md#roadmap-fragment-references).
 
+## Evaluation
+
+Search quality is measured against labeled ground truth — graded relevance judgments for each result across 4 test queries. Truth data is checked in at `explorer/public/demo/demo/truth/`.
+
+Each truth file records:
+- **Query intent** — what the user is actually trying to find
+- **Session relevance** — which sessions are primary/secondary sources
+- **Per-result grades** — 0 (noise) to 3 (exact match), with noise classification (`single_word_match`, `compaction_echo`, etc.)
+
+The same data powers the [live demo](https://andyed.github.io/session-cartographer/) and the precision/recall benchmarks above. Run the full test suite:
+
+```bash
+bash tests/private/run-tests.sh        # 11 tests against live data
+bash tests/private/run-fixture-tests.sh # 14 tests against fixtures
+bash tests/private/benchmark.sh         # 8-query speed comparison
+```
+
 ## See also
 
 - [docs/SETUP.md](docs/SETUP.md) — Full setup, Qdrant, environment variables, disk usage
@@ -181,6 +200,8 @@ Hooks write [`claude-history://`](docs/PERMALINK_SPEC.md) URIs into every event 
 - [docs/EXPLORER_SPEC.md](docs/EXPLORER_SPEC.md) — Explorer implementation architecture
 - [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme
 - [docs/landscape-survey.md](docs/landscape-survey.md) — 30+ Claude Code memory projects compared
+- [docs/GHPAGES_DEMO_SPEC.md](docs/GHPAGES_DEMO_SPEC.md) — Demo site architecture + ground truth evaluation spec
+- [Live demo](https://andyed.github.io/session-cartographer/) — Try the Explorer against real test data
 
 ## Uninstall
 
