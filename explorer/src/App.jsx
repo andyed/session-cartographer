@@ -108,8 +108,8 @@ export default function App() {
     <div className="h-screen flex flex-col">
       {isDemoMode && (
         <div className="bg-indigo-900/50 border-b border-indigo-700 px-4 py-1.5 text-xs text-indigo-200 flex items-center gap-3">
-          <span>Demo — cached results from Session Cartographer's own development.</span>
-          <a href="https://github.com/andyed/session-cartographer" className="underline hover:text-white" target="_blank" rel="noopener">Install for real data</a>
+          <span>Live demo — test set from building Session Cartographer with Claude Code.</span>
+          <a href="https://github.com/andyed/session-cartographer" className="underline hover:text-white" target="_blank" rel="noopener">GitHub</a>
           {demoQueries.length > 0 && (
             <>
               <span className="text-indigo-500 ml-2">Try:</span>
@@ -126,34 +126,57 @@ export default function App() {
           )}
         </div>
       )}
-      <header className="flex items-center gap-3 px-4 py-2 border-b border-gray-800 flex-shrink-0">
-        {/* Search input with autocomplete — flush left */}
-        <SearchInput value={searchQuery} onChange={handleSearchInput} />
+      <header className="flex flex-col border-b border-gray-800 flex-shrink-0">
+        <div className="flex items-center gap-3 px-4 py-2">
+          {/* Search input with autocomplete — flush left */}
+          <SearchInput value={searchQuery} onChange={handleSearchInput} />
 
-        {/* Nav — flush right */}
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="flex gap-1">
-            {['timeline', 'search'].map(t => (
+          {/* Nav — flush right */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="flex gap-1">
+              {['timeline', 'search'].map(t => (
+                <button
+                  key={t}
+                  onClick={() => handleTabClick(t)}
+                  className={`px-3 py-1 text-xs rounded ${
+                    tab === t
+                      ? 'bg-gray-700 text-gray-200'
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+              {tab === 'transcript' && (
+                <span className="px-3 py-1 text-xs rounded bg-gray-700 text-gray-200">
+                  transcript
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-gray-600 font-mono">SC</span>
+          </div>
+        </div>
+        {!searchQuery && tab !== 'transcript' && (
+          <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
+            <span className="text-[10px] text-gray-600 uppercase tracking-wider">Try:</span>
+            {[
+              'shader compile error',
+              'recent feature commits --project scrutinizer',
+              'what was I working on last session',
+              'that paper about foveated rendering',
+              'psychodeli speed',
+              'store listing',
+            ].map(q => (
               <button
-                key={t}
-                onClick={() => handleTabClick(t)}
-                className={`px-3 py-1 text-xs rounded ${
-                  tab === t
-                    ? 'bg-gray-700 text-gray-200'
-                    : 'text-gray-500 hover:text-gray-300'
-                }`}
+                key={q}
+                onClick={() => handleSearchInput(q)}
+                className="px-2 py-0.5 text-[11px] rounded bg-gray-800/80 border border-gray-700/50 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
               >
-                {t}
+                {q}
               </button>
             ))}
-            {tab === 'transcript' && (
-              <span className="px-3 py-1 text-xs rounded bg-gray-700 text-gray-200">
-                transcript
-              </span>
-            )}
           </div>
-          <span className="text-xs text-gray-600 font-mono">SC</span>
-        </div>
+        )}
       </header>
 
       <main className="flex-1 overflow-hidden relative">
