@@ -317,26 +317,79 @@ app.get('/api/transcript', (req, res) => {
     return res.status(404).json({ error: 'transcript not found or empty' });
   }
 
+  // Classify noise — system machinery that shouldn't dominate the conversation view
+  function classifyNoise(content) {
+    if (content.includes('<task-notification>')) return 'task-notification';
+    if (content.includes('<command-name>')) return 'slash-command';
+    if (content.includes('<local-command-caveat>')) return 'command-caveat';
+    if (content.includes('<local-command-stdout>') || content.includes('<local-command-stderr>')) return 'command-output';
+    if (content.startsWith('Base directory for this skill:')) return 'skill-injection';
+    if (content.startsWith('Launching skill:')) return 'skill-launch';
+    if (content.startsWith('This session is being continued')) return 'compaction-summary';
+    return null;
+  }
+
+  // Extract a short label for collapsed noise rendering
+  function noiseSummary(content, noiseType) {
+    switch (noiseType) {
+      case 'task-notification': {
+        const status = content.match(/<status>([^<]+)/)?.[1] || '';
+        const summary = content.match(/<summary>([^<]+)/)?.[1] || '';
+        return `agent ${status}${summary ? ': ' + summary.slice(0, 80) : ''}`;
+      }
+      case 'slash-command': {
+        const cmd = content.match(/<command-name>([^<]+)/)?.[1] || '';
+        return cmd;
+      }
+      case 'command-caveat':
+        return 'local command output follows';
+      case 'command-output': {
+        const text = content.replace(/<[^>]+>/g, '').trim();
+        return text.slice(0, 80) || 'command output';
+      }
+      case 'skill-injection': {
+        const name = content.match(/^Base directory for this skill:[^\n]*\n+#\s*(.+)/m)?.[1] || 'skill';
+        return `skill loaded: ${name}`;
+      }
+      case 'skill-launch': {
+        const skill = content.match(/^Launching skill:\s*(.+)/)?.[1] || '';
+        return `launching ${skill}`;
+      }
+      case 'compaction-summary':
+        return 'session continuation summary';
+      default:
+        return null;
+    }
+  }
+
   // Filter to conversation entries (user, assistant, tool results)
   const messages = entries.filter(e =>
     e.type === 'user' || e.type === 'assistant' || e.type === 'progress'
-  ).map(e => ({
-    uuid: e.uuid,
-    type: e.type,
-    timestamp: e.timestamp,
-    role: e.message?.role || e.type,
-    content: typeof e.message?.content === 'string'
+  ).map(e => {
+    const content = typeof e.message?.content === 'string'
       ? e.message.content
       : Array.isArray(e.message?.content)
         ? e.message.content
             .filter(b => b.type === 'text')
             .map(b => b.text)
             .join('\n')
-        : e.data?.type || '',
-    model: e.message?.model || '',
-    toolUseID: e.toolUseID || '',
-    parentToolUseID: e.parentToolUseID || '',
-  })).filter(m => m.content);
+        : e.data?.type || '';
+    const noise = classifyNoise(content);
+    return {
+      uuid: e.uuid,
+      type: e.type,
+      timestamp: e.timestamp,
+      role: e.message?.role || e.type,
+      content,
+      model: e.message?.model || '',
+      toolUseID: e.toolUseID || '',
+      parentToolUseID: e.parentToolUseID || '',
+      isSidechain: e.isSidechain ?? false,
+      agentId: e.agentId || '',
+      noise,
+      noiseSummary: noise ? noiseSummary(content, noise) : null,
+    };
+  }).filter(m => m.content);
 
   res.json({ path: resolved, messages, total: messages.length });
 });
@@ -360,9 +413,9 @@ app.get('/api/transcript/analysis', async (req, res) => {
   }
 
   try {
-    const { parseJsonlFile } = await import('../../src/lib/devtools-adapted/session-parser.js');
+    const { parseJsonlFile, deduplicateByRequestId } = await import('../../src/lib/devtools-adapted/session-parser.js');
     const { computeTokenAttribution, estimateTokens } = await import('../../src/lib/devtools-adapted/token-attribution.js');
-    const { detectCompactionPhases } = await import('../../src/lib/devtools-adapted/compaction-detector.js');
+    const { detectCompactionPhases, checkMessagesOngoing } = await import('../../src/lib/devtools-adapted/compaction-detector.js');
 
     const messages = await parseJsonlFile(resolved);
     if (messages.length === 0) {
@@ -456,6 +509,23 @@ app.get('/api/transcript/analysis', async (req, res) => {
       ? Object.entries(attribution).sort((a, b) => b[1] - a[1])[0][0]
       : null;
 
+    // Live session detection
+    const isOngoing = checkMessagesOngoing(messages);
+
+    // Cache hit ratio timeline — one entry per deduplicated assistant turn
+    const dedupedAssistant = deduplicateByRequestId(
+      messages.filter(m => !m.isSidechain && m.type === 'assistant')
+    );
+    const cacheTimeline = dedupedAssistant
+      .filter(m => m.usage && (m.usage.input_tokens ?? 0) > 0)
+      .map((m, i) => {
+        const input = m.usage.input_tokens ?? 0;
+        const cacheRead = m.usage.cache_read_input_tokens ?? 0;
+        const cacheCreate = m.usage.cache_creation_input_tokens ?? 0;
+        const total = input + cacheRead + cacheCreate;
+        return { turn: i, ratio: total > 0 ? cacheRead / total : 0, inputTokens: input, cacheRead };
+      });
+
     res.json({
       summary: {
         totalTurns,
@@ -468,6 +538,8 @@ app.get('/api/transcript/analysis', async (req, res) => {
       attribution,
       compactionEvents,
       perMessageCategory,
+      isOngoing,
+      cacheTimeline,
     });
   } catch (err) {
     // Parse failure or missing devtools modules — return empty enrichment so

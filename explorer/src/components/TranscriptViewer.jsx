@@ -187,6 +187,7 @@ function highlightMatches(text, searchTerms) {
 function MessageBlock({ msg, searchTerms, defaultExpanded }) {
   const isLong = msg.content.length > 500;
   const [expanded, setExpanded] = useState(defaultExpanded || !isLong);
+  const isSc = msg.isSidechain;
 
   const roleColors = {
     user: 'border-blue-500/40',
@@ -200,22 +201,32 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
     progress: 'system',
   };
 
-  const borderColor = roleColors[msg.role] || 'border-gray-700';
+  const borderClass = isSc
+    ? 'border-l-2 border-dashed border-violet-500/40'
+    : `border-l-2 ${roleColors[msg.role] || 'border-gray-700'}`;
   const displayContent = expanded ? msg.content : msg.content.slice(0, 500);
 
   // Check if this message matches search
   const hasMatch = searchTerms.length > 0 &&
     searchTerms.some(t => msg.content.toLowerCase().includes(t.toLowerCase()));
 
+  const isUser = msg.role === 'user' && !isSc;
+
   return (
     <div
       id={msg.uuid}
-      className={`border-l-2 ${borderColor} pl-3 py-2 mb-1 ${
-        hasMatch ? 'bg-yellow-500/5' : ''
-      }`}
+      className={`${borderClass} pl-3 py-2 mb-1 ${isSc ? 'ml-6' : ''} ${
+        isUser ? 'ml-4 bg-gray-800/40 border border-gray-700/50 rounded-md px-3' : ''
+      } ${hasMatch ? 'bg-yellow-500/5' : ''}`}
     >
       <div className="flex items-center gap-2 mb-1">
+        {isSc && (
+          <span className="text-xs px-1 py-0.5 rounded font-mono bg-violet-500/15 text-violet-400 border border-violet-500/30">
+            {msg.agentId || 'agent'}
+          </span>
+        )}
         <span className={`text-xs font-mono ${
+          isSc ? 'text-violet-400' :
           msg.role === 'user' ? 'text-blue-400' :
           msg.role === 'assistant' ? 'text-green-400' :
           'text-gray-500'
@@ -263,9 +274,65 @@ function fmtTokens(n) {
   return `${(n / 1000).toFixed(0)}k`;
 }
 
+// ─── Noise Bar (collapsed system machinery) ─────────────────────────────────
+
+const NOISE_ICONS = {
+  'task-notification': '⚙',
+  'slash-command': '/',
+  'command-caveat': '⚠',
+  'command-output': '>',
+  'skill-injection': '◆',
+  'skill-launch': '◆',
+  'compaction-summary': '⚡',
+};
+
+function NoiseBar({ summary, type }) {
+  return (
+    <div className="flex items-center gap-2 py-0.5 mb-0.5 text-xs text-gray-600 font-mono select-none">
+      <span className="text-gray-700">{NOISE_ICONS[type] || '·'}</span>
+      <span className="truncate">{summary || type}</span>
+    </div>
+  );
+}
+
+// ─── Cache Sparkline ─────────────────────────────────────────────────────────
+
+function CacheSparkline({ timeline }) {
+  if (!timeline || timeline.length < 2) return null;
+
+  const W = 160, H = 24, pad = 1;
+  const n = timeline.length;
+  const xStep = (W - pad * 2) / (n - 1);
+
+  const points = timeline.map((d, i) => [
+    pad + i * xStep,
+    H - pad - d.ratio * (H - pad * 2),
+  ]);
+
+  const polyline = points.map(p => p.join(',')).join(' ');
+  const polygon = [
+    `${pad},${H - pad}`,
+    ...points.map(p => p.join(',')),
+    `${pad + (n - 1) * xStep},${H - pad}`,
+  ].join(' ');
+
+  const avg = timeline.reduce((s, d) => s + d.ratio, 0) / n;
+
+  return (
+    <div className="flex items-center gap-2" title={`Cache hit ratio over ${n} turns (avg ${(avg * 100).toFixed(0)}%)`}>
+      <span className="text-xs text-gray-600 whitespace-nowrap">cache</span>
+      <svg width={W} height={H} className="flex-shrink-0">
+        <polygon points={polygon} fill="rgb(34,197,94)" fillOpacity="0.15" />
+        <polyline points={polyline} fill="none" stroke="rgb(34,197,94)" strokeWidth="1.5" strokeOpacity="0.6" strokeLinejoin="round" />
+      </svg>
+      <span className="text-xs font-mono text-gray-500">{(avg * 100).toFixed(0)}%</span>
+    </div>
+  );
+}
+
 // ─── 1c. Session Summary Header ──────────────────────────────────────────────
 
-function SessionSummaryCard({ summary }) {
+function SessionSummaryCard({ summary, isOngoing, cacheTimeline }) {
   const CATEGORY_LABELS = {
     claudeMd: 'CLAUDE.md',
     mentionedFiles: 'files',
@@ -276,6 +343,7 @@ function SessionSummaryCard({ summary }) {
   };
 
   const stats = [
+    isOngoing && { label: 'status', value: 'live', live: true },
     { label: 'turns', value: summary.totalTurns },
     summary.totalTokens > 0 && { label: 'tokens', value: fmtTokens(summary.totalTokens) },
     summary.toolCallCount > 0 && { label: 'tool calls', value: summary.toolCallCount },
@@ -285,15 +353,21 @@ function SessionSummaryCard({ summary }) {
   ].filter(Boolean);
 
   return (
-    <div className="mx-4 mt-2 mb-1 bg-gray-900/60 border border-gray-800 rounded px-4 py-2.5 flex flex-wrap gap-x-5 gap-y-1 flex-shrink-0">
-      {stats.map(({ label, value, accent }) => (
-        <div key={label} className="flex flex-col">
-          <span className={`text-xs font-mono font-medium ${accent ? 'text-orange-400' : 'text-gray-200'}`}>
-            {value}
-          </span>
-          <span className="text-xs text-gray-600">{label}</span>
-        </div>
-      ))}
+    <div className="mx-4 mt-2 mb-1 bg-gray-900/60 border border-gray-800 rounded px-4 py-2.5 flex flex-col gap-2 flex-shrink-0">
+      <div className="flex flex-wrap gap-x-5 gap-y-1">
+        {stats.map(({ label, value, accent, live }) => (
+          <div key={label} className="flex flex-col">
+            <span className={`text-xs font-mono font-medium flex items-center gap-1.5 ${
+              live ? 'text-green-400' : accent ? 'text-orange-400' : 'text-gray-200'
+            }`}>
+              {live && <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-green-400" /></span>}
+              {value}
+            </span>
+            <span className="text-xs text-gray-600">{label}</span>
+          </div>
+        ))}
+      </div>
+      <CacheSparkline timeline={cacheTimeline} />
     </div>
   );
 }
@@ -420,6 +494,7 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   const [enriched, setEnriched] = useState(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCategory, setActiveCategory] = useState(null);
+  const [hideNoise, setHideNoise] = useState(true);
   const containerRef = useRef(null);
 
   useEffect(() => {
@@ -482,6 +557,11 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
     if (!enriched?.compactionEvents?.length) return {};
     return Object.fromEntries(enriched.compactionEvents.map(e => [e.uuid, e]));
   }, [enriched]);
+
+  const noiseCount = useMemo(() =>
+    messages.filter(m => m.noise).length,
+    [messages]
+  );
 
   const filtered = useMemo(() => {
     let msgs = messages;
@@ -558,13 +638,31 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
           system
         </label>
 
+        {noiseCount > 0 && (
+          <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer" title={`${noiseCount} system machinery messages (skills, commands, notifications)`}>
+            <input
+              type="checkbox"
+              checked={!hideNoise}
+              onChange={(e) => setHideNoise(!e.target.checked)}
+              className="rounded bg-gray-800 border-gray-600"
+            />
+            noise
+          </label>
+        )}
+
         <span className="text-xs text-gray-600 font-mono">
           {filtered.length} messages
         </span>
       </div>
 
       {/* Transcript path */}
-      <div className="px-4 py-1 text-xs text-gray-600 font-mono border-b border-gray-800/50 flex-shrink-0">
+      <div className="px-4 py-1 text-xs text-gray-600 font-mono border-b border-gray-800/50 flex-shrink-0 flex items-center gap-2">
+        {enriched?.isOngoing && (
+          <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-400" />
+          </span>
+        )}
         {transcriptPath}
       </div>
 
@@ -574,7 +672,11 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
         <div className="flex flex-col flex-1 min-h-0">
           {/* 1c. Session summary header */}
           {enriched?.summary && (
-            <SessionSummaryCard summary={enriched.summary} />
+            <SessionSummaryCard
+              summary={enriched.summary}
+              isOngoing={enriched.isOngoing}
+              cacheTimeline={enriched.cacheTimeline}
+            />
           )}
 
           {/* Messages */}
@@ -588,11 +690,15 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
                     postTokens={compactionMap[msg.uuid].postTokens}
                   />
                 )}
-                <MessageBlock
-                  msg={msg}
-                  searchTerms={searchTerms}
-                  defaultExpanded={msg.uuid === targetUuid}
-                />
+                {msg.noise && hideNoise ? (
+                  <NoiseBar summary={msg.noiseSummary} type={msg.noise} />
+                ) : (
+                  <MessageBlock
+                    msg={msg}
+                    searchTerms={searchTerms}
+                    defaultExpanded={msg.uuid === targetUuid}
+                  />
+                )}
               </Fragment>
             ))}
           </div>
