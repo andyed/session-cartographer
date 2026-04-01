@@ -9,16 +9,16 @@ async function load() {
   if (cache) return cache;
 
   const [queries, ac, sessions, events, projects] = await Promise.all([
-    fetch(`${BASE}demo/queries.json`).then(r => r.json()),
-    fetch(`${BASE}demo/autocomplete.json`).then(r => r.json()),
-    fetch(`${BASE}demo/sessions.json`).then(r => r.json()),
-    fetch(`${BASE}demo/events.json`).then(r => r.json()),
-    fetch(`${BASE}demo/projects.json`).then(r => r.json()),
+    fetch(`${BASE}demo/demo/queries.json`).then(r => r.json()),
+    fetch(`${BASE}demo/demo/autocomplete.json`).then(r => r.json()),
+    fetch(`${BASE}demo/demo/sessions.json`).then(r => r.json()),
+    fetch(`${BASE}demo/demo/events.json`).then(r => r.json()),
+    fetch(`${BASE}demo/demo/projects.json`).then(r => r.json()),
   ]);
 
   const results = {};
   for (const q of queries) {
-    results[q.query.toLowerCase()] = await fetch(`${BASE}demo/results/${q.id}.json`).then(r => r.json());
+    results[q.query.toLowerCase()] = await fetch(`${BASE}demo/demo/results/${q.id}.json`).then(r => r.json());
   }
 
   cache = { queries, ac, sessions, events, projects, results };

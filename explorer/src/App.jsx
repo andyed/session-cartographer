@@ -160,12 +160,10 @@ export default function App() {
           <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
             <span className="text-[10px] text-gray-600 uppercase tracking-wider">Try:</span>
             {[
-              'shader compile error',
-              'recent feature commits --project scrutinizer',
-              'what was I working on last session',
-              'that paper about foveated rendering',
-              'psychodeli speed',
-              'store listing',
+              'diff shape',
+              'facets',
+              'concurrent timeline',
+              'fisheye autocomplete',
             ].map(q => (
               <button
                 key={q}
