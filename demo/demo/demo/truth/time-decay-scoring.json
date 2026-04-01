@@ -1,0 +1,27 @@
+{
+  "query_id": "time-decay-scoring",
+  "query": "time decay scoring",
+  "intent": "Find work on the Ebbinghaus time-decay scoring feature in session-cartographer search",
+
+  "sessions": {
+    "fcce4294-ebb6-48b9-9a48-de0e7074ccbf": { "relevant": true, "role": "primary", "notes": "Built the time-decay feature — RRF with exp(-lambda*hours)" },
+    "cbd1b409-539b-4465-99b7-888e2d558304": { "relevant": true, "role": "context", "notes": "Search scoring work" }
+  },
+
+  "events": [
+    { "rank": 1, "event_id": "evt-auvcomjycxnt", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "scrutinizer2025 — matches 'scoring' or 'time' in unrelated context" },
+    { "rank": 2, "event_id": "evt-mrzjtxsijxz5", "relevant": false, "grade": 1, "noise": null, "why": "clicksense research — about scoring/metrics, tangential" },
+    { "rank": 3, "event_id": "evt-dhpq5cxmbk4f", "relevant": false, "grade": 0, "noise": "semantic_drift", "why": "Research URL about something else" },
+    { "rank": 4, "event_id": "evt-kfvaalrj3gd2", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "psychodeli — matches 'time'" },
+    { "rank": 5, "event_id": "evt-9ukf8fk2hetz", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "scrutinizer-figma — matches 'time'" },
+    { "rank": 6, "event_id": "hist-4ad20182", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "Timing for iblipper — matches 'time'" },
+    { "rank": 7, "event_id": "hist-353ec788", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "beat impulse decay in psychodeli — matches 'decay' but wrong project" },
+    { "rank": 8, "event_id": "git-7b32118", "relevant": true, "grade": 2, "noise": null, "why": "Commit in session-cartographer — SCORING.md, search docs" },
+    { "rank": 9, "event_id": "hist-fcce4294-2026-03-27T02:02:13", "relevant": true, "grade": 3, "noise": null, "why": "Discussion of multiword fallback in carto — about the search scoring system" },
+    { "rank": 10, "event_id": "hist-cbd1b409-2026-03-27T02:02:13", "relevant": true, "grade": 3, "noise": null }
+  ],
+
+  "precision_at_5": 0.0,
+  "precision_at_10": 0.3,
+  "notes": "3-word query with all common individual words: 'time' matches everything, 'decay' matches psychodeli audio/visual decay, 'scoring' matches clicksense/scrutinizer. Relevant results buried at ranks 8-10. Semantic finds some (hist- entries about search scoring) but keyword noise dominates RRF. Another strong case for phrase/bigram matching — 'time_decay' and 'decay_scoring' as bigrams would be highly discriminative."
+}

@@ -1,0 +1,37 @@
+{
+  "query_id": "diff-shape",
+  "query": "diff shape",
+  "intent": "Find work on the diff-shape commit classification feature in session-cartographer",
+
+  "sessions": {
+    "a40a6caa-a381-4f87-9df6-129c54741bc4": { "relevant": true, "role": "primary", "notes": "Built concurrent timeline + diff shape (Tier 3)" },
+    "e2ab97ba-6516-4915-8e6e-997128da3594": { "relevant": true, "role": "primary", "notes": "Explorer UI work including diff shape badges" }
+  },
+
+  "events": [
+    { "rank": 1, "summary": "/plan diff shape metadata (Tier 3)", "relevant": true, "grade": 3, "noise": null },
+    { "rank": 2, "summary": "Both captured. Let me make the side-by-side...", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "Matches 'diff' in unrelated screenshot comparison" },
+    { "rank": 3, "summary": "obscures letter shape", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "Matches 'shape' in vision/reading context" },
+    { "rank": 4, "summary": "Saved to screenshots/v24_reading_span_comparison.png", "relevant": false, "grade": 0, "noise": "single_word_match" },
+    { "rank": 5, "summary": "halo changed shape!", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "Matches 'shape' in psychodeli visual context" },
+    { "rank": 6, "summary": "Fetched: https://doi.org/10.1017/nlp.2025.7", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 7, "summary": "Commit 57ee5c2: feat: Concurrent timeline, diff shape (Tier 3)...", "relevant": true, "grade": 3, "noise": null },
+    { "rank": 8, "summary": "Visually still very similar...", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 9, "summary": "Color and Shape Down the Pyramid", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "Matches 'shape' in vision research context" },
+    { "rank": 10, "summary": "Fix the heading and compress...", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 11, "summary": "i was looking for diff of diff vs 2.4", "relevant": false, "grade": 1, "noise": null, "why": "Matches 'diff' in scrutinizer version comparison — tangential" },
+    { "rank": 12, "summary": "Blog image updated at scrutinizer-www...", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 13, "summary": "this is the shape i want", "relevant": false, "grade": 0, "noise": "single_word_match" },
+    { "rank": 14, "summary": "give me a near variant of this copy", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 15, "summary": "Ran: git diff", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "Bare 'git diff' command, not about the feature" },
+    { "rank": 16, "summary": "Done. Image: reading-span-on-off-comparison.png", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 17, "summary": "Ran: git diff (tvOS)", "relevant": false, "grade": 0, "noise": "single_word_match" },
+    { "rank": 18, "summary": "Now the cursor is on the lead paragraph...", "relevant": false, "grade": 0, "noise": "semantic_drift" },
+    { "rank": 19, "summary": "Ran: git diff --stat (nokings)", "relevant": false, "grade": 0, "noise": "single_word_match" },
+    { "rank": 20, "summary": "Edit: iblipper2025/src/visuals/NuanceText.tsx", "relevant": false, "grade": 0, "noise": "semantic_drift" }
+  ],
+
+  "precision_at_5": 0.2,
+  "precision_at_10": 0.1,
+  "notes": "Severe single_word_match noise — 'diff' matches every 'git diff' command, 'shape' matches vision research. Phrase matching would dramatically improve precision. The 2 relevant results (ranks 1, 7) are both about the actual feature."
+}

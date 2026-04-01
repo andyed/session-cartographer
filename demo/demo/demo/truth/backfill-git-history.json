@@ -1,0 +1,29 @@
+{
+  "query_id": "backfill-git-history",
+  "query": "backfill git history",
+  "intent": "Find work on the git history backfill script in session-cartographer",
+
+  "sessions": {
+    "fcce4294-ebb6-48b9-9a48-de0e7074ccbf": { "relevant": true, "role": "primary", "notes": "Built the backfill-git-history.sh script" },
+    "d95a31fd-1a23-4901-8de5-01cb4819b4e8": { "relevant": true, "role": "primary", "notes": "This session — enrich-sessions.js, backfill improvements" }
+  },
+
+  "events": [
+    { "rank": 1, "event_id": "evt-dd6wshvqvnkc", "relevant": false, "grade": 1, "noise": null, "why": "claude-code-session-bridge research — tangentially about git history tools" },
+    { "rank": 2, "event_id": "evt-hn0kxsivs0fo", "relevant": false, "grade": 1, "noise": null },
+    { "rank": 3, "event_id": "evt-p180mzofr3ij", "relevant": false, "grade": 1, "noise": null },
+    { "rank": 4, "event_id": "evt-trkj75lmsrvp", "relevant": false, "grade": 1, "noise": null },
+    { "rank": 5, "event_id": "evt-ime42xfm8al4", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "marginalia project — matches 'git' from a git command" },
+    { "rank": 6, "event_id": "96ee5921-f7c5-49e6-93d4-cb8ec6b2468d", "relevant": true, "grade": 3, "noise": null, "why": "This session discussing backfill and enrich-sessions" },
+    { "rank": 7, "event_id": "7432b5a4-bd0c-4f65-9619-f042713b13dc", "relevant": true, "grade": 3, "noise": null },
+    { "rank": 8, "event_id": "evt-vzdvzq3dvim1", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "clicksense project — matches 'git'" },
+    { "rank": 9, "event_id": "15262ff5-19d7-42cf-b7dc-944ad72f71df", "relevant": true, "grade": 2, "noise": null },
+    { "rank": 10, "event_id": "evt-1pdaf5ybn0ju", "relevant": false, "grade": 0, "noise": "single_word_match", "why": "mindbendingpixels — matches 'git'" },
+    { "rank": 11, "event_id": "synth-toolu_01FWaRpquzVucQjNjMesdEWc", "relevant": true, "grade": 3, "noise": null, "why": "Edit to backfill-git-history.sh itself" },
+    { "rank": 12, "event_id": "20ce0cc4-7cc2-4a77-bf23-80702d2599bb", "relevant": true, "grade": 2, "noise": null }
+  ],
+
+  "precision_at_5": 0.0,
+  "precision_at_10": 0.3,
+  "notes": "3-word query severely degraded by bag-of-words: 'git' matches every git command across all projects, 'history' matches browsing history research. The relevant results (ranks 6-7, 11-12) are pushed down by noise. This is the strongest case for phrase matching — 'backfill git history' as a trigram would be highly discriminative."
+}
