@@ -156,7 +156,7 @@ export default function App() {
             <span className="text-xs text-gray-600 font-mono">SC</span>
           </div>
         </div>
-        {!searchQuery && tab !== 'transcript' && (
+        {isDemoMode && !searchQuery && tab !== 'transcript' && (
           <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
             <span className="text-[10px] text-gray-600 uppercase tracking-wider">Try:</span>
             {[
