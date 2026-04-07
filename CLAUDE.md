@@ -7,12 +7,14 @@ Hooks (produce JSONL)
   ├── /remember (CLI search, bash + awk)
   ├── /focus (project orientation from event logs)
   ├── /carto (web UI, Node + React)
+  ├── /wrapup (strategic session-end preservation)
   └── Qdrant indexer (semantic search)
 ```
 
 - **`/remember`** — Claude uses this to recover context from past sessions. Agent's primary history tool.
 - **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
 - **`/carto`** — Opens the Explorer web app for the human. Not an agent tool.
+- **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a milestone event. Agent-initiated.
 - **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by all skills.
 
 ## Project Structure
@@ -33,6 +35,7 @@ plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
   skills/focus/SKILL.md         — /focus skill (project orientation from event logs)
   skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
+  skills/wrapup/SKILL.md        — /wrapup skill (strategic session-end preservation)
   scripts/remember-search.sh    — Legacy keyword-only search (superseded by cartographer-search.sh)
   hooks/
     hooks.json                  — Hook registrations (8 hooks)
@@ -85,6 +88,8 @@ Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (R
 When a user says "remember X" or needs context from a past session, use `/remember`. The skill runs the search, returns ranked results with transcript paths. **Read the transcript** to recover full context — the search result is the map, the transcript is the territory.
 
 When a user says "explore" or wants to browse history visually, use `/carto` to start the web app and open the browser. That's a human tool — don't try to scrape it.
+
+At the end of a productive session — or when a user says "wrap up" — use `/wrapup` to synthesize decisions, discoveries, and open threads into a milestone event. The milestone gets indexed and becomes searchable via `/remember`.
 
 ## Testing
 
