@@ -97,3 +97,4 @@ At the end of a productive session — or when a user says "wrap up" — use `/w
 - `bash tests/private/run-fixture-tests.sh` — 14 tests against synthetic fixtures
 - `bash tests/private/benchmark.sh` — 8-query speed comparison (grep vs. cartographer)
 - `bash tests/private/head-to-head.sh "query"` — side-by-side comparison for a single query
+- **No MCP-based browser testing.** Test the Explorer UI manually — don't puppet Chrome via desktop-control MCP.

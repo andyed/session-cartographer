@@ -1,11 +1,85 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import EventGroup, { groupEvents } from './EventGroup';
 import SessionSparkline from './SessionSparkline';
 import ProjectBadge from './ProjectBadge';
 
+function formatTokens(n) {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(0)}k`;
+  return String(n);
+}
+
+const CONTEXT_WINDOW = 1_000_000;
+
+function ContextGauge({ summary, compactionEvents }) {
+  if (!summary) return null;
+  const { totalTokens, compactionCount } = summary;
+  if (!totalTokens) return null;
+
+  // Cumulative: sum of preTokens from each compaction + current phase tokens
+  const compactedTokens = (compactionEvents || []).reduce((sum, e) => sum + (e.preTokens || 0), 0);
+  const cumulativeTokens = compactedTokens + totalTokens;
+
+  // Bar shows cumulative as multiple windows
+  const windows = cumulativeTokens / CONTEXT_WINDOW;
+  const barW = 56; // px
+  const barH = 10;
+
+  // Segments: one per window consumed (compaction phases + current)
+  const phases = [];
+  for (const e of (compactionEvents || [])) {
+    if (e.preTokens > 0) phases.push(e.preTokens);
+  }
+  phases.push(totalTokens); // current phase
+
+  // Normalize each phase to its share of cumulative
+  const totalPhaseTokens = phases.reduce((a, b) => a + b, 0);
+
+  // Color ramp by cumulative windows: <0.15 gray, <0.5 emerald, <1.5 amber, >1.5 red
+  const fill = windows < 0.15 ? '#6b7280' : windows < 0.5 ? '#34d399' : windows < 1.5 ? '#fbbf24' : '#f87171';
+
+  // Compaction divider positions (cumulative fraction)
+  const dividers = [];
+  let runningTokens = 0;
+  for (let i = 0; i < phases.length - 1; i++) {
+    runningTokens += phases[i];
+    dividers.push(runningTokens / totalPhaseTokens);
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs" title={`${formatTokens(cumulativeTokens)} cumulative (${compactionCount} compaction${compactionCount !== 1 ? 's' : ''}) • ${formatTokens(totalTokens)} current phase • ${windows.toFixed(1)}x context window`}>
+      <svg width={barW} height={barH} className="rounded-sm overflow-hidden">
+        <rect width={barW} height={barH} fill="#1f2937" />
+        <rect width={Math.max(1, barW * Math.min(windows, 1))} height={barH} fill={fill} rx={0} />
+        {windows > 1 && (
+          <rect x={0} y={0} width={barW} height={barH} fill="none" stroke={fill} strokeWidth={1.5} rx={1} />
+        )}
+        {dividers.map((frac, i) => (
+          <line key={i} x1={barW * Math.min(frac, 1)} y1={0} x2={barW * Math.min(frac, 1)} y2={barH} stroke="#a78bfa" strokeWidth={1.5} />
+        ))}
+      </svg>
+      <span className="text-gray-300">{windows < 1 ? `${(windows * 100).toFixed(0)}%` : `${windows.toFixed(1)}x`}</span>
+    </span>
+  );
+}
+
 export default function SessionCard({ session, onOpenTranscript, onProjectClick }) {
   const [expanded, setExpanded] = useState(false);
-  
+  const [summary, setSummary] = useState(null);
+
+  const [compactionEvents, setCompactionEvents] = useState([]);
+
+  useEffect(() => {
+    if (!session.transcript_path) return;
+    fetch(`/api/transcript/analysis?path=${encodeURIComponent(session.transcript_path)}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.summary) setSummary(data.summary);
+        if (data?.compactionEvents) setCompactionEvents(data.compactionEvents);
+      })
+      .catch(() => {});
+  }, [session.transcript_path]);
+
   const events = session.events;
   if (!events || events.length === 0) return null;
 
@@ -31,6 +105,9 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick 
   // Find unique projects
   const projects = Array.from(new Set(events.map(e => e.project).filter(Boolean)));
 
+  // First meaningful summary for collapsed preview
+  const previewSummary = events.find(e => e.summary && e.summary.length > 5 && !e.summary.startsWith('/'))?.summary || '';
+
   // Group events chronologically within the session just like the normal timeline
   const groups = groupEvents(events);
 
@@ -45,6 +122,7 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick 
                 : `Session ${session.session_id.substring(0, 8)}`}
             </span>
             <span className="text-gray-500 text-xs">{events.length} events • {durationMins}m</span>
+            <ContextGauge summary={summary} compactionEvents={compactionEvents} />
           </div>
           <div className="flex gap-2">
             {projects.map(p => <ProjectBadge key={p} project={p} onClick={onProjectClick} />)}
@@ -54,6 +132,9 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick 
         <div className="text-xs text-gray-600 mb-2">
           {dateObj.toLocaleDateString()} • {startTime} - {endTime}
         </div>
+        {previewSummary && !expanded && (
+          <div className="text-xs text-gray-300 mb-2 truncate max-w-xl">{previewSummary}</div>
+        )}
 
         <SessionSparkline events={events} />
 

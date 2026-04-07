@@ -18,10 +18,14 @@ function groupEventsBySession(events) {
       sessions[sid] = {
         session_id: sid,
         events: [],
+        transcript_path: '',
         timestamp: e.timestamp // Most recent timestamp
       };
     }
     sessions[sid].events.push(e);
+    if (!sessions[sid].transcript_path && e.transcript_path) {
+      sessions[sid].transcript_path = e.transcript_path;
+    }
   }
   
   return Object.values(sessions).sort((a, b) => {

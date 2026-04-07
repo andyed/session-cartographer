@@ -231,6 +231,14 @@ app.get('/api/sessions', (req, res) => {
       if (!transcriptPath && e.transcript_path) transcriptPath = e.transcript_path;
     }
 
+    // Derive transcript_path from project + sessionId when not present in events
+    if (!transcriptPath && sid) {
+      const projectDir = Object.keys(projectCounts)[0] || '';
+      const encoded = projectDir.replace(/\//g, '-') || '-';
+      const candidate = resolve(homedir(), '.claude', 'projects', encoded, `${sid}.jsonl`);
+      try { statSync(candidate); transcriptPath = candidate; } catch {}
+    }
+
     if (end < cutoff) continue;
     const project = Object.entries(projectCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
     const highSignal = evts.filter(isHighSignal).slice(0, 200);
@@ -240,8 +248,9 @@ app.get('/api/sessions', (req, res) => {
       projects: Object.keys(projectCounts), types: typeCounts, quadrants: quadrantCounts, commit_types: commitTypeCounts,
       transcript_path: transcriptPath,
       events: highSignal.map(e => ({
-        event_id: e.event_id, timestamp: e.timestamp, type: e.type,
-        project: e.project, summary: (e.summary || '').slice(0, 120),
+        event_id: e.event_id, timestamp: e.timestamp, type: e.type || e._source || '',
+        project: e.project, summary: (e.summary || e.display || e.description || '').slice(0, 120),
+        ...(e.transcript_path ? { transcript_path: e.transcript_path } : {}),
       })),
     });
   }

@@ -1,5 +1,5 @@
 import { readFileSync, statSync, watch, openSync, readSync, closeSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { homedir } from 'os';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
@@ -104,6 +104,23 @@ export function readAllEvents() {
       return n < 2000000000 ? n * 1000 : n;
     }
     return new Date(ts).getTime() || 0;
+  }
+
+  // Normalize field variants so downstream code can use canonical names
+  for (const e of all) {
+    // sessionId → session_id
+    if (!e.session_id && e.sessionId) e.session_id = e.sessionId;
+    if (!e.session_id && e.session) e.session_id = e.session;
+    // display → summary fallback
+    if (!e.summary && e.display) e.summary = e.display;
+    // type fallback to source
+    if (!e.type && e._source) e.type = e._source;
+    // Derive transcript_path for claude-history events
+    if (!e.transcript_path && e.session_id && e.project) {
+      const encoded = e.project.replace(/\//g, '-') || '-';
+      const candidate = resolve(homedir(), '.claude', 'projects', encoded, `${e.session_id}.jsonl`);
+      try { statSync(candidate); e.transcript_path = candidate; } catch {}
+    }
   }
 
   // Sort by timestamp descending (newest first)
