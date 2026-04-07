@@ -2,7 +2,7 @@
   "name": "session-cartographer",
   "version": "0.2.0",
   "description": "Search and explore Claude Code session history — hooks log events, /remember searches them, /carto opens the Explorer, /focus orients on a project",
-  "author": "Andy Edmonds",
+  "author": { "name": "Andy Edmonds" },
   "homepage": "https://github.com/andyed/session-cartographer",
   "repository": "https://github.com/andyed/session-cartographer",
   "license": "MIT",
