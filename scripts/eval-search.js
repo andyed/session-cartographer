@@ -151,35 +151,80 @@ function scoreResults(truthQuery, searchResult, mode) {
   const k20 = Math.min(20, searchResult.events.length);
 
   // Match search results to truth labels.
-  // Strategy: tokenize both summaries, compute word overlap ratio.
-  // A truth label matches if enough distinctive words overlap.
+  //
+  // Two signals, checked in order:
+  //
+  // 1. Explicit event-level match via word-overlap against truth.events.
+  //    Required when truth.events contains noise exemplars (grade 0) — those
+  //    are specifically called out as "the query matches this but it's wrong"
+  //    and must override the session-level inference below.
+  //
+  // 2. Session-level fallback. If the event's session is in truth.sessions
+  //    with relevant:true, credit it with a grade based on the session role
+  //    (primary=3, secondary=2, other=1). This catches all the legitimate
+  //    results that the word-overlap matcher misses because commit summaries
+  //    (Commit abc123: feat: ... | files: ...) don't lexically match the
+  //    human-written truth event summaries.
+  //
+  // The old matcher was word-overlap only, which scored P@5=0 even on queries
+  // where session recall was 100%. The session fallback is essential for
+  // queries whose truth.events are written against transcript content but
+  // whose indexed events are commit summaries.
   function tokenize(s) {
     return (s || '').toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
   }
 
   const STOP = new Set(['the','and','for','this','that','with','from','was','are','not','but','has','had','have','will','been','can','its','all','also','into','let','now','then','done','just']);
 
-  function matchTruth(event, truthEvents) {
+  function sessionRoleGrade(role) {
+    if (role === 'primary') return 3;
+    if (role === 'secondary') return 2;
+    return 1;
+  }
+
+  function matchTruth(event, truthEvents, truthSessions) {
     const eTokens = new Set(tokenize(event.summary).filter(w => !STOP.has(w)));
-    if (eTokens.size === 0) return null;
 
-    let bestMatch = null;
-    let bestScore = 0;
+    // 1. Explicit event-level match (word overlap). Wins when present because
+    //    it can assign grade:0 to known noise.
+    if (eTokens.size > 0) {
+      let bestMatch = null;
+      let bestScore = 0;
+      for (const te of truthEvents) {
+        const tTokens = tokenize(te.summary).filter(w => !STOP.has(w));
+        if (tTokens.length === 0) continue;
+        const overlap = tTokens.filter(w => eTokens.has(w)).length;
+        const score = overlap / tTokens.length;
+        if (score > bestScore && score >= 0.5) {
+          bestScore = score;
+          bestMatch = te;
+        }
+      }
+      if (bestMatch) return bestMatch;
+    }
 
-    for (const te of truthEvents) {
-      const tTokens = tokenize(te.summary).filter(w => !STOP.has(w));
-      if (tTokens.length === 0) continue;
-
-      const overlap = tTokens.filter(w => eTokens.has(w)).length;
-      const score = overlap / tTokens.length; // what fraction of truth tokens found in result
-
-      if (score > bestScore && score >= 0.5) { // at least half the truth words must match
-        bestScore = score;
-        bestMatch = te;
+    // 2. Session-level fallback: if the event lives in a relevant session,
+    //    credit it. Role → grade mapping preserves the primary/secondary
+    //    distinction from the truth file.
+    const eventSid = event.session || '';
+    if (eventSid && truthSessions) {
+      for (const [sid, info] of Object.entries(truthSessions)) {
+        if (!info.relevant) continue;
+        // Prefix match in both directions — session IDs may be truncated in
+        // either source (matches the sessionRecall strategy above).
+        const prefix = 12;
+        if (sid.includes(eventSid.slice(0, prefix)) ||
+            eventSid.includes(sid.slice(0, prefix))) {
+          return {
+            grade: sessionRoleGrade(info.role),
+            noise: null,
+            summary: `[session:${sid.slice(0, 8)} ${info.role || 'relevant'}]`,
+          };
+        }
       }
     }
 
-    return bestMatch;
+    return null;
   }
 
   let relevant5 = 0, relevant10 = 0, relevant20 = 0;
@@ -188,7 +233,7 @@ function scoreResults(truthQuery, searchResult, mode) {
 
   for (let i = 0; i < Math.min(20, searchResult.events.length); i++) {
     const event = searchResult.events[i];
-    const truth = matchTruth(event, truthEvents);
+    const truth = matchTruth(event, truthEvents, truthSessions);
 
     const isRelevant = truth ? truth.grade > 0 : false;
     const noise = truth?.noise || (isRelevant ? null : 'unlabeled');
