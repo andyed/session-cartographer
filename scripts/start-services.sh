@@ -7,8 +7,8 @@ set -euo pipefail
 QDRANT_PORT="${CARTOGRAPHER_QDRANT_PORT:-6333}"
 EMBED_PORT="${CARTOGRAPHER_EMBED_PORT:-8890}"
 QDRANT_STORAGE="${CARTOGRAPHER_QDRANT_STORAGE:-$HOME/Documents/dev/qdrant-storage}"
-QDRANT_BIN="${CARTOGRAPHER_QDRANT_BIN:-qdrant}"
 MODEL_PATH="${CARTOGRAPHER_EMBED_MODEL_PATH:-$HOME/.cache/llama-models/mxbai-embed-large-v1-f16.gguf}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors
 RED='\033[0;31m'
@@ -46,7 +46,7 @@ stop_services() {
     log "Stopping services..."
 
     if is_running "$QDRANT_PORT"; then
-        pkill -f "qdrant.*--storage-path" 2>/dev/null || true
+        pkill -f "qdrant" 2>/dev/null || true
         log "Qdrant stopped"
     else
         warn "Qdrant not running"
@@ -64,11 +64,6 @@ stop_services() {
 
 start_services() {
     # Check prerequisites
-    if ! command -v "$QDRANT_BIN" >/dev/null 2>&1; then
-        err "qdrant binary not found. Install from https://qdrant.tech/documentation/guides/installation/"
-        exit 1
-    fi
-
     if ! command -v llama-server >/dev/null 2>&1; then
         err "llama-server not found. Install with: brew install llama.cpp"
         exit 1
@@ -89,7 +84,22 @@ start_services() {
     else
         log "Starting Qdrant..."
         mkdir -p "$QDRANT_STORAGE"
-        nohup "$QDRANT_BIN" --storage-path "$QDRANT_STORAGE" >/dev/null 2>&1 &
+
+        # Generate config file with custom storage path
+        local config_file="$QDRANT_STORAGE/config.yaml"
+        cat > "$config_file" <<EOF
+storage:
+  storage_path: $QDRANT_STORAGE/data
+  snapshots_path: $QDRANT_STORAGE/snapshots
+service:
+  host: 127.0.0.1
+  http_port: $QDRANT_PORT
+  grpc_port: $((QDRANT_PORT + 1))
+  enable_cors: true
+telemetry_disabled: true
+EOF
+
+        nohup qdrant --config-path "$config_file" >/dev/null 2>&1 &
         wait_for_port "$QDRANT_PORT" "Qdrant"
     fi
 
@@ -133,7 +143,6 @@ case "${1:-}" in
         echo "  CARTOGRAPHER_QDRANT_PORT       Qdrant port (default: 6333)"
         echo "  CARTOGRAPHER_EMBED_PORT        Embedding server port (default: 8890)"
         echo "  CARTOGRAPHER_QDRANT_STORAGE    Qdrant data directory"
-        echo "  CARTOGRAPHER_QDRANT_BIN        Path to qdrant binary"
         echo "  CARTOGRAPHER_EMBED_MODEL_PATH  Path to embedding model GGUF"
         ;;
     "")
