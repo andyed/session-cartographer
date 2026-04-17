@@ -76,6 +76,36 @@ async function processTranscript(filePath) {
     let eventCount = 0;
     const cwdCounts = new Map(); // track cwd-derived projects
 
+    // Turn accumulator — one document per conversation turn (user prompt +
+    // every assistant message up to the next user prompt). Turn boundaries
+    // match the CLI path (scripts/transcript-to-turns.awk) so event_ids line
+    // up across retro-index.sh, reconstruct-history.js, and the CLI BM25.
+    let turnIdx = 0;
+    let turnStarted = false;
+    let turnText = '';
+    let turnTimestamp = null;
+    let turnCwd = '';
+    const TURN_BODY_MAX = 200000;
+
+    const flushTurn = () => {
+        if (!turnStarted) return;
+        const body = turnText.length > TURN_BODY_MAX ? turnText.slice(0, TURN_BODY_MAX) : turnText;
+        if (body.trim().length > 5) {
+            sendToQdrant({
+                event_id: `turn-${sessionId}-${turnIdx}`,
+                timestamp: turnTimestamp,
+                project: projectFromCwd(turnCwd) || projectDir,
+                cwd: turnCwd,
+                type: 'transcript',
+                summary: body,
+                transcript_path: filePath,
+                session: sessionId,
+                turn_idx: turnIdx
+            });
+        }
+        turnText = '';
+    };
+
     for await (const line of rl) {
         if (!line.trim()) continue;
 
@@ -94,26 +124,36 @@ async function processTranscript(filePath) {
                 if (p) cwdCounts.set(p, (cwdCounts.get(p) || 0) + 1);
             }
 
-            // General Transcript text
+            // Turn-level aggregation for transcript indexing
             if ((entry.type === 'user' || entry.type === 'assistant') && entry.message?.content) {
+                if (entry.type === 'user') {
+                    flushTurn();
+                    turnIdx++;
+                    turnStarted = true;
+                    turnTimestamp = entry.timestamp || null;
+                    turnCwd = entry.cwd || '';
+                }
+
                 let textContent = '';
                 if (typeof entry.message.content === 'string') {
                     textContent = entry.message.content;
                 } else if (Array.isArray(entry.message.content)) {
-                    const textNode = entry.message.content.find(c => c.type === 'text');
-                    if (textNode) textContent = textNode.text;
+                    // Join all text blocks; include tool_use intents for filename recall
+                    const parts = [];
+                    for (const block of entry.message.content) {
+                        if (block.type === 'text' && block.text) parts.push(block.text);
+                        else if (block.type === 'tool_use' && block.name) {
+                            const arg = block.input?.file_path || block.input?.path
+                                || block.input?.command || block.input?.query
+                                || block.input?.url || '';
+                            parts.push(`[${block.name}${arg ? ': ' + arg : ''}]`);
+                        }
+                    }
+                    textContent = parts.join(' ');
                 }
 
-                if (textContent && textContent.length > 5) {
-                    sendToQdrant({
-                        event_id: `hist-${sessionId}-${entry.timestamp || Date.now()}`,
-                        timestamp: entry.timestamp,
-                        project: projectFromCwd(entry.cwd) || projectDir,
-                        cwd: entry.cwd || '',
-                        type: 'transcript',
-                        summary: textContent,
-                        transcript_path: filePath
-                    });
+                if (textContent) {
+                    turnText += (turnText ? ' ' : '') + textContent;
                 }
             }
 
@@ -167,6 +207,9 @@ async function processTranscript(filePath) {
             // Ignore badly formatted JSONL rows
         }
     }
+
+    // Flush the trailing turn (no terminating user message)
+    flushTurn();
 
     // Resolve session project from cwd frequency, fall back to transcript dir
     const resolvedProject = cwdCounts.size > 0

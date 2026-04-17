@@ -23,13 +23,14 @@ Hooks (produce JSONL)
 scripts/
   cartographer-search.sh        — CLI search: BM25 (awk) + semantic + RRF fusion
   bm25-search.awk               — BM25 scorer (two-pass TF-IDF, pure awk)
+  transcript-to-turns.awk       — Turn-group transcripts (user→next-user boundary) before BM25
   embed-events.js               — Batch index JSONL events into Qdrant
   semantic-search.js             — Query Qdrant by vector similarity
   index-event.sh                — Real-time single-event indexing (called by hooks)
   backfill-git-history.sh       — Import git commits into event logs
   backfill-memories.sh          — Index Claude Code memory files
-  retro-index.sh                — Backfill historical transcripts into Qdrant
-  reconstruct-history.js        — Deep transcript analysis for backfill
+  retro-index.sh                — Backfill historical transcripts into Qdrant (turn-grouped)
+  reconstruct-history.js        — Deep transcript analysis for backfill (turn-grouped)
 project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
@@ -53,6 +54,7 @@ docs/
   RANK_FUSION.md                — BM25 + RRF scoring architecture
   SCORING.md                    — Score interpretation guide
   SETUP.md                      — Install, Qdrant, cold start backfill, disk usage
+  MIGRATION_TURNS.md            — Existing-user guide for turn-based transcript migration
   CUSTOM_HOOKS.md               — How to log your own events
   EXPLORER_SPEC.md              — Explorer implementation spec
   companion_explorer_spec.md    — Explorer product spec
@@ -64,6 +66,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 ## Implementation Constraints — READ THESE
 
 - **BM25 in awk is intentional.** `bm25-search.awk` is the CLI search scorer. Zero dependencies (no Node, no jq). Do not port to Python. The JS port in `explorer/server/bm25.js` exists separately for the API path.
+- **Transcripts are turn-grouped, not line-indexed.** `transcript-to-turns.awk` preprocesses each transcript into one document per conversation turn (user prompt + assistant responses up to the next user prompt). Event IDs are deterministic (`turn-<sid>-<idx>`). Do not revert to per-line indexing — keeps questions and resolutions together for BM25 and semantic retrieval both. See `docs/MIGRATION_TURNS.md` for the existing-user migration.
 - **Field extraction uses a fallback chain** (`summary → description → prompt → url → query → event_id → milestone`) across diverse JSONL schemas. Do not hardcode a single field.
 - **Transcripts are first-class citizens in RRF.** They compete equally with event log results. Do not append them at the bottom.
 - **`LC_ALL=C` on grep and awk** prevents multibyte errors on unicode in JSONL.

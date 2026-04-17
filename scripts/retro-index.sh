@@ -20,10 +20,17 @@ while [ $# -gt 0 ]; do
 done
 
 TRANSCRIPTS="${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}"
-INDEXER="$(dirname "$0")/index-event.sh"
+SCRIPT_DIR="$(dirname "$0")"
+INDEXER="$SCRIPT_DIR/index-event.sh"
+TURN_GROUPER="$SCRIPT_DIR/transcript-to-turns.awk"
 
 if [ ! -x "$INDEXER" ]; then
     echo "Error: Cannot find executable index-event.sh at $INDEXER"
+    exit 1
+fi
+
+if [ ! -f "$TURN_GROUPER" ]; then
+    echo "Error: Cannot find $TURN_GROUPER"
     exit 1
 fi
 
@@ -49,26 +56,18 @@ while IFS= read -r transcript; do
 
     echo "Indexing session: $session_id ($project_dir)"
 
-    # Extract user and assistant messages, generate deterministic IDs, and format for index-event.sh
-    jq -c -r \
-        --arg proj "$project_dir" \
-        --arg sid "$session_id" \
-        --arg tpath "$transcript" \
-        'select(.type == "user" or .type == "assistant") | select(.content != null) | 
-         {
-            event_id: (.uuid // ("hist-" + $sid + "-" + (.timestamp))),
-            timestamp: .timestamp,
-            project: $proj,
-            type: "transcript",
-            summary: .content,
-            transcript_path: $tpath,
-            cwd: .cwd
-         }' "$transcript" 2>/dev/null | \
+    # Turn-group the transcript, then ship one event per turn to Qdrant.
+    # Turn event_ids are deterministic (turn-<sid>-<idx>), so reruns and
+    # parallel reconstruct-history.js runs dedupe cleanly via the point-id hash.
+    awk -f "$TURN_GROUPER" \
+        -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" \
+        "$transcript" 2>/dev/null | \
     while IFS= read -r payload; do
+        [ -z "$payload" ] && continue
         echo "$payload" | "$INDEXER"
         total_indexed=$((total_indexed + 1))
     done
 
 done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f "${FIND_ARGS[@]}" 2>/dev/null || true)
 
-echo "Retro-indexing complete! Backfilled $total_indexed historical messages."
+echo "Retro-indexing complete! Backfilled $total_indexed historical turns."

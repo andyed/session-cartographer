@@ -177,7 +177,8 @@ grep_transcripts_to_tsv() {
   [ -d "$TRANSCRIPTS" ] || return 0
 
   local matched_files=0
-  
+  local script_dir="$(dirname "$0")"
+
   # Bulk grep all transcripts in one shot to eliminate thousands of slow bash/grep subprocesses (drops latency from 24s to <1s)
   while IFS= read -r transcript; do
     [ -z "$transcript" ] && continue
@@ -194,10 +195,22 @@ grep_transcripts_to_tsv() {
 
     matched_files=$((matched_files + 1))
 
-    # Use bm25 algorithm — much faster than jq for large files, and ranks properly via TF-IDF
-    awk -f "$(dirname "$0")/bm25-search.awk" \
-      -v query="$QUERY" -v src="transcript" -v sid="$session_id" -v pdir="$project_dir" -v tpath="$transcript" \
-      "$transcript" "$transcript" 2>/dev/null | head -$((LIMIT * 2))
+    # Turn-group the transcript so BM25 scores conversation turns, not
+    # individual JSONL lines. This keeps user/assistant exchanges together
+    # — a question and its resolution appear in the same document.
+    local turns_file="$TMPDIR/turns-${session_id}.jsonl"
+    awk -f "$script_dir/transcript-to-turns.awk" \
+      -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" \
+      "$transcript" > "$turns_file" 2>/dev/null
+
+    [ ! -s "$turns_file" ] && continue
+
+    # Score turns as regular event records. `src=transcript-turn` bypasses
+    # the legacy per-line transcript branch in bm25-search.awk; the turn
+    # JSONL already exposes summary/event_id/timestamp in event-log shape.
+    awk -f "$script_dir/bm25-search.awk" \
+      -v query="$AWK_QUERY" -v src="transcript-turn" -v proj_filter="$PROJECT" \
+      "$turns_file" "$turns_file" 2>/dev/null | head -$((LIMIT * 2))
 
     if [ "$matched_files" -ge 20 ]; then
       echo "(showing top 20 matching transcripts)" >&2

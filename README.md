@@ -195,6 +195,7 @@ bash tests/private/benchmark.sh         # 8-query speed comparison
 ## See also
 
 - [docs/SETUP.md](docs/SETUP.md) — Full setup, Qdrant, environment variables, disk usage
+- [docs/MIGRATION_TURNS.md](docs/MIGRATION_TURNS.md) — Existing-user migration to turn-based transcript indexing
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture
 - [docs/SCORING.md](docs/SCORING.md) — What scores mean, when to chase a result
 - [docs/CUSTOM_HOOKS.md](docs/CUSTOM_HOOKS.md) — Log your own events to the index

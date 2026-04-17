@@ -91,7 +91,7 @@ Set these in your shell profile or Claude Code settings for your work machine.
 
 On a fresh install, the JSONL event logs are empty — hooks only capture events going forward. Two scripts backfill your existing Claude Code session history into the Qdrant index for immediate semantic search.
 
-### Quick backfill (bash + jq)
+### Quick backfill (bash + awk)
 
 ```bash
 # Index all historical transcripts into Qdrant
@@ -104,7 +104,15 @@ bash scripts/retro-index.sh --limit-days 30
 bash scripts/retro-index.sh --project scrutinizer
 ```
 
-Extracts user/assistant messages from transcript JSONL files and pipes each through `index-event.sh` → Qdrant. Lightweight but only indexes message text.
+Groups each transcript into conversation turns (user prompt + assistant responses up to the next user prompt), then pipes one event per turn through `index-event.sh` → Qdrant. Deterministic `turn-<session>-<idx>` IDs — safe to rerun.
+
+**Tip:** For a full rebuild (or the first migration to turn-based indexing), disable the prediction-error gate so every turn lands:
+
+```bash
+PE_GATE_REJECT=2.0 bash scripts/retro-index.sh
+```
+
+The PE gate normally skips near-duplicate events, but turns are already deduplicated by their deterministic IDs — the gate adds no value here and can reject legitimate turns whose content overlaps other point types (synthesized tool events, prior per-message transcript indexing).
 
 ### Deep reconstruction (Node.js)
 
