@@ -40,6 +40,8 @@ echo "Starting historical backfill..."
 FIND_ARGS=()
 [ -n "$LIMIT_DAYS" ] && FIND_ARGS+=("-mtime" "-$LIMIT_DAYS")
 
+COUNTER_FILE=$(mktemp)
+trap 'rm -f "$COUNTER_FILE"' EXIT
 total_indexed=0
 
 # Walk the transcripts directory
@@ -59,15 +61,19 @@ while IFS= read -r transcript; do
     # Turn-group the transcript, then ship one event per turn to Qdrant.
     # Turn event_ids are deterministic (turn-<sid>-<idx>), so reruns and
     # parallel reconstruct-history.js runs dedupe cleanly via the point-id hash.
+    # Piping through a while loop would put the counter in a subshell where
+    # increments don't propagate; write to a counter file and sum at the end.
     awk -f "$TURN_GROUPER" \
         -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" \
         "$transcript" 2>/dev/null | \
     while IFS= read -r payload; do
         [ -z "$payload" ] && continue
         echo "$payload" | "$INDEXER"
-        total_indexed=$((total_indexed + 1))
+        echo 1 >> "$COUNTER_FILE"
     done
 
 done < <(find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f "${FIND_ARGS[@]}" 2>/dev/null || true)
 
+total_indexed=$(wc -l < "$COUNTER_FILE" | tr -d ' ')
+rm -f "$COUNTER_FILE"
 echo "Retro-indexing complete! Backfilled $total_indexed historical turns."
