@@ -914,6 +914,47 @@ if [ "$FOUND" -eq 0 ]; then
     echo "To search raw session transcripts now:"
     echo "  grep -r -i \"$QUERY\" $TRANSCRIPTS/ --include='*.jsonl' -l"
   else
+    # ─── Phantom detection (LongMemEval abstention) ───
+    # Empty result + entity-shaped tokens in the query is a different failure
+    # mode than "no results, query was vague". Distinguish them: scan for
+    # event_ids and file paths in the query; check the index for each; log
+    # the unknowns as knowledge_gap events for future capture.
+    UNKNOWN=""
+
+    # Event ID candidates: evt-XXXXXXXXXXXX or git-XXXXXXX
+    for eid in $(echo "$QUERY" | grep -oE '(evt-|git-)[a-z0-9]+' 2>/dev/null); do
+      if ! LC_ALL=C grep -q "$eid" \
+          "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
+          "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" \
+          2>/dev/null; then
+        UNKNOWN="${UNKNOWN:+$UNKNOWN,}$eid"
+      fi
+    done
+
+    # File path candidates: tokens with a dot extension
+    for path in $(echo "$QUERY" | grep -oE '[/A-Za-z0-9_.-]+\.[a-zA-Z0-9]{1,8}' 2>/dev/null); do
+      # Skip pure version numbers and common non-paths
+      case "$path" in
+        [0-9]*.[0-9]*|*.md|*.) continue ;;
+      esac
+      if ! LC_ALL=C grep -q -- "$path" \
+          "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
+          "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" \
+          2>/dev/null; then
+        UNKNOWN="${UNKNOWN:+$UNKNOWN,}$path"
+      fi
+    done
+
+    if [ -n "$UNKNOWN" ]; then
+      LOGGER="$(dirname "$0")/../plugins/session-cartographer/hooks/log-knowledge-gap.sh"
+      if [ -x "$LOGGER" ]; then
+        "$LOGGER" --query "$QUERY" --entities "$UNKNOWN" --project "$PROJECT" 2>/dev/null
+      fi
+      gap_count=$(echo "$UNKNOWN" | tr ',' '\n' | wc -l | tr -d ' ')
+      printf "(no results — flagged %d unknown entit%s for next-session capture: %s)\n" \
+        "$gap_count" "$([ "$gap_count" -eq 1 ] && echo y || echo ies)" "$UNKNOWN"
+      echo ""
+    fi
     echo "Try broader keywords, --project filter, or --transcript to search raw session text."
   fi
 fi

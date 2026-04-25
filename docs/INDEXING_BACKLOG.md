@@ -14,9 +14,9 @@ The MenteDB-borrowed framing from `TODO.md`'s "Memory research" section. SC's co
 | Multi-session reasoning | Improving (write-side + `--thread` shipped 2026-04-22) | — |
 | Knowledge updates | Weak | #4 event_relations |
 | Temporal reasoning | Strong (since the `--since`/`--before` work shipped 2026-04-24) | — |
-| Abstention | Weak | #3 phantom detection |
+| Abstention | Detector shipped 2026-04-25; consumer pending | (#3 follow-up) |
 
-Doing #1 and #2 (shipped) lifted coverage from 1.5/5 to ~3/5. Adding #3 + #4 gets to ~4.5/5.
+Doing #1, #2, #3 (shipped) lifted coverage from 1.5/5 to ~3.5/5. Adding #4 gets to ~4.5/5.
 
 ---
 
@@ -24,20 +24,9 @@ Doing #1 and #2 (shipped) lifted coverage from 1.5/5 to ~3/5. Adding #3 + #4 get
 
 - **#1 — Cross-event linkage via `parent_event_id`** — Write-side in `hooks/common.sh:find_parent_event_id` + all three `log-*.sh`. Read-side `--thread <event_id>` in `cartographer-search.sh` walks ancestors + descendants and prints the arc as a sorted timeline. `/remember` SKILL.md teaches the new query intent. Shipped 2026-04-22.
 - **#2 — Salience scoring at write time** — Hooks emit a `salience` field ([0..1]) per event using event-type heuristics: `/wrapup` 0.9, feature/fix commits 0.7, research-paper fetches 0.7, chore/test/docs commits 0.4, tool_bash 0.2. `bm25-search.awk` extracts and emits as a 9th TSV column; `semantic_search_to_tsv()` reads from Qdrant payloads; `rank_fuse_and_display` uses it as a multiplicative weight on RRF. Defaults to 0.5 for old events without the field. Shipped 2026-04-22.
+- **#3 — Phantom detection (detector only)** — Empty-results path in `cartographer-search.sh` scans the query for `evt-*`/`git-*` IDs and file paths (regex `[/A-Za-z0-9_.-]+\.[a-zA-Z0-9]{1,8}`), checks each against the JSONL corpus, and routes unknowns to `hooks/log-knowledge-gap.sh`. Writes a `knowledge_gap` event (salience 0.6) to `knowledge-gaps.jsonl` + `changelog.jsonl`. Surfaces inline as `(no results — flagged N unknown entities…)`. Consumer is a follow-up — `/focus <project>` reading recent gaps for that project would close the loop most cleanly. Shipped 2026-04-25.
 
 ## Active
-
-### #3 — Phantom detection signal (HIGH leverage)
-
-**Gap.** When a query mentions an entity SC has zero info on (project name from registry, file path under `$DEV/`, identifier matching `evt-*`/`git-*`), the script silently returns "No results found." That's an *abstention failure*: the system can't distinguish "we genuinely don't know" from "your query was too narrow."
-
-**Change.** When `cartographer-search.sh` is about to return zero results, run an entity scan over the query: extract project-name candidates (compare against `project-registry.json`), file paths (anything matching `[\w/.-]+\.\w+`), and event identifiers. For unknown ones, emit a `knowledge_gap` event log entry via a new `log-knowledge-gap.sh` hook driver — turning every empty query into a future-capture target. Surface to the user: "(no results — flagged 2 unknown entities for next-session capture)".
-
-**Touches:** `cartographer-search.sh` final block; new `plugins/session-cartographer/hooks/log-knowledge-gap.sh`.
-
-**Payoff.** Targets LongMemEval abstention. Also closes a self-improvement loop — empty queries become signals for what auto-memory should pick up.
-
----
 
 ### #4 — `event_relations.jsonl` sidecar for knowledge updates (MEDIUM leverage)
 
