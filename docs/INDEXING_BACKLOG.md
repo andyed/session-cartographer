@@ -28,6 +28,18 @@ Doing #1, #2, #3 (shipped) lifted coverage from 1.5/5 to ~3.5/5. Adding #4 gets 
 
 ## Active
 
+### #3-consumer — `/focus` reads `knowledge-gaps.jsonl` (LOW effort, closes loop)
+
+**Gap.** `#3` ships a detector but no reader. The `knowledge_gap` events accumulate in JSONL and search results but nothing actively surfaces them at the moment they would matter — when the agent is entering a project.
+
+**Change.** `/focus <project>` (and the underlying `cartographer-search.sh "recent activity" --project <p>`) reads the last ~20 `knowledge_gap` events filtered to the requested project, dedupes by `query`, and prints a short "Unanswered questions" block at the top of the orientation. Only show gaps with recurrence ≥ 2 (one-off phantoms are noise; recurring ones are signal that the entity actually matters and auto-memory should capture it).
+
+**Touches:** `plugins/session-cartographer/skills/focus/SKILL.md`; possibly a small awk reader inline.
+
+**Payoff.** Closes the self-improvement loop. The recurrence signal also tells us whether `#3`'s detection heuristics are any good before we invest in `#4`'s harder problem.
+
+---
+
 ### #4 — `event_relations.jsonl` sidecar for knowledge updates (MEDIUM leverage)
 
 **Gap.** Jsonl is append-only; "last write wins" is implicit but invisible to retrieval. A revert commit, a "supersedes" decision, an "actually let's do Y" message — all logged independently from what they replace. `/remember` happily returns stale facts alongside their corrections.
