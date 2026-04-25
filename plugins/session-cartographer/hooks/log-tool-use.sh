@@ -36,6 +36,8 @@ fi
 . "$(dirname "$0")/common.sh"
 PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
 
+SALIENCE="0.5"  # default; per-branch overrides below
+
 case "$TOOL_NAME" in
   Edit|Write)
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
@@ -43,7 +45,7 @@ case "$TOOL_NAME" in
     # Refine project via file path's git repo
     FILE_REPO=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
     [ -n "$FILE_REPO" ] && PROJECT=$(basename "$FILE_REPO")
-    
+
     # Skip noisy paths (node_modules, .git, lock files)
     case "$FILE_PATH" in
       */node_modules/*|*/.git/*|*/package-lock.json|*/yarn.lock|*/pnpm-lock.yaml) exit 0 ;;
@@ -51,6 +53,7 @@ case "$TOOL_NAME" in
     FILENAME=$(basename "$FILE_PATH")
     SUMMARY="Modified: $FILE_PATH"
     TYPE="tool_file_edit"
+    SALIENCE="0.4"
     ;;
   Bash)
     COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 500)
@@ -104,6 +107,32 @@ case "$TOOL_NAME" in
         [ -n "$CHANGED_FILES" ] && SUMMARY="${SUMMARY} | files: ${CHANGED_FILES}"
         TYPE="git_commit"
 
+        # Salience by commit type — feature/fix carry more strategic weight
+        # than chore/style. +0.1 for wide-ranging or release commits. Cap 1.0.
+        case "$COMMIT_TYPE" in
+          feature|fix)         SALIENCE_RAW="0.7" ;;
+          refactor|revert|perf) SALIENCE_RAW="0.6" ;;
+          enhancement|other)   SALIENCE_RAW="0.5" ;;
+          docs|test|chore|ci|build) SALIENCE_RAW="0.4" ;;
+          style)               SALIENCE_RAW="0.3" ;;
+          *)                   SALIENCE_RAW="0.5" ;;
+        esac
+        # Bonus: wide blast radius
+        FILE_COUNT=0
+        if [ -n "$CHANGED_FILES" ]; then
+          FILE_COUNT=$(echo "$CHANGED_FILES" | tr ',' '\n' | wc -l | tr -d ' ')
+        fi
+        if [ "$FILE_COUNT" -gt 5 ]; then
+          SALIENCE_RAW=$(awk -v s="$SALIENCE_RAW" 'BEGIN { v = s + 0.1; if (v > 1.0) v = 1.0; printf "%.2f", v }')
+        fi
+        # Bonus: release commits ("Release vX.Y.Z" or contains version tag pattern)
+        case "$COMMIT_MSG" in
+          [Rr]elease\ *|*v[0-9]*.[0-9]*)
+            SALIENCE_RAW=$(awk -v s="$SALIENCE_RAW" 'BEGIN { v = s + 0.1; if (v > 1.0) v = 1.0; printf "%.2f", v }')
+            ;;
+        esac
+        SALIENCE="$SALIENCE_RAW"
+
         # Build GitHub commit URL from remote
         COMMIT_URL=""
         if [ -n "$GIT_REPO" ]; then
@@ -113,14 +142,17 @@ case "$TOOL_NAME" in
       else
         SUMMARY="Ran: $COMMAND"
         TYPE="tool_bash"
+        SALIENCE="0.2"
       fi
     # Detect git push
     elif echo "$COMMAND" | grep -q "git push"; then
       SUMMARY="Pushed: $COMMAND"
       TYPE="git_push"
+      SALIENCE="0.6"
     else
       SUMMARY="Ran: $(echo "$COMMAND" | head -c 200)"
       TYPE="tool_bash"
+      SALIENCE="0.2"
     fi
     ;;
   *)
@@ -143,7 +175,8 @@ jq -n -c \
     --arg commit_url "${COMMIT_URL:-}" \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
     --arg parent_id "$PARENT_ID" \
-    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape}
+    --argjson salience "${SALIENCE:-0.5}" \
+    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape, salience: $salience}
      + if $commit_type != "" then {commit_type: $commit_type} else {} end
      + if $commit_url != "" then {commit_url: $commit_url} else {} end
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
@@ -162,7 +195,8 @@ jq -n -c \
     --arg commit_type "${COMMIT_TYPE:-}" \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
     --arg parent_id "$PARENT_ID" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: []}
+    --argjson salience "${SALIENCE:-0.5}" \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: [], salience: $salience}
      + if $commit_type != "" then {commit_type: $commit_type} else {} end
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$CHANGELOG"

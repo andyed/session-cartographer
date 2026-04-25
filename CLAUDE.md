@@ -66,7 +66,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 ## Implementation Constraints — READ THESE
 
 - **BM25 in awk is intentional.** `bm25-search.awk` is the CLI search scorer. Zero dependencies (no Node, no jq). Do not port to Python. The JS port in `explorer/server/bm25.js` exists separately for the API path.
-- **Transcripts are turn-grouped, not line-indexed.** `transcript-to-turns.awk` preprocesses each transcript into one document per conversation turn (user prompt + assistant responses up to the next user prompt). Event IDs are deterministic (`turn-<sid>-<idx>`). Do not revert to per-line indexing — keeps questions and resolutions together for BM25 and semantic retrieval both. See `docs/MIGRATION_TURNS.md` for the existing-user migration.
+- **Turn-grouping is an indexing-layer concern, not a query-layer concern.** `transcript-to-turns.awk` preprocesses transcripts into one document per turn (user prompt + assistant responses up to the next user prompt) and is used by `retro-index.sh` + hooks when ingesting into Qdrant. Event IDs are deterministic (`turn-<sid>-<idx>`). Do not run it per-query — the CLI keyword `--transcript` fallback is plain per-line grep by design; semantic search (Qdrant) owns turn-coherent transcript recall. See `docs/MIGRATION_TURNS.md` for historical context.
 - **Field extraction uses a fallback chain** (`summary → description → prompt → url → query → event_id → milestone`) across diverse JSONL schemas. Do not hardcode a single field.
 - **Transcripts are first-class citizens in RRF.** They compete equally with event log results. Do not append them at the bottom.
 - **`LC_ALL=C` on grep and awk** prevents multibyte errors on unicode in JSONL.

@@ -61,10 +61,22 @@ categorize_url() {
 
 PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
 
+# Salience by URL category — research papers and primary docs outrank
+# casual blog/news. Tuning: see docs/INDEXING_BACKLOG.md item #2.
+salience_for_category() {
+  case "$1" in
+    research)         echo "0.7" ;;
+    docs|reference)   echo "0.5" ;;
+    blog|news)        echo "0.4" ;;
+    *)                echo "0.4" ;;
+  esac
+}
+
 if [ "$TOOL_NAME" = "WebFetch" ]; then
     URL=$(echo "$INPUT" | jq -r '.tool_input.url // empty')
     PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty')
     CATEGORY=$(categorize_url "$URL")
+    SALIENCE=$(salience_for_category "$CATEGORY")
 
     jq -n -c \
         --arg eid "$EVENT_ID" \
@@ -78,7 +90,8 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg session "$SESSION_ID" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
-        '{event_id: $eid, timestamp: $ts, type: $type, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}
+        --argjson salience "$SALIENCE" \
+        '{event_id: $eid, timestamp: $ts, type: $type, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$LOG_FILE"
 
@@ -92,7 +105,8 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg summary "Fetched: $URL" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
-        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}
+        --argjson salience "$SALIENCE" \
+        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$CHANGELOG"
 
@@ -101,6 +115,7 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
 
     # Log the search query itself
     SEARCH_EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
+    SEARCH_SALIENCE="0.5"
     jq -n -c \
         --arg eid "$SEARCH_EVENT_ID" \
         --arg ts "$TIMESTAMP" \
@@ -111,7 +126,8 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg session "$SESSION_ID" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
-        '{event_id: $eid, timestamp: $ts, type: $type, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}
+        --argjson salience "$SEARCH_SALIENCE" \
+        '{event_id: $eid, timestamp: $ts, type: $type, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$LOG_FILE"
 
@@ -125,7 +141,8 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg summary "Search: $QUERY" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
-        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}
+        --argjson salience "$SEARCH_SALIENCE" \
+        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$CHANGELOG"
 
@@ -153,6 +170,7 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         ' 2>/dev/null | head -1)
 
         RESULT_EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
+        RESULT_SALIENCE="0.3"
         # Search results parent to the search event itself (intra-fanout linkage),
         # which already lives in related_ids. parent_event_id keeps the cross-
         # event chain coherent — set to the search event for the same reason.
@@ -169,7 +187,8 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
             --arg session "$SESSION_ID" \
             --arg transcript "$TRANSCRIPT" \
             --arg parent "$SEARCH_EVENT_ID" \
-            '{event_id: $eid, timestamp: $ts, type: $type, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent], parent_event_id: $parent}' \
+            --argjson salience "$RESULT_SALIENCE" \
+            '{event_id: $eid, timestamp: $ts, type: $type, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent], parent_event_id: $parent, salience: $salience}' \
             >> "$LOG_FILE"
     done
 fi

@@ -24,6 +24,18 @@ function extract(json, field,    pat, val) {
     return ""
 }
 
+# Numeric extractor — for "salience": 0.7 (no quotes around the value)
+function extract_num(json, field,    pat, val) {
+    pat = "\"" field "\"[[:space:]]*:[[:space:]]*"
+    if (match(json, pat)) {
+        val = substr(json, RSTART + RLENGTH)
+        # Stop at first non-numeric (comma, brace, whitespace)
+        sub(/[^0-9.\-].*/, "", val)
+        return val
+    }
+    return ""
+}
+
 # Helper to get the searchable text body from the JSON line
 function get_search_text(line, src_type) {
     if (src_type == "transcript") {
@@ -148,7 +160,8 @@ NR == FNR {
             etype = "transcript:" extract($0, "type")
 
             # Use negative score as a sort key placeholder since we want descending order
-            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract($0, "type"), 0, key, ts, pdir, summary, extras, etype)
+            # Transcripts have no salience score yet — default 0.5 (neutral).
+            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract($0, "type"), 0, key, ts, pdir, summary, extras, etype, "0.5")
         } else {
             key = extract($0, "event_id")
             if (key == "") key = extract($0, "milestone")
@@ -178,7 +191,12 @@ NR == FNR {
                 else etype = src
             }
 
-            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras, etype)
+            # Salience is a hook-emitted [0..1] strategic-weight signal. Old
+            # events without the field default to 0.5 (neutral) so back-compat.
+            sal = extract_num($0, "salience")
+            if (sal == "") sal = "0.5"
+
+            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras, etype, sal)
         }
     }
 }
@@ -186,7 +204,7 @@ NR == FNR {
 END {
     # Shell out to sort by score (column 1 numeric), then re-assign rank 1-N (so RRF works)
     # We pass the results array directly to sort.
-    # Output: src \t rank \t key \t ts \t proj \t summary \t extras \t etype
+    # Output: src \t rank \t key \t ts \t proj \t summary \t extras \t etype \t salience
     if (nresults > 0) {
         sort_cmd = "sort -n | awk -F'\\t' '{ $3 = NR; for(i=2;i<=NF;i++) printf \"%s%s\", $i, (i==NF?\"\\n\":\"\\t\") }'"
         for (i = 1; i <= nresults; i++) {

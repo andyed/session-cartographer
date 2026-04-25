@@ -46,6 +46,8 @@ else
   TIMESTAMP=$(echo "$INPUT" | jq -r '.timestamp // empty')
   SOURCE=$(echo "$INPUT" | jq -r '.type // empty')
   SESSION=$(echo "$INPUT" | jq -r '(.session // .session_id // empty)')
+  SALIENCE=$(echo "$INPUT" | jq -r '(.salience // 0.5)')
+  PARENT_EVENT_ID=$(echo "$INPUT" | jq -r '.parent_event_id // empty')
 fi
 
 [ -z "$EVENT_ID" ] || [ -z "$TEXT" ] && exit 0
@@ -83,7 +85,9 @@ if [ -n "$SEARCH_RESULT" ]; then
   fi
 fi
 
-# Upsert to Qdrant safely building the JSON with jq to avoid quote injection
+# Upsert to Qdrant safely building the JSON with jq to avoid quote injection.
+# Salience and parent_event_id are read by cartographer-search.sh's semantic
+# TSV emitter (and by --thread traversal) to weight ranking and walk arcs.
 PAYLOAD=$(jq -n -c \
   --arg id "$POINT_ID" \
   --argjson vec "$VECTOR" \
@@ -94,7 +98,9 @@ PAYLOAD=$(jq -n -c \
   --arg cwd "$CWD" \
   --arg summ "$TEXT" \
   --arg sess "$SESSION" \
-  '{points: [{id: ($id | tonumber), vector: $vec, payload: {event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess}}]}')
+  --argjson salience "${SALIENCE:-0.5}" \
+  --arg parent_id "${PARENT_EVENT_ID:-}" \
+  '{points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end))}]}')
 
 curl -sf "$QDRANT_URL/collections/$COLLECTION/points" \
   -H "Content-Type: application/json" \

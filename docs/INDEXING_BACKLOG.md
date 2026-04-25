@@ -11,48 +11,21 @@ The MenteDB-borrowed framing from `TODO.md`'s "Memory research" section. SC's co
 | Category | Current state | Targeted by |
 |---|---|---|
 | Information extraction | Strong (hybrid BM25 + semantic) | — |
-| Multi-session reasoning | **Weak** | #1 parent_event_id |
+| Multi-session reasoning | Improving (write-side + `--thread` shipped 2026-04-22) | — |
 | Knowledge updates | Weak | #4 event_relations |
 | Temporal reasoning | Strong (since the `--since`/`--before` work shipped 2026-04-24) | — |
 | Abstention | Weak | #3 phantom detection |
 
-Doing #1, #2, #3, #4 lifts coverage from 1.5/5 to 4.5/5. The remaining gap (full multi-session reasoning) requires #1 to be in place plus query-side traversal, queued as a follow-up.
+Doing #1 and #2 (shipped) lifted coverage from 1.5/5 to ~3/5. Adding #3 + #4 gets to ~4.5/5.
 
 ---
+
+## Shipped
+
+- **#1 — Cross-event linkage via `parent_event_id`** — Write-side in `hooks/common.sh:find_parent_event_id` + all three `log-*.sh`. Read-side `--thread <event_id>` in `cartographer-search.sh` walks ancestors + descendants and prints the arc as a sorted timeline. `/remember` SKILL.md teaches the new query intent. Shipped 2026-04-22.
+- **#2 — Salience scoring at write time** — Hooks emit a `salience` field ([0..1]) per event using event-type heuristics: `/wrapup` 0.9, feature/fix commits 0.7, research-paper fetches 0.7, chore/test/docs commits 0.4, tool_bash 0.2. `bm25-search.awk` extracts and emits as a 9th TSV column; `semantic_search_to_tsv()` reads from Qdrant payloads; `rank_fuse_and_display` uses it as a multiplicative weight on RRF. Defaults to 0.5 for old events without the field. Shipped 2026-04-22.
 
 ## Active
-
-### #1 — Cross-event linkage via `parent_event_id` (HIGH leverage)
-
-**Gap.** Each event today is atomic. Conversations have arcs ("tried X" → "X failed because Y" → "switched to Z" → "Z worked, committed"); the JSONL captures each step but not the linkage. `/remember` returns disconnected snapshots even when the user is asking about a coherent thread of work.
-
-**Change.** Add a `parent_event_id` field to every emitted event. Compute it by reading the last line of the per-type log (or the unified changelog) on each write — if the prior event is in the same `session_id` and within 60s of `now`, link to it. Otherwise leave null.
-
-**Read-side.** New CLI flag `--thread <event_id>` traverses the parent chain (or its descendants by reverse-lookup) and surfaces the entire arc rather than individual events. `/remember` skill teaches Claude to use this when the user asks "show me how I got to X."
-
-**Touches:** new `plugins/session-cartographer/hooks/common.sh` for the parent-lookup helper; all three `log-*.sh` to populate; `cartographer-search.sh` for `--thread`; `SKILL.md` for the new query intent.
-
-**Payoff.** Targets LongMemEval's multi-session reasoning category. Over weeks of activity, this turns the JSONL from a flat event log into a queryable graph — same data, dramatically richer recall on "show me the arc" questions.
-
----
-
-### #2 — Salience scoring at write time (HIGH leverage, LOW effort)
-
-**Gap.** Every event has equal weight in RRF today. Andy's `/wrapup` milestone and a routine typo-fix commit rank identically when their summary text matches the query. This dilutes the top-K with noise.
-
-**Change.** Hooks emit a `salience: 0.0–1.0` field per event using event-type-specific heuristics:
-- `log-research.sh`: research-domain fetch → 0.7; docs/reference → 0.5; blog/news → 0.4; search query itself → 0.5; search result → 0.3.
-- `log-session-milestones.sh`: `/wrapup`-style milestones → 0.9; compaction → 0.4; session_end → 0.5.
-- `log-tool-use.sh`: commit_type feature/fix → 0.7, docs/test/chore → 0.4, revert → 0.6; +0.1 if files-changed > 5; +0.1 if message starts with "Release" or matches `v\d+\.`.
-- `tool_bash` → 0.2 (mostly noise).
-
-`cartographer-search.sh:rank_fuse_and_display` reads salience and uses it as a third RRF dimension. Old events without the field default to 0.5 (back-compat).
-
-**Touches:** all three `log-*.sh`; `bm25-search.awk` to extract + emit; `semantic-search.js` to extract from Qdrant payload; `rank_fuse_and_display` for the multiplier.
-
-**Payoff.** Single change improves *every* downstream search. Smallest code surface, biggest perceived improvement on "find the important X" queries.
-
----
 
 ### #3 — Phantom detection signal (HIGH leverage)
 

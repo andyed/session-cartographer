@@ -21,9 +21,10 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--all] [--reset-served]
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--all] [--reset-served] [--thread EVENT_ID]
        WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
-       Delta serving (auto when CLAUDE_SESSION_ID is set): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.}"
+       Delta serving (auto when CLAUDE_SESSION_ID is set): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
+       --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).}"
 shift
 
 LIMIT=15
@@ -33,6 +34,7 @@ SINCE=""
 BEFORE=""
 ALL_MODE=0
 RESET_SERVED=0
+THREAD_ID=""
 # Transcript fallback is expensive (turn-grouping awk runs per-query on raw
 # transcripts; one 100MB+ session can hang search for minutes). Qdrant
 # already holds turn-grouped embeddings for the semantic path, so the keyword
@@ -49,6 +51,7 @@ while [ $# -gt 0 ]; do
     --before)         BEFORE="$2"; shift 2 ;;
     --all)            ALL_MODE=1; shift ;;
     --reset-served)   RESET_SERVED=1; shift ;;
+    --thread)         THREAD_ID="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -313,7 +316,8 @@ semantic_search_to_tsv() {
   [ "$count" = "0" ] || [ -z "$count" ] && return 1
 
   # Emit TSV in the same format as keyword sources — RRF fuses them together
-  # Fields: src \t rank \t key \t ts \t proj \t summary \t extras \t etype
+  # Fields: src \t rank \t key \t ts \t proj \t summary \t extras \t etype \t salience
+  # Salience defaults to 0.5 for old payloads without the field (back-compat).
   echo "$results" | jq -r '.result | to_entries[] |
     "semantic\t" +
     (.key + 1 | tostring) + "\t" +
@@ -327,7 +331,9 @@ semantic_search_to_tsv() {
     (if .value.payload.cwd and .value.payload.cwd != "" then "cwd:" + .value.payload.cwd + "|" else "" end) +
     (if .value.payload.session then "session:" + .value.payload.session + "|" else "" end) +
     "\t" +
-    (.value.payload.type // (if (.value.payload.event_id // "") | startswith("git-") then "git_commit" else "?" end))
+    (.value.payload.type // (if (.value.payload.event_id // "") | startswith("git-") then "git_commit" else "?" end)) +
+    "\t" +
+    ((.value.payload.salience // 0.5) | tostring)
   ' 2>/dev/null
 }
 
@@ -381,9 +387,9 @@ grep_transcripts_to_tsv() {
           gsub(/\t/, " ", content)
           gsub(/[[:cntrl:]]/, " ", content)
           if (length(content) > 300) content = substr(content, 1, 300) "..."
-          printf "transcript\t%d\ttranscript-%s-%d\t?\t%s\t%s\t%s\t%s\n", \
+          printf "transcript\t%d\ttranscript-%s-%d\t?\t%s\t%s\t%s\t%s\t%s\n", \
             NR, sid, lineno, proj, content, \
-            "session:" sid "|transcript:" tpath, "transcript"
+            "session:" sid "|transcript:" tpath, "transcript", "0.5"
         }
       '
 
@@ -439,7 +445,12 @@ rank_fuse_and_display() {
   }
 
   {
-    src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7; etype = $8
+    src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7; etype = $8; sal = $9
+    # Salience: hook-emitted strategic-weight multiplier in [0..1]. Old events
+    # (pre-write-time-salience) lack the field — default to 0.5 (neutral).
+    if (sal == "" || sal + 0 == 0) sal = 0.5
+    if (sal + 0 > 1.0) sal = 1.0
+    if (sal + 0 < 0.05) sal = 0.05  # floor; avoid zeroing-out anomalies
 
     # ─── Temporal filter: --since / --before ───
     # When either is set, drop rows outside the window. Records with no
@@ -464,13 +475,17 @@ rank_fuse_and_display() {
       next
     }
 
-    # RRF score: 1/(k + rank)
-    score = 1.0 / (60 + rank)
+    # RRF score: 1/(k + rank), then weighted by per-event salience. Salience is
+    # multiplicative — a routine bash command (0.2) ranks 2.5× lower than a
+    # neutral event (0.5) and 4.5× lower than a /wrapup milestone (0.9).
+    score = (1.0 / (60 + rank)) * (sal + 0)
 
     # Accumulate scores per unique key (handles same event in multiple sources)
     if (key in rrf_score) {
       rrf_score[key] += score
       sources[key] = sources[key] "+" src
+      # Track max salience seen so deduped keys retain the strongest signal
+      if (sal + 0 > salience_map[key] + 0) salience_map[key] = sal
     } else {
       rrf_score[key] = score
       sources[key] = src
@@ -479,6 +494,7 @@ rank_fuse_and_display() {
       summaries[key] = summary
       extra[key] = extras
       etype_map[key] = etype
+      salience_map[key] = sal
       order[++n] = key
     }
   }
@@ -721,6 +737,117 @@ rank_fuse_and_display() {
   }
   '
 }
+
+# ─── --thread: traverse the parent_event_id work-arc ───
+# Hooks emit parent_event_id linking events within the same session that are
+# logged within 60s of each other (see hooks/common.sh). This walks both
+# directions from the supplied event: ancestors (recurse via parent_event_id)
+# and descendants (events whose parent_event_id == an ancestor in the chain).
+# Output is the full arc sorted by timestamp — a coherent thread of work
+# rather than disconnected snapshots. Targets LongMemEval multi-session
+# reasoning (docs/INDEXING_BACKLOG.md item #1).
+thread_traversal() {
+  local start_id="$1"
+  local changelog="$DEV/changelog.jsonl"
+  if [ ! -f "$changelog" ]; then
+    echo "thread: $changelog not found" >&2
+    return 1
+  fi
+
+  echo "=== Thread for: $start_id ==="
+  echo ""
+
+  awk -v start="$start_id" '
+    function extract_str(json, field,    pat, val) {
+      pat = "\"" field "\"[[:space:]]*:[[:space:]]*\""
+      if (match(json, pat)) {
+        val = substr(json, RSTART + RLENGTH)
+        sub(/".*/, "", val)
+        return val
+      }
+      return ""
+    }
+
+    {
+      eid = extract_str($0, "event_id")
+      if (eid == "") next
+      ts  = extract_str($0, "timestamp")
+      pid = extract_str($0, "parent_event_id")
+      sid = extract_str($0, "session_id"); if (sid == "") sid = extract_str($0, "session")
+      proj = extract_str($0, "project")
+      summ = extract_str($0, "summary"); if (summ == "") summ = extract_str($0, "description")
+      etype = extract_str($0, "type"); if (etype == "") etype = extract_str($0, "milestone")
+
+      ts_of[eid] = ts
+      parent_of[eid] = pid
+      session_of[eid] = sid
+      project_of[eid] = proj
+      summary_of[eid] = summ
+      type_of[eid] = etype
+      seen[eid] = 1
+      if (pid != "") children[pid] = children[pid] " " eid
+    }
+
+    END {
+      if (!(start in seen)) {
+        printf "(no event with id %s in changelog)\n", start
+        exit 1
+      }
+
+      # Walk ancestors
+      cur = start
+      while (cur != "" && (cur in seen) && !(cur in visited)) {
+        visited[cur] = 1
+        cur = parent_of[cur]
+      }
+
+      # BFS descendants
+      qh = 1; qt = 1; queue[1] = start
+      while (qh <= qt) {
+        cur = queue[qh++]
+        n = split(children[cur], kids, " ")
+        for (i = 1; i <= n; i++) {
+          kid = kids[i]
+          if (kid != "" && !(kid in visited)) {
+            visited[kid] = 1
+            queue[++qt] = kid
+          }
+        }
+      }
+
+      # Collect into array, sort by timestamp ascending (oldest first)
+      ni = 0
+      for (k in visited) order[++ni] = k
+      for (i = 2; i <= ni; i++) {
+        kk = order[i]; tt = ts_of[kk]; j = i - 1
+        while (j >= 1 && ts_of[order[j]] > tt) {
+          order[j+1] = order[j]
+          j--
+        }
+        order[j+1] = kk
+      }
+
+      for (i = 1; i <= ni; i++) {
+        k = order[i]
+        marker = (k == start) ? "★" : " "
+        printf "%s [%s] [%s] %s\n", marker, ts_of[k], type_of[k], k
+        s = summary_of[k]
+        if (length(s) > 240) s = substr(s, 1, 240) "..."
+        printf "    %s\n", s
+        if (project_of[k] != "" && project_of[k] != "?") printf "    project: %s\n", project_of[k]
+        if (parent_of[k] != "") printf "    parent: %s\n", parent_of[k]
+        printf "\n"
+      }
+
+      printf "(arc length: %d events)\n", ni
+    }
+  ' "$changelog"
+}
+
+if [ -n "$THREAD_ID" ]; then
+  thread_traversal "$THREAD_ID"
+  exit $?
+fi
 
 # ─── Run searches ───
 echo "=== Searching for: \"$QUERY\" ==="

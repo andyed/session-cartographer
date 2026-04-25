@@ -66,6 +66,16 @@ esac
 
 DEEPLINK="claude-history://session/${ENCODED_PATH}"
 
+# Salience by milestone type — wrapups are deliberate strategic synthesis,
+# compactions are mechanical noise. Tuning: docs/INDEXING_BACKLOG.md item #2.
+case "$MILESTONE" in
+  session_wrapup)   SALIENCE="0.9" ;;
+  session_end_*)    SALIENCE="0.5" ;;
+  compaction_*)     SALIENCE="0.4" ;;
+  agent_*)          SALIENCE="0.4" ;;
+  *)                SALIENCE="0.5" ;;
+esac
+
 # Git context for session-end and compaction events
 GIT_BRANCH=""
 GIT_DIRTY=0
@@ -99,7 +109,8 @@ jq -n -c \
     --arg recent_commits "$GIT_RECENT" \
     --argjson event_count "$SESSION_EVENT_COUNT" \
     --arg parent_id "$PARENT_ID" \
-    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count}
+    --argjson salience "$SALIENCE" \
+    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count, salience: $salience}
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$LOG_FILE"
 
@@ -122,7 +133,8 @@ jq -n -c \
     --arg summary "$RICH_SUMMARY" \
     --arg transcript "$TRANSCRIPT" \
     --arg parent_id "$PARENT_ID" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: []}
+    --argjson salience "$SALIENCE" \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$CHANGELOG"
 

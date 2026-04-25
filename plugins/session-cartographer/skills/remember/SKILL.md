@@ -48,6 +48,22 @@ Results include faceted summaries (project, source, event type, time range). Use
 
 Beyond ~30 days, transcript files are deleted by Claude Codes default TTL — event-log results still surface but the "read the transcript" step (Step 3 below) will hit a missing file. When that happens, present the event metadata as the answer and note that full context isn't available.
 
+### Threading: trace a work-arc with `--thread`
+
+Hooks link successive events from the same session into a `parent_event_id` chain (the prior event must be in the same session and within 60s). Over time this turns the JSONL from a flat log into a graph you can traverse.
+
+When the user asks "show me how I got to X", "what led up to that commit", or "what was the chain of work around Y", run a normal search to find the anchor `event_id`, then walk the arc:
+
+```bash
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh _ --thread evt-xxxxxxxxxxxx
+```
+
+The first argument is ignored when `--thread` is set (pass any placeholder like `_`). Output is the full ancestor + descendant arc sorted by timestamp, with the supplied event marked `★`. Present it as a coherent timeline rather than a search result.
+
+### Salience weighting (automatic)
+
+Hooks emit a `salience` score per event ([0..1]). `/wrapup` milestones (0.9), feature/fix commits (0.7), and research-paper fetches (0.7) outrank routine bash commands (0.2) and chore commits (0.4). Salience multiplies into the RRF score, so deliberate strategic moments naturally rise to the top of results without any extra flag.
+
 ### Delta serving (automatic in-session)
 
 When you call `/remember` repeatedly in the same session, the script automatically suppresses event_ids that were returned in earlier calls — so each subsequent call surfaces *fresh* material rather than re-returning the same top-K. Activated whenever `$CLAUDE_SESSION_ID` is set (which it always is in skill context).
@@ -126,4 +142,7 @@ jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
     → bash cartographer-search.sh "audio reactivity" --since "last week"
 /remember Wednesday's debugging session
     → bash cartographer-search.sh "debug" --since "last week" --before yesterday
+/remember show me how I got to that fix
+    → bash cartographer-search.sh "the fix" --limit 5     (find anchor event_id)
+    → bash cartographer-search.sh _ --thread evt-xxxxxxxxxxxx
 ```
