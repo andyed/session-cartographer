@@ -22,6 +22,10 @@ TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
+# Cross-event linkage: thread events into work-arcs.
+. "$(dirname "$0")/common.sh"
+PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
+
 GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
 if [ -n "$GIT_REPO" ]; then
     PROJECT=$(basename "$GIT_REPO")
@@ -94,7 +98,9 @@ jq -n -c \
     --argjson dirty "$GIT_DIRTY" \
     --arg recent_commits "$GIT_RECENT" \
     --argjson event_count "$SESSION_EVENT_COUNT" \
-    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count}' \
+    --arg parent_id "$PARENT_ID" \
+    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count}
+     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$LOG_FILE"
 
 # Build richer summary for changelog
@@ -115,7 +121,9 @@ jq -n -c \
     --arg deeplink "$DEEPLINK" \
     --arg summary "$RICH_SUMMARY" \
     --arg transcript "$TRANSCRIPT" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: []}' \
+    --arg parent_id "$PARENT_ID" \
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: []}
+     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)

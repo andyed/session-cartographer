@@ -32,6 +32,10 @@ else
     PROJECT=$(basename "$CWD")
 fi
 
+# Cross-event linkage: thread events into work-arcs.
+. "$(dirname "$0")/common.sh"
+PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
+
 case "$TOOL_NAME" in
   Edit|Write)
     FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
@@ -138,9 +142,11 @@ jq -n -c \
     --arg commit_type "${COMMIT_TYPE:-}" \
     --arg commit_url "${COMMIT_URL:-}" \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
+    --arg parent_id "$PARENT_ID" \
     '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape}
      + if $commit_type != "" then {commit_type: $commit_type} else {} end
-     + if $commit_url != "" then {commit_url: $commit_url} else {} end' \
+     + if $commit_url != "" then {commit_url: $commit_url} else {} end
+     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$LOG_FILE"
 
 # Write to unified changelog
@@ -155,8 +161,10 @@ jq -n -c \
     --arg transcript "$TRANSCRIPT" \
     --arg commit_type "${COMMIT_TYPE:-}" \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
+    --arg parent_id "$PARENT_ID" \
     '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: []}
-     + if $commit_type != "" then {commit_type: $commit_type} else {} end' \
+     + if $commit_type != "" then {commit_type: $commit_type} else {} end
+     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)

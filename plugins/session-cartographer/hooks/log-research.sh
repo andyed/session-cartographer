@@ -22,6 +22,10 @@ CHANGELOG="$DEV/changelog.jsonl"
 INPUT=$(cat)
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 
+# Cross-event linkage: thread events into work-arcs. Parent computed against
+# the unified changelog so chains can span event types in the same session.
+. "$(dirname "$0")/common.sh"
+
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
@@ -55,6 +59,8 @@ categorize_url() {
     esac
 }
 
+PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
+
 if [ "$TOOL_NAME" = "WebFetch" ]; then
     URL=$(echo "$INPUT" | jq -r '.tool_input.url // empty')
     PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty')
@@ -71,7 +77,9 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg cwd "$CWD" \
         --arg session "$SESSION_ID" \
         --arg transcript "$TRANSCRIPT" \
-        '{event_id: $eid, timestamp: $ts, type: $type, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}' \
+        --arg parent_id "$PARENT_ID" \
+        '{event_id: $eid, timestamp: $ts, type: $type, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$LOG_FILE"
 
     # Changelog envelope
@@ -83,7 +91,9 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg cwd "$CWD" \
         --arg summary "Fetched: $URL" \
         --arg transcript "$TRANSCRIPT" \
-        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}' \
+        --arg parent_id "$PARENT_ID" \
+        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$CHANGELOG"
 
 elif [ "$TOOL_NAME" = "WebSearch" ]; then
@@ -100,7 +110,9 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg cwd "$CWD" \
         --arg session "$SESSION_ID" \
         --arg transcript "$TRANSCRIPT" \
-        '{event_id: $eid, timestamp: $ts, type: $type, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}' \
+        --arg parent_id "$PARENT_ID" \
+        '{event_id: $eid, timestamp: $ts, type: $type, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript}
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$LOG_FILE"
 
     # Changelog envelope
@@ -112,7 +124,9 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg cwd "$CWD" \
         --arg summary "Search: $QUERY" \
         --arg transcript "$TRANSCRIPT" \
-        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}' \
+        --arg parent_id "$PARENT_ID" \
+        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: []}
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$CHANGELOG"
 
     # Extract result URLs from tool_response and log each as search_result
@@ -139,6 +153,9 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         ' 2>/dev/null | head -1)
 
         RESULT_EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
+        # Search results parent to the search event itself (intra-fanout linkage),
+        # which already lives in related_ids. parent_event_id keeps the cross-
+        # event chain coherent — set to the search event for the same reason.
         jq -n -c \
             --arg eid "$RESULT_EVENT_ID" \
             --arg ts "$TIMESTAMP" \
@@ -152,7 +169,7 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
             --arg session "$SESSION_ID" \
             --arg transcript "$TRANSCRIPT" \
             --arg parent "$SEARCH_EVENT_ID" \
-            '{event_id: $eid, timestamp: $ts, type: $type, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent]}' \
+            '{event_id: $eid, timestamp: $ts, type: $type, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent], parent_event_id: $parent}' \
             >> "$LOG_FILE"
     done
 fi
