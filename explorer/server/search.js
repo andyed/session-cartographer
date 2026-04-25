@@ -58,6 +58,91 @@ async function semanticSearch(query, { project, limit }) {
 }
 
 /**
+ * Parse a temporal argument (--since / --before equivalent for the API path).
+ * Mirrors scripts/cartographer-search.sh:parse_time_arg() — keep the two in sync.
+ *
+ * Accepts: natural phrases (today, yesterday, this morning/afternoon/evening,
+ * tonight, this hour, this/last week/month), relative durations (7d, 2h, 30m,
+ * 1w, 3mo, 1y), or absolute dates (2026-04-20, 2026-04-20T12:00:00).
+ * Returns epoch ms, or null on parse failure.
+ */
+export function parseTimeArg(arg) {
+  if (!arg) return null;
+  const norm = String(arg).toLowerCase().trim().replace(/\s+/g, ' ');
+  const now = new Date();
+
+  // Helpers: build local-time anchors
+  const atToday = (h, m = 0) => {
+    const d = new Date(now); d.setHours(h, m, 0, 0); return d.getTime();
+  };
+  const atYesterday = (h, m = 0) => {
+    const d = new Date(now); d.setDate(d.getDate() - 1); d.setHours(h, m, 0, 0); return d.getTime();
+  };
+  const atMonday = (offsetWeeks = 0) => {
+    const d = new Date(now);
+    const dow = d.getDay() || 7; // Sun=0 → 7 so Monday is dow=1
+    d.setDate(d.getDate() - (dow - 1) + offsetWeeks * 7);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const atFirstOfMonth = (offsetMonths = 0) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + offsetMonths, 1, 0, 0, 0, 0);
+    return d.getTime();
+  };
+
+  // Natural-language phrases
+  switch (norm) {
+    case 'today':
+    case 'this day':           return atToday(0);
+    case 'yesterday':
+    case 'last night':         return atYesterday(0);
+    case 'this morning':       return atToday(6);
+    case 'this afternoon':     return atToday(12);
+    case 'this evening':       return atToday(18);
+    case 'tonight':            return atToday(21);
+    case 'this hour': {
+      const d = new Date(now); d.setMinutes(0, 0, 0); return d.getTime();
+    }
+    case 'this week':          return atMonday(0);
+    case 'last week':          return atMonday(-1);
+    case 'this month':         return atFirstOfMonth(0);
+    case 'last month':         return atFirstOfMonth(-1);
+  }
+
+  // Relative duration: NUMBER + UNIT
+  const rel = arg.match(/^(\d+)(d|h|m|w|mo|y)$/);
+  if (rel) {
+    const num = parseInt(rel[1], 10);
+    const unitMs = { h: 3600e3, m: 60e3, d: 86400e3, w: 604800e3, mo: 2592000e3, y: 31536000e3 }[rel[2]];
+    return now.getTime() - num * unitMs;
+  }
+
+  // Absolute date (ISO-ish)
+  if (/^\d{4}-\d{2}-\d{2}/.test(arg)) {
+    const t = Date.parse(arg.length === 10 ? arg + 'T00:00:00' : arg);
+    if (!isNaN(t)) return t;
+  }
+  return null;
+}
+
+/**
+ * Extract epoch ms from an event's timestamp field. Mirrors applyTimeDecay's
+ * normalization. Returns null if the value cant be interpreted.
+ */
+function eventEpochMs(item) {
+  const rawTs = item.timestamp;
+  if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
+    const t = new Date(rawTs).getTime();
+    return isNaN(t) ? null : t;
+  }
+  if (rawTs) {
+    const num = Number(rawTs);
+    if (!isNaN(num)) return num > 1e12 ? num : num * 1000;
+  }
+  return null;
+}
+
+/**
  * Reciprocal Rank Fusion across two result lists.
  */
 function rrfFuse(list1, list1Source, list2, list2Source, limit) {
@@ -200,7 +285,7 @@ export function computeFacets(items) {
  * Run hybrid search: BM25 + optional Qdrant, fused via RRF.
  * Returns full fusion pool (up to 500) + facets. Client paginates.
  */
-export async function hybridSearch(index, query, { project = '' } = {}) {
+export async function hybridSearch(index, query, { project = '', sinceMs = null, beforeMs = null } = {}) {
   const FUSION_DEPTH = 500;
   // Always run BM25 and get full pool
   const bm25All = scoreBM25(index, query, { project });
@@ -221,6 +306,19 @@ export async function hybridSearch(index, query, { project = '' } = {}) {
     fusedItems = bm25All.items.map(r => ({ ...r.event, _score: r.score, _sources: 'keyword' }));
   } else {
     fusedItems = semanticAll.map(r => ({ ...r.event, _score: r.score, _sources: 'semantic' }));
+  }
+
+  // Temporal filter: --since / --before equivalent. Drop items outside the window.
+  // Items with no parseable timestamp are dropped when a filter is active —
+  // mirrors the CLI behaviour at scripts/cartographer-search.sh:rank_fuse.
+  if (sinceMs !== null || beforeMs !== null) {
+    fusedItems = fusedItems.filter(item => {
+      const ts = eventEpochMs(item);
+      if (ts === null) return false;
+      if (sinceMs !== null && ts < sinceMs) return false;
+      if (beforeMs !== null && ts > beforeMs) return false;
+      return true;
+    });
   }
 
   // Apply time-decay: Ebbinghaus-inspired recency weighting.

@@ -1,7 +1,7 @@
 import express from 'express';
 import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
-import { hybridSearch, computeFacets } from './search.js';
+import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
 import { statSync } from 'fs';
 import { resolve, normalize } from 'path';
 import { homedir } from 'os';
@@ -153,6 +153,25 @@ app.get('/api/coterms', (req, res) => {
 app.get('/api/search', async (req, res) => {
   const query = req.query.q || '';
   const project = req.query.project || '';
+  const since = req.query.since || '';
+  const before = req.query.before || '';
+
+  // Parse temporal filters — return 400 on unparseable input so callers get
+  // a clear error rather than silently broad results.
+  let sinceMs = null;
+  let beforeMs = null;
+  if (since) {
+    sinceMs = parseTimeArg(since);
+    if (sinceMs === null) {
+      return res.status(400).json({ error: `Cannot parse 'since' value '${since}'. Try '7d', 'today', 'this week', or '2026-04-20'.` });
+    }
+  }
+  if (before) {
+    beforeMs = parseTimeArg(before);
+    if (beforeMs === null) {
+      return res.status(400).json({ error: `Cannot parse 'before' value '${before}'. Try '7d', 'today', 'this week', or '2026-04-20'.` });
+    }
+  }
 
   // No query and no project filter — return empty
   if (!query.trim() && !project) {
@@ -164,14 +183,25 @@ app.get('/api/search', async (req, res) => {
 
   if (!query.trim() && project) {
     // Project-only filter: return recent events for that project (no BM25 needed)
-    const filtered = events
+    let filtered = events
       .filter(e => (e.project || '').toLowerCase().includes(project.toLowerCase()))
       .filter(isHighSignal);
+
+    // Apply temporal filter on the project-browse path too
+    if (sinceMs !== null || beforeMs !== null) {
+      filtered = filtered.filter(e => {
+        const ts = e.timestamp ? new Date(e.timestamp).getTime() : 0;
+        if (!ts || isNaN(ts)) return false;
+        if (sinceMs !== null && ts < sinceMs) return false;
+        if (beforeMs !== null && ts > beforeMs) return false;
+        return true;
+      });
+    }
 
     const allItems = filtered.slice(0, 500).map(e => ({ ...e, _score: 0, _sources: 'browse' }));
     results = { items: allItems, keywordCount: 0, semanticCount: 0, fusedCount: filtered.length, facets: computeFacets(allItems) };
   } else {
-    results = await hybridSearch(index, query, { project });
+    results = await hybridSearch(index, query, { project, sinceMs, beforeMs });
   }
 
   const duration = Date.now() - start;
