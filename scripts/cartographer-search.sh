@@ -21,7 +21,8 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since DURATION] [--before DURATION]}"
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN]
+       WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20}"
 shift
 
 LIMIT=15
@@ -48,13 +49,83 @@ while [ $# -gt 0 ]; do
 done
 
 # ─── Temporal filter: parse --since / --before to epoch seconds ───
-# Accepts:
+# Accepts (in priority order):
+#   - Natural phrases:    today, yesterday, this morning, this afternoon,
+#                         this evening, tonight, this week, last week,
+#                         this month, last month, this hour
 #   - Relative durations: 7d, 2h, 30m, 1w, 3mo (months ≈ 30d), 1y (years ≈ 365d)
-#   - Absolute dates: 2026-04-01, 2026-04-01T12:00:00
+#   - Absolute dates:     2026-04-01, 2026-04-01T12:00:00
 # Returns echoed epoch seconds, or empty on parse failure.
+#
+# Designed around Claude Codes 30-day transcript TTL — the meaningful
+# working window is sub-month, which is exactly where humans say "yesterday"
+# and "this afternoon" rather than "26h" or "1296000s ago".
 parse_time_arg() {
   local arg="$1"
   [ -z "$arg" ] && return 0
+
+  # Normalize: lowercase, collapse whitespace
+  local norm
+  norm=$(echo "$arg" | tr '[:upper:]' '[:lower:]' | tr -s ' ')
+
+  # ─── Natural-language phrases ───
+  # BSD date (macOS): -v adjusts components in-place. We zero H/M/S to get
+  # midnight, set H to a fixed hour for parts-of-day, or use -v-1d for
+  # yesterday. Linux fallback uses date -d "today 00:00" style strings.
+  case "$norm" in
+    today|"this day")
+      date -j -v0H -v0M -v0S +%s 2>/dev/null || date -d "today 00:00" +%s 2>/dev/null
+      return 0
+      ;;
+    yesterday|"last night")
+      date -j -v-1d -v0H -v0M -v0S +%s 2>/dev/null || date -d "yesterday 00:00" +%s 2>/dev/null
+      return 0
+      ;;
+    "this morning")
+      # Morning starts at 06:00 local time
+      date -j -v6H -v0M -v0S +%s 2>/dev/null || date -d "today 06:00" +%s 2>/dev/null
+      return 0
+      ;;
+    "this afternoon")
+      # Afternoon starts at 12:00 local time
+      date -j -v12H -v0M -v0S +%s 2>/dev/null || date -d "today 12:00" +%s 2>/dev/null
+      return 0
+      ;;
+    "this evening")
+      # Evening starts at 18:00 local time
+      date -j -v18H -v0M -v0S +%s 2>/dev/null || date -d "today 18:00" +%s 2>/dev/null
+      return 0
+      ;;
+    tonight)
+      # Tonight starts at 21:00 local time
+      date -j -v21H -v0M -v0S +%s 2>/dev/null || date -d "today 21:00" +%s 2>/dev/null
+      return 0
+      ;;
+    "this hour")
+      date -j -v0M -v0S +%s 2>/dev/null || date -d "$(date +%Y-%m-%dT%H:00:00)" +%s 2>/dev/null
+      return 0
+      ;;
+    "this week")
+      # Most recent Monday at 00:00. BSD: -v-mon goes to most recent Monday.
+      date -j -v-mon -v0H -v0M -v0S +%s 2>/dev/null || date -d "monday this week 00:00" +%s 2>/dev/null
+      return 0
+      ;;
+    "last week")
+      # Monday of previous week (this weeks Monday minus 7 days)
+      date -j -v-mon -v-7d -v0H -v0M -v0S +%s 2>/dev/null || date -d "monday last week 00:00" +%s 2>/dev/null
+      return 0
+      ;;
+    "this month")
+      # First of current month at 00:00
+      date -j -v1d -v0H -v0M -v0S +%s 2>/dev/null || date -d "$(date +%Y-%m-01) 00:00" +%s 2>/dev/null
+      return 0
+      ;;
+    "last month")
+      # First of previous month at 00:00
+      date -j -v-1m -v1d -v0H -v0M -v0S +%s 2>/dev/null || date -d "$(date -d 'last month' +%Y-%m-01) 00:00" +%s 2>/dev/null
+      return 0
+      ;;
+  esac
 
   # Relative duration: NUMBER + UNIT (d=day, h=hour, m=min, w=week, mo=month, y=year)
   if echo "$arg" | grep -qE '^[0-9]+(d|h|m|w|mo|y)$'; then
