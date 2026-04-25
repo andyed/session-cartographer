@@ -48,6 +48,18 @@ Results include faceted summaries (project, source, event type, time range). Use
 
 Beyond ~30 days, transcript files are deleted by Claude Codes default TTL — event-log results still surface but the "read the transcript" step (Step 3 below) will hit a missing file. When that happens, present the event metadata as the answer and note that full context isn't available.
 
+### Delta serving (automatic in-session)
+
+When you call `/remember` repeatedly in the same session, the script automatically suppresses event_ids that were returned in earlier calls — so each subsequent call surfaces *fresh* material rather than re-returning the same top-K. Activated whenever `$CLAUDE_SESSION_ID` is set (which it always is in skill context).
+
+If you actually need to re-cite an event from a prior call (the user is asking about something you already showed them), pass `--all` to bypass suppression for that single call:
+
+```bash
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<terms>" --all
+```
+
+To wipe the per-session served list entirely (rare; only when starting a genuinely fresh investigation): pass `--reset-served`.
+
 ## IMPORTANT: Use the search script
 
 Do NOT freestyle grep or jq commands. Always use the unified search script.

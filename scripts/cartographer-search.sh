@@ -21,8 +21,9 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN]
-       WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20}"
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--all] [--reset-served]
+       WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
+       Delta serving (auto when CLAUDE_SESSION_ID is set): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.}"
 shift
 
 LIMIT=15
@@ -30,6 +31,8 @@ FUSION_DEPTH=500
 PROJECT=""
 SINCE=""
 BEFORE=""
+ALL_MODE=0
+RESET_SERVED=0
 # Transcript fallback is expensive (turn-grouping awk runs per-query on raw
 # transcripts; one 100MB+ session can hang search for minutes). Qdrant
 # already holds turn-grouped embeddings for the semantic path, so the keyword
@@ -44,6 +47,8 @@ while [ $# -gt 0 ]; do
     --no-transcript)  INCLUDE_TRANSCRIPTS=0; shift ;;
     --since)          SINCE="$2"; shift 2 ;;
     --before)         BEFORE="$2"; shift 2 ;;
+    --all)            ALL_MODE=1; shift ;;
+    --reset-served)   RESET_SERVED=1; shift ;;
     *) shift ;;
   esac
 done
@@ -174,6 +179,30 @@ if [ -n "$BEFORE" ]; then
     echo "cartographer-search: --before '$BEFORE' could not be parsed (try '7d', '2h', '2026-04-01')" >&2
     exit 2
   fi
+fi
+
+# ─── Delta serving: per-session suppression of already-returned event_ids ───
+# When Claude calls /remember iteratively in one session, semantic similarity
+# is stable — call N+1 returns ~70% the same top-K events as call N. Wasted
+# tokens, no new signal. Delta serving suppresses already-shown event_ids
+# from subsequent calls so each /remember surfaces fresh material.
+#
+# Activated when CLAUDE_SESSION_ID is set (skill context) and --all is not.
+# The served-list file caps at the most recent 200 entries so old served IDs
+# eventually fall off and re-surface in fresh queries. --reset-served wipes
+# the per-session list. --all bypasses both reading and writing.
+SERVED_FILE=""
+SERVED_OUT=""
+if [ -n "$CLAUDE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
+  SERVED_DIR="${TMPDIR_BASE:-/tmp}/cartographer-served"
+  mkdir -p "$SERVED_DIR" 2>/dev/null
+  SERVED_FILE="$SERVED_DIR/$CLAUDE_SESSION_ID.txt"
+  if [ "$RESET_SERVED" -eq 1 ]; then
+    rm -f "$SERVED_FILE"
+    echo "(served-list reset for session $CLAUDE_SESSION_ID)" >&2
+  fi
+  touch "$SERVED_FILE" 2>/dev/null || SERVED_FILE=""
+  [ -n "$SERVED_FILE" ] && SERVED_OUT="$TMPDIR/served-this-call.txt"
 fi
 
 DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
@@ -370,7 +399,18 @@ rank_fuse_and_display() {
   # Input: TSV lines from all sources
   # Output: faceted summary of top 500, then detailed top N results
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
-      -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" '
+      -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
+      -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" '
+  BEGIN {
+    # Delta-serving: load already-served event_ids for this session
+    if (served_in != "") {
+      while ((getline served_line < served_in) > 0) {
+        if (served_line != "") served[served_line] = 1
+      }
+      close(served_in)
+    }
+    suppressed_count = 0
+  }
   # Parse an ISO 8601-ish timestamp (2026-03-29T14:30:00...) to epoch seconds.
   # Returns 0 if ts is empty, "?", or unparseable. Same arithmetic as the
   # time-decay block below — kept as a helper so the temporal filter and the
@@ -404,6 +444,17 @@ rank_fuse_and_display() {
       if (ts_epoch == 0) next
       if (since_epoch + 0 > 0 && ts_epoch < since_epoch + 0) next
       if (before_epoch + 0 > 0 && ts_epoch > before_epoch + 0) next
+    }
+
+    # ─── Delta-serving suppression ───
+    # Drop already-served event_ids so iterative /remember calls in the
+    # same session surface fresh material rather than re-returning the
+    # same top-K from the prior call. --all bypasses by leaving served
+    # empty. The suppression is at row-ingestion (before RRF) so the
+    # final ranking reflects only fresh events.
+    if (key in served) {
+      suppressed_count++
+      next
     }
 
     # RRF score: 1/(k + rank)
@@ -645,6 +696,18 @@ rank_fuse_and_display() {
       }
       printf "\n"
       shown++
+
+      # Delta-serving: record this displayed key so subsequent calls in
+      # the same session suppress it. Written to a file the shell wrapper
+      # appends into the per-session served-list with last-200 cap.
+      if (served_out != "") print k > served_out
+    }
+
+    # Surface a hint when delta-serving suppressed material so the user
+    # knows to use --all if they want to re-see it.
+    if (suppressed_count > 0) {
+      printf "(delta serving: %d already-shown result%s suppressed; --all to see)\n", \
+        suppressed_count, (suppressed_count == 1 ? "" : "s")
     }
 
     if (shown == 0) exit 1
@@ -685,6 +748,18 @@ fi
 
 cat "$TMPDIR/keyword_results.tsv" "$TMPDIR/semantic_results.tsv" | rank_fuse_and_display
 [ $? -eq 0 ] && FOUND=1
+
+# ─── Delta-serving: append this calls served keys to the per-session list ───
+# Capped at the most recent 200 unique entries so old served IDs eventually
+# fall off and re-surface in fresh queries.
+if [ -n "$SERVED_FILE" ] && [ -f "$SERVED_OUT" ]; then
+  cat "$SERVED_OUT" >> "$SERVED_FILE"
+  # Atomically rewrite with last-200 unique entries
+  if [ -s "$SERVED_FILE" ]; then
+    tail -200 "$SERVED_FILE" | awk '!seen[$0]++' > "$SERVED_FILE.tmp" 2>/dev/null \
+      && mv "$SERVED_FILE.tmp" "$SERVED_FILE"
+  fi
+fi
 
 # ─── Cold start guidance ───
 if [ "$FOUND" -eq 0 ]; then
