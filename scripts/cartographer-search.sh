@@ -224,6 +224,13 @@ FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
+# ─── Capture stdout so we can report context-window fill at the end ───
+# /remember and /focus pipe this output into Claude's context — surface
+# how much it costs, concisely. tee preserves live streaming to terminal.
+OUTPUT_CAPTURE="$TMPDIR/_output.txt"
+exec 3>&1
+exec 1> >(tee "$OUTPUT_CAPTURE" >&3)
+
 # ─── Query rewriting: wildcard expansion ───
 # "hallucinat*" → find all tokens starting with "hallucinat" in the logs,
 # then pass them as the query to BM25 (which does exact token matching).
@@ -786,3 +793,25 @@ fi
 
 echo ""
 echo "=== Done ==="
+
+# ─── Context-window fill report (concise) ───
+# Restore real stdout so the tee child can flush, then read the captured
+# byte count and print one-line token estimate. /remember and /focus both
+# pipe this into Claude's context; users want to see what it costs.
+exec 1>&3
+exec 3>&-
+sleep 0.05  # let tee flush
+if [ -s "$OUTPUT_CAPTURE" ]; then
+  chars=$(wc -c < "$OUTPUT_CAPTURE" | tr -d ' ')
+  # Rough English heuristic: 1 token ≈ 4 chars. Good to ±20% for prose;
+  # less accurate for dense JSON/code (more like 3 chars/token), but the
+  # purpose is order-of-magnitude awareness, not budget enforcement.
+  tokens=$((chars / 4))
+  if [ "$tokens" -ge 1000 ]; then
+    tokens_h=$(awk -v t="$tokens" 'BEGIN { printf "%.1fK", t/1000 }')
+  else
+    tokens_h="${tokens}"
+  fi
+  pct200k=$(awk -v t="$tokens" 'BEGIN { printf "%.1f", t*100/200000 }')
+  printf "(~%s tokens · ~%s%%/200K)\n" "$tokens_h" "$pct200k"
+fi
