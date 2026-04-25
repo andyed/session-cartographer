@@ -1,5 +1,47 @@
 # Session Cartographer — TODO
 
+## Memory research — borrowable ideas + benchmark context (added 2026-04-24)
+
+### Industry benchmark: LongMemEval (ICLR 2025)
+
+[arxiv 2410.10813](https://arxiv.org/abs/2410.10813) is the standard eval for long-term memory in chat assistants. 500 questions across **5 ability categories** embedded in scalable chat histories. Headline finding: commercial assistants + long-context LLMs drop **30% accuracy** at sustained-interaction length — empirical justification for purpose-built memory tooling.
+
+**Categories (and SC's current alignment):**
+- **Information extraction** — single-shot recall of an earlier fact. SC's hybrid BM25+semantic addresses this directly. Probably scores fine.
+- **Multi-session reasoning** — synthesizing across multiple past conversations. SC has no explicit cross-session join; relies on the LLM to stitch returned events. Gap.
+- **Knowledge updates** — handling facts that changed (user said X, then later said Y). SC's jsonl is append-only; "last write wins" is implicit but invisible to retrieval. Gap.
+- **Temporal reasoning** — "when did I tell you about Z?" SC has timestamps but no time-aware ranking, no `--since`/`--before` filters, no "what did I know on date X" as a first-class operation. **Highest-leverage gap for SC's actual use cases.**
+- **Abstention** — knowing not to answer when info isn't there. SC always returns top-K regardless of confidence floor. Gap.
+
+SC has never been benchmarked against LongMemEval. It probably shouldn't be the primary target since SC is *human-driven session search*, not *agent memory substrate* — but the benchmark categories are still the right diagnostic frame for where retrieval underperforms.
+
+### Borrowable ideas from MenteDB ([nambok/mentedb](https://github.com/nambok/mentedb))
+
+MenteDB is a Rust-native cognition-aware DB engine for AI agent memory. Different consumer (LLMs in a single forward pass, not humans browsing history), but several architectural choices map cleanly to SC's gaps. Each design choice below targets a specific LongMemEval failure mode.
+
+- **[ ] Temporal reasoning — `--since` / `--before` filters + recency-aware ranking.** *Andy's first pick (2026-04-24).* Time-window filtering as a first-class CLI + Explorer concept. Recency boost in RRF formula (small weight, time-decayed score). Time-aware query rewriting in `/remember` ("last week" → `--since 7d`). Targets the LongMemEval temporal-reasoning category.
+- **[ ] Delta serving — track what `/remember` already returned in this session, only send what's new on subsequent calls.** MenteDB claims ~90% retrieval-token reduction across multi-turn conversations. For SC: maintain a per-session bloom filter or LRU of returned event_ids; default `/remember` filters those out unless `--all` requested. Targets multi-session reasoning + token economy.
+- **[ ] U-curve context assembly — when `/remember` returns N results, place highest-confidence at start AND end of the returned block, supporting context in middle.** Research-backed: that's how transformer attention actually works (Liu et al. "Lost in the Middle"). Cheap reorder, no new data, real comprehension delta.
+- **[ ] Phantom detection — when a `/remember` query mentions an entity SC has zero info on, flag the gap rather than return weak top-K matches.** Auto-memory hooks could emit these as "knowledge to capture next session" signals. Targets LongMemEval abstention category — answers "is the gap because the question is bad, or because we genuinely don't know?"
+- **[ ] Pain signals + emotional valence on auto-memory feedback entries.** Existing `feedback_*.md` memories already encode "this approach failed" lessons. Extending with explicit decay (exponential, recent pain weighted higher) and surfacing them via spreading activation would be a small change with big "last time you tried X, here's what broke" payoff. SC adjacent — most relevant in Andy's auto-memory layer.
+- **[ ] Knowledge-update edges — when a memory is contradicted or superseded, mark it (Supersedes / Contradicts edge equivalent) so retrieval can suppress stale beliefs without losing them.** Jsonl is append-only, so "edges" are virtual. Could be implemented as a sidecar `event_relations.jsonl` consumed at query time. Targets knowledge-update category. Larger scope.
+
+### Vision-stage MenteDB ideas (track, don't build)
+
+Aspirational research targets in MenteDB's `VISION.md`. None are shipping; worth knowing as adjacent design space:
+
+- **Dream Engine** — background analogical recombination across memory clusters; "your deployment pattern is structurally identical to your migration pattern."
+- **Emergent Identity** — periodic full-corpus analysis to extract "this agent prefers X / strongest in A / weakest in B" statements.
+- **Reconstructive Memory** — same underlying memories produce different context for debugging vs. planning vs. reflecting modes.
+- **Spreading Activation** — accessing one memory temporarily boosts related memories in the graph (Python → Django → web framework → deployment). Closest of the four to something SC could prototype on its existing event graph.
+- **Cognitive mode awareness** — query mode biases retrieval (debug mode surfaces errors aggressively; creative surfaces analogies; review surfaces contradictions).
+
+### Open question for SC's strategic scope
+
+If SC's role expands from "human session search" to "Claude's primary memory while in a long conversation," LongMemEval becomes the actual benchmark. Worth a sandbox test against a single project (Psychodeli or muriel) where MenteDB's ingestion/retrieval is compared to `/remember`'s on the same questions, to size the gap.
+
+---
+
 ## Explorer UI
 - [ ] Facet brushing — hover pill → non-matching results collapse to colored pixel bars
 - [ ] Contrast audit — enforce minimum gray-300 for readable text, gray-400 for info
