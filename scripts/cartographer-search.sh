@@ -21,19 +21,89 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N]}"
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since DURATION] [--before DURATION]}"
 shift
 
 LIMIT=15
 FUSION_DEPTH=500
 PROJECT=""
+SINCE=""
+BEFORE=""
+# Transcript fallback is expensive (turn-grouping awk runs per-query on raw
+# transcripts; one 100MB+ session can hang search for minutes). Qdrant
+# already holds turn-grouped embeddings for the semantic path, so the keyword
+# transcript fallback stays off by default. Pass --transcript to opt in when
+# semantic is unavailable or the query is a grep-style needle.
+INCLUDE_TRANSCRIPTS=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --project)  PROJECT="$2"; shift 2 ;;
-    --limit)    LIMIT="$2"; shift 2 ;;
+    --project)        PROJECT="$2"; shift 2 ;;
+    --limit)          LIMIT="$2"; shift 2 ;;
+    --transcript)     INCLUDE_TRANSCRIPTS=1; shift ;;
+    --no-transcript)  INCLUDE_TRANSCRIPTS=0; shift ;;
+    --since)          SINCE="$2"; shift 2 ;;
+    --before)         BEFORE="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
+
+# ─── Temporal filter: parse --since / --before to epoch seconds ───
+# Accepts:
+#   - Relative durations: 7d, 2h, 30m, 1w, 3mo (months ≈ 30d), 1y (years ≈ 365d)
+#   - Absolute dates: 2026-04-01, 2026-04-01T12:00:00
+# Returns echoed epoch seconds, or empty on parse failure.
+parse_time_arg() {
+  local arg="$1"
+  [ -z "$arg" ] && return 0
+
+  # Relative duration: NUMBER + UNIT (d=day, h=hour, m=min, w=week, mo=month, y=year)
+  if echo "$arg" | grep -qE '^[0-9]+(d|h|m|w|mo|y)$'; then
+    local num unit secs
+    num=$(echo "$arg" | sed -E 's/^([0-9]+).*/\1/')
+    unit=$(echo "$arg" | sed -E 's/^[0-9]+(.*)$/\1/')
+    case "$unit" in
+      h)  secs=$((num * 3600)) ;;
+      m)  secs=$((num * 60)) ;;
+      d)  secs=$((num * 86400)) ;;
+      w)  secs=$((num * 604800)) ;;
+      mo) secs=$((num * 2592000)) ;;     # ~30d
+      y)  secs=$((num * 31536000)) ;;    # ~365d
+      *)  return 0 ;;
+    esac
+    echo $(( $(date +%s) - secs ))
+    return 0
+  fi
+
+  # Absolute date — try BSD date first (macOS), then GNU date (Linux)
+  if echo "$arg" | grep -qE '^[0-9]{4}-[0-9]{2}-[0-9]{2}'; then
+    local epoch
+    # BSD date (macOS): -j -f format input +%s
+    epoch=$(date -j -f '%Y-%m-%dT%H:%M:%S' "${arg}T00:00:00" +%s 2>/dev/null || \
+            date -j -f '%Y-%m-%d' "$arg" +%s 2>/dev/null || \
+            date -j -f '%Y-%m-%dT%H:%M:%S' "$arg" +%s 2>/dev/null || \
+            date -d "$arg" +%s 2>/dev/null)
+    [ -n "$epoch" ] && echo "$epoch"
+    return 0
+  fi
+  return 0
+}
+
+SINCE_EPOCH=""
+BEFORE_EPOCH=""
+if [ -n "$SINCE" ]; then
+  SINCE_EPOCH=$(parse_time_arg "$SINCE")
+  if [ -z "$SINCE_EPOCH" ]; then
+    echo "cartographer-search: --since '$SINCE' could not be parsed (try '7d', '2h', '2026-04-01')" >&2
+    exit 2
+  fi
+fi
+if [ -n "$BEFORE" ]; then
+  BEFORE_EPOCH=$(parse_time_arg "$BEFORE")
+  if [ -z "$BEFORE_EPOCH" ]; then
+    echo "cartographer-search: --before '$BEFORE' could not be parsed (try '7d', '2h', '2026-04-01')" >&2
+    exit 2
+  fi
+fi
 
 DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
@@ -176,10 +246,11 @@ grep_jsonl_to_tsv() {
 grep_transcripts_to_tsv() {
   [ -d "$TRANSCRIPTS" ] || return 0
 
+  # Per-line grep, no turn-grouping, no BM25. Turn-extraction is an
+  # indexing-layer concern (Qdrant embeddings); the CLI keyword path is
+  # a plain needle-finder of last resort. Opt-in via --transcript only.
   local matched_files=0
-  local script_dir="$(dirname "$0")"
 
-  # Bulk grep all transcripts in one shot to eliminate thousands of slow bash/grep subprocesses (drops latency from 24s to <1s)
   while IFS= read -r transcript; do
     [ -z "$transcript" ] && continue
 
@@ -188,29 +259,26 @@ grep_transcripts_to_tsv() {
     session_file=$(basename "$transcript")
     session_id="${session_file%.jsonl}"
 
-    # Project filter
     if [ -n "$PROJECT" ]; then
       echo "$project_dir" | grep -qi "$PROJECT" || continue
     fi
 
     matched_files=$((matched_files + 1))
 
-    # Turn-group the transcript so BM25 scores conversation turns, not
-    # individual JSONL lines. This keeps user/assistant exchanges together
-    # — a question and its resolution appear in the same document.
-    local turns_file="$TMPDIR/turns-${session_id}.jsonl"
-    awk -f "$script_dir/transcript-to-turns.awk" \
-      -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" \
-      "$transcript" > "$turns_file" 2>/dev/null
-
-    [ ! -s "$turns_file" ] && continue
-
-    # Score turns as regular event records. `src=transcript-turn` bypasses
-    # the legacy per-line transcript branch in bm25-search.awk; the turn
-    # JSONL already exposes summary/event_id/timestamp in event-log shape.
-    awk -f "$script_dir/bm25-search.awk" \
-      -v query="$AWK_QUERY" -v src="transcript-turn" -v proj_filter="$PROJECT" \
-      "$turns_file" "$turns_file" 2>/dev/null | head -$((LIMIT * 2))
+    LC_ALL=C grep -niE "$GREP_QUERY" "$transcript" 2>/dev/null | head -20 | \
+      awk -F: -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" '
+        {
+          lineno = $1
+          content = $2
+          for (i = 3; i <= NF; i++) content = content ":" $i
+          gsub(/\t/, " ", content)
+          gsub(/[[:cntrl:]]/, " ", content)
+          if (length(content) > 300) content = substr(content, 1, 300) "..."
+          printf "transcript\t%d\ttranscript-%s-%d\t?\t%s\t%s\t%s\t%s\n", \
+            NR, sid, lineno, proj, content, \
+            "session:" sid "|transcript:" tpath, "transcript"
+        }
+      '
 
     if [ "$matched_files" -ge 20 ]; then
       echo "(showing top 20 matching transcripts)" >&2
@@ -218,10 +286,8 @@ grep_transcripts_to_tsv() {
     fi
   done < <(
     if command -v rg >/dev/null 2>&1; then
-      # ripgrep: fast, unicode-safe, parallelized
       rg -l "$GREP_QUERY" "$TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null | head -20
     else
-      # grep fallback: no LC_ALL=C (breaks on multibyte), slower but correct
       find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
     fi
   )
@@ -232,9 +298,42 @@ rank_fuse_and_display() {
   # RRF with k=60 (standard constant)
   # Input: TSV lines from all sources
   # Output: faceted summary of top 500, then detailed top N results
-  awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" '
+  awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
+      -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" '
+  # Parse an ISO 8601-ish timestamp (2026-03-29T14:30:00...) to epoch seconds.
+  # Returns 0 if ts is empty, "?", or unparseable. Same arithmetic as the
+  # time-decay block below — kept as a helper so the temporal filter and the
+  # decay scorer stay in sync.
+  function ts_to_epoch(ts,    y, mo, da, h, mi, days_from_year, mdays, days_from_month, total_days) {
+    if (ts == "" || ts == "?") return 0
+    y = substr(ts, 1, 4) + 0
+    if (y < 1970 || y > 2100) return 0
+    mo = substr(ts, 6, 2) + 0
+    da = substr(ts, 9, 2) + 0
+    h = substr(ts, 12, 2) + 0
+    mi = substr(ts, 15, 2) + 0
+    days_from_year = (y - 1970) * 365 + int((y - 1969) / 4)
+    split("0,31,59,90,120,151,181,212,243,273,304,334", mdays, ",")
+    days_from_month = mdays[mo] + 0
+    if (mo > 2 && y % 4 == 0) days_from_month++
+    total_days = days_from_year + days_from_month + da - 1
+    return total_days * 86400 + h * 3600 + mi * 60
+  }
+
   {
     src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7; etype = $8
+
+    # ─── Temporal filter: --since / --before ───
+    # When either is set, drop rows outside the window. Records with no
+    # parseable timestamp (transcripts emit "?") are dropped when a temporal
+    # filter is active — we cant honour the filter for them, and including
+    # them would silently leak unbounded results.
+    if (since_epoch + 0 > 0 || before_epoch + 0 > 0) {
+      ts_epoch = ts_to_epoch(ts)
+      if (ts_epoch == 0) next
+      if (since_epoch + 0 > 0 && ts_epoch < since_epoch + 0) next
+      if (before_epoch + 0 > 0 && ts_epoch > before_epoch + 0) next
+    }
 
     # RRF score: 1/(k + rank)
     score = 1.0 / (60 + rank)
@@ -487,13 +586,13 @@ echo "=== Searching for: \"$QUERY\" ==="
 [ -n "$PROJECT" ] && echo "=== Project filter: $PROJECT ==="
 echo ""
 
-# Collect keyword results from all JSONL sources + transcripts
+# Collect keyword results from all JSONL sources + (optionally) transcripts
 keyword_search() {
   grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
   grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
   grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
   grep_jsonl_to_tsv "$DEV/tool-use-log.jsonl" "tool-use"
-  grep_transcripts_to_tsv
+  [ "$INCLUDE_TRANSCRIPTS" = "1" ] && grep_transcripts_to_tsv
 }
 
 # Phase 1 & 2: Run keyword and semantic searches in parallel
@@ -535,7 +634,7 @@ if [ "$FOUND" -eq 0 ]; then
     echo "To search raw session transcripts now:"
     echo "  grep -r -i \"$QUERY\" $TRANSCRIPTS/ --include='*.jsonl' -l"
   else
-    echo "Try broader keywords or check transcripts with --project filter."
+    echo "Try broader keywords, --project filter, or --transcript to search raw session text."
   fi
 fi
 
