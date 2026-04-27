@@ -1,49 +1,89 @@
 {
-  "hooks": [
-    {
-      "event": "PostToolUse",
-      "match_tool_name": "WebFetch",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh",
-      "async": true
-    },
-    {
-      "event": "PostToolUse",
-      "match_tool_name": "WebSearch",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh",
-      "async": true
-    },
-    {
-      "event": "PreCompact",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
-      "async": true
-    },
-    {
-      "event": "SessionEnd",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
-      "async": true
-    },
-    {
-      "event": "SubagentStop",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
-      "async": true
-    },
-    {
-      "event": "PostToolUse",
-      "match_tool_name": "Edit",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
-      "async": true
-    },
-    {
-      "event": "PostToolUse",
-      "match_tool_name": "Write",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
-      "async": true
-    },
-    {
-      "event": "PostToolUse",
-      "match_tool_name": "Bash",
-      "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
-      "async": true
-    }
-  ]
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "WebFetch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "WebSearch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
+            "async": true
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
 }
