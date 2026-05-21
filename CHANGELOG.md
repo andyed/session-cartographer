@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.0 — 2026-05-20
+
 ### feat(intent): prompt-intent classification for transcript turns
 
 Every transcript turn opened by a human prompt is now classified into one of 17 intent categories (bug-fixes, research, planning-strategy, deploy-release, …). The intent is stored on the Qdrant turn payload and is searchable as both a filter and a facet.
