@@ -20,6 +20,7 @@ import path from 'path';
 import readline from 'readline';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { classifyPromptIntent } from './classify-prompt-intent.js';
 
 // Feature flag — checked once at startup
 const DEVTOOLS_PARSER = process.env.DEVTOOLS_PARSER === 'true' || process.env.DEVTOOLS_PARSER === '1';
@@ -83,6 +84,7 @@ async function processTranscript(filePath) {
     let turnIdx = 0;
     let turnStarted = false;
     let turnText = '';
+    let turnPrompt = '';
     let turnTimestamp = null;
     let turnCwd = '';
     const TURN_BODY_MAX = 200000;
@@ -91,7 +93,7 @@ async function processTranscript(filePath) {
         if (!turnStarted) return;
         const body = turnText.length > TURN_BODY_MAX ? turnText.slice(0, TURN_BODY_MAX) : turnText;
         if (body.trim().length > 5) {
-            sendToQdrant({
+            const payload = {
                 event_id: `turn-${sessionId}-${turnIdx}`,
                 timestamp: turnTimestamp,
                 project: projectFromCwd(turnCwd) || projectDir,
@@ -101,9 +103,18 @@ async function processTranscript(filePath) {
                 transcript_path: filePath,
                 session: sessionId,
                 turn_idx: turnIdx
-            });
+            };
+            // Tag the turn with the human's prompt intent so search and the
+            // Explorer can facet by intent. Only the user's own text drives
+            // classification — turns started by a bare tool_result carry no
+            // prompt and stay untagged.
+            if (turnPrompt.trim()) {
+                payload.prompt_intent = classifyPromptIntent(turnPrompt).key;
+            }
+            sendToQdrant(payload);
         }
         turnText = '';
+        turnPrompt = '';
     };
 
     for await (const line of rl) {
@@ -154,6 +165,13 @@ async function processTranscript(filePath) {
 
                 if (textContent) {
                     turnText += (turnText ? ' ' : '') + textContent;
+                }
+
+                // Capture the human's prompt that opened this turn (each user
+                // message starts a fresh turn). tool_result-only user messages
+                // yield no text and leave turnPrompt empty.
+                if (entry.type === 'user' && !turnPrompt && textContent) {
+                    turnPrompt = textContent;
                 }
             }
 

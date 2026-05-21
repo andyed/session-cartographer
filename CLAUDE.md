@@ -31,6 +31,9 @@ scripts/
   backfill-memories.sh          — Index Claude Code memory files
   retro-index.sh                — Backfill historical transcripts into Qdrant (turn-grouped)
   reconstruct-history.js        — Deep transcript analysis for backfill (turn-grouped)
+  classify-prompt-intent.js     — Rule-based prompt-intent classifier (17 categories, zero-dep)
+  backfill-prompt-intents.js    — Tag already-indexed turns with prompt_intent (payload-only, no re-embed)
+  prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
 project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)

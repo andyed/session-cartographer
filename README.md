@@ -72,6 +72,12 @@ bash scripts/retro-index.sh --limit-days 30
 
 # Deep reconstruction — extracts tool_use blocks, synthesizes research events
 node scripts/reconstruct-history.js
+
+# Tag indexed transcript turns with a prompt-intent (run after the Qdrant
+# backfills above) — enables `cartographer-search.sh --intent KEY` and the
+# intents facet. reconstruct-history.js already tags turns it indexes itself;
+# this catches turns indexed before intent classification was added.
+node scripts/backfill-prompt-intents.js
 ```
 
 ## Footprint

@@ -18,12 +18,18 @@
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
 #   CARTOGRAPHER_COLLECTION      — default: session-cartographer
 #   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~30-day half-life)
+#
+# --intent KEY restricts results to transcript turns tagged with a given
+# prompt-intent (see classify-prompt-intent.js for the 17 keys). Intent lives
+# only on Qdrant turn points, so --intent runs semantic-only — the keyword
+# JSONL logs carry no intent and are skipped when it is set.
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--all] [--reset-served] [--thread EVENT_ID]
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--all] [--reset-served] [--thread EVENT_ID]
        WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when CLAUDE_SESSION_ID is set): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
+       --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).}"
 shift
 
@@ -32,6 +38,7 @@ FUSION_DEPTH=500
 PROJECT=""
 SINCE=""
 BEFORE=""
+INTENT=""
 ALL_MODE=0
 RESET_SERVED=0
 THREAD_ID=""
@@ -49,6 +56,7 @@ while [ $# -gt 0 ]; do
     --no-transcript)  INCLUDE_TRANSCRIPTS=0; shift ;;
     --since)          SINCE="$2"; shift 2 ;;
     --before)         BEFORE="$2"; shift 2 ;;
+    --intent)         INTENT="$2"; shift 2 ;;
     --all)            ALL_MODE=1; shift ;;
     --reset-served)   RESET_SERVED=1; shift ;;
     --thread)         THREAD_ID="$2"; shift 2 ;;
@@ -184,6 +192,21 @@ if [ -n "$BEFORE" ]; then
   fi
 fi
 
+# ─── Validate --intent against the known prompt-intent keys ───
+# Keys mirror classify-prompt-intent.js. A typo would otherwise just yield an
+# empty Qdrant filter result — fail loud instead, listing the valid options.
+VALID_INTENTS="feature-design implementation bug-fixes git-commands deploy-release run-build-app code-review-qa planning-strategy research documentation testing-verification refactor-cleanup content-creation data-analysis feedback-context plan-approvals other"
+if [ -n "$INTENT" ]; then
+  case " $VALID_INTENTS " in
+    *" $INTENT "*) ;;
+    *)
+      echo "cartographer-search: --intent '$INTENT' is not a known prompt-intent key." >&2
+      echo "  valid keys: $VALID_INTENTS" >&2
+      exit 2
+      ;;
+  esac
+fi
+
 # ─── Delta serving: per-session suppression of already-returned event_ids ───
 # When Claude calls /remember iteratively in one session, semantic similarity
 # is stable — call N+1 returns ~70% the same top-K events as call N. Wasted
@@ -290,20 +313,31 @@ semantic_search_to_tsv() {
 
   local search_body
   local depth=$FUSION_DEPTH
+
+  # Build the Qdrant filter as a "must" array, appending one condition per
+  # active facet (project, intent). A multi-project alias becomes a nested
+  # should-group; a single project / intent is a plain match. No facets → no
+  # filter key at all.
+  local must_conditions="[]"
   if [ -n "$PROJECT" ]; then
-    # Build Qdrant filter: single project uses match, multi-project alias uses should
     if echo "$PROJECT" | grep -q '|'; then
-      local qdrant_filter
-      qdrant_filter=$(echo "$PROJECT" | tr '|' '\n' | jq -R '{key: "project", match: {value: .}}' | jq -sc '{must: [{should: .}]}')
-      search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --argjson f "$qdrant_filter" \
-        '{vector: $v, limit: $l, with_payload: true, filter: $f}')
+      local proj_should
+      proj_should=$(echo "$PROJECT" | tr '|' '\n' | jq -R '{key: "project", match: {value: .}}' | jq -sc '{should: .}')
+      must_conditions=$(echo "$must_conditions" | jq -c --argjson g "$proj_should" '. + [$g]')
     else
-      search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --arg p "$PROJECT" \
-        '{vector: $v, limit: $l, with_payload: true, filter: {must: [{key: "project", match: {value: $p}}]}}')
+      must_conditions=$(echo "$must_conditions" | jq -c --arg p "$PROJECT" '. + [{key: "project", match: {value: $p}}]')
     fi
-  else
+  fi
+  if [ -n "$INTENT" ]; then
+    must_conditions=$(echo "$must_conditions" | jq -c --arg i "$INTENT" '. + [{key: "prompt_intent", match: {value: $i}}]')
+  fi
+
+  if [ "$must_conditions" = "[]" ]; then
     search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" \
       '{vector: $v, limit: $l, with_payload: true}')
+  else
+    search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --argjson m "$must_conditions" \
+      '{vector: $v, limit: $l, with_payload: true, filter: {must: $m}}')
   fi
 
   local results
@@ -330,6 +364,7 @@ semantic_search_to_tsv() {
     (if .value.payload.transcript_path and .value.payload.transcript_path != "" then "transcript:" + .value.payload.transcript_path + "|" else "" end) +
     (if .value.payload.cwd and .value.payload.cwd != "" then "cwd:" + .value.payload.cwd + "|" else "" end) +
     (if .value.payload.session then "session:" + .value.payload.session + "|" else "" end) +
+    (if .value.payload.prompt_intent and .value.payload.prompt_intent != "" then "intent:" + .value.payload.prompt_intent + "|" else "" end) +
     "\t" +
     (.value.payload.type // (if (.value.payload.event_id // "") | startswith("git-") then "git_commit" else "?" end)) +
     "\t" +
@@ -562,6 +597,7 @@ rank_fuse_and_display() {
       delete proj_count
       delete src_count
       delete type_count
+      delete intent_count
       delete time_bucket
       delete day_bucket
       oldest = ""; newest = ""
@@ -581,6 +617,13 @@ rank_fuse_and_display() {
         # Event type facet
         et = etype_map[k]
         if (et != "" && et != "?") type_count[et]++
+
+        # Prompt-intent facet — pull intent:<key> out of the extras bag.
+        # Only transcript turns (post-backfill) carry one; other rows skip.
+        if (match(extra[k], /intent:[a-z][a-z-]*/)) {
+          iv = substr(extra[k], RSTART + 7, RLENGTH - 7)
+          if (iv != "") intent_count[iv]++
+        }
 
         # Time buckets: YYYY-MM (monthly) and YYYY-MM-DD (daily for recent)
         t = timestamp[k]
@@ -635,6 +678,26 @@ rank_fuse_and_display() {
       }
       if (nt > 8) printf ", +%d more", nt - 8
       printf "\n"
+
+      # Prompt-intent distribution (transcript turns only; sorted descending)
+      nin = 0
+      for (iv in intent_count) { nin++; innames[nin] = iv; incounts[nin] = intent_count[iv] }
+      for (i = 2; i <= nin; i++) {
+        tk = innames[i]; tv = incounts[i]; j = i - 1
+        while (j >= 1 && incounts[j] < tv) {
+          innames[j+1] = innames[j]; incounts[j+1] = incounts[j]; j--
+        }
+        innames[j+1] = tk; incounts[j+1] = tv
+      }
+      if (nin > 0) {
+        printf "  intents:  "
+        for (i = 1; i <= nin && i <= 8; i++) {
+          if (i > 1) printf ", "
+          printf "%s(%d)", innames[i], incounts[i]
+        }
+        if (nin > 8) printf ", +%d more", nin - 8
+        printf "\n"
+      }
 
       # Source distribution
       printf "  sources:  "
@@ -856,6 +919,10 @@ echo ""
 
 # Collect keyword results from all JSONL sources + (optionally) transcripts
 keyword_search() {
+  # --intent is a transcript-turn facet that only exists on Qdrant points.
+  # The JSONL event logs carry no intent, so honouring --intent means going
+  # semantic-only — emit nothing here rather than leaking unfiltered rows.
+  [ -n "$INTENT" ] && return 0
   grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
   grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
   grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
