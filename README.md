@@ -11,6 +11,7 @@ Searchable memory for Claude Code. Hooks capture every URL fetched, file edited,
 - **`/remember`** — Ask Claude to recall past decisions, research, fixes. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a searchable milestone event. Invoke before ending a productive session.
+- **`/investigate`** — Diagnosis gate for bug work. Forces a written root-cause hypothesis (cause + mechanism + disproof) before any fix code, and logs it as a searchable event for later recall.
 - **Faceted search** — Server computes distributions over the top 500 fused results. Filter by project, event type (fetch/search/commit/edit/bash), and match source (keyword/semantic). Client-side filtering, URL-persisted state.
 - **Hybrid ranking** — BM25 keyword scoring + Qdrant semantic similarity, merged via RRF (k=60). Graceful degradation — keyword-only if Qdrant isn't running.
 
@@ -48,6 +49,7 @@ Session Cartographer is installed. Skills:
 - `/focus <project>` — orient on a project before diving in
 - `/carto` — open the Explorer web app for visual browsing
 - `/wrapup` — end-of-session synthesis (decisions, discoveries, next steps)
+- `/investigate <bug>` — root-cause diagnosis gate before writing fix code
 
 When you need context from a previous conversation, use `/remember`. The skill
 runs BM25 + RRF search across event logs and transcripts. Read the transcript
