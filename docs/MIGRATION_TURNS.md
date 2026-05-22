@@ -43,6 +43,8 @@ Restrict the window with `--limit-days 30` or `--project <name>` if you want a s
 
 **Expected throughput:** ~10 seconds per substantive session. A 30-day window is 5–30 minutes depending on session size. Full history can be multi-hour — run it overnight.
 
+**Interrupted?** Just rerun the same command. `retro-index.sh` checkpoints each finished session to `$CARTOGRAPHER_DEV_DIR/.carto/retro-index-progress` and skips it on the next run, so a killed backfill resumes where it stopped — only the interrupted session onward is reprocessed. Pass `--fresh` to clear the checkpoint and reindex from scratch.
+
 ### 3. (Optional) Refresh the rich reconstruction
 
 ```bash
