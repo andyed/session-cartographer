@@ -3,6 +3,10 @@
  * Graceful degradation — returns keyword-only if Qdrant/embeddings are down.
  */
 
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
 import { scoreBM25 } from './bm25.js';
 
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
@@ -11,6 +15,14 @@ const EMBED_MODEL = process.env.CARTOGRAPHER_EMBED_MODEL || 'mxbai-embed-large';
 const COLLECTION = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
 const RRF_K = 60;
 const DECAY_LAMBDA = parseFloat(process.env.CARTOGRAPHER_DECAY_LAMBDA || '0.001');
+
+// Promote-on-reuse access ledger — written by the CLI's --touch when /remember
+// actually reads the transcript behind a result. Mirrors the activation layer
+// in scripts/cartographer-search.sh:rank_fuse_and_display (the canonical
+// implementation); keep the two in sync.
+const ACCESS_LEDGER = process.env.CARTOGRAPHER_ACCESS_LEDGER ||
+  join(process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev'), 'access-ledger.jsonl');
+const REUSE_WEIGHT = parseFloat(process.env.CARTOGRAPHER_REUSE_WEIGHT || '0.3');
 
 /**
  * Get embedding vector for a query string.
@@ -181,28 +193,77 @@ function rrfFuse(list1, list1Source, list2, list2Source, limit) {
 }
 
 /**
- * Apply Ebbinghaus-inspired time decay to fused results.
- * score *= exp(-lambda * hours_since_event)
- * Gently favors recent results without eliminating old ones.
+ * Aggregate the access ledger: event_id → { n, lastMs, sum } where sum is the
+ * ACT-R-style frequency term Σ 1/sqrt(days_since_access). Re-read per query —
+ * the ledger is tiny, the server is long-running, and the sums are
+ * time-varying (an access counts less as it ages), so caching would freeze
+ * them. Missing or unreadable ledger → empty map → no behavior change.
  */
-function applyTimeDecay(items, lambda) {
-  if (lambda <= 0) return items;
+function loadAccessLedger() {
+  const map = new Map();
+  let raw;
+  try {
+    raw = readFileSync(ACCESS_LEDGER, 'utf8');
+  } catch {
+    return map;
+  }
+  const now = Date.now();
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let rec;
+    try { rec = JSON.parse(line); } catch { continue; }
+    const id = rec.event_id;
+    const ts = Date.parse(rec.timestamp || '');
+    if (!id || isNaN(ts)) continue;
+    // Floor ~30min — guards div-by-zero and clock skew
+    const days = Math.max(0.02, (now - ts) / 86400e3);
+    const entry = map.get(id) || { n: 0, lastMs: 0, sum: 0 };
+    entry.n += 1;
+    entry.lastMs = Math.max(entry.lastMs, ts);
+    entry.sum += 1 / Math.sqrt(days);
+    map.set(id, entry);
+  }
+  return map;
+}
+
+/**
+ * Apply activation: Ebbinghaus time-decay + promote-on-reuse.
+ * score *= exp(-lambda * hours_since_last_use) * reuse_boost
+ *
+ * "Last use" is the event timestamp or the most recent recorded access,
+ * whichever is newer — reuse refreshes recency. reuse_boost =
+ * 1 + REUSE_WEIGHT * Σ 1/sqrt(days_since_access), capped at 2.0 so reuse
+ * breaks ties without overpowering relevance. Events with no recorded
+ * access score exactly as before. Mirrors the awk activation block in
+ * scripts/cartographer-search.sh — keep the two in sync.
+ */
+function applyActivation(items, lambda) {
+  const accesses = REUSE_WEIGHT > 0 ? loadAccessLedger() : new Map();
+  if (lambda <= 0 && accesses.size === 0) return items;
   const now = Date.now();
   for (const item of items) {
-    const rawTs = item.timestamp;
-    let epoch = 0;
-    if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
-      epoch = new Date(rawTs).getTime();
-    } else if (rawTs) {
-      const num = Number(rawTs);
-      if (!isNaN(num)) epoch = num > 1e12 ? num : num * 1000;
+    const acc = accesses.get(item.event_id);
+    if (acc) {
+      item._score *= Math.min(2.0, 1 + REUSE_WEIGHT * acc.sum);
+      item._reuseCount = acc.n;
     }
-    if (epoch > 0) {
-      const hours = (now - epoch) / 3600000;
-      item._score *= Math.exp(-lambda * Math.max(0, hours));
+    if (lambda > 0) {
+      const rawTs = item.timestamp;
+      let epoch = 0;
+      if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
+        epoch = new Date(rawTs).getTime();
+      } else if (rawTs) {
+        const num = Number(rawTs);
+        if (!isNaN(num)) epoch = num > 1e12 ? num : num * 1000;
+      }
+      if (epoch > 0) {
+        if (acc && acc.lastMs > epoch) epoch = acc.lastMs;
+        const hours = (now - epoch) / 3600000;
+        item._score *= Math.exp(-lambda * Math.max(0, hours));
+      }
     }
   }
-  // Re-sort after decay adjustment
+  // Re-sort after activation adjustment
   items.sort((a, b) => b._score - a._score);
   return items;
 }
@@ -321,10 +382,10 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
     });
   }
 
-  // Apply time-decay: Ebbinghaus-inspired recency weighting.
+  // Apply activation: time-decay + promote-on-reuse weighting.
   // Applied after RRF fusion so it affects ranking but doesn't
   // eliminate old results entirely (they still appear if relevant enough).
-  applyTimeDecay(fusedItems, DECAY_LAMBDA);
+  applyActivation(fusedItems, DECAY_LAMBDA);
 
   // Trim noise tail — keep results with meaningful RRF score
   // Threshold: items scoring below 20% of the top score are noise

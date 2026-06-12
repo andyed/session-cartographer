@@ -26,11 +26,12 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--all] [--reset-served] [--thread EVENT_ID]
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--all] [--reset-served] [--thread EVENT_ID] [--touch EVENT_IDS]
        WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when CLAUDE_SESSION_ID is set): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
-       --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).}"
+       --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).
+       --touch EVENT_IDS: record a reuse access (comma-separated ids) in the access ledger and exit. Called by /remember after actually reading the transcript behind a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
 shift
 
 LIMIT=15
@@ -42,6 +43,7 @@ INTENT=""
 ALL_MODE=0
 RESET_SERVED=0
 THREAD_ID=""
+TOUCH_IDS=""
 # Transcript fallback is expensive (turn-grouping awk runs per-query on raw
 # transcripts; one 100MB+ session can hang search for minutes). Qdrant
 # already holds turn-grouped embeddings for the semantic path, so the keyword
@@ -60,6 +62,7 @@ while [ $# -gt 0 ]; do
     --all)            ALL_MODE=1; shift ;;
     --reset-served)   RESET_SERVED=1; shift ;;
     --thread)         THREAD_ID="$2"; shift 2 ;;
+    --touch)          TOUCH_IDS="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -245,6 +248,36 @@ fi
 EMBED_URL="${CARTOGRAPHER_EMBED_URL:-http://localhost:8890/v1/embeddings}"
 EMBED_MODEL="${CARTOGRAPHER_EMBED_MODEL:-mxbai-embed-large}"
 COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
+
+# ─── Promote-on-reuse access ledger ───
+# Append-only JSONL of "this result's transcript was actually read" moments,
+# written by --touch (below), aggregated at query time in rank fusion. Serving
+# a result is free (delta list); *using* it is vouching — reuse refreshes the
+# event's recency and compounds a frequency boost, so events that keep proving
+# useful rise across sessions without manual curation. Set the weight to 0 to
+# disable the boost without losing the ledger.
+ACCESS_LEDGER="${CARTOGRAPHER_ACCESS_LEDGER:-$DEV/access-ledger.jsonl}"
+REUSE_WEIGHT="${CARTOGRAPHER_REUSE_WEIGHT:-0.3}"
+
+# ─── --touch: record reuse accesses and exit ───
+# Accepts comma-separated event_ids. No existence check: transcript-turn ids
+# (turn-<sid>-<idx>) live only in Qdrant, so validating against the JSONL logs
+# would wrongly reject them. A typo'd id is harmless — it never matches a
+# search result, so it never boosts anything.
+if [ -n "$TOUCH_IDS" ]; then
+  now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  touched=0
+  for tid in $(echo "$TOUCH_IDS" | tr ',' ' '); do
+    case "$tid" in
+      *[!A-Za-z0-9_-]*|""|-*) echo "touch: skipping malformed id '$tid'" >&2; continue ;;
+    esac
+    printf '{"event_id":"%s","timestamp":"%s","session_id":"%s","source":"transcript_read"}\n' \
+      "$tid" "$now_iso" "${CLAUDE_SESSION_ID:-}" >> "$ACCESS_LEDGER"
+    touched=$((touched + 1))
+  done
+  echo "(recorded $touched reuse access$([ "$touched" -eq 1 ] || echo es))"
+  exit 0
+fi
 
 FOUND=0
 TMPDIR=$(mktemp -d)
@@ -448,7 +481,8 @@ rank_fuse_and_display() {
   # Output: faceted summary of top 500, then detailed top N results
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
-      -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" '
+      -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
+      -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" '
   BEGIN {
     # Delta-serving: load already-served event_ids for this session
     if (served_in != "") {
@@ -458,6 +492,35 @@ rank_fuse_and_display() {
       close(served_in)
     }
     suppressed_count = 0
+
+    # Promote-on-reuse: load the access ledger (transcript reads recorded by
+    # --touch). Per event we keep the access count, the most recent access
+    # epoch, and an ACT-R-style frequency sum  Σ 1/sqrt(days_since_access) —
+    # recent rehearsals count more, repeats compound with diminishing returns.
+    # Missing ledger file → getline returns -1 → zero entries → untouched
+    # events score exactly as before.
+    if (access_ledger != "" && reuse_weight + 0 > 0) {
+      while ((getline al_line < access_ledger) > 0) {
+        if (match(al_line, /"event_id"[[:space:]]*:[[:space:]]*"/)) {
+          al_id = substr(al_line, RSTART + RLENGTH)
+          sub(/".*/, "", al_id)
+          if (al_id == "") continue
+          al_ep = 0
+          if (match(al_line, /"timestamp"[[:space:]]*:[[:space:]]*"/)) {
+            al_ts = substr(al_line, RSTART + RLENGTH)
+            sub(/".*/, "", al_ts)
+            al_ep = ts_to_epoch(al_ts)
+          }
+          if (al_ep <= 0) continue
+          acc_n[al_id]++
+          if (al_ep > acc_last[al_id] + 0) acc_last[al_id] = al_ep
+          al_days = (now_epoch - al_ep) / 86400
+          if (al_days < 0.02) al_days = 0.02  # floor ~30min; guards div-by-zero and clock skew
+          acc_sum[al_id] += 1 / sqrt(al_days)
+        }
+      }
+      close(access_ledger)
+    }
   }
   # Parse an ISO 8601-ish timestamp (2026-03-29T14:30:00...) to epoch seconds.
   # Returns 0 if ts is empty, "?", or unparseable. Same arithmetic as the
@@ -546,38 +609,41 @@ rank_fuse_and_display() {
       order[j+1] = k
     }
 
-    # ─── Time-decay: Ebbinghaus-inspired recency weighting ───
-    # score *= exp(-lambda * hours_since_event)
-    # Applied after RRF fusion so it affects ranking but does not
-    # eliminate old results entirely (they still appear if relevant enough).
-    if (decay_lambda + 0 > 0 && now_epoch + 0 > 0) {
-      for (i = 1; i <= n; i++) {
-        k = order[i]
-        ts = timestamp[k]
-        if (ts == "" || ts == "?") continue
-
-        # Parse ISO timestamp: 2026-03-29T14:30:00...
-        y = substr(ts, 1, 4) + 0
-        mo = substr(ts, 6, 2) + 0
-        da = substr(ts, 9, 2) + 0
-        h = substr(ts, 12, 2) + 0
-        mi = substr(ts, 15, 2) + 0
-
-        # Portable epoch approximation (no mktime needed)
-        # Days from year + month + day, then add hours
-        days_from_year = (y - 1970) * 365 + int((y - 1969) / 4)
-        split("0,31,59,90,120,151,181,212,243,273,304,334", mdays, ",")
-        days_from_month = mdays[mo] + 0
-        if (mo > 2 && y % 4 == 0) days_from_month++
-        total_days = days_from_year + days_from_month + da - 1
-        event_epoch = total_days * 86400 + h * 3600 + mi * 60
-
-        hours = (now_epoch - event_epoch) / 3600
-        if (hours < 0) hours = 0
-        rrf_score[k] = rrf_score[k] * exp(-decay_lambda * hours)
+    # ─── Activation: Ebbinghaus time-decay + promote-on-reuse ───
+    # score *= exp(-lambda * hours_since_last_use) * reuse_boost
+    #
+    # "Last use" is the event timestamp OR the most recent recorded access,
+    # whichever is newer — reading the transcript behind a result refreshes
+    # its recency (ACT-R: retrieval re-strengthens the trace). On top of that,
+    # reuse_boost = 1 + reuse_weight * Σ 1/sqrt(days_since_access), capped at
+    # 2.0 so reuse breaks ties and lifts proven-useful events without ever
+    # overpowering relevance. Events with no recorded access score exactly
+    # as before (decay from event time, boost 1.0).
+    resort_needed = 0
+    for (i = 1; i <= n; i++) {
+      k = order[i]
+      factor = 1.0
+      if (k in acc_sum) {
+        boost = 1 + reuse_weight * acc_sum[k]
+        if (boost > 2.0) boost = 2.0
+        factor *= boost
+        resort_needed = 1
       }
+      if (decay_lambda + 0 > 0 && now_epoch + 0 > 0) {
+        event_epoch = ts_to_epoch(timestamp[k])
+        if (event_epoch > 0) {
+          if (acc_last[k] + 0 > event_epoch) event_epoch = acc_last[k] + 0
+          hours = (now_epoch - event_epoch) / 3600
+          if (hours < 0) hours = 0
+          factor *= exp(-decay_lambda * hours)
+          resort_needed = 1
+        }
+      }
+      if (factor != 1.0) rrf_score[k] = rrf_score[k] * factor
+    }
 
-      # Re-sort after decay adjustment
+    # Re-sort after activation adjustment
+    if (resort_needed) {
       for (i = 2; i <= n; i++) {
         k = order[i]
         s = rrf_score[k]
@@ -759,7 +825,10 @@ rank_fuse_and_display() {
     shown = 0
     for (i = 1; i <= n && shown < limit; i++) {
       k = order[i]
-      printf "[%s] [%s] %s\n", timestamp[k], sources[k], k
+      # Reuse marker: events with recorded accesses show a visible (used xN)
+      # tag — the glass-box cue for why a result may rank above fresher ones.
+      reuse_tag = (acc_n[k] + 0 > 0) ? sprintf(" (used x%d)", acc_n[k]) : ""
+      printf "[%s] [%s] %s%s\n", timestamp[k], sources[k], k, reuse_tag
 
       # Truncate summary to 200 chars
       s = summaries[k]
