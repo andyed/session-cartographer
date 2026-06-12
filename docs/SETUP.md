@@ -127,6 +127,16 @@ Does full transcript analysis: extracts tool_use blocks (WebFetch, WebSearch, Ed
 
 **Note:** Both scripts require Qdrant + embedding server to be running. They index into the `session-cartographer` collection for semantic search. Keyword search (`/remember` via BM25) works against the JSONL logs, which only grow from hooks going forward — backfill is Qdrant-only.
 
+### App-session metadata (desktop app / Cowork users)
+
+```bash
+node scripts/backfill-app-sessions.js --dry-run   # preview
+node scripts/backfill-app-sessions.js             # append to changelog.jsonl
+node scripts/embed-events.js                      # then index into Qdrant
+```
+
+Imports what the transcript pipeline never sees: human-readable session titles from the Claude desktop app, and Cowork sessions (VM-based, no local transcripts) whose title + initial prompt is the only recoverable record. Unlike the transcript backfills above, this writes `app_session` events into `changelog.jsonl`, so keyword search benefits too. Deterministic `app-<uuid>` IDs — safe to rerun.
+
 ## Verify Skills
 
 `claude install` should symlink all three skills into `~/.claude/skills/`. If any are missing, create the symlink manually:
