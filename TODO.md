@@ -102,6 +102,25 @@ Reference: https://github.com/metalaureate/tend-cli — pull-based status board 
 - `relay.tend.cx` hosted service (Andy's sessions all run on one Mac; no remote agents)
 - `tend init` scaffolding per repo (cartographer uses a single registry)
 
+## Topics Facet (mindmap-mcp-inspired)
+
+Reference: https://github.com/ravi-labs/mindmap-mcp-server (`src/graph.ts`), reviewed 2026-06-12. Cross-tool memory MCP server; weak search but a good zero-dependency topic-graph engine. The *storage and capture model* doesn't fit (LLM-written summaries, JSON-file-per-thread, capture discipline required — passive hooks are SC's moat), but the topic extraction maps cleanly onto SC's corpus.
+
+- [ ] **Topics facet in Explorer.** *Andy's pick (2026-06-12).* Auto-derive recurring topic labels across events/sessions and surface them as a facet pill row (and eventually a graph lens). Algorithm to port from `graph.ts`:
+  1. Per doc: TF-IDF top-10 terms, field-weighted (title ×3, tags ×2, body ×1). SC already has the TF-IDF machinery in `explorer/server/bm25.js`.
+  2. Category candidates: terms appearing in ≥3 docs and ≤60% of corpus, shortlist top-40 by document frequency.
+  3. **Cohesion filter — the part worth stealing:** a candidate survives only if its member docs are cosine-similar to each other *after excluding the shared term* (`cosineExcluding`, threshold ~0.012). Kills spurious categories whose members share nothing else. This directly addresses the existing "Stopword model refinement" TODO — cohesion scoring is the principled version of a learned stopword list.
+  4. Edges (graph view, later): inverted-index candidate pairs only, cosine ≥0.12, keep top-6 neighbors per node. Scales without pairwise N².
+  - Docs unit question to settle first: events are too granular (single commits), sessions probably right, turn-groups possible via Qdrant payloads.
+- [ ] **Trace-on-decay — distill before transcript TTL.** mindmap's cold tier collapses memories to a one-line searchable `trace` instead of deleting ("recall never hard-fails"). SC's equivalent gap is documented in the /remember skill: transcripts vanish at Claude Code's ~30d TTL and the read-the-transcript step hard-fails. Maintenance pass: find events whose transcripts are near TTL, distill a compact trace into the event log (turn text already survives in Qdrant payloads — the event-log fallback is what's thin).
+- [ ] **Transcript-expiry countdown.** mindmap's audit ledger forecasts decay per memory ("→ cold trace in 20d"). SC version: show "transcript expires in Nd" on Explorer sessions and /remember results, from file mtime vs. TTL. Surfaces what's about to become unreadable while you can still act.
+
+**Explicitly NOT taking from mindmap-mcp:**
+- Token-overlap search (strictly weaker than BM25+semantic+RRF)
+- JSON-file-per-thread storage (coarser than the event log)
+- Capture-discipline model (hooks already capture passively; their system fails if the LLM forgets to call capture)
+- Gamified cleanliness score (SC's store is a log, not a garden)
+
 ## Infrastructure
 - [ ] `npm install` pre-flight check in `/carto` skill
 - [ ] Connection status indicator for EventSource (SSE reconnect feedback)
