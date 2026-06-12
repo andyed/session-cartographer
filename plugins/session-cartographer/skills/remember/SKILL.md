@@ -64,6 +64,10 @@ The first argument is ignored when `--thread` is set (pass any placeholder like 
 
 Hooks emit a `salience` score per event ([0..1]). `/wrapup` milestones (0.9), feature/fix commits (0.7), and research-paper fetches (0.7) outrank routine bash commands (0.2) and chore commits (0.4). Salience multiplies into the RRF score, so deliberate strategic moments naturally rise to the top of results without any extra flag.
 
+### Promote-on-reuse (you participate in this)
+
+Write-time salience is a static prior; the access ledger makes it a learned posterior. When you actually *use* a result — read its transcript in Step 3 — record the access with `--touch`. Reuse refreshes the event's recency and compounds a frequency boost (capped at 2×), so events that keep proving useful rise across future sessions. Results that have been reused before show a `(used xN)` tag — that is why they may rank above fresher events. Serving alone records nothing: searching is free, using is vouching.
+
 ### Delta serving (automatic in-session)
 
 When you call `/remember` repeatedly in the same session, the script automatically suppresses event_ids that were returned in earlier calls — so each subsequent call surfaces *fresh* material rather than re-returning the same top-K. Activated whenever `$CLAUDE_SESSION_ID` is set (which it always is in skill context).
@@ -126,6 +130,16 @@ jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
 ```
 
 **The search result is the map. The transcript is the territory.**
+
+### After reading: record the reuse
+
+When a transcript (or `--thread` arc) actually answered the question, touch the event_ids whose context you used — this is the promote-on-reuse moment that strengthens them for future recall:
+
+```bash
+bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh _ --touch <event_id>[,<event_id>...]
+```
+
+Touch only what you used, not everything that was served. A result you read and discarded as irrelevant should NOT be touched — false vouching pollutes future rankings.
 
 ## Examples
 

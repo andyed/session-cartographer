@@ -19,6 +19,18 @@ Reciprocal Rank Fusion scores are computed as `1/(60 + rank)` per source, summed
 - Scores below 0.010 are deep in one list — scan the summary, don't chase the transcript unless the excerpt looks relevant.
 - RRF scores don't measure relevance to your query. They measure rank position. A score of 0.016 means "first match in one file" — the match quality depends on whether grep found it because of a core keyword or a tangential mention.
 
+## Score modifiers (applied after fusion)
+
+Three multipliers adjust the fused RRF score before display. They reorder results; they never remove them.
+
+**Salience** (write-time prior). Hooks stamp each event with a strategic-weight score in [0..1]: `/wrapup` milestones 0.9, feature/fix commits 0.7, research-paper fetches 0.7, neutral default 0.5, chore commits 0.4, routine bash 0.2. Multiplies directly into the RRF score.
+
+**Time decay** (Ebbinghaus). `score *= exp(-lambda * hours_since_last_use)` with `CARTOGRAPHER_DECAY_LAMBDA` defaulting to 0.001 (~30-day half-life). "Last use" is the event timestamp — unless the event has recorded reuse accesses, in which case the most recent access counts instead (reuse refreshes recency).
+
+**Promote-on-reuse** (read-time posterior). When `/remember` actually reads the transcript behind a result, it records the access via `--touch` into `access-ledger.jsonl`. At query time each accessed event gets `boost = 1 + w * Σ 1/sqrt(days_since_access)` capped at 2.0, with `w = CARTOGRAPHER_REUSE_WEIGHT` (default 0.3, 0 disables). The shape is ACT-R base-level activation: recent rehearsals count more, repeats compound with diminishing returns. Reused results show a `(used xN)` tag in CLI output and a `_reuseCount` field in the API. Events never touched score exactly as if the layer did not exist.
+
+The intended division of labor: BM25/semantic measure *relevance to this query*, salience encodes *how deliberate the moment was when written*, reuse encodes *how useful the memory has proven since*. A capped 2× reuse boost breaks ties and lifts proven events but cannot overcome a relevance gap.
+
 ## Semantic search (Qdrant cosine similarity)
 
 When Qdrant is running, scores are cosine similarity between query and event embeddings.
