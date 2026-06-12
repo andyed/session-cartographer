@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### feat(search): promote-on-reuse — access ledger + activation scoring
+
+Write-time salience was a static prior; this makes it a learned posterior. When `/remember` actually reads the transcript behind a result, it records the access via a new `--touch EVENT_IDS` flag into an append-only `access-ledger.jsonl`. At query time, rank fusion folds the ledger in as an activation layer: reuse refreshes the event's recency (time decay runs from the most recent access, not the event timestamp) and compounds an ACT-R-style frequency boost `1 + w·Σ 1/sqrt(days_since_access)`, capped at 2× so reuse breaks ties without overpowering relevance. Reused results show a `(used xN)` tag. Searching is free; using is vouching — only transcript reads record accesses, never mere serving.
+
+Inspired by mindmap-mcp-server's promote-on-reuse lifecycle ("reusing it = vouching for it"), implemented continuously in the scoring layer instead of as discrete hot/warm/cold tiers. Untouched events score exactly as before; `CARTOGRAPHER_REUSE_WEIGHT=0` disables (default 0.3).
+
+**Files:**
+- `scripts/cartographer-search.sh` — `--touch` verb, ledger aggregation in the fusion awk BEGIN block, decay block generalized to an activation block (now uses the existing `ts_to_epoch` helper), `(used xN)` display tag
+- `explorer/server/search.js` — same activation layer for the API path (`applyTimeDecay` → `applyActivation`), `_reuseCount` on results
+- `plugins/session-cartographer/skills/remember/SKILL.md` — Step 3 now records reuse after reading a transcript; touch only what was used, not everything served
+- `docs/SCORING.md` — new "Score modifiers" section documenting salience, decay, and reuse as one post-fusion layer
+
+### feat(backfill): app-session metadata import — titles + Cowork prompts
+
+New `scripts/backfill-app-sessions.js` walks the Claude desktop app's session-metadata stores (`~/Library/Application Support/Claude/{claude-code-sessions,local-agent-mode-sessions}`) and imports what the transcript pipeline never sees: human-readable session titles ("SPF trilogy") keyed to CLI session ids, and Cowork sessions — which run in VMs and never write transcripts to `~/.claude/projects` — whose title + initialMessage is the only locally recoverable record. Recon found 318 desktop sessions (13 with TTL'd transcripts where only the title survives) and 20 Cowork sessions that were entirely invisible to `/remember`.
+
+Events land in `changelog.jsonl` as type `app_session` with deterministic ids (`app-<uuid>`), so re-runs are no-ops. Salience graded by uniqueness of the record: Cowork 0.7, orphaned desktop 0.6, transcript-backed desktop 0.5. `transcript_path` attached when the CLI transcript still exists. Store paths catalogued from mindmap-mcp-server's `import.ts`.
+
 ### feat(skill): /investigate — root-cause diagnosis gate
 
 New skill that enforces diagnosis before bug-fix code. `/investigate <bug summary>` runs a five-step contract: reproduce the failure, read the failing path end-to-end, classify the root-cause layer (logic / state / boundary / validation-gap / config-build), write a hypothesis with **cause + mechanism + disproof**, then log it to the event log and stop — no fix code until the diagnosis is confirmed.

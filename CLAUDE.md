@@ -29,6 +29,7 @@ scripts/
   index-event.sh                — Real-time single-event indexing (called by hooks)
   backfill-git-history.sh       — Import git commits into event logs
   backfill-memories.sh          — Index Claude Code memory files
+  backfill-app-sessions.js      — Import desktop-app/Cowork session metadata (titles + VM-session prompts)
   retro-index.sh                — Backfill historical transcripts into Qdrant (turn-grouped)
   reconstruct-history.js        — Deep transcript analysis for backfill (turn-grouped)
   classify-prompt-intent.js     — Rule-based prompt-intent classifier (17 categories, zero-dep)
@@ -79,6 +80,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.
 - **Enrichment scripts modify `changelog.jsonl` in place.** Back up before running on large datasets.
+- **`access-ledger.jsonl` is append-only retrieval telemetry.** `--touch` in `cartographer-search.sh` is the only writer; both search paths aggregate it at query time (awk BEGIN block / `loadAccessLedger()` in `explorer/server/search.js`). Do not rewrite it in place, and keep the two activation implementations in sync.
 - **RRF score cutoff at 10% of top score** to trim the semantic noise tail.
 - **Diff-shape quadrant labels:** bootstrap, construct, surgical, rework. Not "dangerous."
 
