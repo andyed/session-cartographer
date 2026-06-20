@@ -60,6 +60,36 @@ bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh _ --thr
 
 The first argument is ignored when `--thread` is set (pass any placeholder like `_`). Output is the full ancestor + descendant arc sorted by timestamp, with the supplied event marked `★`. Present it as a coherent timeline rather than a search result.
 
+### Procedural recall: "how do I do X" (maneuver map)
+
+Procedural questions — "how do I deploy X", "what's my release process", "the cloudflare config dance" — aren't similarity matches, they're *maneuvers*. The co-occurrence graph (`scripts/cooccurrence-graph.js`) detects recurring technical maneuvers and which projects run them. Two entry points, both alias/partial-tolerant:
+
+```bash
+# Query names a project → which maneuvers it runs + which projects share them
+node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --maneuvers <project>
+
+# Query names the procedure → which projects run it (e.g. cloudflare, release, merge, overleaf)
+node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --signal <maneuver>
+```
+
+The map is an *index*, not a command store — it deliberately holds no commands and no secrets. Recovering the actual invocation is the same "map → territory" move as reading a transcript in Step 3 (so it's exempt from the no-freestyle rule below): grep the changelog for the matching project + maneuver marker.
+
+```bash
+jq -r 'select(.project=="<project>" and (.summary|test("wrangler pages deploy|gh release create|netlify"))) | .summary' ~/Documents/dev/changelog.jsonl | sed 's/^Ran: //' | tail -3
+```
+
+Present the recovered command(s) with project + recency. They're the user's own past invocations — don't echo any embedded tokens / account IDs gratuitously.
+
+### Cross-thread broadening (related projects)
+
+When a recall centers on one project but the work spans a thread, surface the co-active siblings so you can widen the search. The graph knows, e.g., `approach-retreat` co-threads with `allserp-paper` / `ettac-paper`:
+
+```bash
+node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --related <project>
+```
+
+Use it when results cluster on one project and the question is open-ended ("what was I doing around the AOI work") — offer to pull the related threads into the search.
+
 ### Salience weighting (automatic)
 
 Hooks emit a `salience` score per event ([0..1]). `/wrapup` milestones (0.9), feature/fix commits (0.7), and research-paper fetches (0.7) outrank routine bash commands (0.2) and chore commits (0.4). Salience multiplies into the RRF score, so deliberate strategic moments naturally rise to the top of results without any extra flag.
@@ -159,4 +189,11 @@ Touch only what you used, not everything that was served. A result you read and 
 /remember show me how I got to that fix
     → bash cartographer-search.sh "the fix" --limit 5     (find anchor event_id)
     → bash cartographer-search.sh _ --thread evt-xxxxxxxxxxxx
+/remember how do I deploy movies-mindbendingpixels
+    → node cooccurrence-graph.js --maneuvers movies-mindbendingpixels   (→ cloudflare-pages)
+    → recover the invocation from the changelog, present it
+/remember my cloudflare deploy process
+    → node cooccurrence-graph.js --signal cloudflare
+/remember what else was I working on around the approach-retreat AOI work
+    → node cooccurrence-graph.js --related approach-retreat   (→ allserp-paper, ettac-paper…)
 ```
