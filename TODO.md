@@ -121,6 +121,27 @@ Reference: https://github.com/ravi-labs/mindmap-mcp-server (`src/graph.ts`), rev
 - Capture-discipline model (hooks already capture passively; their system fails if the LLM forgets to call capture)
 - Gamified cleanliness score (SC's store is a log, not a garden)
 
+## Co-occurrence Graph / Maneuver Map (lume-inspired)
+
+Reference: [DeepBlueDynamics/lume](https://github.com/DeepBlueDynamics/lume) — Rust hybrid search with a Semantic Knowledge Graph layer (entity co-occurrence + significance weighting). Built `scripts/cooccurrence-graph.js` (2026-06-19): one G² engine, two graphs over **structured entities** (never tokenized prose). Zero external deps (fs/path/os only), ~46 KB artifact, the whole maneuver layer is **3.3 KB**.
+
+**Shipped (prototype, not yet wired into a skill):**
+- [x] **Project co-activity graph** — document = calendar DAY, entity = project. `--related <project>` surfaces cross-project research threads (approach-retreat ↔ allserp-paper ↔ ettac-paper). Day-grain is load-bearing: 97% of sessions are single-project, so same-session co-occurrence is dead — the cross-thread signal lives in same-DAY co-activity (Andy's 3-5 concurrent sessions/day).
+- [x] **Maneuver map** — entities = tech-signals from a signature catalog (ff-merge, gh-release, cloudflare-pages, netlify, overleaf-sync…) matched against `summary + files_changed`. Two views: *composition* (signal×signal, doc=session — which markers compose one maneuver; e.g. gh-release+version-tag+lfs = the Psychodeli DMG release) and *transfer* (project×project, doc=signal — which projects share a procedure; the two mindbendingpixels sites share the CF-deploy; cikm ↔ ettac share the overleaf dance). `--maneuvers <project>` = a project's profile + transfer peers.
+- [x] **Dunning G² over lume's z-score+tanh.** Key finding from prototyping on the real corpus: lume's significance formula *saturates* — for a perfectly-correlated pair (a=b=k) the z-score collapses to √N regardless of count, so a 3-session fluke and a 30-session pattern score identically. G² ("surprise and coincidence," Dunning 1993) scales with evidence.
+
+**Deferred:**
+- [ ] **Actual-command recipe reconstruction.** *Parked 2026-06-19 ("todo the actual commands; see how efficient we can be without it").* Reconstruct the canonical command SEQUENCE per maneuver (the replayable playbook), not just the co-occurrence map. Deferred deliberately: (a) **secrets** — sampled commands embed CF account/zone IDs and an OAuth-token `awk` extraction; storing them = indexing secrets; (b) **redundant** — the commands already live in `changelog.jsonl` (`tool_bash` summaries). The signal map is a 3.3 KB index of which `(project, signal)` cells are non-empty; the actual command is one on-demand query away (`jq 'select(.project==X and (.summary|test(SIGNAL)))'`), verified working. Revisit only if on-demand recovery is too slow or a guided `/playbook` UX is wanted — and scrub secrets at reconstruction time.
+
+**Next:**
+- [ ] **Wire `--related` + `--maneuvers` into `/focus`** — both are orientation lenses; /focus is their natural home (SKILL.md edit calling the builder's query modes). Maps densify on their own as sessions land.
+- [ ] **Method doc** `docs/COOCCURRENCE.md` — grain decisions, the G²-vs-z saturation finding, signature catalog, the index-not-store architecture.
+- [ ] **Sequence/order edges (only if revisited)** — composition is co-membership; timestamps allow directed edges (tag→release→deploy) for a maneuver-shape map. Drifts toward the recipe view, so low priority.
+
+**Findings worth keeping:**
+- Entities must be STRUCTURED fields (project, files_changed, detected signals), **never tokenized summary prose** — the prose term-graph attempt produced machinery cliques (agent/explore/completed) and was redundant with the existing Qdrant semantic path. ("We already had entities.")
+- Maneuver map is intrinsically thin (~29 maneuver-sessions) — maneuvers are punctual events. High-precision; grows with corpus depth, not with more modeling.
+
 ## Infrastructure
 - [ ] `npm install` pre-flight check in `/carto` skill
 - [ ] Connection status indicator for EventSource (SSE reconnect feedback)
