@@ -23,9 +23,9 @@ The sanity floor. Dump the top-N edges of each graph; Andy labels each `real / c
 - **Why it's legitimate:** Andy *is* the ground-truth oracle for his own corpus. No one else can label "is approach-retreat↔ettac a real thread."
 - **Target:** precision@10 ≥ 0.8 on project edges. Lower is fine on maneuver transfer (N=19 signals, known-thin).
 
-## Tier 1 — Predictive validation (self-supervised, the centerpiece)
+## Tier 1 — Predictive validation (self-supervised; ran first, demoted — see Result)
 
-The rigorous, label-free test: **does co-activity structure learned on the past predict co-activity in the future?** If the graph captures stable structure rather than noise, a high-scored edge in the training window should keep co-occurring in the held-out window.
+The intended rigor test: **does co-activity structure learned on the past predict co-activity in the future?** It ran first and produced the most important finding of the eval — that prediction is the wrong objective here (see **Result** below). Kept for the record and the link-prediction follow-up.
 
 - **Split:** train = first 80% of days, test = last 20% (temporal holdout, not random — respects the arrow of time).
 - **Procedure:** build the project graph on train only. For every project pair active in train, score it by each method below. Label = did the pair co-occur on ≥1 day in the *test* window (binary)?
@@ -40,6 +40,24 @@ The rigorous, label-free test: **does co-activity structure learned on the past 
   | (optional) PMI / npmi | `ln(k·N/(a·b))` |
 - **What good looks like:** G² AUC ≥ z-tanh AUC, both meaningfully above raw-count and above 0.5. **The headline number is the G² − z-tanh delta** — it turns "z saturates" from an algebra argument into a measured win (or tells us the algebra didn't matter at this corpus size, which is also worth knowing).
 - **Caveat:** maneuver data is too thin (~29 sessions) for a powered predictive test — run this on the *project* graph; report maneuvers as descriptive-only until the corpus deepens.
+
+**Result (first run, 2026-06-19 — [`scripts/eval-cooccurrence.js`](../scripts/eval-cooccurrence.js)).** The predictive framing backfired, instructively.
+
+| scorer | AUC (set A, 945 pairs) | AUC (set B, both still active, 92 pairs) |
+|---|---|---|
+| activity `a·b` baseline | 0.804 | 0.656 |
+| raw count `k` | **0.815** | **0.693** |
+| Jaccard | 0.611 | 0.606 |
+| z-tanh (lume) | 0.485 | 0.530 |
+| **G² (ours)** | 0.564 | 0.578 |
+
+Two readings, both honest:
+1. **The narrow claim holds.** G² beats lume's z-tanh in every run (0.564 vs 0.485; 0.578 vs 0.530; and at 70/30, 0.461 vs 0.456). The z-saturation fix is real.
+2. **But prediction is the wrong objective for this feature.** Raw count and activity *dominate* both significance scores — because predicting recurrence rewards exactly the base-rate/activity signal that significance scoring is *designed to remove*. G² deflates the always-active-together pairs (`andyed↔interests2025`); those are the ones that recur, so G² underperforms at prediction **by construction**. The activity baseline winning is almost tautological.
+
+Tier 1 falsified the *metric*, not the feature. `/focus` doesn't want to predict recurrence — it wants *distinctive* threads (`allserp↔ettac`), which is what G² does and raw count cannot. The right yardsticks are therefore **Tier 0** (are surfaced threads real/useful?) and **Tier 2** (are they stable?), both of which measure distinctiveness — which prediction cannot. Tier 1 is demoted to a diagnostic.
+
+**The predictive variant that *would* favor significance: link prediction.** Predict *new* co-occurrence among pairs that did NOT co-occur in train. With no prior count to lean on, raw count can't compete and a structural/significance score has room to win. That's the one predictive test worth building next, if any.
 
 ## Tier 2 — Stability / robustness (bootstrap)
 
@@ -66,12 +84,12 @@ The real question — *does the `/focus` related-threads block actually surface 
 
 ## Success criteria (one glance)
 
-| Tier | Metric | Target |
-|---|---|---|
-| 0 face validity | precision@10 (project edges) | ≥ 0.80 |
-| 1 predictive | AUC: G² vs z-tanh | G² ≥ z-tanh, both > raw-count, > 0.5 |
-| 2 stability | top-10 edges stable across bootstrap | ≥ 90% |
-| 3 signatures | per-signal precision | ≥ 0.90 |
+| Tier | Metric | Target | Status |
+|---|---|---|---|
+| 0 face validity | precision@10 (project edges) | ≥ 0.80 | not run — **now primary** |
+| 1 predictive | AUC: G² vs z-tanh | G² ≥ z-tanh | ✓ held, but "both > raw-count" **failed** — prediction rewards base rate; demoted |
+| 2 stability | top-10 edges stable across bootstrap | ≥ 90% | not run — **now primary** |
+| 3 signatures | per-signal precision | ≥ 0.90 | not run |
 
 ## Implementation
 
@@ -86,4 +104,9 @@ Reuses the builder's scoring functions (export `dunningLLR`, `zSig`-equivalent, 
 
 ## Recommended order
 
-Run **Tier 1 first** — it's the rigorous validation of the core decision (G² over lume's z), needs no human time, and produces the single most defensible number. Then Tier 0 (cheap human pass) and Tier 2 (gates the `/focus` UX). Tier 3 when tuning the signature catalog; Tier 4 is ongoing.
+**Revised after the Tier 1 result.** Tier 1 ran and is demoted to a diagnostic — it measures predictive recurrence, which rewards the activity base rate that significance scoring deliberately removes, so it cannot validate a *distinctiveness* feature. Next:
+
+1. **Tier 0** — Andy labels the top threads. The only test of whether surfaced threads are actually useful, which is the feature's real objective.
+2. **Tier 2** — bootstrap stability; use it to gate which edges `/focus` shows (only edges stable in ≥90% of resamples).
+3. **Link-prediction variant** (Tier 1 follow-up) — the one predictive test where significance scoring could genuinely beat raw count.
+4. Tier 3 when tuning the signature catalog; Tier 4 (downstream utility) is ongoing.
