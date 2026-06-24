@@ -57,7 +57,7 @@ const KQ = parseInt(arg('--k', '8'), 10);
 
 // "Projects" that are really cwd-encoded filesystem path fragments, not real projects. Editable.
 const PROJECT_BLOCKLIST = new Set([
-  'Users-andyed', 'Users', 'Documents-dev', 'Documents', 'Downloads', 'Desktop', 'Library',
+  'andyed', 'Users-andyed', 'Users', 'Documents-dev', 'Documents', 'Downloads', 'Desktop', 'Library', 'home',
   'workspace', 'images', 'tmp', 'var', 'private', 'node_modules', 'dev',
 ]);
 
@@ -95,6 +95,15 @@ const COMP_MIN_K = 3;        // a signal pair must co-occur in >= 3 sessions
 const COMP_LLR_GATE = 10.83; // χ²(1df) at p≈0.001
 const XFER_MIN_K = 2;        // a project pair must share >= 2 maneuver-signals
 const XFER_LLR_GATE = 6.63;  // χ²(1df) at p≈0.01 (N = #signals is small, so a looser gate)
+
+// Related-threads LENS gate (display-only — the projEdges graph + JSON stay unfiltered). A pair
+// surfaces only if significant (G² ≥ 6.63, p≈0.01) AND not a thin two-day fluke: a k<3 pair must
+// clear the stricter p≈0.001 bar (10.83). Cheap stand-in for Tier-2 bootstrap stability — it cuts
+// solo-project coincidence (session-cartographer 8→1 related edges) while keeping real low-k
+// threads (allserp↔trail-telegraph: k=2, G²=14). See docs/COOCCURRENCE_EVAL.md Tier 2.
+const REL_LLR_FLOOR = 6.63;
+const REL_THIN_K = 3;
+const REL_THIN_LLR = 10.83;
 
 // ─── Scoring ───
 
@@ -235,7 +244,9 @@ function resolveProject(name) {
 
 if (RELATED !== null) {
   const P = resolveProject(RELATED);
-  const nbrs = neighbors(projEdges, P);
+  const nbrs = neighbors(projEdges, P).filter(
+    (e) => e.llr >= REL_LLR_FLOOR && (e.k >= REL_THIN_K || e.llr >= REL_THIN_LLR),
+  );
   if (!nbrs.length) console.log(`(no co-active projects for "${P}")`);
   else {
     console.log(`Related threads — projects co-active with ${P} (shared days · G²):`);
