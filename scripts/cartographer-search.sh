@@ -385,13 +385,16 @@ semantic_search_to_tsv() {
   # Emit TSV in the same format as keyword sources — RRF fuses them together
   # Fields: src \t rank \t key \t ts \t proj \t summary \t extras \t etype \t salience
   # Salience defaults to 0.5 for old payloads without the field (back-compat).
+  # Summary is control-char-sanitized: payloads hold parsed JSON strings, so a
+  # multi-line bash command would otherwise split one TSV row into several —
+  # the tail fragments mis-parse as rank/key/timestamp and pollute fusion.
   echo "$results" | jq -r '.result | to_entries[] |
     "semantic\t" +
     (.key + 1 | tostring) + "\t" +
     (.value.payload.event_id // "sem-" + (.key | tostring)) + "\t" +
     (.value.payload.timestamp // "?") + "\t" +
     (.value.payload.project // "?") + "\t" +
-    (.value.payload.summary // .value.payload.url // .value.payload.type // "?") + "\t" +
+    ((.value.payload.summary // .value.payload.url // .value.payload.type // "?") | gsub("[\\u0000-\\u001f]+"; " ")) + "\t" +
     (if .value.payload.url then "url:" + .value.payload.url + "|" else "" end) +
     (if .value.payload.deeplink and .value.payload.deeplink != "" then "deeplink:" + .value.payload.deeplink + "|" else "" end) +
     (if .value.payload.transcript_path and .value.payload.transcript_path != "" then "transcript:" + .value.payload.transcript_path + "|" else "" end) +
@@ -544,6 +547,11 @@ rank_fuse_and_display() {
 
   {
     src = $1; rank = $2; key = $3; ts = $4; proj = $5; summary = $6; extras = $7; etype = $8; sal = $9
+    # Malformed-row guard: a row with no key or a non-numeric rank is a TSV
+    # fragment (e.g. a multi-line summary split across lines), never a real
+    # result. Without this, rank coerces to 0 → score 1/(60+0) — above every
+    # legitimate rank-1 result — and fragments merge under key "" at the top.
+    if (key == "" || rank !~ /^[0-9]+$/) next
     # Salience: hook-emitted strategic-weight multiplier in [0..1]. Old events
     # (pre-write-time-salience) lack the field — default to 0.5 (neutral).
     if (sal == "" || sal + 0 == 0) sal = 0.5

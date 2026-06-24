@@ -56,7 +56,9 @@ case "$TOOL_NAME" in
     SALIENCE="0.4"
     ;;
   Bash)
-    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 500)
+    # Flatten newlines/tabs: multi-line commands (heredocs, python -c) must
+    # become one-line summaries — downstream TSV/embedding paths are line-based.
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 500 | tr '\n\t\r' '   ' | tr -s ' ')
     [ -z "$COMMAND" ] && exit 0
     # Skip noisy commands (ls, cat, echo, pwd)
     case "$COMMAND" in
@@ -65,8 +67,10 @@ case "$TOOL_NAME" in
 
     # Detect git commit — extract commit hash, message, and changed files
     if echo "$COMMAND" | grep -q "git commit"; then
-      # Parse the commit output from tool_response
-      RESPONSE=$(echo "$INPUT" | jq -r '.tool_response // empty' | head -c 2000)
+      # Parse the commit output from tool_response. Use .stdout when it's an
+      # object: jq -r of the whole object prints raw JSON whose \n escape
+      # sequences then leak into COMMIT_MSG as literal backslash-n text.
+      RESPONSE=$(echo "$INPUT" | jq -r '(.tool_response // empty) | if type == "object" then (.stdout // "") else . end' | head -c 2000)
       COMMIT_HASH=$(echo "$RESPONSE" | grep -oE '[a-f0-9]{7,}' | head -1)
       COMMIT_MSG=$(echo "$RESPONSE" | grep -oE '\] .+' | head -1 | sed 's/^\] //')
 

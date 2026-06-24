@@ -196,6 +196,18 @@ NR == FNR {
             sal = extract_num($0, "salience")
             if (sal == "") sal = "0.5"
 
+            # Flatten JSON escape sequences before TSV emit — pre-fix events
+            # carry literal \n/\t from multi-line bash commands (same cleanup
+            # the transcript branch does above). The double-backslash form
+            # first: git_commit summaries hold \n as literal text (escaped to
+            # \\n in raw JSON), which would otherwise leave a stray backslash.
+            # Scoring already happened on the raw body; this is display-only.
+            gsub(/\\\\n/, " ", body)
+            gsub(/\\\\t/, " ", body)
+            gsub(/\\n/, " ", body)
+            gsub(/\\t/, " ", body)
+            gsub(/  +/, " ", body)
+
             results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras, etype, sal)
         }
     }
