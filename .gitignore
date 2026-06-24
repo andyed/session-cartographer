@@ -8,3 +8,15 @@ explorer/node_modules/
 explorer/dist/
 explorer/public/demo/
 demo/truth/
+
+# — local Claude Code / tool state (never shipped) —
+.claude/
+.entire/
+
+# claude-mem auto-generated per-dir context stubs (plugin is disabled; these are leftovers).
+# Keep the real root CLAUDE.md tracked.
+CLAUDE.md
+!/CLAUDE.md
+
+# excalidraw skill's vendored fonts (24 MB Excalifont/Virgil) — dropped here by the skill, not part of SC.
+scripts/excalidraw/

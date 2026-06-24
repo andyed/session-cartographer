@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 0.3.0 — 2026-06-23
+
+### feat(graph): significance-weighted co-occurrence graph + maneuver map
+
+Two orientation lenses search can't provide, from one Dunning-G² engine over the **structured** fields of the event logs (project, detected tech-signals) — never tokenized prose (a prose term-graph just rebuilt machinery cliques and duplicated the Qdrant path). **Project co-activity** (`--related <project>`) uses the calendar *day* as the document — 97% of sessions are single-project, so the cross-thread signal lives in same-day concurrency, not same-session — surfacing research threads like `allserp-paper ↔ ettac-paper`. **Maneuver map** (`--maneuvers <project>`) detects tech-signals (`gh-release`, `cloudflare-pages`, `overleaf-sync`, …) from a signature catalog over `summary + files_changed`, in two views: *composition* (signal × signal, doc = session — `gh-release + version-tag + lfs` = the Psychodeli DMG release) and *transfer* (project × project, doc = signal — which projects share a procedure).
+
+Edges rank by **Dunning's log-likelihood ratio (G², 1993)**, not lume's z-score+tanh: for a perfectly-correlated pair the z-score collapses to `√N` regardless of count, so a 3-session fluke ties a 30-session pattern — it saturates. A temporal-holdout eval confirmed G² beats z-tanh in every split, and also that *prediction is the wrong yardstick* (raw count dominates both — forecasting recurrence rewards the base rate significance is designed to remove); `/focus` wants distinctive threads, not predictable ones. The artifact is an **index, not a store** (~46 KB; maneuver layer 3.3 KB): it records which `(project, signal)` cells are non-empty, never the commands — those stay in the changelog and are recovered on demand, so no secrets (CF tokens / zone IDs) are indexed. Inspired by DeepBlueDynamics/lume's Semantic Knowledge Graph layer.
+
+**Files:**
+- `scripts/cooccurrence-graph.js` *(new)* — the G² engine + `--related` / `--maneuvers` / `--signal` query modes; writes `cooccurrence-graph.json`.
+- `scripts/eval-cooccurrence.js` *(new)* — temporal-holdout predictive eval (the diagnostic that demoted prediction as the success metric).
+- `plugins/session-cartographer/skills/focus/SKILL.md` — Step 3 surfaces related threads + maneuvers.
+- `plugins/session-cartographer/skills/remember/SKILL.md` — `--signal` procedural recall ("how do I deploy X").
+- `docs/COOCCURRENCE.md` *(new)*, `docs/COOCCURRENCE_EVAL.md` *(new)* — method + evaluation plan.
+- `README.md` — *Co-occurrence graph* section + lume inspiration.
+
+### feat(hook): auto-focus on session start — experimental, opt-in
+
+`SessionStart` hook that injects the graph's related-threads + maneuver lenses as session context on entering a project, so cross-thread connections surface without a manual `/focus`. **Dormant by default** — enable with `CARTOGRAPHER_FOCUS_ON_START=1`. Abstains on home-dir / non-project launches (early-exit, no graph build) and surfaces at most **once per project per day** — the same banner on every launch is wallpaper. Logs every fire to `focus-on-start-trial.jsonl` (`fired` = had signal, `shown` = actually injected) so hit-rate and follow-through are measurable. Trial finding (155 fires): home-dir noise and repetition dominated until both were suppressed; the maneuver half is reliably useful, and the related-threads half is now gated by a cheap G² stability heuristic (significant *and* not a two-day fluke) that cuts solo-project coincidence — full Tier-2 bootstrap stability remains the principled version.
+
+**Files:**
+- `plugins/session-cartographer/hooks/surface-focus-on-start.sh` *(new)* — env-gated, silent-fail, skips compaction.
+- `plugins/session-cartographer/hooks/hooks.json` — `SessionStart` registration (inert until the env var is set).
+
 ### feat(search): promote-on-reuse — access ledger + activation scoring
 
 Write-time salience was a static prior; this makes it a learned posterior. When `/remember` actually reads the transcript behind a result, it records the access via a new `--touch EVENT_IDS` flag into an append-only `access-ledger.jsonl`. At query time, rank fusion folds the ledger in as an activation layer: reuse refreshes the event's recency (time decay runs from the most recent access, not the event timestamp) and compounds an ACT-R-style frequency boost `1 + w·Σ 1/sqrt(days_since_access)`, capped at 2× so reuse breaks ties without overpowering relevance. Reused results show a `(used xN)` tag. Searching is free; using is vouching — only transcript reads record accesses, never mere serving.
@@ -35,6 +59,21 @@ Built to break the "plausible fix shipped before the failure mode was understood
 
 **Files:**
 - `scripts/retro-index.sh` — per-session checkpoint + skip-on-resume; `--fresh` flag clears the checkpoint for a full reindex; portable `file_mtime` (BSD/GNU `stat`).
+
+## 0.2.1 — 2026-06-12
+
+### fix(events): single-line summaries everywhere — malformed top-ranked results eliminated
+
+Multi-line bash commands (heredocs, `python -c`) flowed into event summaries with newlines intact. The JSONL stayed valid (escaped `\n`), but Qdrant payloads hold the parsed string, and the semantic TSV emitter printed it raw — one result row split into many, fragments mis-parsed as rank/key/timestamp, rank coerced to 0, and the garbage aggregate (`[]`/`[0.5]` timestamps, `+`-joined command fragments) outranked every real result on every query. Separately, a hand-written pretty-printed wrapup record sat as 41 invalid lines in both `changelog.jsonl` and `session-milestones.jsonl`, and `grep -c … || echo 0` in the milestones hook produced `"0\n0"` counts — corrupting summaries and silently failing the milestones-log write via `--argjson`.
+
+Writers now flatten at the source; the search pipeline sanitizes and guards at every layer; historical data cleaned in place (backups kept) including 261 Qdrant payloads.
+
+**Files:**
+- `plugins/session-cartographer/hooks/log-tool-use.sh` — flatten `\n`/`\t` in commands; read `tool_response.stdout` (object form) so commit parsing stops leaking raw JSON escapes into summaries
+- `plugins/session-cartographer/hooks/log-session-milestones.sh` — `grep -c | head -1` + numeric guard for the session event count
+- `scripts/cartographer-search.sh` — semantic TSV emitter strips control chars from summaries; fusion awk drops rows with an empty key or non-numeric rank (the backstop)
+- `scripts/bm25-search.awk` — flatten `\n`/`\\n` escape sequences in event-log summaries before TSV emit (display-only; scoring unchanged)
+- `scripts/index-event.sh` — embed request built with jq instead of string interpolation (summaries with quotes were silently never indexed); text flattened before embedding
 
 ## 0.2.0 — 2026-05-20
 
