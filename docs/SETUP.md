@@ -87,6 +87,10 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_EMBED_MODEL` | `mxbai-embed-large` | Embedding model name |
 | `CARTOGRAPHER_QDRANT_URL` | `http://localhost:6333` | Qdrant REST endpoint |
 | `CARTOGRAPHER_COLLECTION` | `session-cartographer` | Qdrant collection name |
+| `CARTOGRAPHER_LOG_TOOL_USE` | `false` | Set `true` to log Edit/Write/Bash + git commits |
+| `CARTOGRAPHER_REUSE_WEIGHT` | `0.3` | Promote-on-reuse activation weight (`0` disables) |
+| `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to auto-surface `/focus` orientation (related threads + maneuvers) on session start — opt-in, dormant by default |
+| `CARTOGRAPHER_GRAPH` | `$CARTOGRAPHER_DEV_DIR/cooccurrence-graph.json` | Where the co-occurrence graph JSON is written |
 
 Set these in your shell profile or Claude Code settings for your work machine.
 
