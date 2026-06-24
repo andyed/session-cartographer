@@ -53,14 +53,22 @@ fi
 
 [ -z "$EVENT_ID" ] || [ -z "$TEXT" ] && exit 0
 
+# Flatten control chars: payload summaries must be single-line (the search
+# TSV emitter and CLI display are line-based), and embedding quality doesn't
+# care about line breaks.
+TEXT=$(printf '%s' "$TEXT" | tr '\n\t\r' '   ' | tr -s ' ')
+
 # Quick health check — fail fast, fail silent
 curl -sf "$QDRANT_URL/collections/$COLLECTION" >/dev/null 2>&1 || exit 0
 curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || exit 0
 
-# Get embedding
+# Get embedding — body built with jq, not string interpolation: a summary
+# containing quotes or backslashes would otherwise produce invalid JSON and
+# the event would silently never get indexed.
+EMBED_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$TEXT" '{model: $m, input: $i}') || exit 0
 EMBED_RESPONSE=$(curl -sf "$EMBED_URL" \
   -H "Content-Type: application/json" \
-  -d "{\"model\":\"$EMBED_MODEL\",\"input\":\"$TEXT\"}" 2>/dev/null) || exit 0
+  -d "$EMBED_BODY" 2>/dev/null) || exit 0
 
 # Extract vector — need jq for this
 command -v jq &>/dev/null || exit 0

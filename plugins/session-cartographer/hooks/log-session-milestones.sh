@@ -86,10 +86,13 @@ if [ -n "$GIT_REPO" ]; then
     GIT_RECENT=$(git -C "$GIT_REPO" log --oneline -5 2>/dev/null | paste -sd '|' - || true)
 fi
 
-# Count session events from changelog
+# Count session events from changelog. grep -c prints "0" AND exits 1 on
+# zero matches, so `|| echo 0` would yield "0\n0" — take the first line and
+# guard non-numeric so --argjson below never sees a multi-line value.
 SESSION_EVENT_COUNT=0
 if [ -f "$CHANGELOG" ] && [ -n "$SESSION_ID" ]; then
-    SESSION_EVENT_COUNT=$(LC_ALL=C grep -c "$SESSION_ID" "$CHANGELOG" 2>/dev/null || echo 0)
+    SESSION_EVENT_COUNT=$(LC_ALL=C grep -c "$SESSION_ID" "$CHANGELOG" 2>/dev/null | head -1)
+    case "$SESSION_EVENT_COUNT" in ''|*[!0-9]*) SESSION_EVENT_COUNT=0 ;; esac
 fi
 
 # Write to milestones log
