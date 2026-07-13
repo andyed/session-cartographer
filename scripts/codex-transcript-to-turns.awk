@@ -1,28 +1,11 @@
 #!/usr/bin/awk -f
-# transcript-to-turns.awk — Group Claude Code transcript JSONL into turns.
+# codex-transcript-to-turns.awk — Normalize a Codex rollout JSONL to turns.
 #
-# This is the Claude provider adapter. Codex has a separate adapter because
-# transcript wire formats are provider-owned and unstable; both adapters emit
-# the same Cartographer turn schema.
-#
-# A "turn" is a user message plus every following assistant message up to the
-# next user message. One turn → one output document. Text-bearing JSON values
-# (user content, assistant text blocks, tool inputs, names, URLs) are pulled
-# out and concatenated; the JSON scaffolding (parentUuid, isSidechain,
-# promptId, etc.) is dropped. That keeps BM25 matching focused on real
-# content and preview strings human-readable.
-#
-# Input:  raw ~/.claude/projects/<proj>/<session>.jsonl
-# Output: JSONL, one line per turn, fields compatible with event-log sources:
-#         event_id, timestamp, project, type, summary, transcript_path, session, turn_idx
-#
-# Usage:
-#   awk -f transcript-to-turns.awk \
-#     -v sid="<session_id>" -v proj="<project_dir>" -v tpath="<absolute_path>" \
-#     transcript.jsonl
-#
-# Environment knob:
-#   TURN_BODY_MAX (default 50000) — truncate each turn body to this many chars.
+# Codex currently records user prompts as event_msg/user_message and retained
+# assistant messages/tool activity as response_item records. This adapter owns
+# that unstable wire format and emits the same provider-neutral turn documents
+# as transcript-to-turns.awk. Consumers must depend on the output schema, not
+# either provider's raw transcript representation.
 
 function json_escape(s,    out) {
     out = s
@@ -46,8 +29,6 @@ function field(line, key,    pat, val) {
     return ""
 }
 
-# Extract every string value for a given JSON key, concatenated with spaces.
-# Walks character-by-character so escaped quotes inside values don't truncate.
 function extract_values(line, key, _out, _rem, _pat, _i, _c, _nc, _val, _len) {
     _out = ""
     _rem = line
@@ -75,29 +56,23 @@ function extract_values(line, key, _out, _rem, _pat, _i, _c, _nc, _val, _len) {
     return _out
 }
 
-# Pull the searchable text out of a transcript line. Keeps human-readable
-# content (text blocks, tool inputs, URLs, file paths, commands); drops the
-# JSON scaffolding. The key list is additive — over-extraction is harmless,
-# under-extraction loses recall.
 function harvest(line,    out) {
     out = ""
+    out = out extract_values(line, "message")
     out = out extract_values(line, "text")
     out = out extract_values(line, "content")
-    out = out extract_values(line, "file_path")
-    out = out extract_values(line, "command")
-    out = out extract_values(line, "description")
-    out = out extract_values(line, "prompt")
+    out = out extract_values(line, "input")
+    out = out extract_values(line, "output")
+    out = out extract_values(line, "name")
     out = out extract_values(line, "query")
     out = out extract_values(line, "url")
-    out = out extract_values(line, "name")
-    out = out extract_values(line, "pattern")
     return out
 }
 
 function flush_turn() {
     if (!started) return
     if (length(turn_body) > body_max) turn_body = substr(turn_body, 1, body_max)
-    printf "{\"event_id\":\"turn-%s-%d\",\"timestamp\":\"%s\",\"project\":\"%s\",\"type\":\"transcript\",\"provider\":\"claude\",\"summary\":\"%s\",\"transcript_path\":\"%s\",\"session\":\"%s\",\"turn_idx\":%d}\n", \
+    printf "{\"event_id\":\"turn-codex-%s-%d\",\"timestamp\":\"%s\",\"project\":\"%s\",\"type\":\"transcript\",\"provider\":\"codex\",\"summary\":\"%s\",\"transcript_path\":\"%s\",\"session\":\"%s\",\"turn_idx\":%d}\n", \
         sid, turn_idx, \
         json_escape(turn_ts), \
         json_escape(proj), \
@@ -116,9 +91,10 @@ BEGIN {
 }
 
 {
-    is_user = ($0 ~ /"type"[[:space:]]*:[[:space:]]*"user"/)
-    is_asst = ($0 ~ /"type"[[:space:]]*:[[:space:]]*"assistant"/)
-    if (!is_user && !is_asst) next
+    is_user = ($0 ~ /^\{"timestamp"[^}]*"type":"event_msg"/ && $0 ~ /"type":"user_message"/)
+    is_message = ($0 ~ /^\{"timestamp"[^}]*"type":"response_item"/ && $0 ~ /"type":"message"/ && $0 ~ /"role":"assistant"/)
+    is_tool = ($0 ~ /^\{"timestamp"[^}]*"type":"response_item"/ && $0 ~ /"type":"(custom_tool_call|custom_tool_call_output|function_call|function_call_output)"/)
+    if (!is_user && !is_message && !is_tool) next
 
     if (is_user) {
         if (started) flush_turn()
@@ -128,6 +104,7 @@ BEGIN {
         turn_ts = field($0, "timestamp")
     }
 
+    if (!started) next
     harvested = harvest($0)
     if (harvested != "") turn_body = turn_body " " harvested
 }

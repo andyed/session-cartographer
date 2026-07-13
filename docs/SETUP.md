@@ -1,6 +1,7 @@
 # Setup Guide
 
-Session Cartographer works in two modes:
+Session Cartographer works with Claude Code, Codex, or both. Search itself has
+two service levels:
 
 1. **Keyword search only** — zero dependencies beyond bash + jq (ships with macOS)
 2. **Semantic search** — requires Qdrant binary + llama.cpp embedding server
@@ -8,8 +9,12 @@ Session Cartographer works in two modes:
 ## Minimal Setup (keyword search)
 
 ```bash
-# Install the plugin
-claude install /path/to/session-cartographer
+# From an extracted GitHub release bundle (choose your agent)
+codex plugin marketplace add "$PWD"
+codex plugin add session-cartographer@session-cartographer
+
+claude plugin marketplace add "$PWD"
+claude plugin install session-cartographer@session-cartographer
 
 # That's it. Hooks auto-register, /remember works with grep.
 ```
@@ -82,7 +87,7 @@ All paths and endpoints are configurable:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `CARTOGRAPHER_DEV_DIR` | `~/Documents/dev` | Where JSONL event logs live |
-| `CARTOGRAPHER_TRANSCRIPTS_DIR` | `~/.claude/projects` | Where session transcripts live |
+| `CARTOGRAPHER_TRANSCRIPTS_DIR` | `~/.claude/projects` | Optional Claude transcript-root override; Codex history is also read from `~/.codex/sessions` |
 | `CARTOGRAPHER_EMBED_URL` | `http://localhost:8890/v1/embeddings` | OpenAI-compatible embedding endpoint |
 | `CARTOGRAPHER_EMBED_MODEL` | `mxbai-embed-large` | Embedding model name |
 | `CARTOGRAPHER_QDRANT_URL` | `http://localhost:6333` | Qdrant REST endpoint |

@@ -1,0 +1,28 @@
+{
+  "name": "session-cartographer",
+  "version": "0.4.0-rc.1",
+  "description": "Search and explore coding-agent session history across Claude Code and Codex",
+  "author": {
+    "name": "Andy Edmonds"
+  },
+  "homepage": "https://github.com/andyed/session-cartographer",
+  "repository": "https://github.com/andyed/session-cartographer",
+  "license": "MIT",
+  "keywords": ["search", "history", "session", "memory", "BM25", "hooks"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Session Cartographer",
+    "shortDescription": "Search and explore coding-agent history",
+    "longDescription": "Capture, search, and explore session history from Claude Code and Codex through a shared JSONL event index.",
+    "developerName": "Andy Edmonds",
+    "category": "Productivity",
+    "capabilities": ["Search", "History", "Hooks"],
+    "websiteURL": "https://github.com/andyed/session-cartographer",
+    "defaultPrompt": [
+      "Remember what we decided last time.",
+      "Orient me on this project's recent work.",
+      "Open the session history explorer."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

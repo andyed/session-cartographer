@@ -12,7 +12,9 @@
 #
 # Environment:
 #   CARTOGRAPHER_DEV_DIR         — default: ~/Documents/dev
-#   CARTOGRAPHER_TRANSCRIPTS_DIR — default: ~/.claude/projects
+#   CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR — default: ~/.claude/projects
+#   CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR  — default: ~/.codex/sessions
+#   CARTOGRAPHER_TRANSCRIPTS_DIR        — legacy Claude-only override
 #   CARTOGRAPHER_QDRANT_URL      — default: http://localhost:6333
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
@@ -216,19 +218,21 @@ fi
 # tokens, no new signal. Delta serving suppresses already-shown event_ids
 # from subsequent calls so each /remember surfaces fresh material.
 #
-# Activated when CLAUDE_SESSION_ID is set (skill context) and --all is not.
+# Activated when CARTOGRAPHER_SESSION_ID or the legacy CLAUDE_SESSION_ID is
+# set (skill context) and --all is not.
 # The served-list file caps at the most recent 200 entries so old served IDs
 # eventually fall off and re-surface in fresh queries. --reset-served wipes
 # the per-session list. --all bypasses both reading and writing.
 SERVED_FILE=""
 SERVED_OUT=""
-if [ -n "$CLAUDE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
+ACTIVE_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-}}"
+if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
   SERVED_DIR="${TMPDIR_BASE:-/tmp}/cartographer-served"
   mkdir -p "$SERVED_DIR" 2>/dev/null
-  SERVED_FILE="$SERVED_DIR/$CLAUDE_SESSION_ID.txt"
+  SERVED_FILE="$SERVED_DIR/$ACTIVE_SESSION_ID.txt"
   if [ "$RESET_SERVED" -eq 1 ]; then
     rm -f "$SERVED_FILE"
-    echo "(served-list reset for session $CLAUDE_SESSION_ID)" >&2
+    echo "(served-list reset for session $ACTIVE_SESSION_ID)" >&2
   fi
   touch "$SERVED_FILE" 2>/dev/null || SERVED_FILE=""
   [ -n "$SERVED_FILE" ] && SERVED_OUT="$TMPDIR/served-this-call.txt"
@@ -236,7 +240,8 @@ fi
 
 DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
-TRANSCRIPTS="${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}"
+CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
+CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
 
 # Resolve project aliases from registry
@@ -284,11 +289,16 @@ TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
 
 # ─── Capture stdout so we can report context-window fill at the end ───
-# /remember and /focus pipe this output into Claude's context — surface
-# how much it costs, concisely. tee preserves live streaming to terminal.
+# /remember and /focus pipe this output into agent context — surface how much
+# it costs, concisely. A named pipe preserves live streaming without Bash's
+# /dev/fd process substitution, which is denied in the Codex sandbox.
 OUTPUT_CAPTURE="$TMPDIR/_output.txt"
+OUTPUT_PIPE="$TMPDIR/_output.pipe"
 exec 3>&1
-exec 1> >(tee "$OUTPUT_CAPTURE" >&3)
+mkfifo "$OUTPUT_PIPE"
+tee "$OUTPUT_CAPTURE" < "$OUTPUT_PIPE" >&3 &
+TEE_PID=$!
+exec 1> "$OUTPUT_PIPE"
 
 # ─── Query rewriting: wildcard expansion ───
 # "hallucinat*" → find all tokens starting with "hallucinat" in the logs,
@@ -400,6 +410,7 @@ semantic_search_to_tsv() {
     (if .value.payload.transcript_path and .value.payload.transcript_path != "" then "transcript:" + .value.payload.transcript_path + "|" else "" end) +
     (if .value.payload.cwd and .value.payload.cwd != "" then "cwd:" + .value.payload.cwd + "|" else "" end) +
     (if .value.payload.session then "session:" + .value.payload.session + "|" else "" end) +
+    (if .value.payload.provider and .value.payload.provider != "" then "provider:" + .value.payload.provider + "|" else "" end) +
     (if .value.payload.prompt_intent and .value.payload.prompt_intent != "" then "intent:" + .value.payload.prompt_intent + "|" else "" end) +
     "\t" +
     (.value.payload.type // (if (.value.payload.event_id // "") | startswith("git-") then "git_commit" else "?" end)) +
@@ -428,7 +439,7 @@ grep_jsonl_to_tsv() {
 }
 
 grep_transcripts_to_tsv() {
-  [ -d "$TRANSCRIPTS" ] || return 0
+  [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || return 0
 
   # Per-line grep, no turn-grouping, no BM25. Turn-extraction is an
   # indexing-layer concern (Qdrant embeddings); the CLI keyword path is
@@ -438,10 +449,22 @@ grep_transcripts_to_tsv() {
   while IFS= read -r transcript; do
     [ -z "$transcript" ] && continue
 
-    local project_dir session_file session_id
-    project_dir=$(basename "$(dirname "$transcript")")
+    local provider project_dir session_file session_id session_cwd
     session_file=$(basename "$transcript")
-    session_id="${session_file%.jsonl}"
+    case "$transcript" in
+      "$CODEX_TRANSCRIPTS"/*)
+        provider="codex"
+        session_id=$(jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' "$transcript" 2>/dev/null | head -1)
+        session_id="${session_id:-${session_file%.jsonl}}"
+        session_cwd=$(jq -r 'select(.type == "session_meta") | .payload.cwd // empty' "$transcript" 2>/dev/null | head -1)
+        project_dir=$(basename "${session_cwd:-$(dirname "$transcript")}")
+        ;;
+      *)
+        provider="claude"
+        project_dir=$(basename "$(dirname "$transcript")")
+        session_id="${session_file%.jsonl}"
+        ;;
+    esac
 
     if [ -n "$PROJECT" ]; then
       echo "$project_dir" | grep -qi "$PROJECT" || continue
@@ -450,7 +473,7 @@ grep_transcripts_to_tsv() {
     matched_files=$((matched_files + 1))
 
     LC_ALL=C grep -niE "$GREP_QUERY" "$transcript" 2>/dev/null | head -20 | \
-      awk -F: -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" '
+      awk -F: -v sid="$session_id" -v proj="$project_dir" -v provider="$provider" -v tpath="$transcript" '
         {
           lineno = $1
           content = $2
@@ -458,9 +481,9 @@ grep_transcripts_to_tsv() {
           gsub(/\t/, " ", content)
           gsub(/[[:cntrl:]]/, " ", content)
           if (length(content) > 300) content = substr(content, 1, 300) "..."
-          printf "transcript\t%d\ttranscript-%s-%d\t?\t%s\t%s\t%s\t%s\t%s\n", \
-            NR, sid, lineno, proj, content, \
-            "session:" sid "|transcript:" tpath, "transcript", "0.5"
+          printf "transcript\t%d\ttranscript-%s-%s-%d\t?\t%s\t%s\t%s\t%s\t%s\n", \
+            NR, provider, sid, lineno, proj, content, \
+            "provider:" provider "|session:" sid "|transcript:" tpath, "transcript", "0.5"
         }
       '
 
@@ -470,9 +493,15 @@ grep_transcripts_to_tsv() {
     fi
   done < <(
     if command -v rg >/dev/null 2>&1; then
-      rg -l "$GREP_QUERY" "$TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null | head -20
+      {
+        [ -d "$CLAUDE_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CLAUDE_TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null
+        [ -d "$CODEX_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CODEX_TRANSCRIPTS" --glob '*.jsonl' --max-depth 5 2>/dev/null
+      } | head -20
     else
-      find "$TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+      {
+        [ -d "$CLAUDE_TRANSCRIPTS" ] && find "$CLAUDE_TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+        [ -d "$CODEX_TRANSCRIPTS" ] && find "$CODEX_TRANSCRIPTS" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+      } | head -20
     fi
   )
 }
@@ -1056,7 +1085,7 @@ if [ "$FOUND" -eq 0 ]; then
     echo "compaction, or session end."
     echo ""
     echo "To search raw session transcripts now:"
-    echo "  grep -r -i \"$QUERY\" $TRANSCRIPTS/ --include='*.jsonl' -l"
+    echo "  grep -r -i \"$QUERY\" $CLAUDE_TRANSCRIPTS/ $CODEX_TRANSCRIPTS/ --include='*.jsonl' -l"
   else
     # ─── Phantom detection (LongMemEval abstention) ───
     # Empty result + entity-shaped tokens in the query is a different failure
@@ -1090,7 +1119,8 @@ if [ "$FOUND" -eq 0 ]; then
     done
 
     if [ -n "$UNKNOWN" ]; then
-      LOGGER="$(dirname "$0")/../plugins/session-cartographer/hooks/log-knowledge-gap.sh"
+      LOGGER="$(dirname "$0")/../hooks/log-knowledge-gap.sh"
+      [ -x "$LOGGER" ] || LOGGER="$(dirname "$0")/../plugins/session-cartographer/hooks/log-knowledge-gap.sh"
       if [ -x "$LOGGER" ]; then
         "$LOGGER" --query "$QUERY" --entities "$UNKNOWN" --project "$PROJECT" 2>/dev/null
       fi
@@ -1112,7 +1142,7 @@ echo "=== Done ==="
 # pipe this into Claude's context; users want to see what it costs.
 exec 1>&3
 exec 3>&-
-sleep 0.05  # let tee flush
+wait "$TEE_PID"
 if [ -s "$OUTPUT_CAPTURE" ]; then
   chars=$(wc -c < "$OUTPUT_CAPTURE" | tr -d ' ')
   # Rough English heuristic: 1 token ≈ 4 chars. Good to ±20% for prose;

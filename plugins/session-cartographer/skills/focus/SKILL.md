@@ -1,7 +1,6 @@
 ---
 name: focus
 description: Orient on a project or project family. Shows recent activity, milestones, and commits from event logs.
-argument-hint: "<project or alias>"
 allowed-tools:
   - Bash
   - Read
@@ -10,6 +9,11 @@ allowed-tools:
 # Focus
 
 Get oriented on a project before diving in. Pulls recent activity from the event logs — no git calls, no compilation, just what the hooks already captured.
+
+Before running commands, resolve `ROOT` to the Session Cartographer plugin
+root. Prefer `CARTOGRAPHER_ROOT`, then `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT`.
+Otherwise derive it from this skill's reported base directory (`../..` from
+`skills/focus`), with the conventional checkout as a legacy fallback.
 
 ## What it shows
 
@@ -24,7 +28,7 @@ Get oriented on a project before diving in. Pulls recent activity from the event
 Run the search script with `--project` and a broad recency query:
 
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "recent activity" --project <PROJECT> --limit 20
+bash "$ROOT/scripts/cartographer-search.sh" "recent activity" --project <PROJECT> --limit 20
 ```
 
 The `<PROJECT>` argument supports:
@@ -36,13 +40,13 @@ The `<PROJECT>` argument supports:
 If the user gives a vague name, check `project-registry.json` for aliases:
 
 ```bash
-jq -r '.aliases | keys[]' ~/Documents/dev/session-cartographer/project-registry.json
+jq -r '.aliases | keys[]' "$ROOT/project-registry.json"
 ```
 
 ## Step 2: Search recent activity
 
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "recent activity" --project <PROJECT> --limit 20
+bash "$ROOT/scripts/cartographer-search.sh" "recent activity" --project <PROJECT> --limit 20
 ```
 
 ## Step 3: Surface related threads + maneuvers
@@ -50,8 +54,8 @@ bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "recent
 The co-occurrence graph adds two orientation lenses the search can't: which *other* projects this one is worked on alongside (cross-project research threads), and which recurring technical maneuvers (release, deploy, merge, overleaf-sync…) it runs. Both resolve aliases/partial names automatically.
 
 ```bash
-node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --related <PROJECT>
-node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --maneuvers <PROJECT>
+node "$ROOT/scripts/cooccurrence-graph.js" --related <PROJECT>
+node "$ROOT/scripts/cooccurrence-graph.js" --maneuvers <PROJECT>
 ```
 
 Skip either line silently if it prints `(no co-active…)` / `(no maneuvers…)`. The maneuver map is an *index*, not a command store — to recover the actual command for a maneuver, grep the changelog on demand:

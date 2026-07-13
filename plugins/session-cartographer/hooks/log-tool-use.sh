@@ -34,23 +34,29 @@ fi
 
 # Cross-event linkage: thread events into work-arcs.
 . "$(dirname "$0")/common.sh"
+PROVIDER=$(detect_provider "$INPUT")
 PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
 
 SALIENCE="0.5"  # default; per-branch overrides below
 
 case "$TOOL_NAME" in
-  Edit|Write)
-    FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+  Edit|Write|apply_patch)
+    if [ "$TOOL_NAME" = "apply_patch" ]; then
+      FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.patch // .tool_input.input // empty' | sed -nE 's/^\*\*\* (Add|Update|Delete) File: (.*)$/\2/p' | head -20 | paste -sd ',' -)
+    else
+      FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
+    fi
     [ -z "$FILE_PATH" ] && exit 0
+    PRIMARY_FILE=${FILE_PATH%%,*}
     # Refine project via file path's git repo
-    FILE_REPO=$(cd "$(dirname "$FILE_PATH")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+    FILE_REPO=$(cd "$(dirname "$PRIMARY_FILE")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
     [ -n "$FILE_REPO" ] && PROJECT=$(basename "$FILE_REPO")
 
     # Skip noisy paths (node_modules, .git, lock files)
-    case "$FILE_PATH" in
+    case "$PRIMARY_FILE" in
       */node_modules/*|*/.git/*|*/package-lock.json|*/yarn.lock|*/pnpm-lock.yaml) exit 0 ;;
     esac
-    FILENAME=$(basename "$FILE_PATH")
+    FILENAME=$(basename "$PRIMARY_FILE")
     SUMMARY="Modified: $FILE_PATH"
     TYPE="tool_file_edit"
     SALIENCE="0.4"
@@ -83,7 +89,8 @@ case "$TOOL_NAME" in
       # Extract diff shape metadata (Tier 3)
       DIFF_SHAPE=""
       if [ -n "$COMMIT_HASH" ] && [ -n "$GIT_REPO" ]; then
-        DIFF_SHAPE=$(bash "$(dirname "$0")/../../../scripts/diff-shape.sh" "$COMMIT_HASH" "$GIT_REPO" 2>/dev/null || echo "")
+        DIFF_SHAPE_SCRIPT=$(cartographer_script diff-shape.sh)
+        [ -n "$DIFF_SHAPE_SCRIPT" ] && DIFF_SHAPE=$(bash "$DIFF_SHAPE_SCRIPT" "$COMMIT_HASH" "$GIT_REPO" 2>/dev/null || echo "")
       fi
 
       if [ -n "$COMMIT_HASH" ]; then
@@ -174,13 +181,14 @@ jq -n -c \
     --arg project "$PROJECT" \
     --arg cwd "$CWD" \
     --arg session "$SESSION_ID" \
+    --arg provider "$PROVIDER" \
     --arg transcript "$TRANSCRIPT" \
     --arg commit_type "${COMMIT_TYPE:-}" \
     --arg commit_url "${COMMIT_URL:-}" \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
     --arg parent_id "$PARENT_ID" \
     --argjson salience "${SALIENCE:-0.5}" \
-    '{event_id: $eid, timestamp: $ts, type: $type, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape, salience: $salience}
+    '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape, salience: $salience}
      + if $commit_type != "" then {commit_type: $commit_type} else {} end
      + if $commit_url != "" then {commit_url: $commit_url} else {} end
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
@@ -192,6 +200,7 @@ jq -n -c \
     --arg ts "$TIMESTAMP" \
     --arg type "$TYPE" \
     --arg session "$SESSION_ID" \
+    --arg provider "$PROVIDER" \
     --arg project "$PROJECT" \
     --arg cwd "$CWD" \
     --arg summary "$SUMMARY" \
@@ -200,13 +209,13 @@ jq -n -c \
     --argjson diff_shape "${DIFF_SHAPE:-null}" \
     --arg parent_id "$PARENT_ID" \
     --argjson salience "${SALIENCE:-0.5}" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: [], salience: $salience}
+    '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: [], salience: $salience}
      + if $commit_type != "" then {commit_type: $commit_type} else {} end
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)
-INDEXER="$(dirname "$0")/../../../scripts/index-event.sh"
+INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
   tail -1 "$CHANGELOG" | "$INDEXER" &
 fi

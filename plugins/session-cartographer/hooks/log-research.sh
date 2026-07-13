@@ -25,6 +25,7 @@ EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 # Cross-event linkage: thread events into work-arcs. Parent computed against
 # the unified changelog so chains can span event types in the same session.
 . "$(dirname "$0")/common.sh"
+PROVIDER=$(detect_provider "$INPUT")
 
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
@@ -72,8 +73,23 @@ salience_for_category() {
   esac
 }
 
-if [ "$TOOL_NAME" = "WebFetch" ]; then
-    URL=$(echo "$INPUT" | jq -r '.tool_input.url // empty')
+RESEARCH_KIND=""
+case "$TOOL_NAME" in
+  WebFetch) RESEARCH_KIND="fetch" ;;
+  WebSearch) RESEARCH_KIND="search" ;;
+  web__run)
+    if echo "$INPUT" | jq -e '.tool_input.search_query[0].q? // .tool_input.image_query[0].q?' >/dev/null 2>&1; then
+      RESEARCH_KIND="search"
+    elif echo "$INPUT" | jq -e '.tool_input.open[0].ref_id? // .tool_input.open[0].url?' >/dev/null 2>&1; then
+      RESEARCH_KIND="fetch"
+    fi
+    ;;
+  mcp__*search*) RESEARCH_KIND="search" ;;
+  mcp__*fetch*|mcp__*open*) RESEARCH_KIND="fetch" ;;
+esac
+
+if [ "$RESEARCH_KIND" = "fetch" ]; then
+    URL=$(echo "$INPUT" | jq -r '.tool_input.url // .tool_input.uri // .tool_input.open[0].url // .tool_input.open[0].ref_id // empty')
     PROMPT=$(echo "$INPUT" | jq -r '.tool_input.prompt // empty')
     CATEGORY=$(categorize_url "$URL")
     SALIENCE=$(salience_for_category "$CATEGORY")
@@ -88,10 +104,11 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg project "$PROJECT" \
         --arg cwd "$CWD" \
         --arg session "$SESSION_ID" \
+        --arg provider "$PROVIDER" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SALIENCE" \
-        '{event_id: $eid, timestamp: $ts, type: $type, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
+        '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$LOG_FILE"
 
@@ -100,18 +117,19 @@ if [ "$TOOL_NAME" = "WebFetch" ]; then
         --arg eid "$EVENT_ID" \
         --arg ts "$TIMESTAMP" \
         --arg session "$SESSION_ID" \
+        --arg provider "$PROVIDER" \
         --arg project "$PROJECT" \
         --arg cwd "$CWD" \
         --arg summary "Fetched: $URL" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SALIENCE" \
-        '{event_id: $eid, timestamp: $ts, type: "research_fetch", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
+        '{event_id: $eid, timestamp: $ts, type: "research_fetch", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$CHANGELOG"
 
-elif [ "$TOOL_NAME" = "WebSearch" ]; then
-    QUERY=$(echo "$INPUT" | jq -r '.tool_input.query // empty')
+elif [ "$RESEARCH_KIND" = "search" ]; then
+    QUERY=$(echo "$INPUT" | jq -r '.tool_input.query // .tool_input.q // .tool_input.search_query[0].q // .tool_input.image_query[0].q // empty')
 
     # Log the search query itself
     SEARCH_EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
@@ -124,10 +142,11 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg project "$PROJECT" \
         --arg cwd "$CWD" \
         --arg session "$SESSION_ID" \
+        --arg provider "$PROVIDER" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SEARCH_SALIENCE" \
-        '{event_id: $eid, timestamp: $ts, type: $type, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
+        '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$LOG_FILE"
 
@@ -136,13 +155,14 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
         --arg eid "$SEARCH_EVENT_ID" \
         --arg ts "$TIMESTAMP" \
         --arg session "$SESSION_ID" \
+        --arg provider "$PROVIDER" \
         --arg project "$PROJECT" \
         --arg cwd "$CWD" \
         --arg summary "Search: $QUERY" \
         --arg transcript "$TRANSCRIPT" \
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SEARCH_SALIENCE" \
-        '{event_id: $eid, timestamp: $ts, type: "research_search", session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
+        '{event_id: $eid, timestamp: $ts, type: "research_search", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
         >> "$CHANGELOG"
 
@@ -185,16 +205,17 @@ elif [ "$TOOL_NAME" = "WebSearch" ]; then
             --arg project "$PROJECT" \
             --arg cwd "$CWD" \
             --arg session "$SESSION_ID" \
+            --arg provider "$PROVIDER" \
             --arg transcript "$TRANSCRIPT" \
             --arg parent "$SEARCH_EVENT_ID" \
             --argjson salience "$RESULT_SALIENCE" \
-            '{event_id: $eid, timestamp: $ts, type: $type, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent], parent_event_id: $parent, salience: $salience}' \
+            '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent], parent_event_id: $parent, salience: $salience}' \
             >> "$LOG_FILE"
     done
 fi
 
 # Real-time indexing (silent fail if services aren't running)
-INDEXER="$(dirname "$0")/../../../scripts/index-event.sh"
+INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
   tail -1 "$CHANGELOG" | "$INDEXER" &
 fi

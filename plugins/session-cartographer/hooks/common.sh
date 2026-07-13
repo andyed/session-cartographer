@@ -5,6 +5,65 @@
 # All helpers are silent on missing dependencies (jq, date) so hooks
 # degrade gracefully — never block a tool call because of indexing.
 
+# detect_provider <hook-input-json>
+#
+# Provider selection belongs at the ingestion boundary. Do not use a mutable
+# global "mode" file: Claude Code and Codex sessions may run concurrently.
+# An explicit CARTOGRAPHER_PROVIDER override is useful for fixtures and custom
+# integrations; normal hooks are detected from provider-specific payload/path
+# signals and fall back to "unknown" rather than guessing.
+detect_provider() {
+  local input="$1"
+
+  case "${CARTOGRAPHER_PROVIDER:-}" in
+    claude|codex) printf '%s\n' "$CARTOGRAPHER_PROVIDER"; return 0 ;;
+  esac
+
+  command -v jq >/dev/null 2>&1 || { printf '%s\n' "unknown"; return 0; }
+
+  local transcript turn_id model
+  transcript=$(printf '%s' "$input" | jq -r '.transcript_path // empty' 2>/dev/null)
+  turn_id=$(printf '%s' "$input" | jq -r '.turn_id // empty' 2>/dev/null)
+  model=$(printf '%s' "$input" | jq -r '.model // empty' 2>/dev/null)
+
+  case "$transcript" in
+    */.codex/sessions/*|*/.codex/archived_sessions/*) printf '%s\n' "codex"; return 0 ;;
+    */.claude/projects/*) printf '%s\n' "claude"; return 0 ;;
+  esac
+
+  # turn_id and model are Codex hook extensions. Keep this below path checks
+  # so fixtures with explicit Claude transcript paths remain deterministic.
+  if [ -n "$turn_id" ] || [ -n "$model" ]; then
+    printf '%s\n' "codex"
+  else
+    printf '%s\n' "unknown"
+  fi
+}
+
+# cartographer_script <filename>
+#
+# Resolve a Cartographer script from a self-contained release plugin, a source
+# checkout plugin, or an explicit install root. Keep the release-plugin check
+# first: GitHub release assets carry scripts inside the plugin so an install
+# never depends on the developer's checkout.
+cartographer_script() {
+  local name="$1" root plugin_root source_root
+  plugin_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)
+  source_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)
+  for root in \
+    "${CARTOGRAPHER_ROOT:-}" \
+    "$plugin_root" \
+    "$source_root" \
+    "$HOME/Documents/dev/session-cartographer"; do
+    [ -n "$root" ] || continue
+    if [ -f "$root/scripts/$name" ]; then
+      printf '%s\n' "$root/scripts/$name"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # find_parent_event_id <log_file> <session_id> <now_ts_iso>
 #
 # Returns the event_id of the most recent prior event in <log_file> that

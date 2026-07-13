@@ -10,6 +10,11 @@ allowed-tools:
 
 # Wrapup
 
+When a runtime script is needed, resolve `ROOT` from `CARTOGRAPHER_ROOT`,
+`CLAUDE_PLUGIN_ROOT`, or `PLUGIN_ROOT`. If none is set, derive the plugin root
+from this skill's reported base directory (`../..` from `skills/wrapup`), with
+the conventional checkout as a legacy fallback.
+
 Deliberate end-of-session preservation. The hooks capture mechanical facts (files changed, commits made, session ended). This skill captures **strategic context** — the decisions, discoveries, and unfinished threads that make the next session productive.
 
 ## What to capture
@@ -29,7 +34,9 @@ Then log it:
 
 ```bash
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
-SESSION_ID="$CLAUDE_SESSION_ID"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-unknown}}"
+PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
+[ "$PROVIDER" = "unknown" ] && [ -n "${CLAUDE_SESSION_ID:-}" ] && PROVIDER="claude"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 
@@ -40,7 +47,13 @@ GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "none")
 
 # Find transcript path
 TRANSCRIPT=$(find ~/.claude/projects -name "${SESSION_ID}.jsonl" 2>/dev/null | head -1)
+if [ -z "$TRANSCRIPT" ] && [ "$SESSION_ID" != "unknown" ]; then
+  TRANSCRIPT=$(find ~/.codex/sessions -name "*${SESSION_ID}*.jsonl" 2>/dev/null | head -1)
+  [ -n "$TRANSCRIPT" ] && PROVIDER="codex"
+fi
 ENCODED_PATH=$(echo "$TRANSCRIPT" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=''))" 2>/dev/null || echo "$TRANSCRIPT")
+DEEPLINK=""
+[ "$PROVIDER" = "claude" ] && DEEPLINK="claude-history://session/${ENCODED_PATH}"
 
 jq -n -c \
   --arg eid "$EVENT_ID" \
@@ -48,13 +61,14 @@ jq -n -c \
   --arg milestone "session_wrapup" \
   --arg description "SESSION_SYNTHESIS_HERE" \
   --arg session "$SESSION_ID" \
+  --arg provider "$PROVIDER" \
   --arg transcript "$TRANSCRIPT" \
-  --arg deeplink "claude-history://session/${ENCODED_PATH}" \
+  --arg deeplink "$DEEPLINK" \
   --arg project "$PROJECT" \
   --arg cwd "$(pwd)" \
   --arg event "Wrapup" \
   --arg branch "$GIT_BRANCH" \
-  '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch}' \
+  '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch}' \
   >> "$DEV/session-milestones.jsonl"
 ```
 
@@ -63,7 +77,8 @@ Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph.
 ## Step 2: Index it
 
 ```bash
-tail -1 "$DEV/session-milestones.jsonl" | bash ~/Documents/dev/session-cartographer/scripts/index-event.sh
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
+tail -1 "$DEV/session-milestones.jsonl" | bash "$ROOT/scripts/index-event.sh"
 ```
 
 ## Step 3: Update memory if warranted

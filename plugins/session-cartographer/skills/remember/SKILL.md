@@ -1,7 +1,6 @@
 ---
 name: remember
-description: Recall past work across all Claude Code sessions. Finds decisions, research, fixes, and conversations by intent.
-argument-hint: "<what to recall>"
+description: Recall past work across Claude Code and Codex sessions. Finds decisions, research, fixes, and conversations by intent.
 allowed-tools:
   - Bash
   - Read
@@ -9,7 +8,18 @@ allowed-tools:
 
 # Remember
 
-Recall past work from Claude Code session history. The user is trying to recover context — a decision, a fix, a paper, an approach — not run a database query.
+Recall past work from the shared Claude Code and Codex session history. The
+consumer and producer do not need to match: Claude can recover Codex work and
+Codex can recover Claude work. The user is trying to recover context — a
+decision, a fix, a paper, an approach — not run a database query.
+
+## Resolve the runtime once
+
+Before running commands, resolve `ROOT` to the Session Cartographer plugin
+root. Prefer `CARTOGRAPHER_ROOT`, then `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT`.
+If none is set, derive it from this skill's reported base directory (`../..`
+from `skills/remember`). Use the conventional checkout only as a legacy
+fallback. Verify that `$ROOT/scripts/cartographer-search.sh` exists.
 
 ## What can be remembered
 
@@ -55,7 +65,7 @@ Hooks link successive events from the same session into a `parent_event_id` chai
 When the user asks "show me how I got to X", "what led up to that commit", or "what was the chain of work around Y", run a normal search to find the anchor `event_id`, then walk the arc:
 
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh _ --thread evt-xxxxxxxxxxxx
+bash "$ROOT/scripts/cartographer-search.sh" _ --thread evt-xxxxxxxxxxxx
 ```
 
 The first argument is ignored when `--thread` is set (pass any placeholder like `_`). Output is the full ancestor + descendant arc sorted by timestamp, with the supplied event marked `★`. Present it as a coherent timeline rather than a search result.
@@ -66,10 +76,10 @@ Procedural questions — "how do I deploy X", "what's my release process", "the 
 
 ```bash
 # Query names a project → which maneuvers it runs + which projects share them
-node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --maneuvers <project>
+node "$ROOT/scripts/cooccurrence-graph.js" --maneuvers <project>
 
 # Query names the procedure → which projects run it (e.g. cloudflare, release, merge, overleaf)
-node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --signal <maneuver>
+node "$ROOT/scripts/cooccurrence-graph.js" --signal <maneuver>
 ```
 
 The map is an *index*, not a command store — it deliberately holds no commands and no secrets. Recovering the actual invocation is the same "map → territory" move as reading a transcript in Step 3 (so it's exempt from the no-freestyle rule below): grep the changelog for the matching project + maneuver marker.
@@ -85,7 +95,7 @@ Present the recovered command(s) with project + recency. They're the user's own 
 When a recall centers on one project but the work spans a thread, surface the co-active siblings so you can widen the search. The graph knows, e.g., `approach-retreat` co-threads with `allserp-paper` / `ettac-paper`:
 
 ```bash
-node ~/Documents/dev/session-cartographer/scripts/cooccurrence-graph.js --related <project>
+node "$ROOT/scripts/cooccurrence-graph.js" --related <project>
 ```
 
 Use it when results cluster on one project and the question is open-ended ("what was I doing around the AOI work") — offer to pull the related threads into the search.
@@ -100,12 +110,12 @@ Write-time salience is a static prior; the access ledger makes it a learned post
 
 ### Delta serving (automatic in-session)
 
-When you call `/remember` repeatedly in the same session, the script automatically suppresses event_ids that were returned in earlier calls — so each subsequent call surfaces *fresh* material rather than re-returning the same top-K. Activated whenever `$CLAUDE_SESSION_ID` is set (which it always is in skill context).
+When you call `/remember` repeatedly in the same session, the script automatically suppresses event_ids that were returned in earlier calls — so each subsequent call surfaces *fresh* material rather than re-returning the same top-K. Activated whenever `CARTOGRAPHER_SESSION_ID` or the backwards-compatible `CLAUDE_SESSION_ID` is available in skill context.
 
 If you actually need to re-cite an event from a prior call (the user is asking about something you already showed them), pass `--all` to bypass suppression for that single call:
 
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<terms>" --all
+bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --all
 ```
 
 To wipe the per-session served list entirely (rare; only when starting a genuinely fresh investigation): pass `--reset-served`.
@@ -119,17 +129,17 @@ Do NOT freestyle grep or jq commands. Always use the unified search script.
 Think about what the user is trying to recall, then translate to search terms.
 
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<search terms>"
+bash "$ROOT/scripts/cartographer-search.sh" "<search terms>"
 ```
 
 If the user mentioned a specific project, add `--project <name>`:
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<terms>" --project scrutinizer
+bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --project scrutinizer
 ```
 
 For more results, add `--limit 25` or `--limit 50`. If the user says "more" or "keep going" after seeing results, re-run with a higher limit:
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh "<same terms>" --limit 30
+bash "$ROOT/scripts/cartographer-search.sh" "<same terms>" --limit 30
 ```
 
 Wildcard prefix search works: `shader*` matches `shader`, `shaders`, `shaderlab`, etc.
@@ -144,14 +154,24 @@ Show results as-is from the script output. Keep it scannable.
 
 Search results are summaries. When you need full context, **read the transcript file directly** — don't wait for the user to ask.
 
-Find the transcript path — it's in the search result as `transcript:`. If missing, resolve from `session:`:
+Find the transcript path — it's in the search result as `transcript:`. Prefer
+that path because it is provider-neutral. If missing, resolve from `session:`
+across both provider stores:
 ```bash
 find ~/.claude/projects -name "<session-id>.jsonl" 2>/dev/null
+find ~/.codex/sessions -name "*<session-id>*.jsonl" 2>/dev/null
 ```
 
-Then read around the relevant moment:
+For a Claude transcript, read around the relevant moment:
 ```bash
 jq -c 'select(.type == "user" or .type == "assistant") | select(.message.content | type == "string") | {type, timestamp, content: .message.content[:500]}' <transcript_path> | grep -A5 -B5 "<keyword>"
+```
+
+For a Codex transcript, retained user and assistant messages are currently in
+`event_msg` and `response_item` records:
+
+```bash
+jq -c 'select((.type == "event_msg" and .payload.type == "user_message") or (.type == "response_item" and .payload.type == "message")) | {type, timestamp, payload}' <transcript_path> | grep -A5 -B5 "<keyword>"
 ```
 
 Or jump to a specific message by UUID:
@@ -166,7 +186,7 @@ jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
 When a transcript (or `--thread` arc) actually answered the question, touch the event_ids whose context you used — this is the promote-on-reuse moment that strengthens them for future recall:
 
 ```bash
-bash ~/Documents/dev/session-cartographer/scripts/cartographer-search.sh _ --touch <event_id>[,<event_id>...]
+bash "$ROOT/scripts/cartographer-search.sh" _ --touch <event_id>[,<event_id>...]
 ```
 
 Touch only what you used, not everything that was served. A result you read and discarded as irrelevant should NOT be touched — false vouching pollutes future rankings.

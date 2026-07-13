@@ -29,10 +29,13 @@ done
 [ -z "$QUERY" ] && exit 0
 [ -z "$ENTITIES" ] && exit 0
 command -v jq >/dev/null 2>&1 || exit 0
+. "$(dirname "$0")/common.sh"
 
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-SESSION_ID="${CLAUDE_SESSION_ID:-}"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-}}"
+PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
+[ "$PROVIDER" = "unknown" ] && [ -n "${CLAUDE_SESSION_ID:-}" ] && PROVIDER="claude"
 CWD=$(pwd)
 
 # Knowledge gaps carry mid-high salience — they are signals worth surfacing
@@ -49,23 +52,25 @@ jq -n -c \
   --arg project "$PROJECT" \
   --arg cwd "$CWD" \
   --arg session "$SESSION_ID" \
+  --arg provider "$PROVIDER" \
   --argjson salience "$SALIENCE" \
-  '{event_id: $eid, timestamp: $ts, type: "knowledge_gap", query: $query, unknown_entities: ($entities | split(",")), project_filter: $project, cwd: $cwd, session: $session, salience: $salience}' \
+  '{event_id: $eid, timestamp: $ts, type: "knowledge_gap", provider: $provider, query: $query, unknown_entities: ($entities | split(",")), project_filter: $project, cwd: $cwd, session: $session, salience: $salience}' \
   >> "$LOG_FILE"
 
 jq -n -c \
   --arg eid "$EVENT_ID" \
   --arg ts "$TIMESTAMP" \
   --arg session "$SESSION_ID" \
+  --arg provider "$PROVIDER" \
   --arg project "$PROJECT" \
   --arg cwd "$CWD" \
   --arg summary "$SUMMARY" \
   --argjson salience "$SALIENCE" \
-  '{event_id: $eid, timestamp: $ts, type: "knowledge_gap", session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: [], salience: $salience}' \
+  '{event_id: $eid, timestamp: $ts, type: "knowledge_gap", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: [], salience: $salience}' \
   >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)
-INDEXER="$(dirname "$0")/../../../scripts/index-event.sh"
+INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
   tail -1 "$CHANGELOG" | "$INDEXER" &
 fi

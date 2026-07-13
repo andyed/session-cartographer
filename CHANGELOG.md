@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 0.4.0-rc.1 — 2026-07-13
+
+### feat(providers): shared Claude Code and Codex history
+
+Hooks now detect provider provenance per event instead of relying on a global
+mode, so Claude Code and Codex can run concurrently and consume each other's
+history. Codex JSONL gets its own turn adapter, transcript search scans both
+provider stores, Qdrant payloads retain provider and transcript path, and the
+Explorer normalizes both formats behind one secure transcript endpoint.
+
+### feat(release): self-contained cross-provider plugin bundle
+
+The plugin no longer depends on the developer checkout after installation.
+Release builds place search/index scripts, the project registry, and Explorer
+inside the plugin, while hook and skill runtime resolution prefers that bundled
+copy. `scripts/build-release.sh` creates a version-checked local-marketplace
+archive plus SHA-256 checksum; `tests/release-smoke.sh` extracts it and proves
+bundled hook resolution and keyword recall. Tags matching `v*` now run unit and
+release smoke tests before GitHub publishes the archive.
+
 ## 0.3.0 — 2026-06-23
 
 ### feat(graph): significance-weighted co-occurrence graph + maneuver map

@@ -24,6 +24,7 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Cross-event linkage: thread events into work-arcs.
 . "$(dirname "$0")/common.sh"
+PROVIDER=$(detect_provider "$INPUT")
 PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
 
 GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
@@ -47,6 +48,15 @@ case "$EVENT" in
         MILESTONE="session_end_${REASON}"
         DESCRIPTION="Session ended (${REASON})"
         ;;
+    Stop)
+        # Claude Code has a dedicated SessionEnd event. Its Stop event is a
+        # turn boundary and would duplicate every response. Codex currently
+        # exposes Stop but not SessionEnd, so preserve it as a provider-labeled
+        # turn milestone rather than pretending the whole session ended.
+        [ "$PROVIDER" = "codex" ] || exit 0
+        MILESTONE="turn_stop"
+        DESCRIPTION="Codex turn completed"
+        ;;
     SubagentStop)
         AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // "unknown"')
         case "$AGENT_TYPE" in
@@ -64,7 +74,8 @@ case "$EVENT" in
         ;;
 esac
 
-DEEPLINK="claude-history://session/${ENCODED_PATH}"
+DEEPLINK=""
+[ "$PROVIDER" = "claude" ] && DEEPLINK="claude-history://session/${ENCODED_PATH}"
 
 # Salience by milestone type — wrapups are deliberate strategic synthesis,
 # compactions are mechanical noise. Tuning: docs/INDEXING_BACKLOG.md item #2.
@@ -102,6 +113,7 @@ jq -n -c \
     --arg milestone "$MILESTONE" \
     --arg description "$DESCRIPTION" \
     --arg session "$SESSION_ID" \
+    --arg provider "$PROVIDER" \
     --arg transcript "$TRANSCRIPT" \
     --arg deeplink "$DEEPLINK" \
     --arg project "$PROJECT" \
@@ -113,7 +125,7 @@ jq -n -c \
     --argjson event_count "$SESSION_EVENT_COUNT" \
     --arg parent_id "$PARENT_ID" \
     --argjson salience "$SALIENCE" \
-    '{event_id: $eid, timestamp: $ts, milestone: $milestone, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count, salience: $salience}
+    '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count, salience: $salience}
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$LOG_FILE"
 
@@ -130,6 +142,7 @@ jq -n -c \
     --arg ts "$TIMESTAMP" \
     --arg type "milestone_${MILESTONE}" \
     --arg session "$SESSION_ID" \
+    --arg provider "$PROVIDER" \
     --arg project "$PROJECT" \
     --arg cwd "$CWD" \
     --arg deeplink "$DEEPLINK" \
@@ -137,12 +150,12 @@ jq -n -c \
     --arg transcript "$TRANSCRIPT" \
     --arg parent_id "$PARENT_ID" \
     --argjson salience "$SALIENCE" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
+    '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)
-INDEXER="$(dirname "$0")/../../../scripts/index-event.sh"
+INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
   tail -1 "$CHANGELOG" | "$INDEXER" &
 fi

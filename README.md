@@ -1,6 +1,9 @@
 # Session Cartographer
 
-Searchable memory for Claude Code. Hooks capture every URL fetched, file edited, git commit, and context compaction. Search fuses BM25 keyword scoring with vector similarity via Reciprocal Rank Fusion — then facets the results by project, event type, source, and time.
+Searchable memory for Claude Code and Codex. Hooks capture URLs, file edits,
+git commits, and lifecycle events into one provider-neutral JSONL history.
+Search fuses BM25 keyword scoring with vector similarity via Reciprocal Rank
+Fusion — then facets the results by project, event type, source, and time.
 
 ![/remember in action](docs/remember_remember_skill.png)
 
@@ -8,7 +11,7 @@ Searchable memory for Claude Code. Hooks capture every URL fetched, file edited,
 
 ## What you get
 
-- **`/remember`** — Ask Claude to recall past decisions, research, fixes. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
+- **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a searchable milestone event. Invoke before ending a productive session.
@@ -43,12 +46,26 @@ Edges are ranked by **Dunning's log-likelihood ratio (G², Dunning 1993)** — o
 
 ## Install
 
+The GitHub release bundle is the easiest cross-provider install. Download and
+extract `session-cartographer-<version>.tar.gz`, then run one of these from the
+extracted directory:
+
 ```bash
-git clone https://github.com/andyed/session-cartographer.git
-claude install /path/to/session-cartographer
+# Codex
+codex plugin marketplace add "$PWD"
+codex plugin add session-cartographer@session-cartographer
+
+# Claude Code
+claude plugin marketplace add "$PWD"
+claude plugin install session-cartographer@session-cartographer
 ```
 
-That's it. Hooks auto-register and start logging immediately. `/remember` works with keyword search out of the box.
+Start a new task/session after installation. Hooks auto-register and start
+logging immediately; `/remember` works with keyword search out of the box.
+
+For development, clone the repository and register the checkout itself as the
+marketplace. Release archives are self-contained: installed skills, hooks,
+search scripts, and the Explorer do not reach back into a source checkout.
 
 ### Explorer (web UI)
 
@@ -169,13 +186,19 @@ Hooks are the foundation. Everything else is a lens.
 
 Each layer is independent. You can use `/remember` without the Explorer, `/focus` without `/remember`, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
 
+There is no global Claude/Codex mode. Each hook invocation and normalized turn
+carries provider provenance, while both agents search the same logs and Qdrant
+collection by default. Claude can therefore recall a Codex session and Codex
+can recall a Claude session. Raw provider formats are isolated behind separate
+transcript adapters. See [Provider Architecture](docs/PROVIDERS.md).
+
 ## What gets logged
 
 | Hook | Triggers on | Captures |
 |------|-------------|----------|
-| `log-research.sh` | WebFetch, WebSearch | URLs, search queries, auto-categorization |
-| `log-session-milestones.sh` | PreCompact, SessionEnd, SubagentStop | Session lifecycle with deep links |
-| `log-tool-use.sh` | Edit, Write, Bash | File modifications, git commits, commands (opt-in: `CARTOGRAPHER_LOG_TOOL_USE=true`) |
+| `log-research.sh` | Claude web tools, Codex web/MCP tools | URLs, search queries, auto-categorization |
+| `log-session-milestones.sh` | PreCompact, SessionEnd/Stop, SubagentStop | Provider-aware lifecycle events with transcript links |
+| `log-tool-use.sh` | Edit, Write, apply_patch, Bash | File modifications, git commits, commands (opt-in: `CARTOGRAPHER_LOG_TOOL_USE=true`) |
 
 Event types are dynamic — they depend on which hooks you enable and how you use Claude Code. Run `jq -r '.type' ~/Documents/dev/changelog.jsonl | sort | uniq -c | sort -rn` to see your actual type distribution.
 
@@ -245,6 +268,7 @@ bash tests/private/benchmark.sh         # 8-query speed comparison
 
 ```bash
 claude uninstall session-cartographer                    # remove plugin + hooks
+# or: codex plugin remove session-cartographer@session-cartographer
 # Optionally delete event logs:
 rm ~/Documents/dev/changelog.jsonl ~/Documents/dev/research-log.jsonl ~/Documents/dev/session-milestones.jsonl
 rm -rf ~/Documents/dev/session-cartographer              # the repo
