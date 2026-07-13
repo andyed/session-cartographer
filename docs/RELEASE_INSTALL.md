@@ -1,6 +1,8 @@
-# Session Cartographer release bundle
+# Session Cartographer unified release bundle
 
 This archive is a self-contained local marketplace for Claude Code and Codex.
+It is the same artifact for both agents; install only the section you use, or
+install both to give them one shared history.
 Keep the extracted directory in a stable location; the agents copy the plugin
 into their own managed cache when it is installed.
 

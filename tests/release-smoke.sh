@@ -56,4 +56,16 @@ if command -v codex >/dev/null 2>&1; then
   [ -f "$INSTALLED/explorer/server/index.js" ]
 fi
 
+# Exercise Claude Code's managed-cache path when its CLI is available. A
+# temporary config root keeps the smoke test isolated from the user's plugins.
+if command -v claude >/dev/null 2>&1; then
+  CLAUDE_CONFIG_DIR="$WORK/claude"
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" claude plugin marketplace add "$BUNDLE" >/dev/null
+  CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" claude plugin install session-cartographer@session-cartographer --scope user >/dev/null
+  INSTALLED="$CLAUDE_CONFIG_DIR/plugins/cache/session-cartographer/session-cartographer/$VERSION"
+  [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
+  [ -f "$INSTALLED/explorer/server/index.js" ]
+fi
+
 echo "Release smoke test passed: $VERSION"

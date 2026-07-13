@@ -46,8 +46,9 @@ Edges are ranked by **Dunning's log-likelihood ratio (G², Dunning 1993)** — o
 
 ## Install
 
-The GitHub release bundle is the easiest cross-provider install. Download and
-extract `session-cartographer-<version>.tar.gz`, then run one of these from the
+The GitHub release ships **one unified bundle for both agents**—there are no
+separate Claude and Codex packages. Download and extract
+`session-cartographer-<version>.tar.gz`, then run one of these from the
 extracted directory:
 
 ```bash
@@ -200,7 +201,7 @@ transcript adapters. See [Provider Architecture](docs/PROVIDERS.md).
 | `log-session-milestones.sh` | PreCompact, SessionEnd/Stop, SubagentStop | Provider-aware lifecycle events with transcript links |
 | `log-tool-use.sh` | Edit, Write, apply_patch, Bash | File modifications, git commits, commands (opt-in: `CARTOGRAPHER_LOG_TOOL_USE=true`) |
 
-Event types are dynamic — they depend on which hooks you enable and how you use Claude Code. Run `jq -r '.type' ~/Documents/dev/changelog.jsonl | sort | uniq -c | sort -rn` to see your actual type distribution.
+Event types are dynamic — they depend on which hooks you enable and how you use Claude Code and Codex. Run `jq -r '.type' ~/Documents/dev/changelog.jsonl | sort | uniq -c | sort -rn` to see your actual type distribution.
 
 ## Configuration
 
