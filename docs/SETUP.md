@@ -101,13 +101,19 @@ Set these in your shell profile or Claude Code settings for your work machine.
 
 ## Cold Start: Backfilling History
 
-On a fresh install, the JSONL event logs are empty — hooks only capture events going forward. Two scripts backfill your existing Claude Code session history into the Qdrant index for immediate semantic search.
+On a fresh install, the JSONL event logs are empty — hooks only capture events
+going forward. The backfill scripts can index existing Claude Code and Codex
+history for immediate semantic search.
 
 ### Quick backfill (bash + awk)
 
 ```bash
-# Index all historical transcripts into Qdrant
-bash scripts/retro-index.sh
+# Index both providers (the default)
+bash scripts/retro-index.sh --provider all
+
+# Or backfill one provider
+bash scripts/retro-index.sh --provider claude
+bash scripts/retro-index.sh --provider codex
 
 # Limit to recent history
 bash scripts/retro-index.sh --limit-days 30

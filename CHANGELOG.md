@@ -2,7 +2,11 @@
 
 ## Unreleased
 
-## 0.4.0-rc.1 — 2026-07-13
+## 0.4.0 — 2026-07-13
+
+Promoted after the release candidate passed clean managed-cache installs in
+both plugin layouts, the full search suite, Explorer build, and published-asset
+checksum verification.
 
 ### feat(providers): shared Claude Code and Codex history
 

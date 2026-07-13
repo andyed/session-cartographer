@@ -39,9 +39,12 @@ jobs:
         run: |
           prerelease=()
           case "$GITHUB_REF_NAME" in *-*) prerelease=(--prerelease) ;; esac
+          notes=(--generate-notes)
+          notes_file="docs/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes_file" ]; then notes=(--notes-file "$notes_file"); fi
           gh release create "$GITHUB_REF_NAME" \
             dist/release/session-cartographer-*.tar.gz \
             dist/release/session-cartographer-*.sha256 \
             --verify-tag \
-            --generate-notes \
+            "${notes[@]}" \
             "${prerelease[@]}"
