@@ -8,6 +8,7 @@ explorer/node_modules/
 explorer/dist/
 explorer/public/demo/
 demo/truth/
+/dist/release/
 
 # — local Claude Code / tool state (never shipped) —
 .claude/

@@ -49,6 +49,8 @@ else
   SALIENCE=$(echo "$INPUT" | jq -r '(.salience // 0.5)')
   PARENT_EVENT_ID=$(echo "$INPUT" | jq -r '.parent_event_id // empty')
   PROMPT_INTENT=$(echo "$INPUT" | jq -r '.prompt_intent // empty')
+  PROVIDER=$(echo "$INPUT" | jq -r '.provider // empty')
+  TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 fi
 
 [ -z "$EVENT_ID" ] || [ -z "$TEXT" ] && exit 0
@@ -109,10 +111,12 @@ PAYLOAD=$(jq -n -c \
   --arg cwd "$CWD" \
   --arg summ "$TEXT" \
   --arg sess "$SESSION" \
+  --arg provider "${PROVIDER:-}" \
+  --arg transcript_path "${TRANSCRIPT_PATH:-}" \
   --argjson salience "${SALIENCE:-0.5}" \
   --arg parent_id "${PARENT_EVENT_ID:-}" \
   --arg intent "${PROMPT_INTENT:-}" \
-  '{points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end) + (if $intent != "" then {prompt_intent: $intent} else {} end))}]}')
+  '{points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $provider != "" then {provider: $provider} else {} end) + (if $transcript_path != "" then {transcript_path: $transcript_path} else {} end) + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end) + (if $intent != "" then {prompt_intent: $intent} else {} end))}]}')
 
 curl -sf "$QDRANT_URL/collections/$COLLECTION/points" \
   -H "Content-Type: application/json" \

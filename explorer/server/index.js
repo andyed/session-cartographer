@@ -2,6 +2,7 @@ import express from 'express';
 import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
+import { isAllowedTranscriptPath, normalizeTranscriptEntries, transcriptRoots } from './transcripts.js';
 import { statSync } from 'fs';
 import { resolve, normalize } from 'path';
 import { homedir } from 'os';
@@ -337,9 +338,7 @@ app.get('/api/stream', (req, res) => {
 });
 
 // ─── Transcript viewer ───
-const TRANSCRIPTS_DIR = resolve(
-  process.env.CARTOGRAPHER_TRANSCRIPTS_DIR || `${homedir()}/.claude/projects`
-);
+const TRANSCRIPT_ROOTS = transcriptRoots();
 
 app.get('/api/transcript', (req, res) => {
   const rawPath = req.query.path || '';
@@ -347,8 +346,8 @@ app.get('/api/transcript', (req, res) => {
 
   // Path traversal protection
   const resolved = resolve(rawPath.replace(/^~/, homedir()));
-  if (!resolved.startsWith(TRANSCRIPTS_DIR)) {
-    return res.status(403).json({ error: 'path outside transcripts directory' });
+  if (!isAllowedTranscriptPath(resolved, TRANSCRIPT_ROOTS)) {
+    return res.status(403).json({ error: 'path outside transcript roots' });
   }
 
   const entries = readJsonlFile(resolved);
@@ -356,81 +355,9 @@ app.get('/api/transcript', (req, res) => {
     return res.status(404).json({ error: 'transcript not found or empty' });
   }
 
-  // Classify noise — system machinery that shouldn't dominate the conversation view
-  function classifyNoise(content) {
-    if (content.includes('<task-notification>')) return 'task-notification';
-    if (content.includes('<command-name>')) return 'slash-command';
-    if (content.includes('<local-command-caveat>')) return 'command-caveat';
-    if (content.includes('<local-command-stdout>') || content.includes('<local-command-stderr>')) return 'command-output';
-    if (content.startsWith('Base directory for this skill:')) return 'skill-injection';
-    if (content.startsWith('Launching skill:')) return 'skill-launch';
-    if (content.startsWith('This session is being continued')) return 'compaction-summary';
-    return null;
-  }
+  const { provider, messages } = normalizeTranscriptEntries(entries);
 
-  // Extract a short label for collapsed noise rendering
-  function noiseSummary(content, noiseType) {
-    switch (noiseType) {
-      case 'task-notification': {
-        const status = content.match(/<status>([^<]+)/)?.[1] || '';
-        const summary = content.match(/<summary>([^<]+)/)?.[1] || '';
-        return `agent ${status}${summary ? ': ' + summary.slice(0, 80) : ''}`;
-      }
-      case 'slash-command': {
-        const cmd = content.match(/<command-name>([^<]+)/)?.[1] || '';
-        return cmd;
-      }
-      case 'command-caveat':
-        return 'local command output follows';
-      case 'command-output': {
-        const text = content.replace(/<[^>]+>/g, '').trim();
-        return text.slice(0, 80) || 'command output';
-      }
-      case 'skill-injection': {
-        const name = content.match(/^Base directory for this skill:[^\n]*\n+#\s*(.+)/m)?.[1] || 'skill';
-        return `skill loaded: ${name}`;
-      }
-      case 'skill-launch': {
-        const skill = content.match(/^Launching skill:\s*(.+)/)?.[1] || '';
-        return `launching ${skill}`;
-      }
-      case 'compaction-summary':
-        return 'session continuation summary';
-      default:
-        return null;
-    }
-  }
-
-  // Filter to conversation entries (user, assistant, tool results)
-  const messages = entries.filter(e =>
-    e.type === 'user' || e.type === 'assistant' || e.type === 'progress'
-  ).map(e => {
-    const content = typeof e.message?.content === 'string'
-      ? e.message.content
-      : Array.isArray(e.message?.content)
-        ? e.message.content
-            .filter(b => b.type === 'text')
-            .map(b => b.text)
-            .join('\n')
-        : e.data?.type || '';
-    const noise = classifyNoise(content);
-    return {
-      uuid: e.uuid,
-      type: e.type,
-      timestamp: e.timestamp,
-      role: e.message?.role || e.type,
-      content,
-      model: e.message?.model || '',
-      toolUseID: e.toolUseID || '',
-      parentToolUseID: e.parentToolUseID || '',
-      isSidechain: e.isSidechain ?? false,
-      agentId: e.agentId || '',
-      noise,
-      noiseSummary: noise ? noiseSummary(content, noise) : null,
-    };
-  }).filter(m => m.content);
-
-  res.json({ path: resolved, messages, total: messages.length });
+  res.json({ path: resolved, provider, messages, total: messages.length });
 });
 
 // ─── Transcript analysis (devtools-enriched metadata) ───────────────────────
@@ -447,8 +374,8 @@ app.get('/api/transcript/analysis', async (req, res) => {
   if (!rawPath) return res.status(400).json({ error: 'path required' });
 
   const resolved = resolve(rawPath.replace(/^~/, homedir()));
-  if (!resolved.startsWith(TRANSCRIPTS_DIR)) {
-    return res.status(403).json({ error: 'path outside transcripts directory' });
+  if (!isAllowedTranscriptPath(resolved, TRANSCRIPT_ROOTS)) {
+    return res.status(403).json({ error: 'path outside transcript roots' });
   }
 
   try {

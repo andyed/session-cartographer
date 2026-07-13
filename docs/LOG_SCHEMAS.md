@@ -13,8 +13,9 @@ Every event across all log types should include:
 | `event_id` | string | yes | Unique ID, format `evt-{12 alphanumeric}` |
 | `timestamp` | ISO 8601 | yes | UTC timestamp |
 | `type` | string | yes | Event type (see per-log tables below) |
+| `provider` | string | recommended | Producer provenance: `claude`, `codex`, or `unknown`; never an index partition |
 | `project` | string | yes | Git repo basename or directory basename |
-| `session_id` | string | recommended | Claude Code session UUID |
+| `session_id` | string | recommended | Provider session UUID |
 | `cwd` | string | optional | Working directory at event time |
 | `transcript_path` | string | **required** | Path to session transcript JSONL — this is how search results link to full context |
 | `summary` | string | recommended | Human-readable one-liner for display |

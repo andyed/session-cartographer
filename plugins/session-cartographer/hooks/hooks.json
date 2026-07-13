@@ -12,42 +12,29 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "WebFetch",
+        "matcher": "WebFetch|web__run|mcp__.*fetch.*|mcp__.*open.*",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh"
           }
         ]
       },
       {
-        "matcher": "WebSearch",
+        "matcher": "WebSearch|mcp__.*search.*",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh"
           }
         ]
       },
       {
-        "matcher": "Edit",
+        "matcher": "Edit|Write|apply_patch",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
-            "async": true
-          }
-        ]
-      },
-      {
-        "matcher": "Write",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh"
           }
         ]
       },
@@ -56,8 +43,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh"
           }
         ]
       }
@@ -67,8 +53,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
           }
         ]
       }
@@ -78,8 +63,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
           }
         ]
       }
@@ -89,8 +73,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh",
-            "async": true
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
           }
         ]
       }

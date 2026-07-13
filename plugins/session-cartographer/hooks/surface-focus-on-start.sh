@@ -26,6 +26,8 @@ command -v jq   >/dev/null 2>&1 || exit 0
 
 INPUT=$(cat)
 SOURCE=$(echo "$INPUT" | jq -r '.source // empty')
+. "$(dirname "$0")/common.sh"
+PROVIDER=$(detect_provider "$INPUT")
 # Fire on any session start EXCEPT compaction (which already re-injects its own summary).
 # Skip-one rather than whitelist: robust to whatever 'source' value a new session reports.
 case "$SOURCE" in compact) exit 0 ;; esac
@@ -48,13 +50,9 @@ case "$PROJECT" in
   andyed|home|dev|Documents|Documents-dev|Users|Users-andyed|Downloads|Desktop|Library|tmp|workspace) exit 0 ;;
 esac
 
-# Locate the graph builder: repo-relative first (dev checkout), then the DEV install fallback.
-GRAPH=""
-for cand in \
-  "$(dirname "$0")/../../../scripts/cooccurrence-graph.js" \
-  "$DEV/session-cartographer/scripts/cooccurrence-graph.js"; do
-  if [ -f "$cand" ]; then GRAPH="$cand"; break; fi
-done
+# Locate the graph builder through the same release/source resolver as the
+# indexing hooks. A missing graph remains a silent optional-feature failure.
+GRAPH=$(cartographer_script cooccurrence-graph.js)
 [ -n "$GRAPH" ] || exit 0
 
 # Two lenses (~250ms each). The script prints a "(no ...)" sentinel when a lens is empty.
@@ -87,9 +85,9 @@ if [ "$FIRED" = "true" ]; then
   PRIOR=$(LC_ALL=C grep "\"project\":\"$PROJECT\"" "$TRIAL" 2>/dev/null | LC_ALL=C grep '"shown":true' | LC_ALL=C grep "\"$TODAY" | tail -1)
   [ -z "$PRIOR" ] && SHOWN="true"
 fi
-jq -n -c --arg ts "$TS" --arg project "$PROJECT" --arg source "$SOURCE" \
+jq -n -c --arg ts "$TS" --arg project "$PROJECT" --arg source "$SOURCE" --arg provider "$PROVIDER" \
    --arg rel "$REL_LINE" --arg man "$MAN_LINE" --argjson fired "$FIRED" --argjson shown "$SHOWN" \
-   '{timestamp:$ts, project:$project, source:$source, related:$rel, maneuvers:$man, fired:$fired, shown:$shown}' \
+   '{timestamp:$ts, project:$project, provider:$provider, source:$source, related:$rel, maneuvers:$man, fired:$fired, shown:$shown}' \
    >> "$TRIAL" 2>/dev/null
 
 # Inject only the first surfacing per project per day — silent on repeats and no-signal starts.

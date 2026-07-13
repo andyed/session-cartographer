@@ -69,7 +69,9 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_DIR="$DEV/.carto/events"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date -u +%Y-%m).jsonl"
-SESSION_ID="${CLAUDE_SESSION_ID:-unknown}"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-unknown}}"
+PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
+[ "$PROVIDER" = "unknown" ] && [ -n "${CLAUDE_SESSION_ID:-}" ] && PROVIDER="claude"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 GIT_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
@@ -80,10 +82,11 @@ jq -nc \
   --arg id "$EVENT_ID" \
   --arg ts "$TIMESTAMP" \
   --arg session "$SESSION_ID" \
+  --arg provider "$PROVIDER" \
   --arg project "$PROJECT" \
   --arg symptom "$SYMPTOM" \
   --arg hypothesis "$HYPOTHESIS" \
-  '{id:$id, ts:$ts, type:"investigation", session_id:$session, project:$project, symptom:$symptom, hypothesis:$hypothesis}' \
+  '{id:$id, ts:$ts, type:"investigation", provider:$provider, session_id:$session, project:$project, symptom:$symptom, hypothesis:$hypothesis}' \
   >> "$LOG_FILE"
 ```
 

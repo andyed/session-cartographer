@@ -195,6 +195,7 @@ async function main() {
           url: event.url,
           deeplink: event.deeplink,
           transcript_path: event.transcript_path,
+          provider: event.provider,
         },
       });
     }
