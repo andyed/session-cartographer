@@ -21,3 +21,4 @@ CLAUDE.md
 
 # excalidraw skill's vendored fonts (24 MB Excalifont/Virgil) — dropped here by the skill, not part of SC.
 scripts/excalidraw/
+.agents/skills/excalidraw/
