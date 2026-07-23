@@ -20,6 +20,14 @@
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
 #   CARTOGRAPHER_COLLECTION      — default: session-cartographer
 #   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~30-day half-life)
+#   CARTOGRAPHER_SERVED_LOG      — default: $DEV/served-log.jsonl (every displayed result)
+#   CARTOGRAPHER_ACCESS_LEDGER   — default: $DEV/access-ledger.jsonl (every --touch)
+#
+# Every displayed result is appended to CARTOGRAPHER_SERVED_LOG (query, rank,
+# source, event_id). Joined against the access ledger, this is the input to
+# scripts/hit-rate-report.js — what fraction of served results actually get
+# touched, broken out by rank and source. Run it after a stretch of /remember
+# use to see whether ranking order predicts usefulness.
 #
 # --intent KEY restricts results to transcript turns tagged with a given
 # prompt-intent (see classify-prompt-intent.js for the 17 keys). Intent lives
@@ -28,12 +36,14 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--all] [--reset-served] [--thread EVENT_ID] [--touch EVENT_IDS]
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--touch EVENT_IDS]
        WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when CLAUDE_SESSION_ID is set): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).
-       --touch EVENT_IDS: record a reuse access (comma-separated ids) in the access ledger and exit. Called by /remember after actually reading the transcript behind a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
+       --purpose KIND: telemetry purpose (remember, focus, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --call-id ID: stable search-call identifier. Pass the same ID to --touch for exact attribution; otherwise --touch infers the latest call that served the event.
+       --touch EVENT_IDS: record result use (comma-separated ids) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
 shift
 
 LIMIT=15
@@ -46,6 +56,8 @@ ALL_MODE=0
 RESET_SERVED=0
 THREAD_ID=""
 TOUCH_IDS=""
+CALL_ID=""
+PURPOSE="${CARTOGRAPHER_PURPOSE:-manual}"
 # Transcript fallback is expensive (turn-grouping awk runs per-query on raw
 # transcripts; one 100MB+ session can hang search for minutes). Qdrant
 # already holds turn-grouped embeddings for the semantic path, so the keyword
@@ -65,9 +77,31 @@ while [ $# -gt 0 ]; do
     --reset-served)   RESET_SERVED=1; shift ;;
     --thread)         THREAD_ID="$2"; shift 2 ;;
     --touch)          TOUCH_IDS="$2"; shift 2 ;;
+    --call-id)        CALL_ID="$2"; shift 2 ;;
+    --purpose)        PURPOSE="$2"; shift 2 ;;
     *) shift ;;
   esac
 done
+
+case "$PURPOSE" in
+  remember|focus|eval|audit|manual) ;;
+  *) echo "Error: --purpose must be remember, focus, eval, audit, or manual" >&2; exit 2 ;;
+esac
+case "$CALL_ID" in
+  *[!A-Za-z0-9_.:-]*|-) echo "Error: malformed --call-id '$CALL_ID'" >&2; exit 2 ;;
+esac
+
+CONTEXT_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-${CODEX_SESSION_ID:-}}}"
+CONTEXT_PROVIDER="${CARTOGRAPHER_PROVIDER:-}"
+if [ -z "$CONTEXT_PROVIDER" ]; then
+  if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+    CONTEXT_PROVIDER="claude"
+  elif [ -n "${CODEX_SESSION_ID:-}" ] || [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_HOME:-}" ]; then
+    CONTEXT_PROVIDER="codex"
+  else
+    CONTEXT_PROVIDER="unknown"
+  fi
+fi
 
 # ─── Temporal filter: parse --since / --before to epoch seconds ───
 # Accepts (in priority order):
@@ -264,6 +298,19 @@ COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
 ACCESS_LEDGER="${CARTOGRAPHER_ACCESS_LEDGER:-$DEV/access-ledger.jsonl}"
 REUSE_WEIGHT="${CARTOGRAPHER_REUSE_WEIGHT:-0.3}"
 
+# ─── Served log ───
+# Append-only JSONL of "this result was displayed to the agent," one line per
+# displayed result per call: query, rank, source, event_id, project. This is
+# the other half of the access ledger — together they let hit-rate-report.js
+# compute what fraction of served results actually get touched (read), broken
+# out by rank and source. Skipped entirely for --thread/--touch calls (no
+# results are served) and when --all is dry-running a reset.
+SERVED_LOG="${CARTOGRAPHER_SERVED_LOG:-$DEV/served-log.jsonl}"
+SERVE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+if [ -z "$TOUCH_IDS" ] && [ -z "$CALL_ID" ]; then
+  CALL_ID="call-$(date -u +%Y%m%dT%H%M%S)-$$"
+fi
+
 # ─── --touch: record reuse accesses and exit ───
 # Accepts comma-separated event_ids. No existence check: transcript-turn ids
 # (turn-<sid>-<idx>) live only in Qdrant, so validating against the JSONL logs
@@ -276,8 +323,20 @@ if [ -n "$TOUCH_IDS" ]; then
     case "$tid" in
       *[!A-Za-z0-9_-]*|""|-*) echo "touch: skipping malformed id '$tid'" >&2; continue ;;
     esac
-    printf '{"event_id":"%s","timestamp":"%s","session_id":"%s","source":"transcript_read"}\n' \
-      "$tid" "$now_iso" "${CLAUDE_SESSION_ID:-}" >> "$ACCESS_LEDGER"
+    touch_call_id="$CALL_ID"
+    if [ -z "$touch_call_id" ] && [ -f "$SERVED_LOG" ] && command -v jq >/dev/null 2>&1; then
+      touch_call_id=$(tail -2000 "$SERVED_LOG" 2>/dev/null | jq -r -s \
+        --arg eid "$tid" --arg sid "$CONTEXT_SESSION_ID" \
+        '[.[] | select(.event_id == $eid) | select($sid == "" or (.session_id // "") == "" or .session_id == $sid)] | last | .call_id // empty' \
+        2>/dev/null)
+    fi
+    jq -n -c \
+      --arg eid "$tid" --arg ts "$now_iso" --arg sid "$CONTEXT_SESSION_ID" \
+      --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
+      --arg call_id "$touch_call_id" \
+      '{event_id:$eid, timestamp:$ts, session_id:$sid, provider:$provider, purpose:$purpose, source:"result_used"}
+       + if $call_id != "" then {call_id:$call_id} else {} end' \
+      >> "$ACCESS_LEDGER"
     touched=$((touched + 1))
   done
   echo "(recorded $touched reuse access$([ "$touched" -eq 1 ] || echo es))"
@@ -404,7 +463,7 @@ semantic_search_to_tsv() {
     (.value.payload.event_id // "sem-" + (.key | tostring)) + "\t" +
     (.value.payload.timestamp // "?") + "\t" +
     (.value.payload.project // "?") + "\t" +
-    ((.value.payload.summary // .value.payload.url // .value.payload.type // "?") | gsub("[\\u0000-\\u001f]+"; " ")) + "\t" +
+    ((.value.payload.summary // .value.payload.url // .value.payload.type // "?") | gsub("[\u0000-\u001f]+"; " ")) + "\t" +
     (if .value.payload.url then "url:" + .value.payload.url + "|" else "" end) +
     (if .value.payload.deeplink and .value.payload.deeplink != "" then "deeplink:" + .value.payload.deeplink + "|" else "" end) +
     (if .value.payload.transcript_path and .value.payload.transcript_path != "" then "transcript:" + .value.payload.transcript_path + "|" else "" end) +
@@ -514,7 +573,9 @@ rank_fuse_and_display() {
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
-      -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" '
+      -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
+      -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
+      -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" '
   BEGIN {
     # Delta-serving: load already-served event_ids for this session
     if (served_in != "") {
@@ -893,6 +954,21 @@ rank_fuse_and_display() {
       # the same session suppress it. Written to a file the shell wrapper
       # appends into the per-session served-list with last-200 cap.
       if (served_out != "") print k > served_out
+
+      # Served log: durable record of what was shown, for hit-rate-report.js
+      # to join against the access ledger later. Rank is fused-order position
+      # i, not display-order shown — they match here since nothing between
+      # fusion and display is skipped.
+      if (served_log != "") {
+        esc_q = serve_query
+        gsub(/\\/, "\\\\", esc_q); gsub(/"/, "\\\"", esc_q)
+        esc_src = sources[k]
+        gsub(/\\/, "\\\\", esc_src); gsub(/"/, "\\\"", esc_src)
+        esc_proj = (project[k] != "" ? project[k] : serve_project)
+        gsub(/\\/, "\\\\", esc_proj); gsub(/"/, "\\\"", esc_proj)
+        printf "{\"timestamp\":\"%s\",\"call_id\":\"%s\",\"purpose\":\"%s\",\"session_id\":\"%s\",\"provider\":\"%s\",\"query\":\"%s\",\"event_id\":\"%s\",\"rank\":%d,\"source\":\"%s\",\"project\":\"%s\"}\n", \
+          serve_ts, call_id, purpose, context_session, context_provider, esc_q, k, i, esc_src, esc_proj >> served_log
+      }
     }
 
     # Surface a hint when delta-serving suppressed material so the user

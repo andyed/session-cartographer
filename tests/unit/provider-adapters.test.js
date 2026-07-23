@@ -12,6 +12,7 @@ const CODEX_ADAPTER = join(ROOT, 'scripts', 'codex-transcript-to-turns.awk');
 const CODEX_PROJECT_INFERER = join(ROOT, 'scripts', 'infer-codex-project.js');
 const COMMON_HOOKS = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'common.sh');
 const HOOK_CONFIG = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'hooks.json');
+const SEARCH_SCRIPT = join(ROOT, 'scripts', 'cartographer-search.sh');
 
 function tempJsonl(lines) {
   const dir = mkdtempSync(join(tmpdir(), 'cartographer-provider-'));
@@ -103,6 +104,14 @@ describe('shared hook configuration', () => {
     assert.match(JSON.stringify(config.hooks.SessionStart), /start-transcript-catch-up\.sh/);
     assert.match(JSON.stringify(config.hooks.PostCompact), /log-compact-summary\.sh/);
     assert.doesNotMatch(JSON.stringify(config), /"async"/);
+  });
+});
+
+describe('semantic result display', () => {
+  test('sanitizes control characters without deleting ordinary text', () => {
+    const script = readFileSync(SEARCH_SCRIPT, 'utf8');
+    assert.match(script, /gsub\("\[\\u0000-\\u001f\]\+"; " "\)/);
+    assert.doesNotMatch(script, /gsub\("\[\\\\u0000-\\\\u001f\]\+"; " "\)/);
   });
 });
 

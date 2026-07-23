@@ -11,7 +11,7 @@ Hooks (produce JSONL)
   └── Qdrant indexer (semantic search)
 ```
 
-- **`/remember`** — Claude uses this to recover context from past sessions. Agent's primary history tool.
+- **`/remember`** — Codex uses this to recover context from past sessions. Agent's primary history tool.
 - **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
 - **`/carto`** — Opens the Explorer web app for the human. Not an agent tool.
 - **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a milestone event. Agent-initiated.
@@ -28,7 +28,7 @@ scripts/
   semantic-search.js             — Query Qdrant by vector similarity
   index-event.sh                — Real-time single-event indexing (called by hooks)
   backfill-git-history.sh       — Import git commits into event logs
-  backfill-memories.sh          — Index Claude Code memory files
+  backfill-memories.sh          — Index Codex memory files
   backfill-app-sessions.js      — Import desktop-app/Cowork session metadata (titles + VM-session prompts)
   retro-index.sh                — Backfill historical transcripts into Qdrant (turn-grouped)
   catch-up-transcripts.sh       — Checkpointed/cooldown transcript refresh used by SessionStart
@@ -40,7 +40,7 @@ scripts/
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
 project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
 plugins/session-cartographer/
-  skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
+  skills/remember/SKILL.md      — /remember skill (Codex's context recovery tool)
   skills/focus/SKILL.md         — /focus skill (project orientation from event logs)
   skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
   skills/wrapup/SKILL.md        — /wrapup skill (strategic session-end preservation)
@@ -66,7 +66,7 @@ docs/
   EXPLORER_SPEC.md              — Explorer implementation spec
   companion_explorer_spec.md    — Explorer product spec
   CHANGELOG_SPEC.md             — Event log format
-  landscape-survey.md           — 30+ Claude Code memory projects compared
+  landscape-survey.md           — 30+ Codex memory projects compared
 tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 ```
 
@@ -95,7 +95,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 
 Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (RRF k=60).
 
-## How Claude should use this
+## How Codex should use this
 
 When a user says "remember X" or needs context from a past session, use `/remember`. The skill runs the search, returns ranked results with transcript paths. **Read the transcript** to recover full context — the search result is the map, the transcript is the territory.
 

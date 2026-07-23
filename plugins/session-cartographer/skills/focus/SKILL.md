@@ -28,7 +28,7 @@ Otherwise derive it from this skill's reported base directory (`../..` from
 Run the search script with `--project` and a broad recency query:
 
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" "recent activity" --project <PROJECT> --limit 20
+CARTOGRAPHER_PURPOSE=focus bash "$ROOT/scripts/cartographer-search.sh" "recent activity" --project <PROJECT> --limit 20
 ```
 
 The `<PROJECT>` argument supports:
@@ -46,7 +46,7 @@ jq -r '.aliases | keys[]' "$ROOT/project-registry.json"
 ## Step 2: Search recent activity
 
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" "recent activity" --project <PROJECT> --limit 20
+CARTOGRAPHER_PURPOSE=focus bash "$ROOT/scripts/cartographer-search.sh" "recent activity" --project <PROJECT> --limit 20
 ```
 
 ## Step 3: Surface related threads + maneuvers
