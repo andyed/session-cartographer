@@ -10,6 +10,7 @@
   "license": "MIT",
   "keywords": ["search", "history", "session", "memory", "BM25", "hooks"],
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Session Cartographer",
     "shortDescription": "Search and explore coding-agent history",

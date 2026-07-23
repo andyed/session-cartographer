@@ -9,6 +9,7 @@ import { isAllowedTranscriptPath, normalizeTranscriptEntries, transcriptRoots } 
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const CODEX_ADAPTER = join(ROOT, 'scripts', 'codex-transcript-to-turns.awk');
+const CODEX_PROJECT_INFERER = join(ROOT, 'scripts', 'infer-codex-project.js');
 const COMMON_HOOKS = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'common.sh');
 const HOOK_CONFIG = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'hooks.json');
 
@@ -60,6 +61,28 @@ describe('Codex transcript adapter', () => {
   });
 });
 
+describe('Codex project inference', () => {
+  test('uses a specific session cwd when available', () => {
+    const path = tempJsonl([
+      { type: 'session_meta', payload: { cwd: '/workspace/session-cartographer' } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', input: '{"workdir":"/workspace/other"}' } },
+    ]);
+    const project = execFileSync('node', [CODEX_PROJECT_INFERER, path, '/workspace'], { encoding: 'utf8' }).trim();
+    assert.equal(project, 'session-cartographer');
+  });
+
+  test('uses the dominant tool workdir when the desktop cwd is the workspace root', () => {
+    const path = tempJsonl([
+      { type: 'session_meta', payload: { cwd: '/workspace' } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', input: '{"workdir":"/workspace/session-cartographer"}' } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', input: 'tools.exec({"workdir":"/workspace/session-cartographer/scripts"})' } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', input: '{"workdir":"/workspace/psychodeli-webgl-port"}' } },
+    ]);
+    const project = execFileSync('node', [CODEX_PROJECT_INFERER, path, '/workspace'], { encoding: 'utf8' }).trim();
+    assert.equal(project, 'session-cartographer');
+  });
+});
+
 describe('hook provider detection', () => {
   test('detects providers from transcript provenance', () => {
     assert.equal(detectProvider({ transcript_path: '/Users/me/.claude/projects/p/s.jsonl' }), 'claude');
@@ -72,9 +95,13 @@ describe('hook provider detection', () => {
 });
 
 describe('shared hook configuration', () => {
-  test('contains no unsupported async handlers and registers Codex Stop', () => {
+  test('contains no unsupported async handlers and registers lifecycle bridges', () => {
     const config = JSON.parse(readFileSync(HOOK_CONFIG, 'utf8'));
     assert.ok(config.hooks.Stop);
+    assert.ok(config.hooks.SessionStart);
+    assert.ok(config.hooks.PostCompact);
+    assert.match(JSON.stringify(config.hooks.SessionStart), /start-transcript-catch-up\.sh/);
+    assert.match(JSON.stringify(config.hooks.PostCompact), /log-compact-summary\.sh/);
     assert.doesNotMatch(JSON.stringify(config), /"async"/);
   });
 });

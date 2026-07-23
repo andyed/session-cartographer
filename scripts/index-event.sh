@@ -15,6 +15,25 @@ EMBED_URL="${CARTOGRAPHER_EMBED_URL:-http://localhost:8890/v1/embeddings}"
 EMBED_MODEL="${CARTOGRAPHER_EMBED_MODEL:-mxbai-embed-large}"
 QDRANT_URL="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
 COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
+DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
+STATE_DIR="$DEV/.carto"
+ERROR_LOG="${CARTOGRAPHER_INDEX_ERROR_LOG:-$STATE_DIR/index-errors.jsonl}"
+EMBED_TEXT_MAX="${CARTOGRAPHER_EMBED_TEXT_MAX:-1200}"
+
+record_failure() {
+  local stage="$1"
+  mkdir -p "$STATE_DIR" 2>/dev/null || true
+  if command -v jq >/dev/null 2>&1; then
+    jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg eid "$EVENT_ID" \
+      --arg stage "$stage" '{timestamp:$ts,event_id:$eid,stage:$stage}' \
+      >> "$ERROR_LOG" 2>/dev/null || true
+  fi
+}
+
+fail_index() {
+  record_failure "$1"
+  return 75
+}
 
 # Parse args or read from stdin
 EVENT_ID=""
@@ -51,6 +70,11 @@ else
   PROMPT_INTENT=$(echo "$INPUT" | jq -r '.prompt_intent // empty')
   PROVIDER=$(echo "$INPUT" | jq -r '.provider // empty')
   TRANSCRIPT_PATH=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+  CANONICAL=$(echo "$INPUT" | jq -r 'if has("canonical") then (.canonical | tostring) else "" end')
+  NOISE_CLASS=$(echo "$INPUT" | jq -r '.noise_class // empty')
+  DERIVED_FROM=$(echo "$INPUT" | jq -c '.derived_from // empty')
+  SUMMARY_HASH=$(echo "$INPUT" | jq -r '.summary_hash // empty')
+  COMPACTION_TRIGGER=$(echo "$INPUT" | jq -r '.compaction_trigger // empty')
 fi
 
 [ -z "$EVENT_ID" ] || [ -z "$TEXT" ] && exit 0
@@ -59,23 +83,36 @@ fi
 # TSV emitter and CLI display are line-based), and embedding quality doesn't
 # care about line breaks.
 TEXT=$(printf '%s' "$TEXT" | tr '\n\t\r' '   ' | tr -s ' ')
+EMBED_TEXT=$(printf '%.*s' "$EMBED_TEXT_MAX" "$TEXT")
 
-# Quick health check — fail fast, fail silent
-curl -sf "$QDRANT_URL/collections/$COLLECTION" >/dev/null 2>&1 || exit 0
-curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || exit 0
+# Quick health check. Hooks still degrade gracefully, but batch callers now
+# receive a non-zero status and can avoid checkpointing data that never landed.
+curl -sf "$QDRANT_URL/collections/$COLLECTION" >/dev/null 2>&1 || { fail_index "qdrant_unavailable"; exit $?; }
+curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || { fail_index "embedder_unavailable"; exit $?; }
 
 # Get embedding — body built with jq, not string interpolation: a summary
 # containing quotes or backslashes would otherwise produce invalid JSON and
 # the event would silently never get indexed.
-EMBED_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$TEXT" '{model: $m, input: $i}') || exit 0
-EMBED_RESPONSE=$(curl -sf "$EMBED_URL" \
+EMBED_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$EMBED_TEXT" '{model: $m, input: $i}') || { fail_index "embed_request_invalid"; exit $?; }
+if ! EMBED_RESPONSE=$(curl -sf "$EMBED_URL" \
   -H "Content-Type: application/json" \
-  -d "$EMBED_BODY" 2>/dev/null) || exit 0
+  -d "$EMBED_BODY" 2>/dev/null); then
+  # Code-dense text can exceed an embedder's token budget even under the
+  # character cap. Retry once at half length before treating it as a service
+  # failure; the complete normalized summary still remains in Qdrant payload.
+  RETRY_TEXT_MAX=$((EMBED_TEXT_MAX / 2))
+  [ "$RETRY_TEXT_MAX" -lt 256 ] && RETRY_TEXT_MAX=256
+  RETRY_TEXT=$(printf '%.*s' "$RETRY_TEXT_MAX" "$TEXT")
+  RETRY_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$RETRY_TEXT" '{model: $m, input: $i}') || { fail_index "embed_retry_request_invalid"; exit $?; }
+  EMBED_RESPONSE=$(curl -sf "$EMBED_URL" \
+    -H "Content-Type: application/json" \
+    -d "$RETRY_BODY" 2>/dev/null) || { fail_index "embedding_failed"; exit $?; }
+fi
 
 # Extract vector — need jq for this
 command -v jq &>/dev/null || exit 0
 VECTOR=$(echo "$EMBED_RESPONSE" | jq -c '.data[0].embedding // empty' 2>/dev/null)
-[ -z "$VECTOR" ] && exit 0
+[ -z "$VECTOR" ] && { fail_index "embedding_missing_vector"; exit $?; }
 
 # Hash event_id to numeric point ID (same as embed-events.js)
 POINT_ID=$(echo -n "$EVENT_ID" | cksum | awk '{print $1}')
@@ -113,15 +150,20 @@ PAYLOAD=$(jq -n -c \
   --arg sess "$SESSION" \
   --arg provider "${PROVIDER:-}" \
   --arg transcript_path "${TRANSCRIPT_PATH:-}" \
+  --arg canonical "${CANONICAL:-}" \
+  --arg noise_class "${NOISE_CLASS:-}" \
+  --argjson derived_from "${DERIVED_FROM:-null}" \
+  --arg summary_hash "${SUMMARY_HASH:-}" \
+  --arg compaction_trigger "${COMPACTION_TRIGGER:-}" \
   --argjson salience "${SALIENCE:-0.5}" \
   --arg parent_id "${PARENT_EVENT_ID:-}" \
   --arg intent "${PROMPT_INTENT:-}" \
-  '{points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $provider != "" then {provider: $provider} else {} end) + (if $transcript_path != "" then {transcript_path: $transcript_path} else {} end) + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end) + (if $intent != "" then {prompt_intent: $intent} else {} end))}]}')
+  '{points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $provider != "" then {provider: $provider} else {} end) + (if $transcript_path != "" then {transcript_path: $transcript_path} else {} end) + (if $canonical != "" then {canonical: ($canonical == "true")} else {} end) + (if $noise_class != "" then {noise_class: $noise_class} else {} end) + (if $derived_from != null then {derived_from: $derived_from} else {} end) + (if $summary_hash != "" then {summary_hash: $summary_hash} else {} end) + (if $compaction_trigger != "" then {compaction_trigger: $compaction_trigger} else {} end) + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end) + (if $intent != "" then {prompt_intent: $intent} else {} end))}]}')
 
 curl -sf "$QDRANT_URL/collections/$COLLECTION/points" \
   -H "Content-Type: application/json" \
   -X PUT \
   -d "$PAYLOAD" \
-  >/dev/null 2>&1
+  >/dev/null 2>&1 || { fail_index "qdrant_upsert_failed"; exit $?; }
 
 exit 0

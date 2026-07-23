@@ -61,8 +61,29 @@ claude plugin marketplace add "$PWD"
 claude plugin install session-cartographer@session-cartographer
 ```
 
-Start a new task/session after installation. Hooks auto-register and start
-logging immediately; `/remember` works with keyword search out of the box.
+### Required Codex hook approval
+
+Codex skips newly installed or changed command hooks until you explicitly trust
+their exact definitions. Hook review is currently available in the **Codex CLI**,
+not the desktop app:
+
+```bash
+cd /path/to/your/project
+codex
+# Then type /hooks, select Session Cartographer, and approve its hooks.
+```
+
+If the desktop app is your only Codex entry point on macOS, its bundled CLI is:
+
+```bash
+/Applications/ChatGPT.app/Contents/Resources/codex
+```
+
+After approval, start a fresh task/session. Hooks then log automatically;
+`/remember` works with keyword search out of the box. The SessionStart hook runs
+a checkpointed, non-blocking Codex transcript catch-up at most once every 15
+minutes. Changed hooks must be reviewed again because Codex trusts their content
+hash, not just the plugin name.
 
 For development, clone the repository and register the checkout itself as the
 marketplace. Release archives are self-contained: installed skills, hooks,

@@ -17,8 +17,11 @@ for required in \
   "$PLUGIN/.codex-plugin/plugin.json" \
   "$PLUGIN/.claude-plugin/plugin.json" \
   "$PLUGIN/hooks/hooks.json" \
+  "$PLUGIN/hooks/log-compact-summary.sh" \
   "$PLUGIN/scripts/cartographer-search.sh" \
+  "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
+  "$PLUGIN/scripts/infer-codex-project.js" \
   "$PLUGIN/scripts/cooccurrence-graph.js" \
   "$PLUGIN/explorer/server/index.js" \
   "$PLUGIN/project-registry.json"; do

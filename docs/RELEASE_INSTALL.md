@@ -15,8 +15,13 @@ codex plugin marketplace add "$PWD"
 codex plugin add session-cartographer@session-cartographer
 ```
 
-Start a new Codex task after installation so its skill catalog and hooks load
-from the new plugin snapshot.
+Codex skips new or changed command hooks until you approve their exact
+definitions. Review is currently CLI-only: launch `codex`, type `/hooks`, select
+**Session Cartographer**, and approve its hooks. If you use only the macOS
+desktop app, launch its bundled CLI with
+`/Applications/ChatGPT.app/Contents/Resources/codex`. Then start a fresh Codex
+task so the approved hooks and updated skill catalog load. Repeat the review
+after any release that changes hook definitions.
 
 ## Claude Code
 

@@ -12,7 +12,7 @@
 # is reprocessed. Pass --fresh to clear the checkpoint and reindex everything.
 #
 # Usage: ./retro-index.sh [--provider all|claude|codex] [--limit-days N]
-#                         [--project NAME] [--fresh]
+#                         [--project NAME] [--transcript PATH] [--fresh]
 
 set -o pipefail
 
@@ -20,12 +20,14 @@ LIMIT_DAYS=""
 PROJECT_FILTER=""
 FRESH=0
 PROVIDER_FILTER="all"
+TRANSCRIPT_FILTER=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --limit-days) LIMIT_DAYS="$2"; shift 2 ;;
     --project)    PROJECT_FILTER="$2"; shift 2 ;;
     --provider)   PROVIDER_FILTER="$2"; shift 2 ;;
+    --transcript) TRANSCRIPT_FILTER="$2"; shift 2 ;;
     --fresh)      FRESH=1; shift ;;
     *) shift ;;
   esac
@@ -44,6 +46,7 @@ SCRIPT_DIR="$(dirname "$0")"
 INDEXER="$SCRIPT_DIR/index-event.sh"
 CLAUDE_TURN_GROUPER="$SCRIPT_DIR/transcript-to-turns.awk"
 CODEX_TURN_GROUPER="$SCRIPT_DIR/codex-transcript-to-turns.awk"
+CODEX_PROJECT_INFERER="$SCRIPT_DIR/infer-codex-project.js"
 
 # Resume checkpoint — lives alongside the carto event logs.
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
@@ -61,6 +64,20 @@ for turn_grouper in "$CLAUDE_TURN_GROUPER" "$CODEX_TURN_GROUPER"; do
         exit 1
     fi
 done
+
+if [ ! -f "$CODEX_PROJECT_INFERER" ]; then
+    echo "Error: Cannot find $CODEX_PROJECT_INFERER"
+    exit 1
+fi
+
+if [ -n "$TRANSCRIPT_FILTER" ] && [ ! -f "$TRANSCRIPT_FILTER" ]; then
+    echo "Error: --transcript path does not exist: $TRANSCRIPT_FILTER"
+    exit 2
+fi
+if [ -n "$TRANSCRIPT_FILTER" ] && [ "$PROVIDER_FILTER" = "all" ]; then
+    echo "Error: --transcript requires --provider claude or --provider codex"
+    exit 2
+fi
 
 # Portable file mtime in epoch seconds — BSD stat (macOS), then GNU stat.
 file_mtime() {
@@ -85,12 +102,18 @@ FIND_ARGS=()
 
 COUNTER_FILE=$(mktemp)
 SKIPPED_FILE=$(mktemp)
-trap 'rm -f "$COUNTER_FILE" "$SKIPPED_FILE"' EXIT
+FAILED_FILE=$(mktemp)
+SESSION_FAILED_FILE=$(mktemp)
+trap 'rm -f "$COUNTER_FILE" "$SKIPPED_FILE" "$FAILED_FILE" "$SESSION_FAILED_FILE"' EXIT
 total_indexed=0
 
 # Emit provider + path pairs. Provider is metadata on every normalized turn,
 # never a separate index or collection.
 discover_transcripts() {
+    if [ -n "$TRANSCRIPT_FILTER" ]; then
+        printf '%s\t%s\n' "$PROVIDER_FILTER" "$TRANSCRIPT_FILTER"
+        return
+    fi
     if [ "$PROVIDER_FILTER" = "all" ] || [ "$PROVIDER_FILTER" = "claude" ]; then
         find "$CLAUDE_TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f "${FIND_ARGS[@]}" -print 2>/dev/null | \
         while IFS= read -r path; do printf 'claude\t%s\n' "$path"; done
@@ -109,7 +132,8 @@ while IFS=$'\t' read -r provider transcript; do
         session_id=$(jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' "$transcript" 2>/dev/null | head -1)
         session_id="${session_id:-${session_file%.jsonl}}"
         session_cwd=$(jq -r 'select(.type == "session_meta") | .payload.cwd // empty' "$transcript" 2>/dev/null | head -1)
-        project_dir=$(basename "${session_cwd:-$(dirname "$transcript")}")
+        project_dir=$(node "$CODEX_PROJECT_INFERER" "$transcript" "$DEV" 2>/dev/null)
+        project_dir="${project_dir:-$(basename "${session_cwd:-$(dirname "$transcript")}")}"
         turn_grouper="$CODEX_TURN_GROUPER"
     else
         project_dir=$(basename "$(dirname "$transcript")")
@@ -125,16 +149,22 @@ while IFS=$'\t' read -r provider transcript; do
     # A transcript that has grown since (new mtime) is reprocessed; the overlap
     # dedupes in Qdrant via the deterministic turn-<sid>-<idx> point IDs.
     transcript_mtime=$(file_mtime "$transcript")
-    progress_key="$provider $session_id $transcript_mtime"
+    # Project is part of the Codex checkpoint identity. This deliberately
+    # invalidates pre-attribution Codex checkpoints once, allowing generic
+    # `project=dev` points to be replaced by deterministic-ID upserts under
+    # their inferred repository. Claude keeps accepting its legacy keys.
+    progress_key="$provider $session_id $transcript_mtime $project_dir"
+    provider_legacy_progress_key="$provider $session_id $transcript_mtime"
     legacy_progress_key="$session_id $transcript_mtime"
     if grep -qxF "$progress_key" "$PROGRESS_FILE" 2>/dev/null || \
-       { [ "$provider" = "claude" ] && grep -qxF "$legacy_progress_key" "$PROGRESS_FILE" 2>/dev/null; }; then
+       { [ "$provider" = "claude" ] && { grep -qxF "$provider_legacy_progress_key" "$PROGRESS_FILE" 2>/dev/null || grep -qxF "$legacy_progress_key" "$PROGRESS_FILE" 2>/dev/null; }; }; then
         echo "Skipping (already indexed): $session_id ($provider/$project_dir)"
         echo 1 >> "$SKIPPED_FILE"
         continue
     fi
 
     echo "Indexing session: $session_id ($provider/$project_dir)"
+    : > "$SESSION_FAILED_FILE"
 
     # Turn-group the transcript, then ship one event per turn to Qdrant.
     # Turn event_ids are deterministic (turn-<sid>-<idx>), so reruns and
@@ -146,9 +176,18 @@ while IFS=$'\t' read -r provider transcript; do
         "$transcript" 2>/dev/null | \
     while IFS= read -r payload; do
         [ -z "$payload" ] && continue
-        echo "$payload" | "$INDEXER"
-        echo 1 >> "$COUNTER_FILE"
+        if echo "$payload" | PE_GATE_REJECT="${PE_GATE_REJECT:-2.0}" "$INDEXER"; then
+            echo 1 >> "$COUNTER_FILE"
+        else
+            echo "$provider $session_id" >> "$SESSION_FAILED_FILE"
+            echo "$provider $session_id" >> "$FAILED_FILE"
+        fi
     done
+
+    if [ -s "$SESSION_FAILED_FILE" ]; then
+        echo "Warning: indexing failed for one or more turns; session left uncheckpointed: $session_id" >&2
+        continue
+    fi
 
     # Checkpoint only after the whole session is walked. A mid-session kill
     # never reaches this line, so the session is reprocessed — not lost — on
@@ -159,5 +198,7 @@ done < <(discover_transcripts)
 
 total_indexed=$(wc -l < "$COUNTER_FILE" | tr -d ' ')
 total_skipped=$(wc -l < "$SKIPPED_FILE" | tr -d ' ')
-rm -f "$COUNTER_FILE" "$SKIPPED_FILE"
-echo "Retro-indexing complete! Backfilled $total_indexed turns; skipped $total_skipped already-indexed session(s)."
+total_failed=$(wc -l < "$FAILED_FILE" | tr -d ' ')
+rm -f "$COUNTER_FILE" "$SKIPPED_FILE" "$FAILED_FILE" "$SESSION_FAILED_FILE"
+echo "Retro-indexing complete! Backfilled $total_indexed turns; skipped $total_skipped already-indexed session(s); $total_failed turn failure(s)."
+[ "$total_failed" -eq 0 ]

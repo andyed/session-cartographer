@@ -95,9 +95,21 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_LOG_TOOL_USE` | `false` | Set `true` to log Edit/Write/Bash + git commits |
 | `CARTOGRAPHER_REUSE_WEIGHT` | `0.3` | Promote-on-reuse activation weight (`0` disables) |
 | `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to auto-surface `/focus` orientation (related threads + maneuvers) on session start — opt-in, dormant by default |
+| `CARTOGRAPHER_AUTO_CATCHUP` | `1` | Set `0` to disable the background Codex transcript catch-up on session start |
+| `CARTOGRAPHER_CATCHUP_INTERVAL_SECONDS` | `900` | Minimum interval between successful automatic catch-up runs |
+| `CARTOGRAPHER_CATCHUP_LIMIT_DAYS` | `7` | Recent transcript window scanned by automatic catch-up |
 | `CARTOGRAPHER_GRAPH` | `$CARTOGRAPHER_DEV_DIR/cooccurrence-graph.json` | Where the co-occurrence graph JSON is written |
 
 Set these in your shell profile or Claude Code settings for your work machine.
+
+### Codex hook trust
+
+After installing or updating the Codex plugin, open an interactive Codex CLI,
+run `/hooks`, and approve Session Cartographer. The desktop app does not
+currently expose this review screen. On macOS, desktop-only users can launch the
+bundled CLI at `/Applications/ChatGPT.app/Contents/Resources/codex`. Start a new
+task after approval. Codex records trust against the hook definition hash, so a
+later hook change requires review again.
 
 ## Cold Start: Backfilling History
 
@@ -123,6 +135,18 @@ bash scripts/retro-index.sh --project scrutinizer
 ```
 
 Groups each transcript into conversation turns (user prompt + assistant responses up to the next user prompt), then pipes one event per turn through `index-event.sh` → Qdrant. Deterministic `turn-<session>-<idx>` IDs — safe to rerun.
+
+For Codex desktop sessions whose recorded cwd is only the shared workspace root,
+the backfill attributes the session to the dominant repository workdir found in
+its tool calls. Automatic runs are checkpointed and report their result in
+`$CARTOGRAPHER_DEV_DIR/.carto/transcript-catch-up.jsonl`; indexing failures go
+to `.carto/index-errors.jsonl` and keep the affected session retryable.
+The first run after installing this attribution change intentionally reprocesses
+recent Codex checkpoints once so deterministic point IDs repair old
+`project=dev` payloads in place.
+Embedding starts with a 1,200-character prefix and automatically retries at half
+length for unusually token-dense turns; the full normalized turn remains in the
+stored payload either way.
 
 **Tip:** For a full rebuild (or the first migration to turn-based indexing), disable the prediction-error gate so every turn lands:
 
