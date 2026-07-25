@@ -5,6 +5,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION=${1:-$(node -p "require('$ROOT/package.json').version")}
 VERSION=${VERSION#v}
 
+bash "$ROOT/tests/source-marketplace-smoke.sh"
 bash "$ROOT/scripts/build-release.sh" "$VERSION" >/dev/null
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/session-cartographer-smoke.XXXXXX")

@@ -12,11 +12,13 @@ The MenteDB-borrowed framing from `TODO.md`'s "Memory research" section. SC's co
 |---|---|---|
 | Information extraction | Strong (hybrid BM25 + semantic) | — |
 | Multi-session reasoning | Improving (write-side + `--thread` shipped 2026-04-22) | — |
-| Knowledge updates | Weak | #4 event_relations |
+| Knowledge updates | Weak | #4 event lifecycle |
 | Temporal reasoning | Strong (since the `--since`/`--before` work shipped 2026-04-24) | — |
 | Abstention | Detector shipped 2026-04-25; consumer pending | (#3 follow-up) |
 
 Doing #1, #2, #3 (shipped) lifted coverage from 1.5/5 to ~3.5/5. Adding #4 gets to ~4.5/5.
+
+`#4` was rewritten 2026-07-23 against the NuggetIndex lifecycle model — see the item for what changed and what was dropped.
 
 ---
 
@@ -40,15 +42,62 @@ Doing #1, #2, #3 (shipped) lifted coverage from 1.5/5 to ~3.5/5. Adding #4 gets 
 
 ---
 
-### #4 — `event_relations.jsonl` sidecar for knowledge updates (MEDIUM leverage)
+### #4 — Event lifecycle: validity intervals + `active`/`deprecated`/`contested` (MEDIUM leverage)
 
-**Gap.** Jsonl is append-only; "last write wins" is implicit but invisible to retrieval. A revert commit, a "supersedes" decision, an "actually let's do Y" message — all logged independently from what they replace. `/remember` happily returns stale facts alongside their corrections.
+**Gap.** Jsonl is append-only; "last write wins" is implicit but invisible to retrieval. A revert commit, a `/wrapup` decision that reverses an earlier one, a port number that moved — all logged independently from what they replace. `/remember` happily returns stale facts alongside their corrections, and time-decay ([SCORING.md](SCORING.md)) only nudges the stale one *slightly* down the ranking. Nothing tells the reader the two results are in conflict.
 
-**Change.** When a commit message contains `revert`, `fix`, `supersedes #N`, `actually`, or matches a refactor-pattern, emit an edge to `event_relations.jsonl`: `{from: <new-event>, to: <previous-event>, type: Supersedes|Contradicts}`. Search-time can then suppress superseded events from default ranking, surface them only with `--include-stale`.
+**Prior art.** [NuggetIndex](https://doi.org/10.1145/3805712.3809687) (Zerhoudi et al., SIGIR '26). Their model: each fact carries a validity interval `[start, end)` and a lifecycle state (`active` / `deprecated` / `contested`); invalid entries are filtered *before* ranking; contested facts surface as labelled disputes rather than being silently adjudicated. Reported −55% conflict rate. We adopt the vocabulary and the filter-position, not the machinery — see **Non-goals**.
 
-**Touches:** new analyzer in the commit-classification path of `log-tool-use.sh`; small read in `rank_fuse_and_display` to suppress superseded keys.
+#### Design
 
-**Payoff.** LongMemEval knowledge-update category. Also makes `/remember` honest about which version of a contested decision is current.
+**Lifecycle states.** Three, with fixed retrieval semantics:
+
+| Status | Default query | `--include-stale` |
+|---|---|---|
+| `active` | returned if the interval spans the query time | returned |
+| `contested` | returned, labelled as disputed alongside its rival | returned |
+| `deprecated` | excluded | returned, marked with what superseded it |
+
+**Validity interval.** `[valid_from, valid_to)`. `valid_from` is the event's own timestamp; `valid_to` is `null` until something supersedes it, then the superseding event's timestamp. No inference — both endpoints are timestamps we already have. This is what makes point-in-time recall work: `--before 2026-05-01` currently filters on *when the event was logged*, so it returns a fact that was already dead by that date. With intervals it can instead ask *what was true then*, which is the query a `/remember` user actually means.
+
+**Storage: append-only sidecar, no in-place rewrite.** NuggetIndex rewrites the ledger line when a status changes. We do not — append-only is a hard constraint across every log in this repo. Instead, `event-lifecycle.jsonl` accumulates state transitions; last record per `event_id` wins at read time:
+
+```json
+{"ts":"2026-05-12T09:14:00Z","event_id":"git-abc1234","subject":"session-cartographer:file:explorer/server/index.js","status":"deprecated","valid_from":"2026-03-01T11:02:00Z","valid_to":"2026-05-12T09:14:00Z","superseded_by":"git-def5678","reason":"revert","project":"session-cartographer"}
+```
+
+Original events in `changelog.jsonl` are never touched. The sidecar is regenerable and safe to delete.
+
+**Conflict key.** NuggetIndex conflicts on `(subject, predicate, scope)`. Our analog is `(project, subject)` where `subject` is a namespaced slug emitted at write time. Two records conflict only when they share a key *and* their intervals overlap. Non-overlapping intervals are succession, not conflict — both stay `active`.
+
+**Resolution.** Follows their asymmetric/symmetric split, mapped to whether we have authority:
+
+- **Deterministic supersession → `deprecated`.** Git itself names the target, or the config write is unambiguously last-wins. Tighten the loser's `valid_to` to the winner's `valid_from`.
+- **Detected but unadjudicated → `contested`.** Same key, overlapping intervals, no authority to pick. Both stay retrievable and are shown side by side with dates and provenance. We do not auto-resolve; that's the user's call.
+
+#### Scope: three deterministic write-time signals only
+
+1. **Revert commits.** `git log` bodies carry `This reverts commit <sha>` verbatim. That is a hard edge, no heuristics — the classifier at [log-tool-use.sh:110](../plugins/session-cartographer/hooks/log-tool-use.sh:110) already tags `COMMIT_TYPE="revert"`; extend it to read the body, resolve `<sha>` to the existing `git-<sha>` event id, and append a `deprecated` record for it.
+2. **`/wrapup` decisions.** The one write path where an LLM is *already in the loop* — the skill is authoring prose about the session, so it can also emit a `decision_key` slug and, when it knows it's reversing a prior call, an explicit `supersedes: <event_id>`. Same-key wrapups with no explicit `supersedes` become `contested`, not `deprecated`. Touches [wrapup/SKILL.md:71](../plugins/session-cartographer/skills/wrapup/SKILL.md:71) (add the two fields to the `jq` object).
+3. **Config values.** Edit/Write on a config-glob file where the diff is a single `KEY = VALUE` line change. Subject is `<project>:config:<file>#<KEY>`, and last write deterministically wins → prior value `deprecated`. Genuinely triple-shaped and requires no extraction. If the diff isn't a clean single-key change, emit nothing.
+
+#### Read-time: filter before RRF
+
+Both search paths gate at row ingestion, *before* scoring — the position is the point. Filtering after fusion still lets dead events consume top-K slots and distort the 10% score cutoff.
+
+- **CLI** — load `event-lifecycle.jsonl` in the `BEGIN` block of `rank_fuse_and_display` (same pattern as the access ledger, [cartographer-search.sh:595](../scripts/cartographer-search.sh:595)), keyed by `event_id`, last line wins. Drop `deprecated` rows in the ingestion block next to delta-serving suppression at [cartographer-search.sh:669](../scripts/cartographer-search.sh:669) — i.e. before `score =` at [:677](../scripts/cartographer-search.sh:677). Mark `contested` keys for the display block.
+- **API** — filter the input lists before `rrfFuse` at [search.js:365](../explorer/server/search.js:365), not after. Explorer renders `contested` pairs as a linked dispute.
+- **New flag** — `--include-stale` disables the drop and annotates each result with its status and `superseded_by`. Orthogonal to `--all` (which governs delta-serving).
+
+#### Non-goals
+
+- **No corpus-wide triple extraction.** Nuggets are semantic facts; our events are episodic. Extracting SPO triples per event needs an LLM at hook time, which breaks the zero-dep bash/awk hook contract.
+- **No `pip install nuggetindex`.** A second index alongside Qdrant, for a slice of the corpus this narrow, is not worth the dependency.
+- **Dropped from the previous version of this item:** keyword-triggered supersession on `fix`, `actually`, or refactor-patterns. Those are inference dressed up as signal and would deprecate live events on a bad match. A false `deprecated` is worse than no lifecycle at all — it makes recall silently lossy. Only the three signals above qualify.
+
+**Payoff.** LongMemEval knowledge-updates category (the sole remaining "weak" row above). Point-in-time `--before` semantics. And `/remember` becomes honest about which version of a contested decision is current, instead of ranking both and letting recency imply an answer.
+
+**Measure.** Conflict rate on a hand-labelled set of known reversals; false-deprecation rate (must be ~0); no regression in the existing fixture tests.
 
 ---
 
@@ -82,6 +131,6 @@ After ~6 months, `tool-use-log.jsonl` is multi-GB. Tier strategy: roll older-tha
 
 ## Status
 
-Last refresh: 2026-04-24. Source: brainstorm during the LongMemEval / MenteDB study thread, prioritized by leverage × effort.
+Last refresh: 2026-07-23 (`#4` redesigned against NuggetIndex). Prior refresh 2026-04-24. Source: brainstorm during the LongMemEval / MenteDB study thread, prioritized by leverage × effort.
 
 Items above are tracked separately from `TODO.md` so the strategic indexing roadmap stays distinct from day-to-day search/UI work. When an item ships, move it out of "Active" and add a one-liner to `CHANGELOG.md`.
