@@ -2,6 +2,17 @@
   "hooks": {
     "SessionStart": [
       {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/start-transcript-catch-up.sh",
+            "timeout": 5,
+            "statusMessage": "Refreshing shared session history"
+          }
+        ]
+      },
+      {
         "hooks": [
           {
             "type": "command",
@@ -54,6 +65,16 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-compact-summary.sh"
           }
         ]
       }

@@ -31,6 +31,25 @@ Three multipliers adjust the fused RRF score before display. They reorder result
 
 The intended division of labor: BM25/semantic measure *relevance to this query*, salience encodes *how deliberate the moment was when written*, reuse encodes *how useful the memory has proven since*. A capped 2× reuse boost breaks ties and lifts proven events but cannot overcome a relevance gap.
 
+## Measuring whether recall helps
+
+Searches made by `/remember` carry a stable call ID, session/provider context,
+and `purpose=remember`. When the skill actually uses a result, `--touch` records
+that same call ID. This makes hit rate and mean reciprocal rank (MRR) attributable
+to the exact result set instead of guessing from a later access to the same event.
+
+```bash
+node scripts/hit-rate-report.js
+node scripts/hit-rate-report.js --json
+node scripts/hit-rate-report.js --purpose all
+```
+
+The default excludes old unattributed rows. Use `--include-legacy` only for a
+historical comparison; each legacy touch is conservatively assigned to the
+single latest eligible serve within the configured time window. MRR is computed
+per search call from the rank of the first explicitly used result; a no-use call
+contributes zero.
+
 ## Semantic search (Qdrant cosine similarity)
 
 When Qdrant is running, scores are cosine similarity between query and event embeddings.

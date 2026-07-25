@@ -31,10 +31,13 @@ scripts/
   backfill-memories.sh          — Index Claude Code memory files
   backfill-app-sessions.js      — Import desktop-app/Cowork session metadata (titles + VM-session prompts)
   retro-index.sh                — Backfill historical transcripts into Qdrant (turn-grouped)
+  catch-up-transcripts.sh       — Checkpointed/cooldown transcript refresh used by SessionStart
+  infer-codex-project.js        — Derive Codex repo attribution from tool workdirs when cwd is generic
   reconstruct-history.js        — Deep transcript analysis for backfill (turn-grouped)
   classify-prompt-intent.js     — Rule-based prompt-intent classifier (17 categories, zero-dep)
   backfill-prompt-intents.js    — Tag already-indexed turns with prompt_intent (payload-only, no re-embed)
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
+  hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
 project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
@@ -43,7 +46,7 @@ plugins/session-cartographer/
   skills/wrapup/SKILL.md        — /wrapup skill (strategic session-end preservation)
   scripts/remember-search.sh    — Legacy keyword-only search (superseded by cartographer-search.sh)
   hooks/
-    hooks.json                  — Hook registrations (8 hooks)
+    hooks.json                  — Hook registrations, including background transcript catch-up
     log-research.sh             — WebFetch/WebSearch → research-log.jsonl + changelog.jsonl
     log-session-milestones.sh   — Compactions, session ends, agent stops (with git context)
     log-tool-use.sh             — Edit/Write/Bash + git commits with classification (opt-in)
@@ -76,12 +79,12 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Transcripts are first-class citizens in RRF.** They compete equally with event log results. Do not append them at the bottom.
 - **`LC_ALL=C` on grep and awk** prevents multibyte errors on unicode in JSONL.
 - **Transcript search uses `find -exec grep {} +`** to batch file matching in one process. Do not revert to per-file subprocess loops (1,839 files = 40x slower).
-- **Hooks call `index-event.sh` for real-time Qdrant indexing.** Silent fail if services aren't running. Do not make Qdrant a hard dependency.
+- **Hooks call `index-event.sh` for real-time Qdrant indexing.** Qdrant remains optional, but failures are recorded in `.carto/index-errors.jsonl` and return nonzero so backfills do not checkpoint incomplete sessions.
 - **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Path traversal protection on transcript endpoints. DOMPurify on rendered content.
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.
 - **Enrichment scripts modify `changelog.jsonl` in place.** Back up before running on large datasets.
-- **`access-ledger.jsonl` is append-only retrieval telemetry.** `--touch` in `cartographer-search.sh` is the only writer; both search paths aggregate it at query time (awk BEGIN block / `loadAccessLedger()` in `explorer/server/search.js`). Do not rewrite it in place, and keep the two activation implementations in sync.
+- **Retrieval telemetry is exact for new calls.** Served rows and `--touch` records share `call_id`; purpose, session, and provider are carried alongside it. `access-ledger.jsonl` is append-only. Do not rewrite it in place, and keep the CLI/API activation implementations in sync. Legacy inference is report-only and opt-in.
 - **RRF score cutoff at 10% of top score** to trim the semantic noise tail.
 - **Diff-shape quadrant labels:** bootstrap, construct, surgical, rework. Not "dangerous."
 

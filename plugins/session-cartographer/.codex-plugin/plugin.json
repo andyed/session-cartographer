@@ -1,6 +1,6 @@
 {
   "name": "session-cartographer",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Search and explore coding-agent session history across Claude Code and Codex",
   "author": {
     "name": "Andy Edmonds"
@@ -10,6 +10,7 @@
   "license": "MIT",
   "keywords": ["search", "history", "session", "memory", "BM25", "hooks"],
   "skills": "./skills/",
+  "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Session Cartographer",
     "shortDescription": "Search and explore coding-agent history",

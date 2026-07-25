@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+## 0.4.1 — 2026-07-24
+
+### fix(release): self-contained repository marketplace installs
+
+Direct installs from a cloned checkout previously copied
+`plugins/session-cartographer` without the search runtime, project registry, or
+Explorer that `scripts/build-release.sh` added only to release archives. The
+installed skills resolved their plugin root correctly and then failed because
+`scripts/cartographer-search.sh` was absent.
+
+The checked-in marketplace source now carries the same assembled runtime as the
+release archive. `scripts/copy-plugin-runtime.sh` is the shared assembly path,
+`tests/source-marketplace-smoke.sh` exercises real isolated Codex and Claude
+managed-cache installs when their CLIs are available, and CI guards the checkout
+marketplace independently of tagged release builds.
+
+### feat(indexing): derived PostCompact summaries and transcript refresh
+
+The lifecycle bridge records redacted, provenance-marked compact summaries as
+derived evidence without replacing canonical transcripts. Session start also
+runs checkpointed transcript catch-up, while project inference and Qdrant
+payloads retain cross-provider provenance.
+
+### feat(search): exact recall-use telemetry
+
+Search calls and `--touch` reuse events now share stable call identifiers,
+purpose, provider, and session metadata. `hit-rate-report.js` computes explicit
+result-use hit rate and MRR without crediting later searches that happened to
+serve the same event.
+
+### docs: cross-provider assessment and event-lifecycle roadmap
+
+The release includes the July cross-provider recall assessment and redesigns
+the knowledge-update backlog around validity intervals plus
+`active`/`deprecated`/`contested` lifecycle states, with the NuggetIndex
+citation verified against arXiv and CrossRef.
+
 ## 0.4.0 — 2026-07-13
 
 Promoted after the release candidate passed clean managed-cache installs in

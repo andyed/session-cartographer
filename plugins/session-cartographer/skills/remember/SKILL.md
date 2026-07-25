@@ -65,7 +65,7 @@ Hooks link successive events from the same session into a `parent_event_id` chai
 When the user asks "show me how I got to X", "what led up to that commit", or "what was the chain of work around Y", run a normal search to find the anchor `event_id`, then walk the arc:
 
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" _ --thread evt-xxxxxxxxxxxx
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --thread evt-xxxxxxxxxxxx
 ```
 
 The first argument is ignored when `--thread` is set (pass any placeholder like `_`). Output is the full ancestor + descendant arc sorted by timestamp, with the supplied event marked `★`. Present it as a coherent timeline rather than a search result.
@@ -115,7 +115,7 @@ When you call `/remember` repeatedly in the same session, the script automatical
 If you actually need to re-cite an event from a prior call (the user is asking about something you already showed them), pass `--all` to bypass suppression for that single call:
 
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --all
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --all
 ```
 
 To wipe the per-session served list entirely (rare; only when starting a genuinely fresh investigation): pass `--reset-served`.
@@ -129,17 +129,17 @@ Do NOT freestyle grep or jq commands. Always use the unified search script.
 Think about what the user is trying to recall, then translate to search terms.
 
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" "<search terms>"
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<search terms>"
 ```
 
 If the user mentioned a specific project, add `--project <name>`:
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --project scrutinizer
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --project scrutinizer
 ```
 
 For more results, add `--limit 25` or `--limit 50`. If the user says "more" or "keep going" after seeing results, re-run with a higher limit:
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" "<same terms>" --limit 30
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<same terms>" --limit 30
 ```
 
 Wildcard prefix search works: `shader*` matches `shader`, `shaders`, `shaderlab`, etc.
@@ -181,12 +181,12 @@ jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
 
 **The search result is the map. The transcript is the territory.**
 
-### After reading: record the reuse
+### After using a result: record the reuse
 
-When a transcript (or `--thread` arc) actually answered the question, touch the event_ids whose context you used — this is the promote-on-reuse moment that strengthens them for future recall:
+When a result summary, transcript, or `--thread` arc actually contributes to the answer, touch the event_ids whose context you used — this is both the promote-on-reuse moment and the explicit result-use signal:
 
 ```bash
-bash "$ROOT/scripts/cartographer-search.sh" _ --touch <event_id>[,<event_id>...]
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --touch <event_id>[,<event_id>...]
 ```
 
 Touch only what you used, not everything that was served. A result you read and discarded as irrelevant should NOT be touched — false vouching pollutes future rankings.
