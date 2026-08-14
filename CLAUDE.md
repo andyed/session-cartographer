@@ -74,6 +74,7 @@ docs/
   companion_explorer_spec.md    — Explorer product spec
   CHANGELOG_SPEC.md             — Event log format
   landscape-survey.md           — 30+ Claude Code memory projects compared
+  LONGMEMEVAL.md                — What a LongMemEval run would/wouldn't validate; ingestion + reader config
 tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 ```
 
