@@ -14,10 +14,69 @@ Fusion — then facets the results by project, event type, source, and time.
 - **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
-- **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a searchable milestone event. Invoke before ending a productive session.
+- **`/wrapup`** — Renders a [session digest](#the-session-digest) you can verify at a glance, then writes the synthesis *against it*: decisions, discoveries, and unfinished threads, as a searchable milestone. Structured `decisions[]` feed the standing profile.
 - **`/investigate`** — Diagnosis gate for bug work. Forces a written root-cause hypothesis (cause + mechanism + disproof) before any fix code, and logs it as a searchable event for later recall.
+- **`.carto/profile.md`** — A derived standing summary of the whole corpus: active projects, standing preferences, durable decisions, work shape, cadence. Start recall here when the question is about the shape of the work rather than one past moment. Rebuild with `node scripts/build-profile.js`; never hand-edit — it regenerates.
+- **Exact fetch (`--get`)** — Search output is lossy by design: summaries are single-line and truncated for display. `--get evt-a,evt-b` returns the complete records — `transcript_path`, `files_changed`, `diff_shape` — so a shortlist can be checked before committing to a 100MB transcript. Missing ids are reported, not silently dropped.
+- **Delta serving** — Repeat `/remember` calls in one session suppress ids already returned, so each call surfaces fresh material instead of the same top-K. `--all` bypasses it.
 - **Faceted search** — Server computes distributions over the top 500 fused results. Filter by project, event type (fetch/search/commit/edit/bash), and match source (keyword/semantic). Client-side filtering, URL-persisted state.
 - **Hybrid ranking** — BM25 keyword scoring + Qdrant semantic similarity, merged via RRF (k=60). Graceful degradation — keyword-only if Qdrant isn't running.
+
+## The session digest
+
+`/wrapup` opens by rendering the session, not by describing it. Every line
+traces back to a logged event or to `git`, so a wrong claim is visible rather
+than merely plausible — prose lets an agent assert that a session went well;
+a panel either matches `git log` or it doesn't.
+
+This is a real session from this repository:
+
+```
+━━ session digest · session-cartographer ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  session   e2ab97ba · claude · 154 events
+  span      2026-03-27 02:01 → 2026-03-29 15:00 UTC · 60h59m
+  tempo     ▂···········▁·····▁█▁▆·▁▁▁·····▁  (1h54m/mark)
+  projects  session-cartographer 128 · andyed 14 · nokings-blipper-firetv 7 · scipr…
+  activity  47 edits · 67 bash · 1 compaction · subagents Explore×6,Plan
+
+  commits   16 · 2 pushes
+            16 other  ▸  2 construct · 2 surgical
+
+            03-29 03:11  57ee5c2  feat: Concurrent timeline, diff shape …  +1010 −65
+            03-29 00:58  9cfb01b  chore: tablet + general store assets (…
+            03-28 22:45  8d7dec2  fix: even timing across all chunks — n…
+            … 13 more
+
+  files     13 touched
+            explorer/src/components/SearchInput.jsx                             ×18
+            README.md                                                           ×9
+            explorer/server/index.js                                            ×4
+
+  leaving   sciprogfi-web@main                  37 uncommitted
+            session-cartographer@main           2 uncommitted
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+The **tempo** sparkline buckets every event across the span — a session resumed
+over three days looks nothing like three hours of continuous work, and a
+start/end timestamp pair hides the difference. **`leaving`** is the only section
+with no log behind it: it is what the session is walking away from *right now*,
+across every repository it touched, which is the thing that actually gets
+forgotten.
+
+Sections appear only when they have content. A `recall` line shows
+`/remember` calls served against uses actually vouched for with `--touch`;
+`research` lists the hosts fetched. The session above has neither.
+
+It serves two readers. You get a session you can check; the agent gets ground
+truth to write its synthesis against, instead of recalling the conversation from
+its own memory of it. Run it directly on any session:
+
+```bash
+node scripts/session-digest.js --session <id>     # or --json for the raw numbers
+```
 
 ## Co-occurrence graph & maneuver map
 
@@ -119,7 +178,45 @@ Session Cartographer is installed. Skills:
 When you need context from a previous conversation, use `/remember`. The skill
 runs BM25 + RRF search across event logs and transcripts. Read the transcript
 path from results to recover full conversation context.
+
+For standing questions — "what am I working on", "what's my usual release
+process" — read `.carto/profile.md` first. It is a derived summary of the whole
+corpus; a specific "when did we fix the blur bug" should go straight to search.
 ```
+
+## Upgrading from before 0.5.1
+
+Two one-time recoveries. Both are dry-run by default and take a `.bak` before
+writing. Skip them on a fresh install — there is nothing to repair.
+
+```bash
+node scripts/repair-orphan-sessions.js      # then --write
+node scripts/backfill-investigations.js     # then --write --index
+```
+
+**Why they exist.** Until 0.5.0 every consumer resolved the active session from
+`CLAUDE_SESSION_ID`, a variable Claude Code has never set — the exported name is
+`CLAUDE_CODE_SESSION_ID`. Nothing crashed and nothing was logged. Delta serving
+never activated, and `/wrapup` stamped `session_id: "unknown"` on records whose
+transcript lookup then failed, leaving them as top-ranked dead ends in
+`/remember`. The first script walks those back to their session by project and
+nearest-event proximity. Separately, `/investigate` wrote its hypotheses to
+`.carto/events/`, which nothing reads; the second normalizes them into the
+searched log.
+
+Expect a mixed result and read the dry run. On the reference corpus the session
+repair recovered 33% with a verified transcript, refused 23% as ambiguous, and
+found 42% unrecoverable — recovery depends on how many sessions you run
+concurrently and how much history predates your transcripts' ~30-day TTL.
+Records that cannot be placed confidently keep `session_id: "unknown"`. That is
+deliberate: a wrong session id is worse than a missing one, because it points
+`/remember` at an unrelated conversation and presents it as the real thing.
+
+`.carto/profile.md`'s "Durable decisions" section fills from `/wrapup`'s
+structured `decisions[]`, which only exists from 0.5.1 onward. Older syntheses
+keep their prose and are not rewritten; the section stays thin until new wrapups
+accumulate, and `build-profile.js` warns on stderr when it is drawn from too
+small a slice.
 
 ## Cold start
 

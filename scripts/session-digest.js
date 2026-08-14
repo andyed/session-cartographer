@@ -327,7 +327,9 @@ if (commits.length) {
   }));
   const tailWidth = Math.max(...shown.map((c) => c.tail.length));
   const timeWidth = stamp(startMs).length;
-  const room = Math.max(16, WIDTH - LABEL - timeWidth - 2 - 7 - 2 - (tailWidth ? tailWidth + 2 : 0));
+  // The -2 matches the two-space gutter cont() prepends; without it the row is
+  // built two characters too wide and fit() eats the end of the churn column.
+  const room = Math.max(16, WIDTH - LABEL - 2 - timeWidth - 2 - 7 - 2 - (tailWidth ? tailWidth + 2 : 0));
   for (const c of shown) {
     const subject = truncate(c.subject, room).padEnd(room);
     const tail = tailWidth ? `  ${c.tail.padStart(tailWidth)}` : '';
