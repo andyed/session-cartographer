@@ -10,114 +10,28 @@
 //   node scripts/enrich-sessions.js --write          # Update changelog.jsonl in place
 //   node scripts/enrich-sessions.js --write --reindex # Also re-index updated events in Qdrant
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'fs';
-import { join, basename, dirname } from 'path';
-import { homedir } from 'os';
+import { readFileSync, writeFileSync } from 'fs';
+import { dirname } from 'path';
 import { execSync } from 'child_process';
+import { buildSessionWindows, defaultPaths, readJsonl, toSortedList } from './session-windows.js';
 
-const DEV = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev');
-const TRANSCRIPTS = process.env.CARTOGRAPHER_TRANSCRIPTS_DIR || join(homedir(), '.claude/projects');
-const CHANGELOG = join(DEV, 'changelog.jsonl');
-const MILESTONES = join(DEV, 'session-milestones.jsonl');
+const { changelog: CHANGELOG, milestones: MILESTONES, transcripts: TRANSCRIPTS } = defaultPaths();
 
 const doWrite = process.argv.includes('--write');
 const doReindex = process.argv.includes('--reindex');
 
-// ─── Step 1: Build session windows from existing events ───
+// ─── Steps 1-2: Build session windows (shared with repair-orphan-sessions.js) ───
 
-function readJsonl(path) {
-  if (!existsSync(path)) return [];
-  return readFileSync(path, 'utf-8')
-    .split('\n')
-    .filter(l => l.trim())
-    .map(l => { try { return JSON.parse(l); } catch { return null; } })
-    .filter(Boolean);
-}
-
-const sessions = new Map(); // session_id → { start, end, projects, transcriptPath }
-
-function updateSession(sid, ts, project, transcriptPath) {
-  if (!sid || !ts) return;
-  let s = sessions.get(sid);
-  if (!s) {
-    s = { start: ts, end: ts, projects: new Set(), transcriptPath: '' };
-    sessions.set(sid, s);
-  }
-  if (ts < s.start) s.start = ts;
-  if (ts > s.end) s.end = ts;
-  if (project) s.projects.add(project);
-  if (transcriptPath && !s.transcriptPath) s.transcriptPath = transcriptPath;
-}
-
-// From changelog + milestones
-for (const file of [CHANGELOG, MILESTONES]) {
-  for (const e of readJsonl(file)) {
-    const sid = e.session_id || e.session;
-    updateSession(sid, e.timestamp, e.project, e.transcript_path);
-  }
-}
-
-// ─── Step 2: Extend session windows from transcript files ───
-
-function scanTranscripts() {
-  let extended = 0;
-  try {
-    for (const projectDir of readdirSync(TRANSCRIPTS)) {
-      const projectPath = join(TRANSCRIPTS, projectDir);
-      if (!statSync(projectPath).isDirectory()) continue;
-
-      for (const file of readdirSync(projectPath)) {
-        if (!file.endsWith('.jsonl')) continue;
-        const sid = file.replace('.jsonl', '');
-        const transcriptPath = join(projectPath, file);
-
-        try {
-          const content = readFileSync(transcriptPath, 'utf-8');
-          const lines = content.split('\n').filter(l => l.trim());
-          if (lines.length === 0) continue;
-
-          const first = JSON.parse(lines[0]);
-          const last = JSON.parse(lines[lines.length - 1]);
-          const tsStart = first.timestamp;
-          const tsEnd = last.timestamp;
-          if (!tsStart || !tsEnd) continue;
-
-          // Normalize numeric timestamps
-          const normTs = (ts) => typeof ts === 'number' ? new Date(ts).toISOString() : ts;
-
-          const s = sessions.get(sid);
-          if (!s) {
-            sessions.set(sid, {
-              start: normTs(tsStart),
-              end: normTs(tsEnd),
-              projects: new Set([projectDir]),
-              transcriptPath,
-            });
-            extended++;
-          } else {
-            const ns = normTs(tsStart);
-            const ne = normTs(tsEnd);
-            if (ns < s.start) s.start = ns;
-            if (ne > s.end) s.end = ne;
-            if (!s.transcriptPath) s.transcriptPath = transcriptPath;
-          }
-        } catch { /* skip unreadable transcripts */ }
-      }
-    }
-  } catch { /* transcripts dir missing */ }
-  return extended;
-}
-
-const transcriptExtended = scanTranscripts();
+const { sessions, extended: transcriptExtended } = buildSessionWindows({
+  sources: [CHANGELOG, MILESTONES],
+  transcriptDirs: [TRANSCRIPTS],
+});
 
 console.log(`Session windows: ${sessions.size} (${transcriptExtended} extended from transcripts)`);
 
 // ─── Step 3: Match orphan events to sessions ───
 
-// Build sorted session list for efficient matching
-const sessionList = [...sessions.entries()]
-  .map(([sid, s]) => ({ sid, ...s }))
-  .sort((a, b) => a.start.localeCompare(b.start));
+const sessionList = toSortedList(sessions);
 
 function findSession(timestamp, project) {
   // Prefer project+time match, fall back to time-only

@@ -1,6 +1,6 @@
 # Claude Code Memory & Session Augmentation Landscape
 
-*Survey date: 2026-03-26. Context: positioning session-cartographer (née CCSB fork) against existing projects.*
+*Survey date: 2026-03-26; updated 2026-07-25 with Tree Ring Memory. Context: positioning session-cartographer (née CCSB fork) against existing projects.*
 
 ## The Problem Space
 
@@ -68,6 +68,7 @@ These model how memory *should work* rather than just storing things.
 | [claude-cognitive](https://github.com/GMaN1911/claude-cognitive) | 443 | Attention-scored tiers (HOT/WARM/COLD), decay + co-activation | Most neuroscience-inspired. Validated on 1M+ line codebases with 8 concurrent instances. 64-95% token savings. |
 | [cog](https://github.com/marciopuga/cog) | 134 | Pure markdown conventions, three-tier (Hot/Warm/Glacier), Zettelkasten threads | Zero dependencies, zero code. Teaches Claude self-maintenance. Philosophically interesting. |
 | [Continuous-Claude-v3](https://github.com/parcadei/Continuous-Claude-v3) | 3.6k | 109 skills, 32 agents, 30 hooks, 5-layer AST/call-graph analysis | Most ambitious framework. PostgreSQL + pgvector. 95% token savings via TLDR code analysis. |
+| [Tree Ring Memory](https://github.com/TerminallyLazy/Tree-Ring-Memory) | Low | Local-first curated lifecycle: cambium/outer/inner/heartwood/scar/seed rings, evidence records, audits, deterministic consolidation, and explicit forgetting | Complementary lifecycle discipline rather than a transcript index. Keeps source documents authoritative and deliberately excludes transcript capture; also published as a standalone [agent skill](https://github.com/TerminallyLazy/tree-ring-memory-skill). |
 
 ### 6. Cross-Session Coordination
 
@@ -113,6 +114,8 @@ For reference — what ships with Claude Code itself.
 - **episodic-memory** (obra) — Also does cross-session transcript search with embeddings. But it's memory-focused, not navigation-focused. No event IDs, no deep links, no energy viz.
 - **claude-history** (raine) — Also navigates past sessions. But it's a standalone TUI, not an agent skill. No semantic search.
 - **claude-code-history-viewer** — Complementary, not competitive. We generate the deep links and events it renders.
+
+**Relevant lifecycle reference:** Tree Ring Memory is not a drop-in provider or close product competitor. Its useful overlap is memory hygiene: evidence-backed promotion, stale/sensitive/contradictory-memory audits, explicit supersession/redaction/deletion, and distinct treatment of durable lessons, failed approaches, and unresolved seeds. Those ideas are prior art for Cartographer's event-lifecycle, `/wrapup`, and future audit work. Cartographer should retain its own strengths—passive cross-provider capture, append-only event provenance, transcript navigation, and continuous salience/decay/reuse ranking—rather than importing the ring hierarchy or a parallel SQLite/FTS store wholesale.
 
 **The gap we fill:** Nobody else is building the *cartography layer* — the map of where you've been, what you found, and how to get back there. The memory projects store knowledge. The viewers display transcripts. We connect the two with addressable events and navigable topology.
 

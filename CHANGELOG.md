@@ -2,6 +2,115 @@
 
 ## Unreleased
 
+## 0.5.0 — 2026-08-14
+
+### fix(attribution): read the session id Claude Code actually exports
+
+Every consumer resolved the active session from `CLAUDE_SESSION_ID`. Claude Code
+has never set that variable — the name it exports to tool calls is
+`CLAUDE_CODE_SESSION_ID`. Nothing crashed and nothing was logged, so the failure
+went unnoticed for the life of the feature.
+
+Two consequences, both silent:
+
+**Delta serving never ran.** It suppresses event_ids already returned earlier in
+a session so repeat `/remember` calls surface fresh material. It gates on the
+session id, so it has been dormant since it shipped: 4,361 of 4,361 served rows
+carried an empty `session_id`. If you wondered why calling `/remember` twice
+returned much the same thing, this is why. It works now — expect repeat calls in
+one session to return genuinely different results.
+
+**Milestones lost their transcripts.** `/wrapup` and `/investigate` build their
+records with inline bash that read the same broken chain, so they stamped
+`session_id: "unknown"`, which then defeated the transcript lookup and wrote an
+empty `transcript_path`. On the reference corpus 437 of 507 wrapup milestones
+(86%) were affected. They still ranked at the top of `/remember` results —
+wrapups carry the highest salience in the corpus — while being dead ends.
+
+The resolution chain is now `CARTOGRAPHER_SESSION_ID → CLAUDE_SESSION_ID →
+CLAUDE_CODE_SESSION_ID → CODEX_SESSION_ID` in every consumer, with provider
+derived from whichever entry resolved rather than re-testing the legacy name
+independently (the same defect had left 369 records with no provider).
+`/wrapup` and `/investigate` now warn on stderr when the session will not
+resolve, so a silent `"unknown"` can never accumulate unnoticed again.
+`tests/unit/session-id-chain.test.js` asserts on the written log row, since that
+is the only place the original failure was visible.
+
+Test harnesses now unset the session variables. With delta serving actually
+working, a harness that inherits a live session id loses repeat results and
+fails tests that are fine.
+
+### feat(search): `--get` for exact, untruncated fetch by event_id
+
+Search output is lossy by construction — summaries are single-line and
+truncated for display. `--get evt-a,evt-b` returns the complete records,
+including `transcript_path`, `files_changed`, and `diff_shape`, so a shortlist
+can be verified before committing to reading a 100MB transcript. Ids that
+resolve to nothing are reported as missing rather than silently dropped;
+returning four records for five ids is how an agent ends up confidently
+answering from a gap.
+
+### feat(profile): standing corpus summary at `.carto/profile.md`
+
+`scripts/build-profile.js` derives a length-budgeted summary of active
+projects, standing preferences, durable decisions, work shape, and cadence, so
+recall can start from the top of the pyramid rather than always from a record
+lookup. Fully derived — delete it and it rebuilds. Commits count toward the
+profile only when the author matches the owner set or the commit carries a
+`session_id`, so backfilled history from cloned repos cannot describe a
+composite of every author whose repo was ever cloned.
+
+### fix(scripts): one definition of an unresolved field
+
+The event pipeline spells absence three ways — `""`, `"unknown"`, and `null` —
+and `/wrapup` alone has written all three across different eras of the skill.
+Readers each re-derived the set inline and diverged.
+
+This never surfaces as an error. `"unknown"` is truthy and equal to itself, so
+`if (sid)` passes and grouping by it silently merges every unattributed record
+into one phantom entity. During this release's orphan repair that phantom built
+a session window spanning the entire corpus, "matched" 148 orphans, and
+overstated the recovery rate by 54% before it was caught.
+
+`scripts/sentinels.js` now holds the single definition (`isResolved`,
+`firstResolved`), and the session-window builder, digest, and repair tool all
+use it. A unit test asserts no window can ever be keyed by a sentinel.
+
+### feat(scripts): recover orphaned sessions from before this release
+
+`scripts/repair-orphan-sessions.js` walks milestone records stamped
+`session_id: "unknown"` back to their session by project and nearest-event
+proximity. Existing users should run it once — see "Recovering Orphaned
+Sessions" in `docs/SETUP.md`. Dry run by default; `--write` takes a `.bak` and
+rewrites only repaired lines.
+
+The matching policy is deliberately stricter than `enrich-sessions.js`: a
+project match is required, ambiguity is refused rather than guessed at, and the
+transcript is verified to exist and to cover the timestamp before it is
+written. A wrong session id is worse than a missing one — it points `/remember`
+at an unrelated conversation and presents it as the real thing.
+
+On the reference corpus (439 orphans) this recovered 145 with a verified
+transcript and 10 whose transcript had expired, refused 101 as ambiguous, and
+found 183 unrecoverable. Wrapup milestones with a working transcript went from
+65 to 210. Concurrent sessions in one project are the limiting factor.
+
+Window construction is now shared with `enrich-sessions.js` through
+`scripts/session-windows.js`; behavior of the existing tool is unchanged.
+
+### feat(wrapup): render a session digest before writing the synthesis
+
+`/wrapup` now opens with `scripts/session-digest.js`, a compact panel covering
+span and tempo, commits with type and diff-shape mix, hottest files, research
+hosts, `/remember` served-vs-used, and the live uncommitted/unpushed state of
+every repo the session touched. Every line traces to a logged event or to
+`git`, so a wrong claim is visible rather than merely plausible.
+
+The panel is shown to you, and the agent writes its synthesis against it rather
+than from its own recollection of the conversation. Digest scalars are attached
+to the milestone under `digest`, so a session stays checkable after its
+transcript passes Claude Code's ~30-day TTL.
+
 ## 0.4.1 — 2026-07-24
 
 ### fix(release): self-contained repository marketplace installs
