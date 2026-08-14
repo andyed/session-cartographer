@@ -43,6 +43,17 @@ The digest already covers *what happened* mechanically — do not restate it. Yo
 3. **The hard problem** — what was actually difficult, not just what was done
 4. **Why** — the reasoning behind the commits the digest lists
 
+Items 1 and 2 are written **twice**: woven into the prose paragraph, and again as
+structured `decisions[]` / `unresolved[]` arrays in Step 1. That is not
+redundancy. The prose is what `/remember` searches; the arrays are what
+`.carto/profile.md` harvests into "Durable decisions". Before 0.5.1 only the
+prose existed, so 508 syntheses contributed nothing to the profile and the
+section drew all five of its entries from a single project on a single day.
+
+Do not skip the arrays as a shortcut — nothing downstream can recover them from
+the paragraph. Measured across 508 descriptions, explicit decision markers
+appear in about 4%, so no later parser can reconstruct what you did not record.
+
 ## Step 1: Write the milestone
 
 Generate a one-paragraph synthesis of the session. Be specific — name the files, the commits, the discoveries. No filler.
@@ -83,8 +94,24 @@ DIGEST=$(node "$ROOT/scripts/session-digest.js" --json --no-git 2>/dev/null \
   | jq -c '{duration_minutes, event_count, projects, commit_types, commit_shapes, files_touched: (.files | length), recall}' 2>/dev/null)
 [ -z "$DIGEST" ] && DIGEST=null
 
+# Structured outcomes for the profile. One item per argument — jq -R turns each
+# line into a JSON string and -s slurps them into an array, so commas, quotes,
+# and apostrophes in your text are safe. Replace the placeholder lines; keep the
+# select() so an empty list stays [] rather than [""].
+DECISIONS=$(printf '%s\n' \
+  "DECISION_ONE" \
+  "DECISION_TWO" \
+  | jq -R . | jq -s 'map(select(length > 0))')
+UNRESOLVED=$(printf '%s\n' \
+  "OPEN_THREAD_ONE" \
+  | jq -R . | jq -s 'map(select(length > 0))')
+KEY_INSIGHT="THE_ONE_THING_WORTH_REMEMBERING"
+
 jq -n -c \
   --argjson digest "$DIGEST" \
+  --argjson decisions "$DECISIONS" \
+  --argjson unresolved "$UNRESOLVED" \
+  --arg insight "$KEY_INSIGHT" \
   --arg eid "$EVENT_ID" \
   --arg ts "$TIMESTAMP" \
   --arg milestone "session_wrapup" \
@@ -97,7 +124,8 @@ jq -n -c \
   --arg cwd "$(pwd)" \
   --arg event "Wrapup" \
   --arg branch "$GIT_BRANCH" \
-  '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, digest: $digest}' \
+  '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, digest: $digest,
+    decisions: $decisions, unresolved: $unresolved, key_insight: $insight}' \
   >> "$DEV/session-milestones.jsonl"
 ```
 
