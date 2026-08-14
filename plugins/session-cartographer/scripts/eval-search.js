@@ -40,6 +40,14 @@ function runSearch(query, mode) {
   // result set and reports a precision drop that is pure measurement artifact.
   for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID',
     'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
+  // Same class of artifact, different mechanism. Time decay (~30-day half-life)
+  // is correct for live recall and ruinous for a fixed truth set: every labeled
+  // event ages, so the scores this harness grades decay ~16x over four months
+  // while the corpus fills the result window with material the labels have
+  // never seen. Measured 2026-08-14 — decay on: bm25 P@5 0.11 / recall 22%,
+  // hybrid 0.13 / 15%. Same corpus, decay off: bm25 0.40 / 56%, hybrid
+  // 0.42 / 65%. The harness was reporting label age, not search quality.
+  env.CARTOGRAPHER_DECAY_LAMBDA = '0';
   const args = [`"${query}"`, '--limit', '50'];
 
   if (mode === 'bm25') {

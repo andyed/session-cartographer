@@ -42,6 +42,8 @@ scripts/
   build-profile.js              — Derives .carto/profile.md: standing summary of projects, preferences, decisions, work shape, cadence
   sentinels.js                  — isResolved()/firstResolved(): the one definition of "field carries no real value"
   session-windows.js            — Shared session time-window construction (enrich + repair consume it)
+  session-match.js              — Strict orphan→session matching (project + proximity, refuses ambiguity)
+  backfill-investigations.js    — Normalize /investigate hypotheses from .carto/events into the searched log
   repair-orphan-sessions.js     — One-time recovery of pre-0.5.0 milestones stamped session_id "unknown"
 project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
 plugins/session-cartographer/
@@ -72,6 +74,7 @@ docs/
   companion_explorer_spec.md    — Explorer product spec
   CHANGELOG_SPEC.md             — Event log format
   landscape-survey.md           — 30+ Claude Code memory projects compared
+  LONGMEMEVAL.md                — What a LongMemEval run would/wouldn't validate; ingestion + reader config
 tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 ```
 
@@ -89,6 +92,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.
 - **Enrichment scripts modify `changelog.jsonl` in place.** Back up before running on large datasets.
+- **Only four logs are searched:** `changelog.jsonl`, `research-log.jsonl`, `session-milestones.jsonl`, `tool-use-log.jsonl`. Anything written elsewhere is write-only. `/investigate` wrote 64 diagnoses to `.carto/events/` before anyone noticed. A new event writer must append to one of the four, use `event_id`/`timestamp`, put its searchable text in `summary`, and call `index-event.sh` — miss any one and the record is unreachable.
 - **Never treat a sentinel as an identity. Use `scripts/sentinels.js`.** The event pipeline spells absence three ways — `""`, `"unknown"`, and `null` — and `/wrapup` alone has written all three. `"unknown"` is truthy and equal to itself, so `if (sid)` passes and `groupBy(sid)` merges every unattributed record into one phantom entity. Nothing errors; the numbers are just wrong. That phantom cost a 54% overstated recovery rate during the 0.5.0 repair. Any code that groups, matches, or keys on `session_id`, `provider`, or `project` must go through `isResolved()` rather than re-deriving the set inline (six sites had already diverged).
 - **The session-id env var is `CLAUDE_CODE_SESSION_ID`.** `CLAUDE_SESSION_ID` is a legacy name Claude Code never sets. Reading only the legacy name left every served row unattributed and delta serving dormant for the whole life of the feature. Any new consumer must read the chain `CARTOGRAPHER_SESSION_ID → CLAUDE_SESSION_ID → CLAUDE_CODE_SESSION_ID → CODEX_SESSION_ID`.
 - **Test harnesses must unset the session vars.** Delta serving is real now; a harness that inherits a live session id silently loses repeat results and fails passing tests.
