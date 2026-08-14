@@ -69,9 +69,11 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_DIR="$DEV/.carto/events"
 mkdir -p "$LOG_DIR"
 LOG_FILE="$LOG_DIR/$(date -u +%Y-%m).jsonl"
-SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-unknown}}"
+CLAUDE_SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-unknown}}}"
 PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
-[ "$PROVIDER" = "unknown" ] && [ -n "${CLAUDE_SESSION_ID:-}" ] && PROVIDER="claude"
+[ "$PROVIDER" = "unknown" ] && [ -n "$CLAUDE_SID" ] && PROVIDER="claude"
+[ "$SESSION_ID" = "unknown" ] && echo "warning: session id unresolved — this event will not link to a transcript" >&2
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 GIT_REPO=$(git rev-parse --show-toplevel 2>/dev/null)

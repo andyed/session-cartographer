@@ -17,14 +17,31 @@ the conventional checkout as a legacy fallback.
 
 Deliberate end-of-session preservation. The hooks capture mechanical facts (files changed, commits made, session ended). This skill captures **strategic context** — the decisions, discoveries, and unfinished threads that make the next session productive.
 
+Wrapup serves two audiences at once. The **log** gets a synthesis paragraph that `/remember` can recall months later. The **human** gets a digest panel they can verify at a glance — every line traces back to a logged event or to `git`, so a wrong claim is visible rather than merely plausible.
+
+## Step 0: Render the digest — do this first
+
+```bash
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
+node "$ROOT/scripts/session-digest.js"
+```
+
+The script resolves the session from `CARTOGRAPHER_SESSION_ID` / `CLAUDE_CODE_SESSION_ID`; pass `--session <id>` to override. It prints a panel covering span and tempo, commits with type and diff-shape mix, hottest files, research hosts, `/remember` served-vs-used, and the live dirty/unpushed state of every repo the session touched.
+
+**Show the panel to the user verbatim.** Do not paraphrase it into prose or re-type its numbers into a bulleted list — the alignment is what makes it scannable, and re-typing is where the numbers drift.
+
+Then read it before writing anything. This step exists so the synthesis is written *against the log* rather than from your own recollection of the conversation — recollection is exactly where confident, unfalsifiable summaries come from. If the digest disagrees with your memory of the session, the digest is right about what happened; your memory is only better on *why*.
+
+If the digest exits non-zero (no events logged for this session), say so plainly and write the synthesis from the conversation, noting that it is unverified.
+
 ## What to capture
 
-Synthesize the session into a milestone entry with:
+The digest already covers *what happened* mechanically — do not restate it. Your synthesis adds the layer no hook can infer:
 
-1. **What was accomplished** — commits, features, fixes (count them from the conversation)
-2. **Key decisions or discoveries** — the non-obvious things that would be expensive to re-derive
-3. **What's unfinished** — threads left open, next steps
-4. **The hard problem** — what was actually difficult, not just what was done
+1. **Key decisions or discoveries** — the non-obvious things that would be expensive to re-derive
+2. **What's unfinished** — threads left open, next steps
+3. **The hard problem** — what was actually difficult, not just what was done
+4. **Why** — the reasoning behind the commits the digest lists
 
 ## Step 1: Write the milestone
 
@@ -34,9 +51,12 @@ Then log it:
 
 ```bash
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
-SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-unknown}}"
+CLAUDE_SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-unknown}}}"
 PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
-[ "$PROVIDER" = "unknown" ] && [ -n "${CLAUDE_SESSION_ID:-}" ] && PROVIDER="claude"
+[ "$PROVIDER" = "unknown" ] && [ -n "$CLAUDE_SID" ] && PROVIDER="claude"
+# Fail loudly. A silent "unknown" is how 437 wrapups lost their transcripts.
+[ "$SESSION_ID" = "unknown" ] && echo "warning: session id unresolved — this milestone will not link to a transcript" >&2
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 
@@ -55,7 +75,16 @@ ENCODED_PATH=$(echo "$TRANSCRIPT" | python3 -c "import sys, urllib.parse; print(
 DEEPLINK=""
 [ "$PROVIDER" = "claude" ] && DEEPLINK="claude-history://session/${ENCODED_PATH}"
 
+# Attach the digest's scalars so the milestone stays checkable after the
+# transcript hits Claude Code's ~30d TTL. Falls back to null if the digest
+# could not run — never block the wrapup on it.
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
+DIGEST=$(node "$ROOT/scripts/session-digest.js" --json --no-git 2>/dev/null \
+  | jq -c '{duration_minutes, event_count, projects, commit_types, commit_shapes, files_touched: (.files | length), recall}' 2>/dev/null)
+[ -z "$DIGEST" ] && DIGEST=null
+
 jq -n -c \
+  --argjson digest "$DIGEST" \
   --arg eid "$EVENT_ID" \
   --arg ts "$TIMESTAMP" \
   --arg milestone "session_wrapup" \
@@ -68,11 +97,11 @@ jq -n -c \
   --arg cwd "$(pwd)" \
   --arg event "Wrapup" \
   --arg branch "$GIT_BRANCH" \
-  '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch}' \
+  '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, digest: $digest}' \
   >> "$DEV/session-milestones.jsonl"
 ```
 
-Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph.
+Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph. It must be a **single line** — the pipeline is TSV/line-based and a literal newline splits the row.
 
 ## Step 2: Index it
 
@@ -91,8 +120,40 @@ If the session produced a non-obvious discovery, preference, or decision that fu
 - Don't write a changelog (the hooks handle that)
 - Don't create memory entries for things derivable from git log
 - Don't be verbose — one paragraph, specific, done
+- Don't retype the digest's numbers into prose. It already showed them, aligned and correct; restating them is where drift enters
+- Don't claim work the digest doesn't show. If you believe something happened that isn't logged, say it's unlogged rather than asserting it flatly
 
 ## Examples
+
+What the digest looks like (Step 0 output — show it as-is):
+
+```
+━━ session digest · attentional-foraging ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  session   dbc9ac21 · claude · 1242 events
+  span      2026-05-01 02:36 → 2026-05-05 15:23 UTC · 108h47m
+  tempo     ▂·▁▁▁▁▁▁··█▄▂▅▄·▁▅▄▁▃▄·▃▂▂▁▁▁·▁▆  (3h24m/mark)
+  projects  attentional-foraging 1054 · approach-retreat 77 · movies-mindbendi…
+  activity  580 edits · 608 bash · 4 searches · 6 compactions · subagents Plan
+
+  commits   26 · 15 pushes
+            15 feature · 8 docs · 2 fix · 1 refactor  ▸  17 construct · 6 surg…
+
+            05-05 13:23  d6be69e  feat(ltr): typed-cascade migration + Pe…  +4724 −139
+            05-03 17:55  7de5c98  docs(lit-notes): Dumais 2010 IIiX entry…      +12 −1
+            … 20 more
+
+  files     173 touched
+            docs/drafts/cikm-2026/paper-v4.md                                   ×41
+
+  recall    3 calls → 22 served · 2 used (9%)
+            evt-7apd8osl9sud evt-wprsakq31ca5
+
+  leaving   attentional-foraging@feat/dd-top-…  1 uncommitted
+            approach-retreat@main               14 uncommitted
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 Good synthesis:
 > "Trimmed root CLAUDE.md from 20KB to 4KB by moving project map, testing, and library details to per-project CLAUDE.md files. Created CLAUDE.md for scrutinizer2025, iblipper2025, interests2025. Pruned 4 stale memories. Key insight: /focus and /remember make the project map redundant in root context — saves ~4000 tokens per turn."

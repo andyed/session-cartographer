@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Delta serving suppresses event_ids already returned this session. A harness
+# that inherits a live session id silently loses repeat results and fails on
+# runs that are actually fine. Tests must be hermetic.
+unset CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID
+
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION=${1:-$(node -p "require('$ROOT/package.json').version")}
 VERSION=${VERSION#v}

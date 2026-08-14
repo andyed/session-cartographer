@@ -38,6 +38,11 @@ scripts/
   backfill-prompt-intents.js    — Tag already-indexed turns with prompt_intent (payload-only, no re-embed)
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
+  session-digest.js             — Compact per-session panel (tempo, commits, files, recall, dirty repos); used by /wrapup
+  build-profile.js              — Derives .carto/profile.md: standing summary of projects, preferences, decisions, work shape, cadence
+  sentinels.js                  — isResolved()/firstResolved(): the one definition of "field carries no real value"
+  session-windows.js            — Shared session time-window construction (enrich + repair consume it)
+  repair-orphan-sessions.js     — One-time recovery of pre-0.5.0 milestones stamped session_id "unknown"
 project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
@@ -84,7 +89,12 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.
 - **Enrichment scripts modify `changelog.jsonl` in place.** Back up before running on large datasets.
+- **Never treat a sentinel as an identity. Use `scripts/sentinels.js`.** The event pipeline spells absence three ways — `""`, `"unknown"`, and `null` — and `/wrapup` alone has written all three. `"unknown"` is truthy and equal to itself, so `if (sid)` passes and `groupBy(sid)` merges every unattributed record into one phantom entity. Nothing errors; the numbers are just wrong. That phantom cost a 54% overstated recovery rate during the 0.5.0 repair. Any code that groups, matches, or keys on `session_id`, `provider`, or `project` must go through `isResolved()` rather than re-deriving the set inline (six sites had already diverged).
+- **The session-id env var is `CLAUDE_CODE_SESSION_ID`.** `CLAUDE_SESSION_ID` is a legacy name Claude Code never sets. Reading only the legacy name left every served row unattributed and delta serving dormant for the whole life of the feature. Any new consumer must read the chain `CARTOGRAPHER_SESSION_ID → CLAUDE_SESSION_ID → CLAUDE_CODE_SESSION_ID → CODEX_SESSION_ID`.
+- **Test harnesses must unset the session vars.** Delta serving is real now; a harness that inherits a live session id silently loses repeat results and fails passing tests.
 - **Retrieval telemetry is exact for new calls.** Served rows and `--touch` records share `call_id`; purpose, session, and provider are carried alongside it. `access-ledger.jsonl` is append-only. Do not rewrite it in place, and keep the CLI/API activation implementations in sync. Legacy inference is report-only and opt-in.
+- **`.carto/profile.md` is derived, never hand-authored.** `build-profile.js` rebuilds it from the corpus; hand edits are lost on the next run. CLAUDE.md owns hand-written context — duplicating it into the profile creates two sources of truth that drift. Two filters are load-bearing: backfilled git history contains other authors' commits (a profile without the owner filter describes everyone whose repo you ever cloned), and `project` is cwd-derived, so the home directory and workspace root show up as the busiest "projects" unless excluded.
+- **`--get` uses `rg` when available, `grep` as fallback.** BSD grep over the four event logs costs ~1s per invocation, which turns a five-id fetch into three seconds and teaches an agent to avoid the cheapest verification step in the system. `rg` does the same pass in 0.02s.
 - **RRF score cutoff at 10% of top score** to trim the semantic noise tail.
 - **Diff-shape quadrant labels:** bootstrap, construct, surgical, rework. Not "dangerous."
 

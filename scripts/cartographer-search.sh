@@ -36,11 +36,12 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--touch EVENT_IDS]
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
        WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
-       Delta serving (auto when CLAUDE_SESSION_ID is set): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
+       Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).
+       --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. The query argument is ignored (pass any placeholder).
        --purpose KIND: telemetry purpose (remember, focus, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
        --call-id ID: stable search-call identifier. Pass the same ID to --touch for exact attribution; otherwise --touch infers the latest call that served the event.
        --touch EVENT_IDS: record result use (comma-separated ids) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
@@ -55,6 +56,7 @@ INTENT=""
 ALL_MODE=0
 RESET_SERVED=0
 THREAD_ID=""
+GET_IDS=""
 TOUCH_IDS=""
 CALL_ID=""
 PURPOSE="${CARTOGRAPHER_PURPOSE:-manual}"
@@ -76,6 +78,7 @@ while [ $# -gt 0 ]; do
     --all)            ALL_MODE=1; shift ;;
     --reset-served)   RESET_SERVED=1; shift ;;
     --thread)         THREAD_ID="$2"; shift 2 ;;
+    --get)            GET_IDS="$2"; shift 2 ;;
     --touch)          TOUCH_IDS="$2"; shift 2 ;;
     --call-id)        CALL_ID="$2"; shift 2 ;;
     --purpose)        PURPOSE="$2"; shift 2 ;;
@@ -91,10 +94,14 @@ case "$CALL_ID" in
   *[!A-Za-z0-9_.:-]*|-) echo "Error: malformed --call-id '$CALL_ID'" >&2; exit 2 ;;
 esac
 
-CONTEXT_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-${CODEX_SESSION_ID:-}}}"
+# CLAUDE_CODE_SESSION_ID is the variable Claude Code actually exports to tool
+# calls; CLAUDE_SESSION_ID was never set, which left every served row
+# unattributed and delta serving permanently dormant. Keep both.
+CLAUDE_SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+CONTEXT_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-}}}"
 CONTEXT_PROVIDER="${CARTOGRAPHER_PROVIDER:-}"
 if [ -z "$CONTEXT_PROVIDER" ]; then
-  if [ -n "${CLAUDE_SESSION_ID:-}" ]; then
+  if [ -n "$CLAUDE_SID" ]; then
     CONTEXT_PROVIDER="claude"
   elif [ -n "${CODEX_SESSION_ID:-}" ] || [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_HOME:-}" ]; then
     CONTEXT_PROVIDER="codex"
@@ -252,14 +259,14 @@ fi
 # tokens, no new signal. Delta serving suppresses already-shown event_ids
 # from subsequent calls so each /remember surfaces fresh material.
 #
-# Activated when CARTOGRAPHER_SESSION_ID or the legacy CLAUDE_SESSION_ID is
-# set (skill context) and --all is not.
+# Activated when CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, or the legacy
+# CLAUDE_SESSION_ID is set (skill context) and --all is not.
 # The served-list file caps at the most recent 200 entries so old served IDs
 # eventually fall off and re-surface in fresh queries. --reset-served wipes
 # the per-session list. --all bypasses both reading and writing.
 SERVED_FILE=""
 SERVED_OUT=""
-ACTIVE_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-}}"
+ACTIVE_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-}}"
 if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
   SERVED_DIR="${TMPDIR_BASE:-/tmp}/cartographer-served"
   mkdir -p "$SERVED_DIR" 2>/dev/null
@@ -269,7 +276,10 @@ if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
     echo "(served-list reset for session $ACTIVE_SESSION_ID)" >&2
   fi
   touch "$SERVED_FILE" 2>/dev/null || SERVED_FILE=""
-  [ -n "$SERVED_FILE" ] && SERVED_OUT="$TMPDIR/served-this-call.txt"
+  # SERVED_OUT is assigned after mktemp below — $TMPDIR does not exist yet here.
+  # macOS exports TMPDIR so referencing it early silently resolved to the system
+  # temp dir; Linux leaves it unset, which made the path "/served-this-call.txt"
+  # and failed the awk redirect outright.
 fi
 
 DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
@@ -343,9 +353,130 @@ if [ -n "$TOUCH_IDS" ]; then
   exit 0
 fi
 
+# ─── --get: exact fetch by event_id ───
+# Search is lossy by construction — summaries are single-line, truncated for
+# display, and ranked against each other. --get is the redemption step: hand it
+# the ids a search returned and get the complete records back, untruncated, with
+# transcript_path and diff_shape intact. Cheap enough to call on a shortlist
+# before reading a 100MB transcript.
+#
+# Missing ids are reported rather than dropped. An id that resolves to nothing
+# is real information (the event aged out, or the id was hallucinated), and
+# silently returning four records for five ids is how an agent ends up
+# confidently answering from a gap.
+#
+# Redemption telemetry: an id that this session was actually served, and now
+# fetches in full, is the cleanest "served result got used" signal in the
+# system — stronger than --touch, which relies on the consumer remembering to
+# call it. Ids that were never served are fetched but not logged, so pasting an
+# id in from elsewhere cannot inflate the hit rate.
+if [ -n "$GET_IDS" ]; then
+  get_logs=""
+  for f in "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
+           "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl"; do
+    [ -f "$f" ] && get_logs="$get_logs $f"
+  done
+  if [ -z "$get_logs" ]; then
+    echo "get: no event logs found in $DEV/" >&2
+    exit 1
+  fi
+
+  get_found=0
+  get_missing=0
+  get_redeemed=""
+  get_ids=""
+  now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+  for gid in $(echo "$GET_IDS" | tr ',' ' '); do
+    case "$gid" in
+      *[!A-Za-z0-9_-]*|""|-*) echo "get: skipping malformed id '$gid'" >&2; continue ;;
+    esac
+    get_ids="${get_ids:+$get_ids }$gid"
+  done
+  [ -z "$get_ids" ] && { echo "get: no usable event ids" >&2; exit 2; }
+
+  # One pass over ~70MB of logs for the whole id set, not one pass per id. The
+  # surviving candidate lines are few, so the exact event_id match can be a
+  # cheap awk over the shortlist.
+  #
+  # rg beats BSD grep by ~40x here (0.02s vs 0.96s on the same four files) and
+  # is the difference between an exact fetch that feels free and one an agent
+  # learns to avoid. grep stays as the fallback so the zero-dependency install
+  # still works, just slower.
+  GET_TMP=$(mktemp -d)
+  trap 'rm -rf "$GET_TMP"' EXIT
+  for gid in $get_ids; do printf '"%s"\n' "$gid"; done > "$GET_TMP/patterns"
+  if command -v rg >/dev/null 2>&1; then
+    rg -N -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
+  else
+    LC_ALL=C grep -h -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
+  fi
+
+  for gid in $get_ids; do
+    line=$(LC_ALL=C awk -v want="$gid" '
+          {
+            if (match($0, /"event_id"[[:space:]]*:[[:space:]]*"/)) {
+              v = substr($0, RSTART + RLENGTH)
+              sub(/".*/, "", v)
+              if (v == want) { print; exit }
+            }
+          }' "$GET_TMP/candidates")
+
+    echo "=== $gid ==="
+    if [ -z "$line" ]; then
+      echo "(no event with that id in $DEV/*.jsonl — it may have aged out, live only in Qdrant as a transcript turn, or not exist)"
+      echo ""
+      get_missing=$((get_missing + 1))
+      continue
+    fi
+
+    # jq gives the exact record with nested diff_shape intact; without it the
+    # raw line is still an exact answer, just denser.
+    if command -v jq >/dev/null 2>&1; then
+      echo "$line" | jq '.' 2>/dev/null || echo "$line"
+    else
+      echo "$line"
+    fi
+    echo ""
+    get_found=$((get_found + 1))
+    get_redeemed="${get_redeemed:+$get_redeemed }$gid"
+  done
+
+  # Log redemptions for ids this session was served (see note above). One jq
+  # pass for the whole id set — slurping the served log per id costs ~0.4s
+  # each and turned a five-id fetch into a three-second call.
+  if [ -n "$get_redeemed" ] && [ -f "$SERVED_LOG" ] && command -v jq >/dev/null 2>&1; then
+    tail -2000 "$SERVED_LOG" 2>/dev/null | jq -r -s -c \
+      --arg ids "$get_redeemed" --arg ts "$now_iso" --arg sid "$CONTEXT_SESSION_ID" \
+      --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" '
+        ($ids | split(" ")) as $want
+        | [ .[]
+            # Bind the id before the pipe into index(): inside index(), `.` is
+            # $want, so a bare .event_id there reads the array, not the row,
+            # and every redemption silently fails to log.
+            | select(.event_id as $e | $e != null and ($want | index($e)) != null)
+            | select($sid == "" or (.session_id // "") == "" or .session_id == $sid) ]
+        | group_by(.event_id)
+        | map(last | select(.call_id != null and .call_id != ""))
+        | .[]
+        | {event_id, timestamp:$ts, session_id:$sid, provider:$provider,
+           purpose:$purpose, source:"result_fetched", call_id}
+      ' 2>/dev/null >> "$ACCESS_LEDGER"
+  fi
+
+  echo "($get_found fetched, $get_missing missing)"
+  [ "$get_found" -eq 0 ] && exit 1
+  exit 0
+fi
+
 FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
+
+# Delta serving's scratch file lives in the temp dir we own, so the trap cleans
+# it up. Deferred to here because $TMPDIR does not exist at the point the
+# served-list is resolved.
+[ -n "$SERVED_FILE" ] && SERVED_OUT="$TMPDIR/served-this-call.txt"
 
 # ─── Capture stdout so we can report context-window fill at the end ───
 # /remember and /focus pipe this output into agent context — surface how much

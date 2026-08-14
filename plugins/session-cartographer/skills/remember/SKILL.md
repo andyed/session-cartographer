@@ -30,6 +30,42 @@ Hooks determine what's in the searchable index:
 - **Semantic index** — turn-grouped embeddings of every transcript (Qdrant) for intent-match recall
 - **Raw transcripts** — opt-in via `--transcript`. Expensive (per-query awk over 100MB+ files); use only when the event logs + semantic index both miss
 
+### The profile: start at the top of the pyramid
+
+`~/Documents/dev/.carto/profile.md` (override with `CARTOGRAPHER_DEV_DIR`) is a
+length-budgeted standing summary derived from the whole corpus: active
+projects, standing preferences, durable decisions, work shape, cadence. Read it
+when the question is about the person or the shape of their work rather than a
+specific past moment — "what am I working on", "what did I decide about X in
+general", "what's my usual release process" — and when you need orientation
+before a vague search.
+
+It is derived, never hand-written. Rebuild it when it looks stale (the file
+states its own generation date and corpus end):
+
+```bash
+node "$ROOT/scripts/build-profile.js"
+```
+
+Do not read it reflexively on every recall. A profile read costs ~3k characters
+and answers standing questions; a specific "when did we fix the blur bug"
+question should go straight to search.
+
+### Exact fetch: `--get`
+
+Search output is lossy on purpose — summaries are single-line and truncated for
+display. `--get` returns the complete records for ids the search surfaced,
+including `transcript_path`, `files_changed`, and `diff_shape`:
+
+```bash
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>[,<event_id>...]
+```
+
+Cheap (~0.1s) and the right move before deciding which transcript is worth
+opening. Ids that resolve to nothing are reported as missing rather than
+dropped — if you asked for five and got four, say so instead of answering
+around the gap.
+
 ### Search facets
 
 Results include faceted summaries (project, source, event type, time range). Use these to narrow searches:
@@ -110,7 +146,7 @@ Write-time salience is a static prior; the access ledger makes it a learned post
 
 ### Delta serving (automatic in-session)
 
-When you call `/remember` repeatedly in the same session, the script automatically suppresses event_ids that were returned in earlier calls — so each subsequent call surfaces *fresh* material rather than re-returning the same top-K. Activated whenever `CARTOGRAPHER_SESSION_ID` or the backwards-compatible `CLAUDE_SESSION_ID` is available in skill context.
+When you call `/remember` repeatedly in the same session, the script automatically suppresses event_ids that were returned in earlier calls — so each subsequent call surfaces *fresh* material rather than re-returning the same top-K. Activated whenever the session resolves from `CARTOGRAPHER_SESSION_ID`, `CLAUDE_CODE_SESSION_ID` (what Claude Code actually exports), the legacy `CLAUDE_SESSION_ID`, or `CODEX_SESSION_ID`.
 
 If you actually need to re-cite an event from a prior call (the user is asking about something you already showed them), pass `--all` to bypass suppression for that single call:
 
@@ -149,6 +185,19 @@ If event logs + semantic come up empty and you genuinely need raw transcript key
 ## Step 2: Present results
 
 Show results as-is from the script output. Keep it scannable.
+
+## Step 2.5: Fetch the full record before opening a transcript
+
+When a result looks right but the truncated summary doesn't settle it, fetch the
+complete record first. It costs ~0.1s against a 100MB+ transcript read, and it
+carries the `transcript_path` you need for Step 3 anyway.
+
+```bash
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>,<event_id>
+```
+
+Often this ends the recall — a commit's full `files_changed` and `diff_shape`
+answer "what did that change touch" without any transcript at all.
 
 ## Step 3: Read the transcript when needed
 
@@ -209,6 +258,10 @@ Touch only what you used, not everything that was served. A result you read and 
 /remember show me how I got to that fix
     → bash cartographer-search.sh "the fix" --limit 5     (find anchor event_id)
     → bash cartographer-search.sh _ --thread evt-xxxxxxxxxxxx
+/remember what exactly did that commit touch
+    → bash cartographer-search.sh _ --get git-abc1234      (full files_changed + diff_shape)
+/remember what am I working on these days
+    → read ~/Documents/dev/.carto/profile.md               (standing question, not a search)
 /remember how do I deploy movies-mindbendingpixels
     → node cooccurrence-graph.js --maneuvers movies-mindbendingpixels   (→ cloudflare-pages)
     → recover the invocation from the changelog, present it

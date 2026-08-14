@@ -40,6 +40,30 @@ Aspirational research targets in MenteDB's `VISION.md`. None are shipping; worth
 
 If SC's role expands from "human session search" to "Claude's primary memory while in a long conversation," LongMemEval becomes the actual benchmark. Worth a sandbox test against a single project (Psychodeli or muriel) where MenteDB's ingestion/retrieval is compared to `/remember`'s on the same questions, to size the gap.
 
+## Topic tracks — the missing pyramid layer (added 2026-08-14)
+
+Reference: **NapMem** ([arxiv 2607.05794](https://arxiv.org/html/2607.05794v1)), Qwen team. Organizes user history as a four-layer "memory pyramid" — raw conversations → memory records → topic tracks → user profile — and gives the agent tools to navigate it rather than pre-selecting context for it.
+
+SC already instantiates most of that thesis, and converged independently on the same retrieval mechanics (hybrid keyword + vector, RRF at k=60). Shipped 2026-08-14: `--get` exact-fetch (their `get_records`) and `scripts/build-profile.js` → `.carto/profile.md` (their layer 4). **Topic tracks are the one layer with nothing standing in for them.**
+
+The ablation is the reason to care. Removing the upper layers and running records-only drops their average from 62.74 → 44.93 — a bigger delta than removing RL training (→ 48.39) or removing the navigation interface entirely (→ 54.08). Multi-granularity is doing more work than either of the headline contributions.
+
+**Andy's framing (2026-08-14): topic tracks are a dreaming outcome, not a write path.** That resolves the tension that has blocked this. Tracks are consolidated, evolving, *rewritten* narratives — which reads as a direct violation of SC's append-only discipline until you notice they aren't a log at all. They're the output of a background consolidation pass over the log. The JSONL stays immutable; dreaming produces derived, fully regenerable track files. Delete them and the next dream rebuilds them. Same relationship `profile.md` already has to the corpus, one granularity down.
+
+This also connects three things already on this list that have been circling the same idea:
+- **Dream Engine** (MenteDB vision, above) — background analogical recombination across memory clusters. Tracks are the concrete, buildable version: not "your deployment pattern is structurally identical to your migration pattern," just "here is the running narrative of the psychodeli audio work, with links down to the events."
+- **Topics facet** (mindmap-mcp section, below) — its cohesion filter (`cosineExcluding`, candidates surviving only if members are similar *after* removing the shared term) is the natural selector for *which* topics deserve a track. Don't dream 200 tracks; dream the ~20 that cohere.
+- **Knowledge-update edges** — supersession has no home in an append-only log. It has an obvious home in a track: the consolidation pass is exactly where "he said X in March, then Y in June" gets resolved into one current narrative, without mutating either event.
+
+Sketch, when it gets built:
+- [ ] **`.carto/tracks/<slug>.md`, capped at ~20 files.** Each with a metadata header, a length budget (same treatment as `profile.md`), a running narrative, and explicit `event_id` links down to the record layer. Regenerable from scratch — never hand-edited.
+- [ ] **Topic selection via the cohesion filter**, not raw term frequency. Reuse the TF-IDF machinery already in `explorer/server/bm25.js`.
+- [ ] **A dream pass that runs on a cadence, not on every session end.** Consolidation is expensive and its value is cumulative; nightly or weekly is the right granularity, and it composes with Claude Code's own Auto Dream rather than competing with it.
+- [ ] **Supersession resolution inside the pass** — when two events make contradictory claims about the same thing, the track states the current one and links both.
+- [ ] **A `read_file`-shaped entry point** so `/remember` can open a track by name, the way it now reads `profile.md`.
+
+Open question worth settling before building: whether tracks are per-project (cheap, obvious, mostly redundant with `/focus`) or per-*topic-across-projects* (the actual gap — "the AOI work" spans approach-retreat, allserp-paper, and cikm-leakycursor, and no current lens holds that together). The co-occurrence graph's `--related` already knows those cross-project threads exist; it just has nowhere to write the narrative down.
+
 ---
 
 ## Explorer UI
@@ -67,6 +91,13 @@ If SC's role expands from "human session search" to "Claude's primary memory whi
   - **120s execSync timeout** in `scripts/eval-search.js` gets hit by every query that lands in the transcript BM25 path — 5 of 9 queries time out with transcripts enabled, all reporting 0/0/0. Either bump to 600s or split transcript scoring into its own harness.
 - [ ] Query rewrite — synonym expansion (builds on phrase matching above)
 - [ ] **Transcript BM25 speed vs recall tradeoff** — Transcript search is the recall backstop: queries like "facets" that never appear in event logs only surface through raw transcript grep. But BM25-scoring full transcript files is slow (2-3s per file × N files). With `LC_ALL=C`, macOS grep silently drops files with multibyte (finds 0). Without it, grep takes 10s+ for file identification alone. `rg` solves the file-finding (0.5s, unicode-safe) but the per-file awk BM25 scoring is the real bottleneck. Current mitigation: cap at 20 transcript files. Proper fix needs a truth dataset to evaluate recall/speed tradeoffs — build this as part of the GH Pages demo with sample data (see backlog). Options: (a) pre-index transcript text into the event log at ingest time, (b) tiered search — fast path first, transcript fallback only on zero results, (c) transcript-level IDF precomputation.
+- [ ] **Live `/remember` precision pass from explicit-use evidence.** Baseline from 2026-07-26: 25/1,317 served rows had an explicit `--touch`, MRR was 0.113 across 56 attributed calls, and 42 calls recorded no used result. Treat that as a conservative instrumentation baseline—not a 1.9% effectiveness claim—because older consumers did not reliably touch results. The qualitative failure is nevertheless clear: exact hashes (`26815f9 703c6d7`) returned the two right commits immediately, while “another agent checked in my changes” repeatedly filled the result set with generic agent milestones, research, and weak lexical matches. Turn that incident into a regression pack and address it as one coherent pass:
+  1. Route commit/ownership queries toward `git_commit` and tool-use evidence while down-ranking research and generic agent-completion milestones; keep procedural queries on the maneuver map.
+  2. Collapse duplicate event provenance and repeated source labels before presentation so one event occupies one result slot.
+  3. Exclude the active query turn from raw-transcript fallback and automatically resolve transcript paths that moved from `sessions/` to `archived_sessions/`.
+  4. Score time-to-first-used-result, P@k, MRR, result count, and abstention on the vague query plus exact project/hash controls.
+  5. Report touch coverage separately from retrieval quality so incomplete consumer instrumentation cannot masquerade as search failure.
+- [ ] **Skill-outcome telemetry, starting with Muriel deltas.** Invocation count does not establish that a skill helped. Define a compact `skill_outcome` record that can be extracted from structured handoffs with `skill`, `disposition` (`consulted`, `changed`, `caught`, `proved`), project, integration/files, and proof references. Index it through the existing event pipeline, preserve the human-readable handoff, and add a report that separates “mentioned” from “materially changed and verified.” Coordinate the first schema with Muriel rather than hard-coding Muriel-specific fields into the generic event model.
 
 ## Documentation
 - [ ] **Cold start data coverage guide** — Document what each backfill script recovers vs what requires live hooks. New users need to understand the tradeoff: backfill gets git commits (no session_id, no transcript link) + transcript text (Qdrant only). Live hooks get session_id, transcript_path, diff shape, commit classification, research URLs. `enrich-sessions.js` bridges the gap by inferring session_id from timestamp+project overlap — but only for commits that happened during a Claude Code session. Commits from outside CC (terminal, IDE) will never have sessions. This matters for the sessions view and for `/remember` recall quality.

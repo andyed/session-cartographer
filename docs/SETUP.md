@@ -176,6 +176,33 @@ node scripts/embed-events.js                      # then index into Qdrant
 
 Imports what the transcript pipeline never sees: human-readable session titles from the Claude desktop app, and Cowork sessions (VM-based, no local transcripts) whose title + initial prompt is the only recoverable record. Unlike the transcript backfills above, this writes `app_session` events into `changelog.jsonl`, so keyword search benefits too. Deterministic `app-<uuid>` IDs — safe to rerun.
 
+## Recovering Orphaned Sessions (upgrading from before 0.5.0)
+
+**Run this once if you used Session Cartographer before 0.5.0.** Skip it on a fresh install — there is nothing to repair.
+
+Before 0.5.0 the skills resolved the active session from `CLAUDE_SESSION_ID`, a variable Claude Code never sets (the real one is `CLAUDE_CODE_SESSION_ID`). Records written by `/wrapup` and `/investigate` were stamped `session_id: "unknown"`, which then defeated the transcript lookup and left `transcript_path` empty. The synthesis paragraph survived and still turns up in `/remember` — but the conversation behind it became unreachable, so "read the transcript" hits nothing.
+
+The hooks were never affected (they read the session from the hook payload, not the environment), which is what makes recovery possible: your milestone's sibling events are correctly attributed, so an orphan can be walked back to its session by project and time proximity.
+
+```bash
+node scripts/repair-orphan-sessions.js            # dry run — reports only
+node scripts/repair-orphan-sessions.js --verbose  # + sample matches to eyeball
+node scripts/repair-orphan-sessions.js --write    # repair (takes a .bak first)
+```
+
+Then reindex so semantic search picks up the new attribution:
+
+```bash
+grep '"repaired_by":"repair-orphan-sessions"' ~/Documents/dev/session-milestones.jsonl \
+  | while IFS= read -r line; do printf '%s\n' "$line" | bash scripts/index-event.sh; done
+```
+
+**Read the dry run before writing.** Expect a mixed result — on the reference corpus (439 orphans) it recovered 33% with a verified transcript, refused 23% as ambiguous, and found 42% unrecoverable. Yours will differ: recovery depends on how many sessions you run concurrently (overlapping sessions in one project are harder to disambiguate) and how much of your history predates your transcripts' ~30-day TTL.
+
+Records it cannot place confidently keep `session_id: "unknown"`. That is deliberate — a wrong session id is worse than a missing one, because it points `/remember` at an unrelated conversation and presents it as the real thing. The script refuses rather than guesses.
+
+Nothing is modified without `--write`, and `--write` copies the file to `<name>.bak-YYYYMMDD` before touching it. Only repaired lines are rewritten.
+
 ## Verify Skills
 
 `claude install` should symlink all three skills into `~/.claude/skills/`. If any are missing, create the symlink manually:

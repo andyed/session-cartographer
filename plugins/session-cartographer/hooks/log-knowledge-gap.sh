@@ -33,9 +33,13 @@ command -v jq >/dev/null 2>&1 || exit 0
 
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SESSION_ID:-}}"
+# CLAUDE_CODE_SESSION_ID is the variable Claude Code exports; CLAUDE_SESSION_ID
+# is a legacy name it never sets. Reading only the legacy name is what left 86%
+# of milestone records unattributed before 0.5.0.
+CLAUDE_SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-}}}"
 PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
-[ "$PROVIDER" = "unknown" ] && [ -n "${CLAUDE_SESSION_ID:-}" ] && PROVIDER="claude"
+[ "$PROVIDER" = "unknown" ] && [ -n "$CLAUDE_SID" ] && PROVIDER="claude"
 CWD=$(pwd)
 
 # Knowledge gaps carry mid-high salience — they are signals worth surfacing
