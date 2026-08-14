@@ -29,6 +29,10 @@ import { execFileSync } from 'child_process';
 
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME, 'Documents/dev');
 const CHANGELOG = process.env.CARTOGRAPHER_CHANGELOG || path.join(DEV, 'changelog.jsonl');
+// /wrapup writes to session-milestones.jsonl, and only a handful of milestones
+// are mirrored into the changelog. Reading the changelog alone left the whole
+// synthesis layer — 508 records — outside the profile's view.
+const MILESTONES = process.env.CARTOGRAPHER_MILESTONES || path.join(DEV, 'session-milestones.jsonl');
 const SERVED_LOG = process.env.CARTOGRAPHER_SERVED_LOG || path.join(DEV, 'served-log.jsonl');
 const ACCESS_LEDGER = process.env.CARTOGRAPHER_ACCESS_LEDGER || path.join(DEV, 'access-ledger.jsonl');
 
@@ -115,6 +119,15 @@ function readJsonl(file) {
     try { out.push(JSON.parse(line)); } catch { /* skip torn line */ }
   }
   return out;
+}
+
+// Derived output hides its own gaps: a section built from zero matching events
+// renders as a short section, not as an error. Warnings go to stderr so they
+// never contaminate --json or the profile itself.
+const warnings = [];
+function warn(message) {
+  warnings.push(message);
+  console.error(`warning: ${message}`);
 }
 
 const events = readJsonl(CHANGELOG);
@@ -224,14 +237,64 @@ for (const e of memoryEvents) {
 const preferences = [...latestByName.values()]
   .sort((a, b) => (toMs(b.timestamp) || 0) - (toMs(a.timestamp) || 0));
 
-const strategic = own
-  .filter((e) => e.type === 'session_end_strategic')
+// Two shapes carry structured session outcomes. `session_end_strategic` is the
+// original; `session_wrapup` is what /wrapup writes today. Reading only the
+// first meant this section drew from the two strategic records in the entire
+// corpus while 508 wrapups went unseen — five decisions from one project on one
+// day, presented as the standing set.
+//
+// A wrapup's prose `description` is deliberately NOT mined for decisions.
+// Measured across 508 of them, explicit decision markers appear in ~4%, while
+// the one frequent marker ("hard problem", 29.5%) is a problem, not a decision.
+// Regex-harvesting it would fill this section with mislabeled content, which is
+// worse than showing less. Decisions come from the structured field or not at all.
+const isStrategic = (e) => e.type === 'session_end_strategic'
+  || e.milestone === 'session_end_strategic'
+  || e.milestone === 'session_wrapup';
+
+// Milestones are read from their own log and de-duplicated against the few the
+// changelog mirrors, so a record present in both is not counted twice.
+const seenMilestoneIds = new Set(events.map((e) => e.event_id).filter(Boolean));
+const milestoneEvents = readJsonl(MILESTONES)
+  .filter((e) => !e.event_id || !seenMilestoneIds.has(e.event_id));
+
+const strategic = [...own, ...milestoneEvents.filter(isOwn)]
+  .filter(isStrategic)
   .sort((a, b) => (toMs(b.timestamp) || 0) - (toMs(a.timestamp) || 0));
 const decisions = [];
 for (const s of strategic) {
   for (const d of s.decisions || []) {
-    decisions.push({ project: s.project || '?', when: (s.timestamp || '').slice(0, 10), text: d });
+    if (typeof d !== 'string' || !d.trim()) continue;
+    decisions.push({ project: s.project || '?', when: (s.timestamp || '').slice(0, 10), text: d.trim() });
   }
+  if (typeof s.key_insight === 'string' && s.key_insight.trim()) {
+    decisions.push({
+      project: s.project || '?',
+      when: (s.timestamp || '').slice(0, 10),
+      text: s.key_insight.trim(),
+    });
+  }
+}
+
+// A harvester that matches nothing is indistinguishable from a quiet corpus.
+// Both of this file's silent failures — the strategic-only filter here and the
+// owner filter on commits — would have announced themselves months earlier with
+// one line of output.
+// Warning on zero alone is too weak a guard: before 0.5.1 this section drew 5
+// decisions from the 2 records in the corpus that had the field, while 508
+// wrapups had none — non-zero, and completely unrepresentative. Report coverage
+// so a thin section is legible as a thin section.
+const withDecisions = strategic.filter(
+  (s) => (Array.isArray(s.decisions) && s.decisions.length) || s.key_insight
+).length;
+if (strategic.length === 0) {
+  warn('no session_wrapup or session_end_strategic events found — "Durable decisions" will be empty');
+} else if (withDecisions === 0) {
+  warn(`0 of ${strategic.length} session syntheses carry a structured decisions field — `
+    + '"Durable decisions" will be empty until /wrapup (0.5.1+) writes them');
+} else if (withDecisions < strategic.length * 0.1) {
+  warn(`only ${withDecisions} of ${strategic.length} session syntheses carry structured `
+    + 'decisions — this section is drawn from a small, possibly unrepresentative slice');
 }
 
 // Recall behaviour: how the owner's agents actually use the memory they have.
@@ -381,6 +444,7 @@ const minCost = (section) =>
 let used = header.join('\n').length;
 const rendered = [...header];
 const omitted = [];
+const thin = []; // dropped for lack of content, not for budget
 for (let i = 0; i < sections.length; i++) {
   const section = sections[i];
   const reserved = sections.slice(i + 1).reduce((sum, s) => sum + minCost(s), 0);
@@ -395,7 +459,11 @@ for (let i = 0; i < sections.length; i++) {
     cost += line.length + 1;
   }
   if (kept.length < section.minLines) {
-    omitted.push(section.title);
+    // Two different causes, and conflating them sends you hunting the wrong
+    // one: the section may have had too little content to begin with, or the
+    // budget may have squeezed it out. Say which.
+    if (section.lines.length < section.minLines) thin.push(section.title);
+    else omitted.push(section.title);
     continue;
   }
   rendered.push(`## ${section.title}`, '');
@@ -409,6 +477,10 @@ for (let i = 0; i < sections.length; i++) {
   }
 }
 if (omitted.length) rendered.push(`_Sections omitted for budget: ${omitted.join(', ')}._`, '');
+if (thin.length) {
+  rendered.push(`_Sections with too little data yet: ${thin.join(', ')}._`, '');
+  warn(`too little data to render: ${thin.join(', ')}`);
+}
 
 const markdown = rendered.join('\n');
 

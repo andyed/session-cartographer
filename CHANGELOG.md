@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+## 0.5.1 — 2026-08-14
+
+### fix(profile): "Durable decisions" drew from two records while 508 went unread
+
+The profile harvested `session_end_strategic` events carrying a `decisions`
+array. Exactly two such records exist in the reference corpus, both from one
+project on one day — and those five decisions were presented as the standing
+set. `/wrapup` meanwhile had written 508 `session_wrapup` milestones, to
+`session-milestones.jsonl`, a file `build-profile.js` never opened.
+
+Both halves are fixed: the profile now reads the milestones log (de-duplicated
+against the few the changelog mirrors) and accepts the `session_wrapup` shape
+alongside the legacy one, and `/wrapup` now emits `decisions[]`, `unresolved[]`,
+and `key_insight` alongside the prose description.
+
+The prose is deliberately **not** mined for decisions. Measured across all 508
+descriptions, explicit decision markers appear in about 4%, while the one
+frequent marker — "hard problem", 29.5% — is a problem, not a decision.
+Harvesting it would fill the section with mislabeled content, which is worse
+than showing less. The section will be thin until new wrapups accumulate.
+
+Existing syntheses are unaffected; nothing is rewritten. Run
+`node scripts/build-profile.js` after a few wrapups to see the section fill.
+
+### fix(profile): report gaps instead of rendering them as short sections
+
+Derived output hides its own failures — a harvester matching zero events looks
+identical to a quiet corpus. `build-profile.js` now warns on stderr when a
+harvester finds nothing, and when a section is drawn from an unrepresentative
+slice (the original bug was *non-zero*: 1 record of 509, which a zero-check
+would have passed). Sections dropped for having too little content are now
+reported as such rather than as "omitted for budget", which sent you looking at
+the wrong cause.
+
 ### fix(investigate): hypotheses were written to a path nothing reads
 
 `/investigate` logged its root-cause diagnoses to `.carto/events/YYYY-MM.jsonl`.
