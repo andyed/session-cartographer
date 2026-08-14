@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### fix(investigate): hypotheses were written to a path nothing reads
+
+`/investigate` logged its root-cause diagnoses to `.carto/events/YYYY-MM.jsonl`.
+Search reads `changelog.jsonl`, `research-log.jsonl`, `session-milestones.jsonl`,
+and `tool-use-log.jsonl` — that directory is not in the set — and the skill never
+called `index-event.sh`, so nothing reached Qdrant either. Its own description
+promised "logs it to the event log for later recall"; recall was impossible on
+every path.
+
+Three independent breaks: the wrong file, `id`/`ts` instead of
+`event_id`/`timestamp`, and the text living in `symptom`/`hypothesis` rather than
+`summary`, which is first in the extraction chain. The skill's jq block had also
+been paraphrased rather than run, producing four record shapes across 64 records.
+
+`scripts/backfill-investigations.js` normalizes all four shapes into the searched
+log — idempotent, dry-run by default. The skill now writes the correct schema
+directly to `changelog.jsonl` and indexes it, so no further backfill is needed.
+
+Recovered on the reference corpus: 64 diagnoses, 42 with a session (18 already
+attributed, 24 matched), 31 with a verified transcript, 6 refused as ambiguous.
+Matching policy is now shared with the orphan repair via `scripts/session-match.js`
+rather than reimplemented.
+
 ## 0.5.0 — 2026-08-14
 
 ### fix(attribution): read the session id Claude Code actually exports

@@ -33,6 +33,7 @@ import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'fs';
 import { execSync } from 'child_process';
 import { buildSessionWindows, defaultPaths, toSortedList } from './session-windows.js';
 import { isResolved } from './sentinels.js';
+import { createMatcher } from './session-match.js';
 
 const args = process.argv.slice(2);
 const valueAfter = (flag, fallback) => {
@@ -64,62 +65,10 @@ const { sessions } = buildSessionWindows({
 });
 const sessionList = toSortedList(sessions);
 
-// A milestone is written from inside a live session, so it should sit within
-// minutes of that session's other events in the same project. Window coverage
-// alone cannot separate concurrent sessions — a session resumed over five days
-// covers everything in between. Nearest-event distance can.
+// Matching policy lives in session-match.js so the backfill cannot drift from
+// the repair. --near-minutes tunes how close a candidate must have been.
 const NEAR_MS = Number.parseInt(valueAfter('--near-minutes', '10'), 10) * 60_000;
-const SEPARATION = 4; // runner-up must be this many times further away
-
-function nearestGap(session, project, ms) {
-  const stamps = session.stampsByProject?.get(project);
-  if (!stamps || stamps.length === 0) return Infinity;
-  // Binary search for the insertion point, then check the two neighbours.
-  let lo = 0;
-  let hi = stamps.length - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1;
-    if (stamps[mid] < ms) lo = mid + 1; else hi = mid;
-  }
-  let best = Math.abs(stamps[lo] - ms);
-  if (lo > 0) best = Math.min(best, Math.abs(stamps[lo - 1] - ms));
-  return best;
-}
-
-/**
- * Strict match. Returns {match, via} | {ambiguous:[...]} | {} for no candidate.
- */
-function findSession(timestamp, project, cwd) {
-  if (!timestamp || !isResolved(project)) return {};
-
-  const covering = [];
-  for (const s of sessionList) {
-    if (s.start > timestamp) break; // list is start-sorted; nothing later can cover
-    if (timestamp <= s.end && s.projects.has(project)) covering.push(s);
-  }
-
-  if (covering.length === 0) return {};
-  if (covering.length === 1) return { match: covering[0], via: 'project+time' };
-
-  // Rank by how close each candidate actually was to this moment.
-  const ms = Date.parse(timestamp);
-  const ranked = covering
-    .map((s) => ({ s, gap: nearestGap(s, project, ms) }))
-    .sort((a, b) => a.gap - b.gap);
-
-  const [best, runnerUp] = ranked;
-  const clear = best.gap <= NEAR_MS
-    && (runnerUp.gap === Infinity
-      || runnerUp.gap >= best.gap * SEPARATION
-      || runnerUp.gap - best.gap >= NEAR_MS);
-  if (clear) return { match: best.s, via: 'proximity', gapSeconds: Math.round(best.gap / 1000) };
-
-  // Last resort: exactly one candidate worked in this exact directory.
-  const byCwd = cwd ? covering.filter((s) => s.cwds.has(cwd)) : [];
-  if (byCwd.length === 1) return { match: byCwd[0], via: 'cwd' };
-
-  return { ambiguous: covering };
-}
+const findSession = createMatcher(sessionList, { nearMs: NEAR_MS, isResolved });
 
 // A recovered session id is only half the value. Confirm the transcript is
 // actually on disk and actually covers this moment before pointing at it —
