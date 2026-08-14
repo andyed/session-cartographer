@@ -46,6 +46,10 @@ function cleanEnv(overrides = {}) {
   const env = { ...process.env };
   for (const key of SESSION_VARS) delete env[key];
   delete env.CARTOGRAPHER_PROVIDER;
+  // macOS exports TMPDIR; Linux does not. Scripts that reference $TMPDIR before
+  // creating it therefore work on a dev machine and fail in CI. Drop it so this
+  // suite runs under the stricter of the two environments everywhere.
+  delete env.TMPDIR;
   return { ...env, ...overrides };
 }
 

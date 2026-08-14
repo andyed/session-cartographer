@@ -276,7 +276,10 @@ if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
     echo "(served-list reset for session $ACTIVE_SESSION_ID)" >&2
   fi
   touch "$SERVED_FILE" 2>/dev/null || SERVED_FILE=""
-  [ -n "$SERVED_FILE" ] && SERVED_OUT="$TMPDIR/served-this-call.txt"
+  # SERVED_OUT is assigned after mktemp below — $TMPDIR does not exist yet here.
+  # macOS exports TMPDIR so referencing it early silently resolved to the system
+  # temp dir; Linux leaves it unset, which made the path "/served-this-call.txt"
+  # and failed the awk redirect outright.
 fi
 
 DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
@@ -469,6 +472,11 @@ fi
 FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
+
+# Delta serving's scratch file lives in the temp dir we own, so the trap cleans
+# it up. Deferred to here because $TMPDIR does not exist at the point the
+# served-list is resolved.
+[ -n "$SERVED_FILE" ] && SERVED_OUT="$TMPDIR/served-this-call.txt"
 
 # ─── Capture stdout so we can report context-window fill at the end ───
 # /remember and /focus pipe this output into agent context — surface how much

@@ -35,6 +35,11 @@ console.log(`Loaded ${queries.length} truth queries\n`);
 
 function runSearch(query, mode) {
   const env = { ...process.env };
+  // Delta serving suppresses event_ids already returned this session. An eval
+  // that inherits a live session id scores later queries against a shrinking
+  // result set and reports a precision drop that is pure measurement artifact.
+  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID',
+    'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
   const args = [`"${query}"`, '--limit', '50'];
 
   if (mode === 'bm25') {
