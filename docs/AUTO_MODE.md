@@ -18,20 +18,48 @@ and other checkouts — and needs no history from cartographer. It offers itself
 once auto mode has been active for a few startups ("Set up auto mode for your
 environment?"). Nothing here replaces it.
 
-**Use `/trustmap` once you have a corpus.** Cartographer has already extracted
-the same substrate the wizard re-reads on acceptance, which changes three
-things:
+**Then use `/trustmap` as well.** These are complementary, not competing, and
+running both beats either. They're authoritative about different things:
 
 | | Built-in wizard | `/trustmap` |
 |---|---|---|
-| Source | Rescans the machine on acceptance | Events already extracted |
-| Ranking | Repos under `$HOME`, self-labeled "CANDIDATES, not vetted context" | Usage-weighted — commits and pushes per repo |
+| Reads | The machine, right now | Events already extracted |
+| Authoritative on | Live state you must *check* | Usage accumulated over *time* |
+| Repo visibility | Verified via authenticated `gh` | Cannot check — inferred at best |
+| Branch protection, rulesets | Queried via `gh` | No equivalent |
+| CI/CD targets | Scans `.github/workflows` | No equivalent |
+| Classifier-bypassing allow rules | **Audits `permissions.allow` and proposes removals** | No equivalent |
+| CLI coverage | What its scope saw | Frequency-ranked across the whole corpus |
+| Repos and orgs | Candidates under `$HOME`, self-labeled "CANDIDATES, not vetted context" | Usage-weighted by commits and pushes |
 | Providers | Claude Code sessions | Claude Code + Codex + backfilled git history |
-| Coverage | Transcripts under a byte cap; "a recent session in a project past the cap may be missing" | Whole corpus |
 | Re-run | One-shot draft | Diffs against current settings, proposes only the delta |
 
-The delta behavior is the real reason this exists. A one-shot draft goes stale
-the first time you add an internal host; a re-runnable derivation doesn't.
+### A measured comparison
+
+Run on the same machine, wizard at `scope=project depth=both`:
+
+**The wizard found, and `/trustmap` structurally cannot:** the repo is public
+(authenticated `gh` check, not a guess); no branch rulesets are configured;
+GitHub Actions and a Pages deploy target exist; and one entry in
+`permissions.allow` — `Bash(python3 -c ":*)` — is a wildcarded interpreter that
+resolves *before* the classifier, which it proposed removing. That last one is a
+genuine security finding, and nothing in cartographer looks for it.
+
+**`/trustmap` found, and the wizard reported as `None configured`:** 24 CLIs it
+never saw, including `adb` (966 hits), `ffmpeg` (958), `xcodebuild` (436),
+`hermes` (296), and `netlify` (96) — against the wizard's own note that "only
+claude, npx, pwd" appeared in its evidence. Also a LAN host, two additional
+source-control remotes, and 11 data stores outside the project, four of them not
+gitignored.
+
+The gap is scope, and the wizard is explicit about it: *"Cross-project
+transcript mining NOT GATHERED."* At `scope=project` it saw 13 transcripts.
+Cartographer's corpus held 103,683 events across every project.
+
+The lesson isn't that one tool wins. It's that the wizard's scope prompt
+silently decides whether your config knows about 3 CLIs or 25, and the narrower
+option is the one that sounds safer. Run the wizard for live state, `/trustmap`
+for accumulated usage, and merge the two.
 
 If your corpus is thin, `/trustmap` says so — it prints a `COLD START` block
 naming which signal is missing and sends you to the wizard. Deriving a trust
