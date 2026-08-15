@@ -1,5 +1,15 @@
 # Session Cartographer — TODO
 
+## Trustmap follow-ups (added 2026-08-15)
+
+`/trustmap` derives `autoMode.environment` from the corpus and ships without a
+way to tell whether the entries it proposed actually helped. Both items below
+are about closing that gap.
+
+- **[ ] Log classifier denials, and make `/trustmap` self-correcting.** Right now the skill proposes trust for everything you *touched*, which is a superset of what you were *blocked on* — most entries buy nothing. Claude Code ships a [`PermissionDenied` hook](https://code.claude.com/docs/en/hooks#permissiondenied) and records denials under `/permissions` → **Recently denied**; the built-in wizard reads a "Recent auto-mode denial reasons" section that cartographer has no equivalent of. Adding a hook that appends denials to the event log would let the second run propose entries for destinations that actually got blocked, and would give the first honest answer to "did applying this reduce denials." That measurement is the whole argument for the tool, and nothing currently makes it.
+- **[ ] Validate against a second corpus.** Every heuristic in `trust-digest.js` is tuned on one machine: the coreutils stoplist, the `DATA_NOISE` filter, the data-directory regex, the cold-start thresholds. Two bugs surfaced only because it ran against 73k real shell events (`const` outranking `adb`; truncated URLs reading as internal hostnames), so a different tree will surface a third. Needs a run on someone else's corpus before the numbers in the README are claimed as general.
+- **[ ] Reconsider the `git.overleaf.com` org grouping.** Remotes are grouped as `host/first-path-segment`, which is right for GitHub and wrong for Overleaf, where the first segment is a per-document id. Harmless today (they surface at 1 hit each and the skill is told to question low counts), but the grouping rule is host-agnostic and will be wrong for any host that isn't org-first.
+
 ## Memory research — borrowable ideas + benchmark context (added 2026-04-24)
 
 ### Industry benchmark: LongMemEval (ICLR 2025)

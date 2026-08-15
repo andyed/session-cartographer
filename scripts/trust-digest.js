@@ -51,6 +51,7 @@ const valueAfter = (flag, fallback) => {
 };
 const AS_JSON = args.includes('--json');
 const NO_GIT = args.includes('--no-git');
+const TEMPLATE_ONLY = args.includes('--template');
 const MIN_HITS = Math.max(1, Number.parseInt(valueAfter('--min', '3'), 10) || 3);
 const REPO_PROBE_CAP = Math.max(1, Number.parseInt(valueAfter('--cap', '40'), 10) || 40);
 
@@ -417,6 +418,54 @@ const proposals = {
 const newCount = Object.values(proposals).flat().filter((p) => !p.covered).length;
 
 // ─── Render ───
+// ─── Cold start ───
+// Deriving from the corpus is only better than rescanning the machine once the
+// corpus exists. On a fresh install it is strictly worse, and that is exactly
+// when someone needs the environment config most. Detect the case and hand over
+// a template to answer directly rather than serving a confident-looking panel
+// built from forty events.
+const COLD_START = {
+  shell: bashSeen < 200,
+  repos: repos.filter((r) => r.remotes.length).length < 2,
+  span: events.length < 500,
+};
+const isColdStart = Object.values(COLD_START).filter(Boolean).length >= 2;
+
+const TEMPLATE = `# autoMode.environment — fill this in
+
+Answer what applies and delete the rest. Entries are prose, not patterns: the
+classifier reads them as natural language, so write them the way you would
+describe your infrastructure to a new engineer. Keep "$defaults" first — without
+it the built-in entries are replaced rather than extended.
+
+  "$defaults",
+  "Organization: <company or 'independent'>. Primary use of Claude Code: <software development | infrastructure automation | data engineering | research>",
+  "Repository visibility: <which repos are public, which are private, and whether any hold material under embargo>",
+  "Source control: <every GitHub/GitLab/Bitbucket org you push to, e.g. github.com/acme and all repos under it>",
+  "Cloud provider(s): <AWS | GCP | Azure | none>",
+  "Trusted cloud buckets: <s3://... , gs://... — the ones Claude should read and write>",
+  "Trusted internal domains: <*.internal.example.com, api.example.com, LAN hosts and what each one is>",
+  "Key internal services: <CI, artifact registry, incident tooling, and where each lives>",
+  "Internal package registry: <the private npm/PyPI installs should route through, or 'none — public registries'>",
+  "Org-specific CLIs: <non-standard tools and what each one drives>",
+  "Sensitive data locations & audiences: <buckets, paths, and databases holding personal, customer, regulated, or entrusted data — and who each may be shared with>",
+  "Sensitive remote targets: <the hosts, namespaces, or containers that count as production>",
+  "Protected IaC scopes: <infrastructure whose apply/destroy should always need you to name the change>",
+  "Additional context: <regulated industry, multi-tenant infra, compliance constraints>"
+
+Two shortcuts, in preference order:
+
+  1. Claude Code's own setup wizard scans this machine directly and needs no
+     corpus. It offers to run when auto mode has been active for a few startups;
+     "Set it up" in that dialog is the fastest path on a fresh install.
+  2. Answer the lines above in conversation and have them written for you.
+
+Re-run /trustmap once you have a few weeks of sessions logged. It will diff
+whatever you set today against what your work actually touches, and propose
+only the difference.`;
+
+if (TEMPLATE_ONLY) { console.log(TEMPLATE); process.exit(0); }
+
 const bar = (s) => `━━ ${s} ${'━'.repeat(Math.max(0, 78 - s.length))}`;
 const fmt = (rows, n = 12) => {
   const shown = rows.slice(0, n);
@@ -440,6 +489,8 @@ if (AS_JSON) {
     loopback: { hosts: loopbackHosts.length, ports: loopbackPorts },
     settings_path: SETTINGS,
     settings_readable: settingsReadable,
+    cold_start: isColdStart,
+    cold_start_signals: COLD_START,
     existing_environment: existing,
     new_count: newCount,
     repos: repos.map((r) => ({
@@ -456,6 +507,21 @@ if (AS_JSON) {
   out.push(`  corpus    ${events.length.toLocaleString()} own events · ${bashSeen.toLocaleString()} shell · ${research.length.toLocaleString()} fetches · last ${WINDOW_DAYS}d`);
   out.push(`  settings  ${SETTINGS} · ${existing.length} existing environment ${existing.length === 1 ? 'entry' : 'entries'}`);
   out.push(`  proposed  ${newCount} not yet covered  (${'+'} = new, blank = already covered)`, '');
+
+  if (isColdStart) {
+    const why = [
+      COLD_START.shell && `only ${bashSeen} shell events`,
+      COLD_START.repos && 'fewer than 2 repos with remotes',
+      COLD_START.span && `only ${events.length} events total`,
+    ].filter(Boolean).join(' · ');
+    out.push('  ⚠ COLD START — this corpus is too thin to derive a trust boundary from.');
+    out.push(`    ${why}.`);
+    out.push('    Anything below is drawn from a handful of events and will miss most of');
+    out.push('    what you touch. Prefer Claude Code\'s built-in setup wizard, which scans');
+    out.push('    this machine directly and needs no history, or fill in the template:');
+    out.push('        node scripts/trust-digest.js --template');
+    out.push('    Then re-run /trustmap in a few weeks for the delta.', '');
+  }
 
   out.push('  Source control orgs (from remotes of repos you commit to)');
   out.push(...fmt(proposals.source_control, 10), '');

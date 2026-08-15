@@ -18,6 +18,14 @@ usage-weighted (a repo pushed to 27 times outranks one that merely exists under
 proposal is diffed against current settings so an update proposes only the
 delta rather than a fresh draft.
 
+This is the *update* path, not a replacement for the built-in wizard. On a fresh
+install the wizard is strictly better — it reads the machine, this reads a
+corpus that doesn't exist yet — and the digest now says so rather than serving a
+confident-looking panel built from forty events. Below roughly 200 shell events,
+two repos with remotes, or 500 events total, it prints a `COLD START` block
+naming which signal is missing and points at the wizard, with
+`trust-digest.js --template` as the fill-in fallback for answering directly.
+
 `scripts/trust-digest.js` emits identifiers, never arguments — commands reduce
 to their leading word, URLs to their host — so the panel is pasteable into a
 settings file without a secret review. Two heuristics there were wrong on the

@@ -18,8 +18,10 @@ as a potential exfiltration target and gets blocked. `autoMode.environment` is
 the prose block that tells the classifier what's actually yours.
 
 Claude Code ships a wizard that drafts that block by scanning your machine when
-you accept it. This skill answers the same question from the corpus cartographer
-already has, which differs in three ways that matter:
+you accept it. **On a fresh install that wizard is the better tool** — it reads
+the machine directly and needs no history, while this skill has nothing to read.
+Once a corpus exists the trade reverses, and answering from extracted events
+differs in three ways that matter:
 
 - **Usage weighting.** A repo under `$HOME` is a candidate; a repo you pushed to
   twenty-seven times is infrastructure. The wizard's own output labels its repo
@@ -52,6 +54,34 @@ entry is a standing grant, and a hallucinated one widens the boundary silently.
 Useful flags: `--window 90d` to narrow, `--cap 80` if a warning says projects
 ranked below the probe cap, `--min 1` to see low-frequency CLIs, `--json` for
 the structured form.
+
+## Step 0.5: If the digest says COLD START, stop and hand over the template
+
+A thin corpus doesn't produce a thin answer — it produces a confident-looking
+panel built from forty events, which is worse, because the gaps are invisible.
+The digest detects this and prints a `⚠ COLD START` block naming which signals
+are missing.
+
+When it does, **do not draft entries from the panel.** Say plainly that there
+isn't enough history to derive a trust boundary yet, then offer both paths:
+
+1. **Claude Code's own setup wizard**, which scans this machine directly and
+   needs no corpus. It offers itself once auto mode has been active for a few
+   startups; that dialog is the fastest path on a fresh install. Recommend this
+   one first — deriving from an empty corpus is strictly worse than scanning.
+2. **The fill-in template**, if they'd rather answer directly:
+
+   ```bash
+   ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
+   node "$ROOT/scripts/trust-digest.js" --template
+   ```
+
+   Walk them through it in conversation and write the answers up as entries.
+   Everything from Step 2 onward applies unchanged.
+
+Either way, tell them to re-run `/trustmap` once a few weeks of sessions have
+accumulated. The value here is the *update* path — diffing what they set today
+against what their work turns out to touch — not the first draft.
 
 ## Step 1: Draft the entries
 
