@@ -88,7 +88,7 @@ and prints one panel. Every later step traces to a row in it.
     +    27  github.com/andyed
 
   Internal / LAN hosts contacted
-    +     4  192.168.1.74:8769
+    +     4  192.168.1.42:8769
 
   Non-standard CLIs by frequency
     +   966  adb          +   436  xcodebuild
@@ -151,9 +151,9 @@ git-ignore state:
 
 ```
   Data stores you work in (derived — review before naming)
-    +   230  ~/dev/cikm-leakycursor-replicate/data/llm_judge  (gitignored)
-    +    84  ~/dev/attentional-foraging/AdSERP/data           (gitignored)
-    +    38  ~/dev/mbp-dash/data                              ← not gitignored
+    +   230  ~/dev/<project-a>/data/judge-runs  (gitignored)
+    +    84  ~/dev/<project-b>/corpus/data           (gitignored)
+    +    38  ~/dev/<project-c>/data                              ← not gitignored
 ```
 
 **`← not gitignored` is the finding.** A data directory git already ignores is

@@ -240,14 +240,14 @@ Digest row → entry:
 
 ```
     +   966  adb
-    +     4  192.168.1.74:8769
+    +     4  192.168.1.42:8769
 ```
 
 > "Org-specific CLIs: `adb` for installing and debugging builds on Fire TV
 > devices over the LAN; `xcodebuild`, `xcrun`, and `codesign` for tvOS and macOS
 > builds; `ffmpeg`/`ffprobe` for video render pipelines."
 >
-> "Trusted internal domains: 192.168.1.74:8769, a LAN service on the home
+> "Trusted internal domains: 192.168.1.42:8769, a LAN service on the home
 > network used during development."
 
 Bad entry — a pattern, not prose, and it grants far more than the evidence:
