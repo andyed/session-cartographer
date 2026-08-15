@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0 — 2026-08-15
+
 ### feat(trustmap): derive auto mode's `autoMode.environment` from the corpus
 
 Auto mode's classifier trusts the working directory and the current repo's
@@ -21,10 +23,13 @@ delta rather than a fresh draft.
 This is the *update* path, not a replacement for the built-in wizard. On a fresh
 install the wizard is strictly better — it reads the machine, this reads a
 corpus that doesn't exist yet — and the digest now says so rather than serving a
-confident-looking panel built from forty events. Below roughly 200 shell events,
-two repos with remotes, or 500 events total, it prints a `COLD START` block
-naming which signal is missing and points at the wizard, with
-`trust-digest.js --template` as the fill-in fallback for answering directly.
+confident-looking panel built from forty events. When two of three signals trip
+— under ~200 shell events, fewer than two repos with remotes, under 500 events
+total — it prints a `COLD START` block naming which ones are missing and points
+at the wizard, with `trust-digest.js --template` as the fill-in fallback for
+answering the slots directly.
+
+Usage and the slot-by-slot walkthrough are in `docs/AUTO_MODE.md`.
 
 `scripts/trust-digest.js` emits identifiers, never arguments — commands reduce
 to their leading word, URLs to their host — so the panel is pasteable into a
@@ -49,6 +54,19 @@ the greater one was considered: on the reference corpus the top result is a
 git-ignore state, since a data directory that is not ignored is the finding,
 and paths the corpus references but that no longer exist on disk are marked and
 excluded — naming a missing directory grants trust to whatever recreates it.
+
+### fix(release): the plugin runtime copy is what installed skills actually run
+
+Skills resolve their scripts against `CLAUDE_PLUGIN_ROOT`, which points at
+`plugins/session-cartographer/` — a directory carrying its own copy of the
+runtime assembled by `copy-plugin-runtime.sh`. A new script added only at the
+repository root is invisible there. `/trustmap` worked from a checkout and
+would have failed at step 0 for anyone who installed the plugin, which is
+everyone who isn't developing it.
+
+Caught while cutting this release rather than by a test: nothing verifies that
+every script a skill references exists under the plugin root. Worth adding
+before the next skill lands.
 
 ### fix(gitignore): `.carto/` was committable
 
