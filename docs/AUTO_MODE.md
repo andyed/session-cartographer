@@ -189,9 +189,45 @@ target, or repeated denials for the same destination. The digest marks entries
 already covered with a blank instead of `+`, so an update run shows only what
 changed.
 
-On update, rebuild the whole array including entries you'd already approved.
-The merge assigns `environment` wholesale, so a partial list silently drops
-them.
+### Provenance: how two tools share one array
+
+The environment block has more than one author — the wizard, `/trustmap`, and
+you. Wholesale assignment means whoever ran last wins and silently discards the
+rest. Pure appending never discards anything, but then nothing can correct its
+own stale entry, so the block grows monotonically until it contradicts itself.
+
+`/trustmap` stamps each entry it writes with a dated marker:
+
+```
+Source control: github.com/andyed and all repos under it [trustmap 2026-08-15]
+```
+
+Entries are free-form prose, so the marker is legal and the classifier reads
+past it. On merge the array is rebuilt as `$defaults` + foreign entries verbatim
++ this run's stamped entries. That gives three properties:
+
+- **The wizard's entries survive**, so running both tools in either order
+  converges instead of clobbering.
+- **Stamped entries are corrected, not duplicated** — a host whose description
+  changed ends up with one accurate entry, not two contradictory ones.
+- **`$defaults` is re-asserted every run**, so an edit can't drop it.
+
+### Retiring entries
+
+Nothing else here ever removes anything, so a host you stopped using keeps
+granting trust indefinitely. The digest flags its own entries whose identifiers
+no longer appear anywhere in the corpus:
+
+```
+  Stale — written by /trustmap, no longer supported by the corpus
+    −        Trusted internal domains: 10.9.9.9:1234, a decommissioned build box…
+```
+
+It flags rather than acts, and the skill asks first: absence from a 365-day
+window isn't proof the thing is gone. It may be seasonal, or used from a machine
+whose history isn't in this corpus. Context entries that name no identifiers
+("Organization: …") are never proposed for retirement — absence of an identifier
+is not evidence against a description.
 
 To review what got blocked in the meantime, open `/permissions` → **Recently
 denied**. Cartographer doesn't yet log those denials, which means nothing

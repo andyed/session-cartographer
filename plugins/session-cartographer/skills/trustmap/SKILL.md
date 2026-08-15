@@ -140,32 +140,65 @@ and managed settings **only**. It deliberately ignores `.claude/settings.json`
 and `.claude/settings.local.json` in the repo, so a checked-in file can't inject
 its own trust. Don't write project-scoped entries and expect them to apply.
 
-## Step 3: Merge
+## Step 3: Merge — augment, never replace
 
-Read the current settings, splice `autoMode.environment`, write it back. Preserve
-every other key — this file holds permissions, hooks, and plugin registrations.
+The environment block has more than one author. Claude Code's setup wizard
+writes it, this skill writes it, and the user edits it by hand. So **stamp every
+entry you write, preserve every entry you didn't, and rewrite only your own.**
+
+Each entry you author ends with the dated marker the digest prints as
+`provenance.stamp`, e.g. `[trustmap 2026-08-15]`. Entries are free-form prose,
+so the marker is legal and the classifier reads past it — but it is what lets a
+re-run correct a stale entry without touching the wizard's work.
+
+The merge is then mechanical: `$defaults`, then foreign entries verbatim, then
+yours. The digest hands you the foreign list, so you never have to re-derive it.
 
 ```bash
 SETTINGS="$HOME/.claude/settings.json"
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
 cp "$SETTINGS" "$SETTINGS.bak-$(date +%Y%m%d%H%M%S)"
 
-# One entry per argument. jq -R turns each line into a JSON string and -s slurps
-# them, so commas, quotes, and apostrophes in your prose are safe.
-ENTRIES=$(printf '%s\n' \
-  '$defaults' \
+DIGEST=$(node "$ROOT/scripts/trust-digest.js" --json)
+STAMP=$(printf '%s' "$DIGEST" | jq -r '.provenance.stamp')
+FOREIGN=$(printf '%s' "$DIGEST" | jq -c '.provenance.foreign')
+
+# One entry per argument, WITHOUT the stamp — it is appended below, so the same
+# text can never end up double-stamped on a re-run.
+MINE=$(printf '%s\n' \
   "ENTRY_ONE" \
   "ENTRY_TWO" \
-  | jq -R . | jq -s 'map(select(length > 0))')
+  | jq -R . | jq -s --arg s "$STAMP" 'map(select(length > 0) | . + " " + $s)')
 
-jq --argjson entries "$ENTRIES" \
-  '.autoMode = ((.autoMode // {}) | .environment = $entries)' \
+jq --argjson foreign "$FOREIGN" --argjson mine "$MINE" \
+  '.autoMode = ((.autoMode // {}) | .environment = (["$defaults"] + $foreign + $mine))' \
   "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"
 ```
 
-On an **update** run, carry the existing entries forward — the digest prints
-them and marks covered proposals with a blank instead of `+`. Rebuild the full
-array including what was already there; the assignment replaces the array
-wholesale, so a partial list silently drops entries the user already approved.
+Three properties this buys, none of which the old wholesale assignment had:
+
+- **The wizard's entries survive.** They land in `foreign` and are copied
+  through untouched. Running both tools in either order converges.
+- **Your own entries are corrected, not duplicated.** Old `[trustmap …]` entries
+  are dropped and replaced by this run's set, so a host whose description
+  changed gets one accurate entry rather than two contradictory ones.
+- **`$defaults` is re-asserted every time**, so it can't be lost by an edit.
+
+### Retiring stale entries
+
+Nothing else in this pipeline ever removes an entry, so a host you stopped using
+keeps granting trust indefinitely. The digest flags entries it wrote whose
+identifiers no longer appear anywhere in the corpus:
+
+```
+  Stale — written by /trustmap, no longer supported by the corpus
+    −        Trusted internal domains: 10.9.9.9:1234, a decommissioned build box…
+```
+
+**Always ask before dropping one.** Absence from a 365-day window is not proof
+the thing is gone — it may be a service used seasonally, or from a machine whose
+history isn't in this corpus. Retire by omitting it from `MINE`; keep it by
+carrying its text forward.
 
 ## Step 4: Verify
 

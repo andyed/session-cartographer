@@ -55,6 +55,30 @@ git-ignore state, since a data directory that is not ignored is the finding,
 and paths the corpus references but that no longer exist on disk are marked and
 excluded — naming a missing directory grants trust to whatever recreates it.
 
+### feat(trustmap): provenance-stamped entries, so two tools can share one array
+
+`autoMode.environment` has more than one author — Claude Code's setup wizard
+writes it, `/trustmap` writes it, and you edit it by hand. The first cut assigned
+the array wholesale, so whoever ran last silently discarded the others. Pure
+appending would have been no better in the other direction: nothing could then
+correct its own stale entry, and the block would grow monotonically until it
+contradicted itself.
+
+Entries this skill authors now carry a dated marker — `[trustmap 2026-08-15]` —
+and the merge rebuilds the array as `$defaults` + foreign entries verbatim +
+this run's stamped set. Entries are free-form prose, so the marker is legal and
+the classifier reads past it. Running the wizard and `/trustmap` in either order
+now converges rather than clobbering, and a re-run corrects its own entries
+instead of duplicating them.
+
+This also makes removal possible for the first time. Nothing in this pipeline
+had ever retired an entry, so a host you stopped using kept granting trust
+indefinitely. The digest flags entries it wrote whose identifiers no longer
+appear anywhere in the corpus, and the skill asks before dropping one — absence
+from a 365-day window is not proof the thing is gone. Context entries that name
+no identifiers are never proposed for retirement, since absence of an identifier
+is not evidence against a description.
+
 ### fix(release): the plugin runtime copy is what installed skills actually run
 
 Skills resolve their scripts against `CLAUDE_PLUGIN_ROOT`, which points at

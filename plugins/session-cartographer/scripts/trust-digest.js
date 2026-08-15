@@ -345,6 +345,25 @@ try {
 const existingText = existing.join('\n').toLowerCase();
 const covered = (needle) => Boolean(needle) && existingText.includes(String(needle).toLowerCase());
 
+// ─── Provenance ───
+// The environment block has more than one author: Claude Code's setup wizard
+// writes it, this writes it, and you edit it by hand. Wholesale assignment means
+// whoever ran last wins and silently discards the others; pure appending never
+// discards anything but can never correct its own stale entry either, so the
+// block grows monotonically and eventually contradicts itself.
+//
+// A dated marker in the prose fixes both. Entries are free-form natural
+// language, so a trailing tag is legal and the classifier reads straight past
+// it — but it lets a re-run rewrite only what it wrote, leave every foreign
+// entry untouched, and retire its own entries when the evidence disappears.
+const STAMP = `[trustmap ${new Date(now).toISOString().slice(0, 10)}]`;
+const OWNED_RE = /\[trustmap(?:\s+(\d{4}-\d{2}-\d{2}))?\]\s*$/;
+const isDefaults = (e) => String(e).trim() === '$defaults';
+
+const ownedEntries = existing.filter((e) => !isDefaults(e) && OWNED_RE.test(String(e)));
+const foreignEntries = existing.filter((e) => !isDefaults(e) && !OWNED_RE.test(String(e)));
+const hasDefaults = existing.some(isDefaults);
+
 // ─── Data stores the corpus shows you working in ───
 // Session transcripts are the sensitive store this tool knows about a priori.
 // They are rarely the *most* sensitive one on the machine: a research corpus of
@@ -415,6 +434,31 @@ const proposals = {
   sensitive: sensitivePaths.map((p) => ({ value: p, hits: 0, covered: covered(p) })),
   data_stores: dataStores,
 };
+
+// ─── Retirement ───
+// Nothing in this pipeline has ever removed an entry, so a host you stopped
+// using last year keeps granting trust forever. An entry this tool wrote is
+// stale when none of the identifiers it names still appear anywhere in the
+// current corpus.
+//
+// Context entries ("Organization: …", "Cloud provider(s): none") name no
+// identifiers at all, and would read as stale under a naive check every single
+// run. They are never retired automatically — absence of an identifier is not
+// evidence against a description.
+const universe = Object.values(proposals).flat()
+  .map((p) => String(p.value).toLowerCase())
+  .filter((v) => v.length >= 3);
+
+const stale = ownedEntries.map((entry) => {
+  const text = String(entry).toLowerCase();
+  const named = universe.filter((id) => text.includes(id));
+  return { entry: String(entry), names: named.length, stale: named.length === 0 };
+}).filter((r) => r.stale);
+
+// Distinguishing "carries no identifiers, so unjudgeable" from "carried
+// identifiers that are now gone" needs the entry's own shape, which prose does
+// not reliably give. Report rather than act: the skill asks before retiring.
+const retirable = stale.filter((r) => /:\s*\S/.test(r.entry) && /[/.]|\bs3:|\bgs:/.test(r.entry));
 const newCount = Object.values(proposals).flat().filter((p) => !p.covered).length;
 
 // ─── Render ───
@@ -467,6 +511,10 @@ only the difference.`;
 if (TEMPLATE_ONLY) { console.log(TEMPLATE); process.exit(0); }
 
 const bar = (s) => `━━ ${s} ${'━'.repeat(Math.max(0, 78 - s.length))}`;
+const clipEntry = (s) => {
+  const flat = String(s).replace(/\s+/g, ' ').trim();
+  return flat.length > 68 ? `${flat.slice(0, 67)}…` : flat;
+};
 const fmt = (rows, n = 12) => {
   const shown = rows.slice(0, n);
   const lines = shown.map((r) => {
@@ -492,6 +540,14 @@ if (AS_JSON) {
     cold_start: isColdStart,
     cold_start_signals: COLD_START,
     existing_environment: existing,
+    provenance: {
+      stamp: STAMP,
+      has_defaults: hasDefaults,
+      owned: ownedEntries,
+      foreign: foreignEntries,
+      stale: stale.map((r) => r.entry),
+      retirable: retirable.map((r) => r.entry),
+    },
     new_count: newCount,
     repos: repos.map((r) => ({
       project: r.name, root: r.root, commits: r.commits, pushes: r.pushes, events: r.events,
@@ -506,6 +562,10 @@ if (AS_JSON) {
   out.push('', bar('trust map · what your work actually touches'), '');
   out.push(`  corpus    ${events.length.toLocaleString()} own events · ${bashSeen.toLocaleString()} shell · ${research.length.toLocaleString()} fetches · last ${WINDOW_DAYS}d`);
   out.push(`  settings  ${SETTINGS} · ${existing.length} existing environment ${existing.length === 1 ? 'entry' : 'entries'}`);
+  if (existing.length) {
+    out.push(`  authored  ${ownedEntries.length} by /trustmap · ${foreignEntries.length} by others (preserved verbatim)`
+      + `${hasDefaults ? ' · $defaults present' : ' · ⚠ NO $defaults'}`);
+  }
   out.push(`  proposed  ${newCount} not yet covered  (${'+'} = new, blank = already covered)`, '');
 
   if (isColdStart) {
@@ -558,6 +618,12 @@ if (AS_JSON) {
       out.push(`    ${mark} ${String(d.hits).padStart(5)}  ${d.value.replace(HOME, '~')}${flag}`);
     }
     out.push('');
+  }
+
+  if (retirable.length) {
+    out.push('  Stale — written by /trustmap, no longer supported by the corpus');
+    for (const r of retirable) out.push(`    −        ${clipEntry(r.entry)}`);
+    out.push('  (ask before retiring: absence from a 365d window is not proof it is gone)', '');
   }
 
   if (repos.length) {
