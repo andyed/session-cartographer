@@ -8,6 +8,7 @@ Hooks (produce JSONL)
   ├── /focus (project orientation from event logs)
   ├── /carto (web UI, Node + React)
   ├── /wrapup (strategic session-end preservation)
+  ├── /trustmap (auto mode environment config)
   └── Qdrant indexer (semantic search)
 ```
 
@@ -15,6 +16,7 @@ Hooks (produce JSONL)
 - **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
 - **`/carto`** — Opens the Explorer web app for the human. Not an agent tool.
 - **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a milestone event. Agent-initiated.
+- **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus. The same question Claude Code's setup wizard answers by rescanning the machine, answered instead from events already extracted — usage-weighted, cross-provider, and re-runnable so an update proposes only the delta.
 - **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by all skills.
 
 ## Project Structure
@@ -39,6 +41,7 @@ scripts/
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
   session-digest.js             — Compact per-session panel (tempo, commits, files, recall, dirty repos); used by /wrapup
+  trust-digest.js               — Derives infrastructure actually touched (orgs, LAN hosts, buckets, CLIs) for auto mode's autoMode.environment; used by /trustmap
   build-profile.js              — Derives .carto/profile.md: standing summary of projects, preferences, decisions, work shape, cadence
   sentinels.js                  — isResolved()/firstResolved(): the one definition of "field carries no real value"
   session-windows.js            — Shared session time-window construction (enrich + repair consume it)
@@ -51,6 +54,7 @@ plugins/session-cartographer/
   skills/focus/SKILL.md         — /focus skill (project orientation from event logs)
   skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
   skills/wrapup/SKILL.md        — /wrapup skill (strategic session-end preservation)
+  skills/trustmap/SKILL.md      — /trustmap skill (derive/update auto mode's autoMode.environment from the corpus)
   scripts/remember-search.sh    — Legacy keyword-only search (superseded by cartographer-search.sh)
   hooks/
     hooks.json                  — Hook registrations, including background transcript catch-up
@@ -98,6 +102,8 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Test harnesses must unset the session vars.** Delta serving is real now; a harness that inherits a live session id silently loses repeat results and fails passing tests.
 - **Retrieval telemetry is exact for new calls.** Served rows and `--touch` records share `call_id`; purpose, session, and provider are carried alongside it. `access-ledger.jsonl` is append-only. Do not rewrite it in place, and keep the CLI/API activation implementations in sync. Legacy inference is report-only and opt-in.
 - **`.carto/profile.md` is derived, never hand-authored.** `build-profile.js` rebuilds it from the corpus; hand edits are lost on the next run. CLAUDE.md owns hand-written context — duplicating it into the profile creates two sources of truth that drift. Two filters are load-bearing: backfilled git history contains other authors' commits (a profile without the owner filter describes everyone whose repo you ever cloned), and `project` is cwd-derived, so the home directory and workspace root show up as the busiest "projects" unless excluded.
+- **`trust-digest.js` emits identifiers, never arguments.** Commands reduce to their leading word, URLs to their host. The output is meant to be pasteable into a settings file without a secret review, and a full command line from `tool-use-log.jsonl` cannot make that promise. Two heuristics there are load-bearing and were both wrong on the first pass: command tokens are resolved against `PATH` (splitting compound lines also splits the inside of inline `node -e`/`python -c` payloads, so `const` and `then` outranked `adb`), and hostnames are shape-checked (summaries clip at ~200 chars, so a URL near the end yields fragments like `huggingfa` that read as single-label internal hosts). Both replaced a guess with a fact — do not revert either to a stoplist.
+- **`.carto/` is gitignored, and that default must survive.** Cartographer's event logs are agent-session transcripts, which auto mode's classifier treats as sensitive data belonging in no repo. A project that wants its history versioned deliberately un-ignores its own path; the default for a repo that merely *runs* cartographer stays "don't commit the logs."
 - **`--get` uses `rg` when available, `grep` as fallback.** BSD grep over the four event logs costs ~1s per invocation, which turns a five-id fetch into three seconds and teaches an agent to avoid the cheapest verification step in the system. `rg` does the same pass in 0.02s.
 - **RRF score cutoff at 10% of top score** to trim the semantic noise tail.
 - **Diff-shape quadrant labels:** bootstrap, construct, surgical, rework. Not "dangerous."

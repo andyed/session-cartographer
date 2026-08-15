@@ -15,6 +15,7 @@ Fusion — then facets the results by project, event type, source, and time.
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — Renders a [session digest](#the-session-digest) you can verify at a glance, then writes the synthesis *against it*: decisions, discoveries, and unfinished threads, as a searchable milestone. Structured `decisions[]` feed the standing profile.
+- **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus: the source-control orgs, LAN hosts, buckets, and non-standard CLIs your work actually touches, each with a hit count. Claude Code's own setup wizard answers this by rescanning the machine and labels its repo list "CANDIDATES, not vetted context"; this answers it from events already extracted, so a repo you pushed to twenty-seven times outranks one that merely exists under `$HOME`. Re-runnable — proposals are diffed against your current settings, so an update proposes only the delta.
 - **`/investigate`** — Diagnosis gate for bug work. Forces a written root-cause hypothesis (cause + mechanism + disproof) before any fix code, and logs it as a searchable event for later recall.
 - **`.carto/profile.md`** — A derived standing summary of the whole corpus: active projects, standing preferences, durable decisions, work shape, cadence. Start recall here when the question is about the shape of the work rather than one past moment. Rebuild with `node scripts/build-profile.js`; never hand-edit — it regenerates.
 - **Exact fetch (`--get`)** — Search output is lossy by design: summaries are single-line and truncated for display. `--get evt-a,evt-b` returns the complete records — `transcript_path`, `files_changed`, `diff_shape` — so a shortlist can be checked before committing to a 100MB transcript. Missing ids are reported, not silently dropped.
@@ -174,6 +175,7 @@ Session Cartographer is installed. Skills:
 - `/carto` — open the Explorer web app for visual browsing
 - `/wrapup` — end-of-session synthesis (decisions, discoveries, next steps)
 - `/investigate <bug>` — root-cause diagnosis gate before writing fix code
+- `/trustmap` — derive or update auto mode's `autoMode.environment` from the corpus
 
 When you need context from a previous conversation, use `/remember`. The skill
 runs BM25 + RRF search across event logs and transcripts. Read the transcript

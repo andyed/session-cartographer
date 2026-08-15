@@ -14,6 +14,15 @@ demo/truth/
 .claude/
 .entire/
 
+# Cartographer's own event logs. These are agent-session transcripts, which auto
+# mode's classifier treats as sensitive data that belongs in no repo — public or
+# private, this one included. A commit here trips the classifier, and rightly so.
+#
+# If a project ever wants its chat history versioned deliberately, un-ignore that
+# project's own path rather than removing this rule — the default for a repo that
+# happens to be *running* cartographer must stay "don't commit the logs."
+.carto/
+
 # claude-mem auto-generated per-dir context stubs (plugin is disabled; these are leftovers).
 # Keep the real root CLAUDE.md tracked.
 CLAUDE.md

@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+### feat(trustmap): derive auto mode's `autoMode.environment` from the corpus
+
+Auto mode's classifier trusts the working directory and the current repo's
+remotes, and blocks everything else as a potential exfiltration target until
+`autoMode.environment` names it. Claude Code drafts that block by rescanning the
+machine on acceptance — walking transcripts under a byte cap, taking the leading
+word of each shell-history line, and enumerating git repos under `$HOME`, which
+its own output labels "CANDIDATES, not vetted context."
+
+Cartographer already extracted that corpus, so `/trustmap` answers the same
+question from events instead. Three differences follow from that: proposals are
+usage-weighted (a repo pushed to 27 times outranks one that merely exists under
+`$HOME`), Codex sessions and backfilled git history are in scope, and every
+proposal is diffed against current settings so an update proposes only the
+delta rather than a fresh draft.
+
+`scripts/trust-digest.js` emits identifiers, never arguments — commands reduce
+to their leading word, URLs to their host — so the panel is pasteable into a
+settings file without a secret review. Two heuristics there were wrong on the
+first pass and both were replaced with facts rather than stoplists:
+
+- Splitting compound lines on shell separators also splits the inside of inline
+  `node -e` and `python -c` payloads, so language keywords surfaced as
+  executables: `const` (1,528 hits) and `then` (374) outranked `adb` (966) and
+  `xcodebuild` (436). Tokens now resolve against `PATH`.
+- Event summaries clip at ~200 characters, so a URL near the end yields a
+  fragment. `huggingfa`, `static-user-manual-h5`, and a bare `127` all read as
+  single-label internal hostnames, and were the entire content of the internal
+  hosts section. Hostnames are now shape-checked, and 51 loopback endpoints
+  collapse to one context line instead of proposing 38 dev-server ports as
+  trusted domains.
+
+Sensitive-data locations are derived rather than hardcoded. Naming only
+cartographer's own event logs would have named the lesser store while implying
+the greater one was considered: on the reference corpus the top result is a
+7.8 GB per-participant eye-tracking dataset. Each store is reported with its
+git-ignore state, since a data directory that is not ignored is the finding,
+and paths the corpus references but that no longer exist on disk are marked and
+excluded — naming a missing directory grants trust to whatever recreates it.
+
+### fix(gitignore): `.carto/` was committable
+
+Cartographer's event logs are agent-session transcripts, which auto mode's
+classifier treats as sensitive data belonging in no repo — this one included.
+The directory was empty here, so nothing had leaked and `git status` stayed
+clean, but any event written to it would have landed as untracked repo content.
+A project that wants its history versioned deliberately un-ignores its own path;
+the default for a repo that merely runs cartographer stays "don't commit the
+logs."
+
 ## 0.5.1 — 2026-08-14
 
 ### fix(profile): "Durable decisions" drew from two records while 508 went unread
