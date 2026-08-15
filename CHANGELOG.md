@@ -55,6 +55,37 @@ git-ignore state, since a data directory that is not ignored is the finding,
 and paths the corpus references but that no longer exist on disk are marked and
 excluded — naming a missing directory grants trust to whatever recreates it.
 
+### feat(trustmap): verify repository visibility with `gh`, for every repo you write to
+
+The classifier assumes a repository is private unless told otherwise, and that
+assumption fails in the unsafe direction: confidential material is acceptable in
+a private repo and publishing it to a public one is not. Visibility is not
+recoverable from the corpus — a log records what happened, not what a repo's
+settings are now — and this file was treating that as a reason not to check.
+
+That was a line drawn in the wrong place. The digest already leaves the corpus
+to read git remotes and `check-ignore` state from disk; one more live probe is
+the same class of operation. It now runs `gh repo view` for each repo you write
+to, capped at 12 (`--gh-cap`, `--no-gh` to skip), and degrades to `unknown` with
+a warning when `gh` is missing or unauthenticated rather than failing.
+
+The scope difference is the point: the wizard checks the repo you are standing
+in. This checks every repo the corpus shows you committing to. On the reference
+machine that surfaced five public repos among twelve, one of them holding paper
+drafts.
+
+### fix(trustmap): a project's repo was resolved from its most recent `cwd`
+
+Sessions `cd` into other repositories to read things, and those events keep the
+session's own `project` while carrying the other repo's `cwd`. Taking the latest
+one attributed `session-cartographer`'s rows to `attentional-foraging`'s remote —
+so the tool proposed trusting a repo on the strength of activity that happened
+somewhere else, and paid a `gh` call to confirm the wrong answer.
+
+Resolution is now by frequency, preferring a directory whose basename matches
+the project name, and repos are de-duplicated by resolved root so one repository
+reached from two project names is listed and probed once.
+
 ### feat(trustmap): provenance-stamped entries, so two tools can share one array
 
 `autoMode.environment` has more than one author — Claude Code's setup wizard

@@ -25,7 +25,7 @@ running both beats either. They're authoritative about different things:
 |---|---|---|
 | Reads | The machine, right now | Events already extracted |
 | Authoritative on | Live state you must *check* | Usage accumulated over *time* |
-| Repo visibility | Verified via authenticated `gh` | Cannot check — inferred at best |
+| Repo visibility | Verified via authenticated `gh` | Verified via `gh`, for every repo you write to |
 | Branch protection, rulesets | Queried via `gh` | No equivalent |
 | CI/CD targets | Scans `.github/workflows` | No equivalent |
 | Classifier-bypassing allow rules | **Audits `permissions.allow` and proposes removals** | No equivalent |
@@ -38,12 +38,20 @@ running both beats either. They're authoritative about different things:
 
 Run on the same machine, wizard at `scope=project depth=both`:
 
-**The wizard found, and `/trustmap` structurally cannot:** the repo is public
-(authenticated `gh` check, not a guess); no branch rulesets are configured;
-GitHub Actions and a Pages deploy target exist; and one entry in
+**The wizard found, and `/trustmap` did not:** no branch rulesets are
+configured; GitHub Actions and a Pages deploy target exist; and one entry in
 `permissions.allow` — `Bash(python3 -c ":*)` — is a wildcarded interpreter that
 resolves *before* the classifier, which it proposed removing. That last one is a
-genuine security finding, and nothing in cartographer looks for it.
+genuine security finding, and nothing in cartographer looks for it yet.
+
+It also verified the repo is public rather than guessing. That one prompted a
+change here: the digest already left the corpus to read git remotes and
+`check-ignore` from disk, so refusing a `gh` call was a line drawn in the wrong
+place. `/trustmap` now checks visibility for every repo you write to — not just
+the one you're standing in, which is the wizard's scope. On the reference
+machine that surfaced **five public repos among the twelve checked**, including
+one holding paper drafts. The classifier assumes private unless told otherwise,
+and that assumption fails in the unsafe direction.
 
 **`/trustmap` found, and the wizard reported as `None configured`:** 24 CLIs it
 never saw, including `adb` (966 hits), `ffmpeg` (958), `xcodebuild` (436),

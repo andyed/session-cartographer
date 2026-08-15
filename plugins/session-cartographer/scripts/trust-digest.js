@@ -256,16 +256,26 @@ const projects = new Map();
 for (const e of events) {
   const name = e.project;
   if (!name || NON_PROJECTS.has(name)) continue;
-  if (!projects.has(name)) projects.set(name, { name, events: 0, commits: 0, pushes: 0, cwd: '', last: 0 });
+  if (!projects.has(name)) projects.set(name, { name, events: 0, commits: 0, pushes: 0, cwds: new Map(), cwd: '', last: 0 });
   const p = projects.get(name);
   p.events++;
   if (e.type === 'git_commit') p.commits++;
   if (e.type === 'git_push') p.pushes++;
   const ms = Date.parse(e.timestamp || '');
-  if (Number.isFinite(ms) && ms > p.last) {
-    p.last = ms;
-    if (e.cwd) p.cwd = e.cwd;
-  }
+  if (Number.isFinite(ms) && ms > p.last) p.last = ms;
+  // Frequency, not recency. A session `cd`s into other repos to read things,
+  // and those events keep the session's own `project` while carrying the other
+  // repo's `cwd`. Taking the latest one attributed session-cartographer's rows
+  // to attentional-foraging's remote — and a wrong remote here means proposing
+  // trust for a repo you never push to.
+  if (e.cwd) bump(p.cwds, e.cwd);
+}
+for (const p of projects.values()) {
+  const ranked = [...p.cwds.entries()].sort((a, b) =>
+    // Prefer a directory whose basename matches the project name; a tie on
+    // frequency alone can still land on a heavily-read sibling.
+    (path.basename(b[0]) === p.name) - (path.basename(a[0]) === p.name) || b[1] - a[1]);
+  p.cwd = ranked.length ? ranked[0][0] : '';
 }
 
 // Rank by write activity, not chatter. A repo read once during a search is not
@@ -308,6 +318,10 @@ if (!NO_GIT) {
     probed++;
     const root = repoRoot(p.cwd);
     if (!root) continue;
+    // Two projects can resolve to one repo (a subdirectory session, a rename).
+    // Listing it twice double-counts it in the PUBLIC warning and pays for a
+    // second gh call to learn the same answer.
+    if (repos.some((r) => r.root === root)) continue;
     const parsed = remotesOf(root).map(parseRemote).filter(Boolean);
     const seen = new Map();
     for (const r of parsed) if (!seen.has(r.path)) seen.set(r.path, r);
@@ -320,6 +334,46 @@ if (!NO_GIT) {
   if (pastCap) warn(`${pastCap} project(s) ranked below the ${REPO_PROBE_CAP}-repo probe cap — raise it with --cap if an org is missing`);
   if (cwdGone) warn(`${cwdGone} project(s) skipped: their last recorded cwd no longer exists on disk`);
 }
+
+// ─── Repository visibility ───
+// The corpus cannot answer this: a log records what happened, not whether a
+// repo is public *right now*. But this file already leaves the corpus to read
+// git remotes and check-ignore state from disk, so refusing one more live probe
+// was a line drawn in the wrong place — and visibility is the single fact that
+// most changes what is safe to commit. Inferring it from a hostname, which is
+// the classifier's own fallback, gets private-org repos wrong in the dangerous
+// direction.
+const GH_CAP = Math.max(0, Number.parseInt(valueAfter('--gh-cap', '12'), 10) || 0);
+const NO_GH = args.includes('--no-gh') || NO_GIT;
+let ghAvailable = true;
+
+const ghVisibility = (nameWithOwner) => {
+  try {
+    return execFileSync('gh', ['repo', 'view', nameWithOwner, '--json', 'visibility', '-q', '.visibility'],
+      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 8000 }).trim() || 'unknown';
+  } catch (err) {
+    // ENOENT means gh isn't installed at all — stop trying rather than paying
+    // the spawn cost once per repo to learn the same thing twelve times.
+    if (err.code === 'ENOENT') { ghAvailable = false; }
+    return 'unknown';
+  }
+};
+
+let ghProbed = 0;
+if (!NO_GH) {
+  for (const r of repos) {
+    if (ghProbed >= GH_CAP || !ghAvailable) break;
+    const gh = r.remotes.find((x) => /(^|\.)github\.com$/i.test(x.host));
+    if (!gh) continue;
+    ghProbed++;
+    r.visibility = ghVisibility(gh.path);
+  }
+  if (!ghAvailable) warn('gh not found on PATH — repository visibility left unknown (the classifier will assume private)');
+  else if (repos.some((r) => r.visibility === 'unknown')) {
+    warn('some repos returned no visibility — gh may not be authenticated (`gh auth status`)');
+  }
+}
+const publicRepos = repos.filter((r) => r.visibility === 'PUBLIC');
 
 // ─── Sensitive locations cartographer can assert on its own authority ───
 // The classifier's built-in rules name "real LLM/agent-session transcripts and
@@ -551,8 +605,11 @@ if (AS_JSON) {
     new_count: newCount,
     repos: repos.map((r) => ({
       project: r.name, root: r.root, commits: r.commits, pushes: r.pushes, events: r.events,
+      visibility: r.visibility || 'unchecked',
       remotes: r.remotes.map((x) => `${x.host}/${x.path}`),
     })),
+    public_repos: publicRepos.map((r) => `${r.remotes[0].host}/${r.remotes[0].path}`),
+    gh: { available: ghAvailable, probed: ghProbed, cap: GH_CAP },
     proposals,
     external_hosts: externalHosts.slice(0, 20).map(([h, n]) => ({ host: h, hits: n })),
     warnings,
@@ -630,9 +687,21 @@ if (AS_JSON) {
     out.push('  Top repos by write activity');
     for (const r of repos.slice(0, 8)) {
       const remote = r.remotes[0] ? `${r.remotes[0].host}/${r.remotes[0].path}` : '(no remote)';
-      out.push(`      ${String(r.commits + r.pushes).padStart(5)}  ${r.name.padEnd(28).slice(0, 28)}  ${remote}`);
+      const vis = r.visibility === 'PUBLIC' ? '  PUBLIC'
+        : r.visibility === 'PRIVATE' ? '  private' : '';
+      out.push(`      ${String(r.commits + r.pushes).padStart(5)}  ${r.name.padEnd(24).slice(0, 24)}  ${remote}${vis}`);
     }
     out.push('');
+  }
+
+  if (publicRepos.length) {
+    out.push(`  ⚠ ${publicRepos.length} of the ${ghProbed} repos checked ${publicRepos.length === 1 ? 'is' : 'are'} PUBLIC — pushing there is publishing`);
+    for (const r of publicRepos.slice(0, 8)) {
+      out.push(`             ${r.remotes[0].host}/${r.remotes[0].path}`);
+    }
+    out.push('    Name these in the visibility entry. The classifier assumes private');
+    out.push('    unless told otherwise, and that assumption is wrong in the unsafe');
+    out.push('    direction: confidential material is fine in a private repo, not here.', '');
   }
   if (externalHosts.length) {
     out.push(`  Public hosts fetched: ${externalHosts.slice(0, 6).map(([h, n]) => `${h} ${n}`).join(' · ')}`);
