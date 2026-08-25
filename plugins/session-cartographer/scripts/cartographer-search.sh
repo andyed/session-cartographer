@@ -316,6 +316,10 @@ REUSE_WEIGHT="${CARTOGRAPHER_REUSE_WEIGHT:-0.3}"
 # out by rank and source. Skipped entirely for --thread/--touch calls (no
 # results are served) and when --all is dry-running a reset.
 SERVED_LOG="${CARTOGRAPHER_SERVED_LOG:-$DEV/served-log.jsonl}"
+if [ -n "$SERVED_LOG" ] && ! ( : >> "$SERVED_LOG" ) 2>/dev/null; then
+  echo "cartographer-search: warning: cannot write served log at $SERVED_LOG; continuing without served-result telemetry" >&2
+  SERVED_LOG=""
+fi
 SERVE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [ -z "$TOUCH_IDS" ] && [ -z "$CALL_ID" ]; then
   CALL_ID="call-$(date -u +%Y%m%dT%H%M%S)-$$"
