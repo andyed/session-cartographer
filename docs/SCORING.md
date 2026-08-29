@@ -46,9 +46,19 @@ node scripts/hit-rate-report.js --purpose all
 
 The default excludes old unattributed rows. Use `--include-legacy` only for a
 historical comparison; each legacy touch is conservatively assigned to the
-single latest eligible serve within the configured time window. MRR is computed
-per search call from the rank of the first explicitly used result; a no-use call
-contributes zero.
+single latest eligible serve within the configured time window. Primary MRR is
+computed per search call from the rank of the first explicitly accessed result;
+last-access MRR is reported separately as an exploration-depth diagnostic. A
+no-use call contributes zero.
+
+Multi-result fetches and touches record `access_batch_id` plus a 1-based
+`access_ordinal`, preserving the caller's result order even when every row has
+the same timestamp. Historical same-time batches without ordinals remain
+order-unknown rather than being ordered lexically or by file position. If
+either boundary is ambiguous, the call is excluded from both MRR denominators
+so first and last remain a matched comparison. No-use calls stay in that shared
+cohort as zero. The report exposes measured and unknown instance counts beside
+both values.
 
 ## Semantic search (Qdrant cosine similarity)
 

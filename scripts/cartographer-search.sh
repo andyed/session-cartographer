@@ -44,7 +44,7 @@ QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit 
        --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. The query argument is ignored (pass any placeholder).
        --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
        --call-id ID: stable search-call identifier. Pass the same ID to --touch for exact attribution; otherwise --touch infers the latest call that served the event.
-       --touch EVENT_IDS: record result use (comma-separated ids) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
+       --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
 shift
 
 LIMIT=15
@@ -342,6 +342,8 @@ fi
 # search result, so it never boosts anything.
 if [ -n "$TOUCH_IDS" ]; then
   now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  access_batch_id="touch-${now_iso}-$$"
+  access_ordinal=0
   touched=0
   for tid in $(echo "$TOUCH_IDS" | tr ',' ' '); do
     case "$tid" in
@@ -354,11 +356,14 @@ if [ -n "$TOUCH_IDS" ]; then
         '[.[] | select(.event_id == $eid) | select($sid == "" or (.session_id // "") == "" or .session_id == $sid)] | last | .call_id // empty' \
         2>/dev/null)
     fi
+    access_ordinal=$((access_ordinal + 1))
     jq -n -c \
       --arg eid "$tid" --arg ts "$now_iso" --arg sid "$CONTEXT_SESSION_ID" \
       --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
-      --arg call_id "$touch_call_id" \
+      --arg call_id "$touch_call_id" --arg access_batch_id "$access_batch_id" \
+      --argjson access_ordinal "$access_ordinal" \
       '{event_id:$eid, timestamp:$ts, session_id:$sid, provider:$provider, purpose:$purpose, source:"result_used"}
+       + {access_batch_id:$access_batch_id, access_ordinal:$access_ordinal}
        + if $call_id != "" then {call_id:$call_id} else {} end' \
       >> "$ACCESS_LEDGER"
     touched=$((touched + 1))
@@ -460,21 +465,25 @@ if [ -n "$GET_IDS" ]; then
   # pass for the whole id set — slurping the served log per id costs ~0.4s
   # each and turned a five-id fetch into a three-second call.
   if [ -n "$get_redeemed" ] && [ -f "$SERVED_LOG" ] && command -v jq >/dev/null 2>&1; then
+    access_batch_id="get-${now_iso}-$$"
     tail -2000 "$SERVED_LOG" 2>/dev/null | jq -r -s -c \
       --arg ids "$get_redeemed" --arg ts "$now_iso" --arg sid "$CONTEXT_SESSION_ID" \
-      --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" '
+      --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
+      --arg access_batch_id "$access_batch_id" '
         ($ids | split(" ")) as $want
         | [ .[]
             # Bind the id before the pipe into index(): inside index(), `.` is
             # $want, so a bare .event_id there reads the array, not the row,
             # and every redemption silently fails to log.
             | select(.event_id as $e | $e != null and ($want | index($e)) != null)
-            | select($sid == "" or (.session_id // "") == "" or .session_id == $sid) ]
-        | group_by(.event_id)
-        | map(last | select(.call_id != null and .call_id != ""))
-        | .[]
+            | select($sid == "" or (.session_id // "") == "" or .session_id == $sid) ] as $eligible
+        | ($want | to_entries[]) as $requested
+        | [ $eligible[] | select(.event_id == $requested.value) ]
+        | last
+        | select(.call_id != null and .call_id != "")
         | {event_id, timestamp:$ts, session_id:$sid, provider:$provider,
-           purpose:$purpose, source:"result_fetched", call_id}
+           purpose:$purpose, source:"result_fetched", call_id,
+           access_batch_id:$access_batch_id, access_ordinal:($requested.key + 1)}
       ' 2>/dev/null >> "$ACCESS_LEDGER"
   fi
 
