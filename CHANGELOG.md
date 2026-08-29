@@ -1,5 +1,82 @@
 # Changelog
 
+## 0.7.0 — 2026-08-29
+
+### fix(hooks): sessions run in a worktree were filed under a throwaway name
+
+Every hook derived the project the same way:
+
+```
+GIT_REPO=$(cd "$CWD" && git rev-parse --show-toplevel)
+PROJECT=$(basename "$GIT_REPO")
+```
+
+Inside a git worktree `--show-toplevel` is the *worktree* directory, not the repo.
+A session run in `pointbreak/.claude/worktrees/agent-a4b1610b7457c11fa` was therefore
+filed under the project `agent-a4b1610b7457c11fa`. Claude Code creates those
+worktrees automatically, so every one of them became a phantom project that owned
+real history — history that never surfaced under a `/remember` scoped to the actual
+repo, and that pointed at a dead path once the worktree was pruned.
+
+`--git-common-dir` resolves to the main repo's `.git` from inside a worktree and
+from the main tree alike, so its parent is the real project root. The new
+`cartographer_project()` in `hooks/common.sh` — which every hook already sources —
+replaces all seven derivation sites across five hooks, including the two `FILE_REPO`
+variants in `log-tool-use.sh`.
+
+Three guards, each of which a naive version gets wrong: git before 2.31 has no
+`--path-format`, so there is a relative-path fallback; a bare repo (`repo.git`)
+would resolve to the name of its *parent* directory, so only a common dir literally
+named `.git` is trusted; and outside a repo it falls back to the cwd basename as
+before.
+
+### feat(migration): repoint events already filed under a worktree name
+
+The fix above is write-time only. `scripts/migrate-project-attribution.js` repairs
+what is already recorded, asking git to resolve each stored `cwd` back to its parent
+repo and rewriting `project` in place with a `project_repointed_from` key so the edit
+is visible. `cwd` and `git_branch` are accurate history and are left alone.
+
+**Run it before any `git worktree prune`.** Resolution only answers while the
+worktree directory still exists. On the development corpus this recovered 5,026
+events across 36 phantom projects, while 670 more referenced worktrees that had
+already been pruned and are unrecoverable.
+
+```bash
+node scripts/migrate-project-attribution.js            # dry run — reports, changes nothing
+node scripts/migrate-project-attribution.js --apply
+```
+
+It backs up unconditionally before writing, carries across anything appended by a
+concurrent session during the pass, and verifies by event-id *set* comparison rather
+than line counts — a concurrent append can otherwise mask a loss that a count check
+would pass. If any id goes missing it restores from the backup and exits nonzero.
+
+It repoints only when `project` equals the basename of the recorded `cwd`, so events
+whose project came from `log-tool-use`'s `FILE_REPO` branch are not collateral
+damage. It is idempotent, and unparseable lines survive verbatim.
+
+### perf(search): pass 1 gathered statistics for the whole corpus, not the query
+
+`bm25-search.awk` populated `df[]` for every token in the corpus on every search,
+so query cost scaled with corpus size rather than query size. Pass 1 now gathers
+document frequencies only for the query's own tokens, and a byte-level grep pass
+narrows pass 2 to rows containing at least one normalized query token before any
+scoring or tokenization runs.
+
+Guardrail tests were added for both this path and the Explorer's JSONL read, so a
+future change that reintroduces a whole-corpus pass fails rather than merely
+getting slower.
+
+### feat(explorer): Internals, a system-observation surface
+
+Where the Timeline explains the chronology and concurrency of human work, Internals
+explains how the system itself behaved. The server side splits into `internals.js`,
+a worker, and an aggregator so the read never blocks the API; the client gets a
+`useStaleResource` hook so a slow aggregate degrades to stale data rather than to a
+spinner. `docs/INTERNALS.md` describes the surface, and `docs/TURBO_MODE_SPEC.md`
+is a draft spec for utility-first recall.
+
 ## 0.6.1 — 2026-08-29
 
 ### fix(indexing): hooks indexed whichever event landed last, not their own
@@ -57,21 +134,6 @@ to a dry run, reports the scheme breakdown and any collision in the new space, a
 leaves points it cannot classify untouched. Run the upgrade before the migration
 so new events land on the new scheme and are never orphaned.
 
-
-### fix(metrics): record result-access order explicitly
-
-Multi-result `--get` and `--touch` operations previously stamped every access
-with the same second, and the fetch path grouped rows by event ID before writing
-them. Any first- or last-access metric therefore depended on lexical or append
-order rather than observed access order.
-
-New access rows carry an `access_batch_id` and 1-based `access_ordinal` in the
-caller's requested order. The explicit-use report now treats first-access MRR as
-the primary compatibility `mrr` value and reports last-access MRR separately.
-Historical same-time multi-result batches without ordinals are counted as
-order-unknown instead of receiving an invented order. First and last MRR use
-the same jointly ordered cohort so the values remain comparable; no-use calls
-still contribute zero.
 
 ### fix(metrics): record result-access order explicitly
 
