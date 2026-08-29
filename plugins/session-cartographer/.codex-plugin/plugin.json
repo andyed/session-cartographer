@@ -1,6 +1,6 @@
 {
   "name": "session-cartographer",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Search and explore coding-agent session history across Claude Code and Codex",
   "author": {
     "name": "Andy Edmonds"

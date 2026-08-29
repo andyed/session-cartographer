@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-08-29
 
 ### fix(indexing): hooks indexed whichever event landed last, not their own
 
