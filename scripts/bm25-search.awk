@@ -3,13 +3,17 @@
 # Expects line-delimited JSON or JSONL. Does basic regex-based field extraction.
 #
 # Usage: awk -f bm25-search.awk -v query="shader fix blur" -v src="changelog" [ -v proj_filter="..." ] file.jsonl file.jsonl
-# Note: You MUST pass the target file twice on the CLI (it uses NR==FNR for the two-pass algorithm).
+# Optimized pass 2 may instead be a grep -n candidate stream on stdin: add
+# -v candidate_numbered=1 and pass file.jsonl - so original fallback ids survive.
 
 BEGIN {
     k1 = 1.2
     b = 0.75
     # Tokenize the query
     nq = split(tolower(query), qterms, /[^a-z0-9]+/)
+    for (i = 1; i <= nq; i++) {
+        if (qterms[i] != "") query_terms[qterms[i]] = 1
+    }
     nresults = 0
 }
 
@@ -78,15 +82,18 @@ NR == FNR {
     body = get_search_text($0, src)
     if (body == "") next
 
-    # We only care about words that appear in the query anyway
+    # Document frequency is only needed for query terms. The previous version
+    # populated df[] for every token in the corpus on every search, which made
+    # the zero-dependency fallback scale with vocabulary size as well as bytes.
     n = split(tolower(body), words, /[^a-z0-9]+/)
     total_dl += n
     ndocs++
 
     delete seen
     for (i = 1; i <= n; i++) {
-        if (!seen[words[i]]++) {
-            df[words[i]]++
+        word = words[i]
+        if ((word in query_terms) && !seen[word]++) {
+            df[word]++
         }
     }
     next
@@ -96,25 +103,36 @@ NR == FNR {
 {
     if (ndocs == 0) exit
 
+    # The shell may prefilter pass 2 with `grep -n` because only rows
+    # containing at least one query token can score. Strip that transport
+    # prefix while preserving the original source line for fallback ids.
+    record = $0
+    source_fnr = FNR
+    if (candidate_numbered + 0 > 0 && match(record, /^[0-9]+:/)) {
+        source_fnr = substr(record, 1, RLENGTH - 1) + 0
+        record = substr(record, RLENGTH + 1)
+    }
+
     avgdl = total_dl / ndocs
 
     if (proj_filter != "") {
-        proj = extract($0, "project")
+        proj = extract(record, "project")
         if (tolower(proj) !~ tolower(proj_filter)) {
             next
         }
     }
 
-    is_transcript = ($0 ~ /"type"[[:space:]]*:[[:space:]]*"user"/ || $0 ~ /"type"[[:space:]]*:[[:space:]]*"assistant"/)
+    is_transcript = (record ~ /"type"[[:space:]]*:[[:space:]]*"user"/ || record ~ /"type"[[:space:]]*:[[:space:]]*"assistant"/)
     if (src == "transcript" && !is_transcript) next
 
-    body = get_search_text($0, src)
+    body = get_search_text(record, src)
     if (body == "") next
 
     n = split(tolower(body), words, /[^a-z0-9]+/)
     delete tf
     for (i = 1; i <= n; i++) {
-        tf[words[i]]++
+        word = words[i]
+        if (word in query_terms) tf[word]++
     }
 
     score = 0
@@ -136,16 +154,16 @@ NR == FNR {
 
         # Extract fields
         if (src == "transcript") {
-            key = extract($0, "uuid")
-            if (key == "") key = "transcript-" sid "-" FNR
-            ts = extract($0, "timestamp")
-            proj = (proj_filter != "") ? proj_filter : extract($0, "project")  # Often missing in line, passed down
+            key = extract(record, "uuid")
+            if (key == "") key = "transcript-" sid "-" source_fnr
+            ts = extract(record, "timestamp")
+            proj = (proj_filter != "") ? proj_filter : extract(record, "project")  # Often missing in line, passed down
 
             # Extract readable content from transcript JSON.
             # Try "text" (content blocks), "content" (string messages),
             # fall back to flattened body.
-            summary = extract($0, "text")
-            if (summary == "") summary = extract($0, "content")
+            summary = extract(record, "text")
+            if (summary == "") summary = extract(record, "content")
             if (summary == "") summary = length(body) > 150 ? substr(body, 1, 150) : body
             # Clean up escaped characters
             gsub(/\\n/, " ", summary)
@@ -153,29 +171,29 @@ NR == FNR {
             gsub(/  +/, " ", summary)
             if (length(summary) > 200) summary = substr(summary, 1, 200)
 
-            cwdf = extract($0, "cwd")
+            cwdf = extract(record, "cwd")
             extras = "transcript:" tpath "|session:" sid "|"
             if (cwdf != "") extras = extras "cwd:" cwdf "|"
 
-            etype = "transcript:" extract($0, "type")
+            etype = "transcript:" extract(record, "type")
 
             # Use negative score as a sort key placeholder since we want descending order
             # Transcripts have no salience score yet — default 0.5 (neutral).
-            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract($0, "type"), 0, key, ts, pdir, summary, extras, etype, "0.5")
+            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract(record, "type"), 0, key, ts, pdir, summary, extras, etype, "0.5")
         } else {
-            key = extract($0, "event_id")
-            if (key == "") key = extract($0, "milestone")
-            if (key == "") key = src "-" FNR
+            key = extract(record, "event_id")
+            if (key == "") key = extract(record, "milestone")
+            if (key == "") key = src "-" source_fnr
 
-            ts = extract($0, "timestamp")
-            proj = extract($0, "project")
+            ts = extract(record, "timestamp")
+            proj = extract(record, "project")
 
-            url = extract($0, "url")
-            deeplink = extract($0, "deeplink")
-            transcript = extract($0, "transcript_path")
-            cwdf = extract($0, "cwd")
-            sid = extract($0, "session_id")
-            if (sid == "") sid = extract($0, "session")
+            url = extract(record, "url")
+            deeplink = extract(record, "deeplink")
+            transcript = extract(record, "transcript_path")
+            cwdf = extract(record, "cwd")
+            sid = extract(record, "session_id")
+            if (sid == "") sid = extract(record, "session")
 
             extras = ""
             if (url != "") extras = extras "url:" url "|"
@@ -184,7 +202,7 @@ NR == FNR {
             if (cwdf != "") extras = extras "cwd:" cwdf "|"
             if (sid != "") extras = extras "session:" sid "|"
 
-            etype = extract($0, "type")
+            etype = extract(record, "type")
             if (etype == "") {
                 # Infer type from event_id prefix or source
                 if (key ~ /^git-/) etype = "git_commit"
@@ -193,7 +211,7 @@ NR == FNR {
 
             # Salience is a hook-emitted [0..1] strategic-weight signal. Old
             # events without the field default to 0.5 (neutral) so back-compat.
-            sal = extract_num($0, "salience")
+            sal = extract_num(record, "salience")
             if (sal == "") sal = "0.5"
 
             # Flatten JSON escape sequences before TSV emit — pre-fix events
@@ -215,10 +233,16 @@ NR == FNR {
 
 END {
     # Shell out to sort by score (column 1 numeric), then re-assign rank 1-N (so RRF works)
-    # We pass the results array directly to sort.
+    # We pass the results array directly to sort. Emit only the bounded
+    # per-source candidate depth requested by the caller. Candidates below the
+    # configured retrieval window are intentionally out of scope. Allowing
+    # every weak OR-match through previously produced tens of thousands of
+    # fusion candidates.
     # Output: src \t rank \t key \t ts \t proj \t summary \t extras \t etype \t salience
     if (nresults > 0) {
-        sort_cmd = "sort -n | awk -F'\\t' '{ $3 = NR; for(i=2;i<=NF;i++) printf \"%s%s\", $i, (i==NF?\"\\n\":\"\\t\") }'"
+        result_limit = max_results + 0
+        if (result_limit <= 0 || result_limit > nresults) result_limit = nresults
+        sort_cmd = "sort -n | awk -F'\\t' -v max_results=" result_limit " 'NR <= max_results { $3 = NR; for(i=2;i<=NF;i++) printf \"%s%s\", $i, (i==NF?\"\\n\":\"\\t\") }'"
         for (i = 1; i <= nresults; i++) {
             print results[i] | sort_cmd
         }

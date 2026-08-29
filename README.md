@@ -381,6 +381,8 @@ bash tests/private/benchmark.sh         # 8-query speed comparison
 - [docs/LOG_SCHEMAS.md](docs/LOG_SCHEMAS.md) — JSONL schemas for all event types
 - [docs/CHANGELOG_SPEC.md](docs/CHANGELOG_SPEC.md) — Event envelope format
 - [docs/EXPLORER_SPEC.md](docs/EXPLORER_SPEC.md) — Explorer implementation architecture
+- [docs/INTERNALS.md](docs/INTERNALS.md) — On-demand utility, coverage, and operations view
+- [docs/TURBO_MODE_SPEC.md](docs/TURBO_MODE_SPEC.md) — Opt-in, utility-first sequence for routing `/remember` through the warm Explorer index
 - [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme
 - [docs/landscape-survey.md](docs/landscape-survey.md) — 30+ Claude Code memory projects compared
 - [docs/GHPAGES_DEMO_SPEC.md](docs/GHPAGES_DEMO_SPEC.md) — Demo site architecture + ground truth evaluation spec

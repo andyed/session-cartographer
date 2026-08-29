@@ -66,32 +66,34 @@ export function isHighSignal(event) {
  * Read all events from all known log files, tagged with source.
  * Deduplicates by event_id (same event in changelog + domain log).
  */
-export function readAllEvents() {
+export function readAllEvents(logFiles = LOG_FILES) {
   const all = [];
-  const seen = new Set();
+  // Keep a direct reference to the first stored event for each id. The event
+  // corpus intentionally overlaps across changelog and domain logs; looking
+  // up every repeated id with all.findIndex() made startup quadratic once the
+  // corpus reached six figures.
+  const byEventId = new Map();
 
-  for (const [source, filePath] of Object.entries(LOG_FILES)) {
+  for (const [source, filePath] of Object.entries(logFiles)) {
     for (const event of readJsonlFile(filePath)) {
       const id = event.event_id;
       // Deduplicate: merge fields from both sources, prefer richer values
-      if (id && seen.has(id)) {
-        const idx = all.findIndex(e => e.event_id === id);
-        if (idx !== -1) {
-          // Merge: for each field, keep whichever is non-empty and longer
-          const existing = all[idx];
-          for (const [k, v] of Object.entries(event)) {
-            if (k === '_source') continue;
-            if (v && (!existing[k] || (typeof v === 'string' && v.length > (existing[k]?.length || 0)))) {
-              existing[k] = v;
-            }
+      if (id && byEventId.has(id)) {
+        const existing = byEventId.get(id);
+        // Merge: for each field, keep whichever is non-empty and longer
+        for (const [k, v] of Object.entries(event)) {
+          if (k === '_source') continue;
+          if (v && (!existing[k] || (typeof v === 'string' && v.length > (existing[k]?.length || 0)))) {
+            existing[k] = v;
           }
-          // Prefer domain source label
-          if (source !== 'changelog') existing._source = source;
         }
+        // Prefer domain source label
+        if (source !== 'changelog') existing._source = source;
         continue;
       }
-      if (id) seen.add(id);
-      all.push({ ...event, _source: source });
+      const stored = { ...event, _source: source };
+      if (id) byEventId.set(id, stored);
+      all.push(stored);
     }
   }
 

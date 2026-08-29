@@ -10,9 +10,9 @@ async function demo() {
 
 // ─── Core fetch — demo mode intercepts here ───
 
-async function apiFetch(url) {
+async function apiFetch(url, options = {}) {
   if (isDemoMode) return (await demo()).handleFetch(url);
-  const res = await fetch(url);
+  const res = await fetch(url, options);
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -46,6 +46,15 @@ export async function fetchProjects() {
 
 export async function fetchSessions({ days = 7 } = {}) {
   return apiFetch(`/api/sessions?days=${days}`);
+}
+
+export async function fetchInternals({ window = '30d', purpose = 'remember', refresh = false, signal } = {}) {
+  if (isDemoMode) {
+    throw new Error('Internals telemetry is not included in the static demo');
+  }
+  const params = new URLSearchParams({ window, purpose });
+  if (refresh) params.set('refresh', '1');
+  return apiFetch(`/api/internals?${params}`, { signal });
 }
 
 // Demo-only: get available queries for the picker UI

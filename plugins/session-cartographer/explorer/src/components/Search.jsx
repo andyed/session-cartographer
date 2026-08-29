@@ -13,7 +13,7 @@ function parseFacetsFromURL() {
   return { projects: parse('fp'), types: parse('ft'), quadrants: parse('fq'), sources: parse('fs') };
 }
 
-export default function Search({ query = '', onOpenTranscript }) {
+export default function Search({ query = '', onOpenTranscript, isActive = true }) {
   const project = new URLSearchParams(window.location.search).get('project') || '';
   const [initialFacets] = useState(parseFacetsFromURL);
   const {
@@ -28,6 +28,7 @@ export default function Search({ query = '', onOpenTranscript }) {
   const isFirstSearch = useRef(true);
 
   useEffect(() => {
+    if (!isActive) return;
     // Don't clear URL-restored facets on initial mount
     if (isFirstSearch.current) {
       isFirstSearch.current = false;
@@ -35,10 +36,11 @@ export default function Search({ query = '', onOpenTranscript }) {
       clearFacets();
     }
     search(query, { project });
-  }, [query, project, search, clearFacets]);
+  }, [query, project, search, clearFacets, isActive]);
 
   // Sync facets + query to URL
   useEffect(() => {
+    if (!isActive) return;
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (project) params.set('project', project);
@@ -50,7 +52,7 @@ export default function Search({ query = '', onOpenTranscript }) {
     const base = import.meta.env.BASE_URL || '/';
     const url = qs ? `${base}?${qs}` : base;
     window.history.replaceState({ tab: 'search' }, '', url);
-  }, [query, project, activeFacets]);
+  }, [query, project, activeFacets, isActive]);
 
   // Track visible cards via IntersectionObserver
   useEffect(() => {

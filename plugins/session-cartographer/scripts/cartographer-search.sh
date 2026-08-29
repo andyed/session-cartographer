@@ -545,6 +545,13 @@ if echo "$QUERY" | grep -q '\*'; then
   [ -n "$AWK_QUERY" ] && echo "(expanded: $AWK_QUERY)"
 fi
 
+# Pass 2 only needs rows containing at least one normalized query token. This
+# is deliberately an unanchored OR superset: grep may admit false positives,
+# but the BM25 scorer remains authoritative and no scoreable row is omitted.
+BM25_CANDIDATE_QUERY=$(printf '%s\n' "$AWK_QUERY" \
+  | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+  | LC_ALL=C sed -E 's/[^a-z0-9]+/|/g; s/^\|//; s/\|$//')
+
 
 
 # ─── Check for jq (needed for semantic search and transcript parsing) ───
@@ -644,11 +651,16 @@ semantic_search_to_tsv() {
 grep_jsonl_to_tsv() {
   local file="$1" source="$2"
   [ -f "$file" ] || return 0
+  [ -n "$BM25_CANDIDATE_QUERY" ] || return 0
 
-  # Note: The file is passed twice for the 2-pass (NR==FNR) BM25 algorithm
-  awk -f "$(dirname "$0")/bm25-search.awk" \
-    -v query="$AWK_QUERY" -v src="$source" -v proj_filter="$PROJECT" \
-    "$file" "$file" 2>/dev/null
+  # Pass 1 remains the complete corpus so N, avgdl, and document frequencies
+  # are exact. grep supplies an OR-superset to pass 2, avoiding a second full
+  # tokenization scan. `-n` preserves original fallback ids for legacy rows.
+  { LC_ALL=C grep -inE "$BM25_CANDIDATE_QUERY" "$file" 2>/dev/null || true; } | \
+    awk -f "$(dirname "$0")/bm25-search.awk" \
+      -v query="$AWK_QUERY" -v src="$source" -v proj_filter="$PROJECT" \
+      -v max_results="$FUSION_DEPTH" -v candidate_numbered=1 \
+      "$file" - 2>/dev/null
 }
 
 grep_transcripts_to_tsv() {
@@ -731,6 +743,30 @@ rank_fuse_and_display() {
       -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
       -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
       -v output_format="$OUTPUT_FORMAT" '
+  # Stable O(n log n) merge sort over order[] using score_map[]. The old
+  # insertion sort was acceptable for tiny corpora, but common project terms
+  # can generate tens of thousands of keyword candidates.
+  function score_precedes(left_key, right_key, score_map, stable_rank) {
+    if (score_map[left_key] > score_map[right_key]) return 1
+    if (score_map[left_key] < score_map[right_key]) return 0
+    return stable_rank[left_key] <= stable_rank[right_key]
+  }
+  function merge_sort_order(lo, hi, order, scratch, score_map, stable_rank,    mid, i, j, out) {
+    if (lo >= hi) return
+    mid = int((lo + hi) / 2)
+    merge_sort_order(lo, mid, order, scratch, score_map, stable_rank)
+    merge_sort_order(mid + 1, hi, order, scratch, score_map, stable_rank)
+    i = lo
+    j = mid + 1
+    out = lo
+    while (i <= mid && j <= hi) {
+      if (score_precedes(order[i], order[j], score_map, stable_rank)) scratch[out++] = order[i++]
+      else scratch[out++] = order[j++]
+    }
+    while (i <= mid) scratch[out++] = order[i++]
+    while (j <= hi) scratch[out++] = order[j++]
+    for (i = lo; i <= hi; i++) order[i] = scratch[i]
+  }
   BEGIN {
     # Delta-serving: load already-served event_ids for this session
     if (served_in != "") {
@@ -805,6 +841,14 @@ rank_fuse_and_display() {
     # result. Without this, rank coerces to 0 → score 1/(60+0) — above every
     # legitimate rank-1 result — and fragments merge under key "" at the top.
     if (key == "" || rank !~ /^[0-9]+$/) next
+    # RRF expects each source list to contain a document at most once. Some
+    # historical logs contain duplicate rows with the same event_id; counting
+    # every copy both inflates relevance and produces source labels such as
+    # "milestones+milestones+..." in durable served telemetry. The first row
+    # is the best-ranked copy because each source arrives in rank order.
+    source_key = src SUBSEP key
+    if (source_key in source_seen) next
+    source_seen[source_key] = 1
     # Salience: hook-emitted strategic-weight multiplier in [0..1]. Old events
     # (pre-write-time-salience) lack the field — default to 0.5 (neutral).
     if (sal == "" || sal + 0 == 0) sal = 0.5
@@ -855,20 +899,12 @@ rank_fuse_and_display() {
       etype_map[key] = etype
       salience_map[key] = sal
       order[++n] = key
+      stable_rank[key] = n
     }
   }
   END {
-    # Sort by RRF score (insertion sort — fine for small N)
-    for (i = 2; i <= n; i++) {
-      k = order[i]
-      s = rrf_score[k]
-      j = i - 1
-      while (j >= 1 && rrf_score[order[j]] < s) {
-        order[j+1] = order[j]
-        j--
-      }
-      order[j+1] = k
-    }
+    # Sort by RRF score without allowing query breadth to make fusion quadratic.
+    merge_sort_order(1, n, order, sort_scratch, rrf_score, stable_rank)
 
     # ─── Activation: Ebbinghaus time-decay + promote-on-reuse ───
     # score *= exp(-lambda * hours_since_last_use) * reuse_boost
@@ -905,16 +941,8 @@ rank_fuse_and_display() {
 
     # Re-sort after activation adjustment
     if (resort_needed) {
-      for (i = 2; i <= n; i++) {
-        k = order[i]
-        s = rrf_score[k]
-        j = i - 1
-        while (j >= 1 && rrf_score[order[j]] < s) {
-          order[j+1] = order[j]
-          j--
-        }
-        order[j+1] = k
-      }
+      for (i = 1; i <= n; i++) stable_rank[order[i]] = i
+      merge_sort_order(1, n, order, sort_scratch, rrf_score, stable_rank)
     }
 
     # ─── Faceting: summarize top fusion_depth results ───
@@ -1277,11 +1305,44 @@ keyword_search() {
   # The JSONL event logs carry no intent, so honouring --intent means going
   # semantic-only — emit nothing here rather than leaking unfiltered rows.
   [ -n "$INTENT" ] && return 0
-  grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog"
-  grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research"
-  grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones"
-  grep_jsonl_to_tsv "$DEV/tool-use-log.jsonl" "tool-use"
-  [ "$INCLUDE_TRANSCRIPTS" = "1" ] && grep_transcripts_to_tsv
+  # Each source has independent corpus statistics and within-source ranks, so
+  # scan them concurrently. Results are concatenated in a deterministic order
+  # after every worker completes.
+  local keyword_dir="$TMPDIR/keyword-sources"
+  local -a keyword_files keyword_pids
+  local keyword_status=0
+  local keyword_file
+  mkdir -p "$keyword_dir"
+
+  keyword_file="$keyword_dir/00-changelog.tsv"
+  keyword_files+=("$keyword_file")
+  grep_jsonl_to_tsv "$DEV/changelog.jsonl" "changelog" > "$keyword_file" &
+  keyword_pids+=("$!")
+  keyword_file="$keyword_dir/01-research.tsv"
+  keyword_files+=("$keyword_file")
+  grep_jsonl_to_tsv "$DEV/research-log.jsonl" "research" > "$keyword_file" &
+  keyword_pids+=("$!")
+  keyword_file="$keyword_dir/02-milestones.tsv"
+  keyword_files+=("$keyword_file")
+  grep_jsonl_to_tsv "$DEV/session-milestones.jsonl" "milestones" > "$keyword_file" &
+  keyword_pids+=("$!")
+  keyword_file="$keyword_dir/03-tool-use.tsv"
+  keyword_files+=("$keyword_file")
+  grep_jsonl_to_tsv "$DEV/tool-use-log.jsonl" "tool-use" > "$keyword_file" &
+  keyword_pids+=("$!")
+
+  if [ "$INCLUDE_TRANSCRIPTS" = "1" ]; then
+    keyword_file="$keyword_dir/04-transcripts.tsv"
+    keyword_files+=("$keyword_file")
+    grep_transcripts_to_tsv > "$keyword_file" &
+    keyword_pids+=("$!")
+  fi
+
+  for keyword_pid in "${keyword_pids[@]}"; do
+    wait "$keyword_pid" || keyword_status=1
+  done
+  cat "${keyword_files[@]}"
+  return "$keyword_status"
 }
 
 # Phase 1 & 2: Run keyword and semantic searches in parallel

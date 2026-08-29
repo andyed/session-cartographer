@@ -3,9 +3,11 @@ import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal } fro
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
 import { isAllowedTranscriptPath, normalizeTranscriptEntries, transcriptRoots } from './transcripts.js';
+import { getInternalsSnapshot, normalizeInternalsPurpose, normalizeInternalsWindow } from './internals.js';
 import { statSync } from 'fs';
 import { resolve, normalize } from 'path';
 import { homedir } from 'os';
+import { performance } from 'perf_hooks';
 
 const PORT = parseInt(process.env.CARTOGRAPHER_API_PORT || '2526', 10);
 const app = express();
@@ -70,6 +72,39 @@ app.get('/api/health', async (_req, res) => {
   } catch {}
 
   res.json({ status: 'ok', events: events.length, files, qdrant, embed });
+});
+
+app.get('/api/internals', async (req, res) => {
+  const window = normalizeInternalsWindow(req.query.window || '30d');
+  const purpose = normalizeInternalsPurpose(req.query.purpose || 'remember');
+  if (!window) return res.status(400).json({ error: "window must be '7d', '30d', or 'all'" });
+  if (!purpose) return res.status(400).json({ error: 'purpose must contain only letters, numbers, underscores, or hyphens' });
+
+  const started = performance.now();
+  try {
+    const snapshot = await getInternalsSnapshot({
+      window,
+      purpose,
+      refresh: req.query.refresh === '1' || req.query.refresh === 'true',
+    });
+    const duration = performance.now() - started;
+    res.set('Server-Timing', `internals;dur=${duration.toFixed(1)}`);
+    res.json({
+      ...snapshot,
+      operations: {
+        ...snapshot.operations,
+        explorer: {
+          capturedEvents: events.length,
+          keywordIndexedDocs: index.docs.size,
+          semanticIndexedDocs: null,
+          semanticCoverageAvailable: false,
+        },
+      },
+    });
+  } catch (error) {
+    console.error('[internals]', error.message);
+    res.status(500).json({ error: 'internals aggregation failed' });
+  }
 });
 
 app.get('/api/events', (req, res) => {

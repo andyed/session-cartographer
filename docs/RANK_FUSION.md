@@ -6,7 +6,8 @@ Session Cartographer searches 4+ heterogeneous sources: changelog, research log,
 
 ## Solution: Reciprocal Rank Fusion (RRF)
 
-Each source produces a ranked list of matches. RRF combines them with:
+Each source produces a ranked list of matches, capped at the top 500 before
+fusion. RRF combines them with:
 
 ```
 RRF_score(item) = Σ 1/(k + rank_in_source)
@@ -19,17 +20,17 @@ Where `k=60` (standard constant from Cormack et al. 2009). Items appearing in mu
 ### Pipeline (all in bash + awk, no jq dependency for keyword path)
 
 ```
-grep -in QUERY changelog.jsonl ─┐
-grep -in QUERY research-log.jsonl ─┤  awk: extract fields,
-grep -in QUERY milestones.jsonl ─┤  assign within-source rank
-grep -in QUERY transcripts/*.jsonl ─┘  → TSV intermediate format
+BM25 QUERY changelog.jsonl ─────┐
+BM25 QUERY research-log.jsonl ──┤  concurrent source scans,
+BM25 QUERY milestones.jsonl ────┤  top-500 per source
+BM25 QUERY tool-use-log.jsonl ───┘  → TSV intermediate format
                                           │
                                     rank_fuse_and_display (awk)
                                           │
                                     ┌─────┴──────┐
                                     │ RRF scoring │
                                     │ dedup by key│
-                                    │ sort by score│
+                                    │ stable O(n log n) sort │
                                     │ format output│
                                     └─────────────┘
 ```
@@ -128,20 +129,47 @@ The BM25 tokenizer (`/[^a-z0-9]+/`) operates on ASCII after NFD normalization. `
 
 For non-Latin content, semantic search is the path. If Qdrant isn't running, those events are invisible to keyword search but still exist in the JSONL logs for future indexing.
 
-## Performance
+## Performance and growth guardrails
 
-On Andy's home machine (3,355 total events across 3 log files + ~200 transcript files):
+The CLI keyword path intentionally remains zero-dependency and scans JSONL at
+query time. Its cost is therefore linear in total event-log bytes. Three
+guardrails prevent broad queries from turning that scan into a hang as the
+corpus grows:
 
-- **Before (jq per source)**: ~2-4 seconds, sequential source dumps
-- **After (awk rank fusion)**: ~1-2 seconds, unified ranked output
+1. the exact corpus-statistics pass retains document frequencies for query
+   terms only;
+2. a case-insensitive OR prefilter feeds only a safe candidate superset into
+   the expensive scoring/tokenization pass;
+3. the four independent event-log sources scan concurrently and emit at most
+   500 candidates each;
+4. RRF and activation order candidates with a stable O(n log n) merge sort.
 
-The bottleneck is transcript search (grep across many JSONL files). The 5-file cap on transcript search keeps this bounded.
+Within each source, an `event_id` contributes at most once. Historical logs can
+contain repeated copies of the same event; accepting every copy would inflate
+its RRF score and create repeated source labels in served telemetry.
+
+The cap makes the retrieval window explicit and symmetric: semantic and each
+keyword source contribute at most 500 candidates, faceting considers 500, and
+only the final top `--limit` rows are displayed. Weak matches below a source's
+top 500 no longer accumulate cross-source RRF credit; that bounded-retrieval
+tradeoff prevents them from consuming unbounded fusion time or memory.
+
+On a very large local corpus the JSONL scan can still take seconds. The
+Explorer's in-memory index remains the low-latency path; the CLI fallback is
+bounded and portable rather than pre-indexed.
 
 ## Limitations
 
-1. **Within-source ranking is by file position**, not relevance. First grep match = rank 1. For chronologically-ordered logs this means oldest first, which may not be what the user wants. Semantic search (Qdrant path) provides true relevance ranking.
+1. **Keyword corpus statistics are computed at query time.** The bounded path is
+   linear rather than quadratic, but a very large corpus still pays for one
+   complete statistics/tokenization pass plus a fast byte-level grep pass. Only
+   grep's candidate superset is tokenized for scoring. The Explorer API
+   amortizes query work with an in-memory index.
 
-2. **Multi-word queries match as phrases**, not individual terms. `"TTM pooling regions"` won't match a line containing "TTM" and "pooling" separately. Consider splitting into OR matches in a future iteration.
+2. **Multi-word keyword queries are bag-of-words.** A document can score when it
+   contains any query term; word order and phrase adjacency are not preserved.
+   Semantic retrieval supplies phrase-level meaning when its services are
+   available.
 
 3. **awk JSON extraction is fragile on nested objects or escaped quotes.** Fine for the flat JSONL schemas used by the hooks, but wouldn't handle arbitrary JSON. This is acceptable because we control the log format.
 

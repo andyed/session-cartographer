@@ -3,6 +3,7 @@ import Timeline from './components/Timeline';
 import Search from './components/Search';
 import SearchInput from './components/SearchInput';
 import TranscriptViewer from './components/TranscriptViewer';
+import Internals from './components/Internals';
 import { isDemoMode, getDemoQueries } from './api';
 
 const BASE = import.meta.env.BASE_URL || '/';
@@ -16,6 +17,7 @@ function parseURL() {
 
   const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
   const sessionMatch = url.pathname.match(new RegExp(`^${base}/session/(.+)`));
+  const isInternals = url.pathname === `${base}/internals` || url.pathname === `${base}/internals/`;
   const deepLinkTranscript = sessionMatch
     ? decodeURIComponent(sessionMatch[1])
     : urlTranscript;
@@ -23,6 +25,7 @@ function parseURL() {
   const urlProject = url.searchParams.get('project') || '';
 
   const tab = deepLinkTranscript ? 'transcript'
+    : isInternals ? 'internals'
     : (urlQuery || urlProject) ? 'search'
     : 'timeline';
 
@@ -35,6 +38,11 @@ export default function App() {
   const [tab, setTab] = useState(initial.tab);
   const [searchQuery, setSearchQuery] = useState(initial.query);
   const [demoQueries, setDemoQueries] = useState([]);
+  // Mount each heavyweight view on first use, then keep it alive so returning
+  // to a tab preserves its scroll and filter state. Direct /internals loads no
+  // timeline or search data until the user asks for those views.
+  const mountedTabs = useRef(new Set([initial.tab]));
+  mountedTabs.current.add(tab);
 
   useEffect(() => {
     if (isDemoMode) getDemoQueries().then(q => setDemoQueries(q || []));
@@ -71,14 +79,20 @@ export default function App() {
 
   const handleTabClick = useCallback((t) => {
     setTab(t);
-    window.history.pushState({ tab: t }, '', t === 'timeline' ? BASE : window.location.href);
-  }, []);
+    let nextURL = BASE;
+    if (t === 'internals') nextURL = `${BASE}internals`;
+    if (t === 'search' && searchQuery.trim()) nextURL = `${BASE}?q=${encodeURIComponent(searchQuery.trim())}`;
+    window.history.pushState({ tab: t }, '', nextURL);
+  }, [searchQuery]);
 
   // When typing in search, auto-switch to search tab
   const handleSearchInput = useCallback((value) => {
     setSearchQuery(value);
     if (value.trim() && tab !== 'search') {
       setTab('search');
+      if (tab === 'internals') {
+        window.history.pushState({ tab: 'search' }, '', `${BASE}?q=${encodeURIComponent(value.trim())}`);
+      }
     }
   }, [tab]);
 
@@ -127,18 +141,18 @@ export default function App() {
         </div>
       )}
       <header className="flex flex-col border-b border-gray-800 flex-shrink-0">
-        <div className="flex items-center gap-3 px-4 py-2">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-4 py-2">
           {/* Search input with autocomplete — flush left */}
           <SearchInput value={searchQuery} onChange={handleSearchInput} />
 
           {/* Nav — flush right */}
-          <div className="flex items-center gap-3 flex-shrink-0">
+          <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
             <div className="flex gap-1">
-              {['timeline', 'search'].map(t => (
+              {['timeline', 'search', ...(isDemoMode ? [] : ['internals'])].map(t => (
                 <button
                   key={t}
                   onClick={() => handleTabClick(t)}
-                  className={`px-3 py-1 text-xs rounded ${
+                  className={`px-3 min-h-10 text-base rounded ${
                     tab === t
                       ? 'bg-gray-700 text-gray-200'
                       : 'text-gray-500 hover:text-gray-300'
@@ -178,12 +192,21 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-hidden relative">
-        <div className={`absolute inset-0 ${tab === 'timeline' ? '' : 'hidden'}`}>
-          <Timeline onOpenTranscript={openTranscript} isActive={tab === 'timeline'} />
-        </div>
-        <div className={`absolute inset-0 ${tab === 'search' ? '' : 'hidden'}`}>
-          <Search query={searchQuery} onOpenTranscript={openTranscript} />
-        </div>
+        {mountedTabs.current.has('timeline') && (
+          <div className={`absolute inset-0 ${tab === 'timeline' ? '' : 'hidden'}`}>
+            <Timeline onOpenTranscript={openTranscript} isActive={tab === 'timeline'} />
+          </div>
+        )}
+        {mountedTabs.current.has('search') && (
+          <div className={`absolute inset-0 ${tab === 'search' ? '' : 'hidden'}`}>
+            <Search query={searchQuery} onOpenTranscript={openTranscript} isActive={tab === 'search'} />
+          </div>
+        )}
+        {mountedTabs.current.has('internals') && (
+          <div className={`absolute inset-0 ${tab === 'internals' ? '' : 'hidden'}`}>
+            <Internals isActive={tab === 'internals'} />
+          </div>
+        )}
         {tab === 'transcript' && (
           <TranscriptViewer
             transcriptPath={transcript.path}

@@ -73,6 +73,21 @@ order-unknown instead of receiving an invented order. First and last MRR use
 the same jointly ordered cohort so the values remain comparable; no-use calls
 still contribute zero.
 
+### fix(metrics): record result-access order explicitly
+
+Multi-result `--get` and `--touch` operations previously stamped every access
+with the same second, and the fetch path grouped rows by event ID before writing
+them. Any first- or last-access metric therefore depended on lexical or append
+order rather than observed access order.
+
+New access rows carry an `access_batch_id` and 1-based `access_ordinal` in the
+caller's requested order. The explicit-use report now treats first-access MRR as
+the primary compatibility `mrr` value and reports last-access MRR separately.
+Historical same-time multi-result batches without ordinals are counted as
+order-unknown instead of receiving an invented order. First and last MRR use
+the same jointly ordered cohort so the values remain comparable; no-use calls
+still contribute zero.
+
 ## 0.6.0 — 2026-08-29
 
 ### fix(hooks): the noise filter matched a compound command by its first token
