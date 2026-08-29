@@ -2,6 +2,74 @@
 
 ## Unreleased
 
+### fix(hooks): the noise filter matched a compound command by its first token
+
+`log-tool-use.sh` skipped noise with a prefix match:
+
+```
+case "$COMMAND" in
+  ls*|cat\ *|echo\ *|pwd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) exit 0 ;;
+esac
+```
+
+In a multi-repo workspace nearly every command is `cd <repo> && <real work>`, and
+that matches `cd\ *`. So the hook was dropping — not misclassifying, **dropping**
+— the majority of a session's activity, keeping only the commands that happened
+to start with a verb it did not recognise.
+
+Three classes of loss, all silent:
+
+- **Edits.** Under auto mode the harness prefers Bash over Edit/Write, so real
+  edits arrive as `cd <repo> && python3 - <<PY …`, `sed -i`, or
+  `cat > f <<EOF`. Measured on session `7c9b94b3`: ~1,050 lines changed across 11
+  files, of which the log captured 4 file edits — all four of them Write-tool
+  calls. `session-digest`'s `files` panel reported that fraction as the session.
+- **Commits and pushes.** `cd <repo> && git commit` and `cd <repo> && git push`
+  matched the same `cd\ *` arm and never reached the git-detection branch below
+  it. The 3,398 `git_commit` events in the changelog are only those issued
+  without a `cd` prefix.
+- **`lsof`, `lsblk`, `lsattr`.** The `ls*` arm was unanchored.
+
+Fixed on both axes:
+
+- **Noise is now judged by what actually runs.** Leading `cd … &&` hops are
+  stripped before the noise test, so `cd repo && ls` is still noise while
+  `cd repo && python3 …` is not. `ls*` is anchored to `ls|ls *`.
+- **Bash-as-editor is detected.** `>`/`>>` redirects (including heredoc writes),
+  `sed -i`, `tee`, and python `open(path,'w'|'a')` now emit `tool_file_edit` with
+  the resolved path, at the same 0.4 salience as an Edit/Write call, with the
+  project re-resolved from the written file's repo. Devices (`/dev/*`), scratch
+  (`/tmp`, `/private/tmp`), fd dups (`2>&1`), lockfiles and `node_modules` are
+  excluded, so `npm test 2>&1 | tail -5` and `node build.js > /dev/null` stay
+  `tool_bash`.
+
+Ordering matters and is asserted: a write outranks the noise filter, because
+`cat > src/f.js <<EOF` is both a real edit and a `cat `.
+
+Known limitation: a command that writes a file whose *content* contains
+write-shaped code (this fix's own test file, for instance) may list a secondary
+path harvested from that content. The primary path — and therefore the project
+attribution — is still the real target. Shell/JSON metacharacters and
+extensionless tokens are filtered, so the earlier `Modified: {",{,src/app.js`
+and `Modified: path` shapes no longer occur.
+
+**Historical data is not recoverable** — dropped events were never written. The
+corpus under-represents bash-driven work and `cd`-prefixed commits for every
+session before this fix.
+
+Detection reads the FULL command; only the summary is truncated to 500 chars. A
+long heredoc puts its `open(p,'w')` well past that cap, so detecting against the
+truncated copy missed precisely the largest edits — a real CHANGELOG.md rewrite
+logged as `tool_bash` while a two-line one was caught.
+
+Regression test: `tests/unit/log-tool-use-bash-edits.test.js` (9 cases; 4 fail
+against the pre-fix hook, including the git-commit case).
+
+Applied to the live plugin cache (`0.6.0`) as well as source, since the installed
+copy is what actually runs and it was byte-identical to the pre-fix source; the
+previous copy is kept alongside as `log-tool-use.sh.pre-bashfix-backup`. The next
+release regenerates it from source normally.
+
 ## 0.6.0 — 2026-08-15
 
 ### feat(trustmap): derive auto mode's `autoMode.environment` from the corpus
