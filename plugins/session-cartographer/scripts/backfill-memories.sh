@@ -106,7 +106,7 @@ process_memory_file() {
     return
   fi
 
-  jq -n -c \
+  CHANGELOG_EVENT=$(jq -n -c \
     --arg eid "$event_id" \
     --arg ts "$timestamp" \
     --arg type "memory_${mem_type}" \
@@ -116,12 +116,12 @@ process_memory_file() {
     --arg mem_name "$name" \
     --arg mem_type "$mem_type" \
     --arg filepath "$filepath" \
-    '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, body: $body, memory_name: $mem_name, memory_type: $mem_type, memory_path: $filepath, related_ids: []}' \
-    >> "$CHANGELOG"
+    '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, body: $body, memory_name: $mem_name, memory_type: $mem_type, memory_path: $filepath, related_ids: []}')
+  if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
   # Real-time indexing
   if [ -x "$INDEXER" ]; then
-    tail -1 "$CHANGELOG" | "$INDEXER" 2>/dev/null &
+    [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" 2>/dev/null &
   fi
 
   total=$((total + 1))

@@ -61,7 +61,7 @@ jq -n -c \
   '{event_id: $eid, timestamp: $ts, type: "knowledge_gap", provider: $provider, query: $query, unknown_entities: ($entities | split(",")), project_filter: $project, cwd: $cwd, session: $session, salience: $salience}' \
   >> "$LOG_FILE"
 
-jq -n -c \
+CHANGELOG_EVENT=$(jq -n -c \
   --arg eid "$EVENT_ID" \
   --arg ts "$TIMESTAMP" \
   --arg session "$SESSION_ID" \
@@ -70,13 +70,13 @@ jq -n -c \
   --arg cwd "$CWD" \
   --arg summary "$SUMMARY" \
   --argjson salience "$SALIENCE" \
-  '{event_id: $eid, timestamp: $ts, type: "knowledge_gap", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: [], salience: $salience}' \
-  >> "$CHANGELOG"
+  '{event_id: $eid, timestamp: $ts, type: "knowledge_gap", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, related_ids: [], salience: $salience}')
+if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
 # Real-time indexing (silent fail if services aren't running)
 INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
-  tail -1 "$CHANGELOG" | "$INDEXER" &
+  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
 fi
 
 exit 0

@@ -1,6 +1,6 @@
 {
   "name": "session-cartographer",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Search and explore shared Claude Code and Codex session history — hooks log events, /remember searches them, /carto opens the Explorer, /focus orients on a project, /trustmap derives auto mode's environment config",
   "author": {
     "name": "Andy Edmonds"

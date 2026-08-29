@@ -113,7 +113,7 @@ if [ "$RESEARCH_KIND" = "fetch" ]; then
         >> "$LOG_FILE"
 
     # Changelog envelope
-    jq -n -c \
+    CHANGELOG_EVENT=$(jq -n -c \
         --arg eid "$EVENT_ID" \
         --arg ts "$TIMESTAMP" \
         --arg session "$SESSION_ID" \
@@ -125,8 +125,8 @@ if [ "$RESEARCH_KIND" = "fetch" ]; then
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SALIENCE" \
         '{event_id: $eid, timestamp: $ts, type: "research_fetch", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
-         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
-        >> "$CHANGELOG"
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
+    if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
 elif [ "$RESEARCH_KIND" = "search" ]; then
     QUERY=$(echo "$INPUT" | jq -r '.tool_input.query // .tool_input.q // .tool_input.search_query[0].q // .tool_input.image_query[0].q // empty')
@@ -151,7 +151,7 @@ elif [ "$RESEARCH_KIND" = "search" ]; then
         >> "$LOG_FILE"
 
     # Changelog envelope
-    jq -n -c \
+    CHANGELOG_EVENT=$(jq -n -c \
         --arg eid "$SEARCH_EVENT_ID" \
         --arg ts "$TIMESTAMP" \
         --arg session "$SESSION_ID" \
@@ -163,8 +163,8 @@ elif [ "$RESEARCH_KIND" = "search" ]; then
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SEARCH_SALIENCE" \
         '{event_id: $eid, timestamp: $ts, type: "research_search", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
-         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
-        >> "$CHANGELOG"
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
+    if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
     # Extract result URLs from tool_response and log each as search_result
     echo "$INPUT" | jq -r '
@@ -217,7 +217,7 @@ fi
 # Real-time indexing (silent fail if services aren't running)
 INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
-  tail -1 "$CHANGELOG" | "$INDEXER" &
+  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
 fi
 
 # Always exit 0 — this is a passive logger, never blocks
