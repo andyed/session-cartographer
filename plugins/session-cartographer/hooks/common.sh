@@ -109,3 +109,39 @@ find_parent_event_id() {
     echo "$parent_id"
   fi
 }
+
+# Resolve a working directory to its REAL project name.
+#
+# `basename $(git rev-parse --show-toplevel)` returns the WORKTREE directory
+# name inside a worktree, so a session run in
+# repo/.claude/worktrees/brave-thompson-40e495 gets filed under the project
+# "brave-thompson-40e495". When that worktree is pruned, every event pointing at
+# it orphans -- measured at ~5,700 events across changelog/tool-use/milestones.
+# --git-common-dir always resolves to the MAIN repo's .git, in a worktree and in
+# the main tree alike, so its parent is the real project root.
+cartographer_project() {
+    cwd="${1:-$PWD}"
+    [ -d "$cwd" ] || cwd=$(dirname "$cwd")
+
+    common=$(git -C "$cwd" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || common=""
+    if [ -z "$common" ]; then
+        # git < 2.31 has no --path-format; --git-common-dir may come back relative.
+        common=$(git -C "$cwd" rev-parse --git-common-dir 2>/dev/null) || common=""
+        case "$common" in
+            "" | /*) : ;;
+            *) common="$cwd/$common" ;;
+        esac
+    fi
+
+    # Only trust it when it really is a .git directory. A bare repo (repo.git)
+    # would otherwise yield the name of its PARENT directory.
+    case "$common" in
+        */.git)
+            basename "$(cd "$(dirname "$common")" 2>/dev/null && pwd -P || dirname "$common")"
+            return 0
+            ;;
+    esac
+
+    toplevel=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || toplevel=""
+    if [ -n "$toplevel" ]; then basename "$toplevel"; else basename "$cwd"; fi
+}

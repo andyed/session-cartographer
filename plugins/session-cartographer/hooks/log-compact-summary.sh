@@ -29,11 +29,9 @@ RAW_SUMMARY=$(printf '%s' "$INPUT" | jq -r '.compact_summary // empty' 2>/dev/nu
 PROVIDER=$(detect_provider "$INPUT")
 
 GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$GIT_REPO" ]; then
-  PROJECT=$(basename "$GIT_REPO")
-else
-  PROJECT=$(basename "$CWD")
-fi
+# A worktree's basename is a throwaway name; resolve to the parent repo.
+. "$(dirname "$0")/common.sh"
+PROJECT=$(cartographer_project "$CWD")
 
 # Event summaries must remain single-line. Redact common credential shapes
 # before either the plaintext changelog or Qdrant can retain them. This is a

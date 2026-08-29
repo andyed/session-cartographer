@@ -34,11 +34,9 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$GIT_REPO" ]; then
-    PROJECT=$(basename "$GIT_REPO")
-else
-    PROJECT=$(basename "$CWD")
-fi
+# A worktree's basename is a throwaway name; resolve to the parent repo.
+. "$(dirname "$0")/common.sh"
+PROJECT=$(cartographer_project "$CWD")
 
 # Auto-categorize URL by domain
 categorize_url() {

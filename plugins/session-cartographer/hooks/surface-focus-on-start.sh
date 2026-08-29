@@ -40,7 +40,7 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 # Project name from the repo (basename of git toplevel, else cwd basename) — same as the
 # milestones hook. The graph's resolveProject() tolerates partials/aliases from here.
 GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$GIT_REPO" ]; then PROJECT=$(basename "$GIT_REPO"); else PROJECT=$(basename "$CWD"); fi
+. "$(dirname "$0")/common.sh"; PROJECT=$(cartographer_project "$CWD")
 [ -n "$PROJECT" ] || exit 0
 
 # Abstain on home-dir / non-project buckets — launching from ~ resolves PROJECT to "andyed",

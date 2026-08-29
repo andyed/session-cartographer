@@ -28,11 +28,9 @@ CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$GIT_REPO" ]; then
-    PROJECT=$(basename "$GIT_REPO")
-else
-    PROJECT=$(basename "$CWD")
-fi
+# A worktree's basename is a throwaway name; resolve to the parent repo.
+. "$(dirname "$0")/common.sh"
+PROJECT=$(cartographer_project "$CWD")
 
 # Cross-event linkage: thread events into work-arcs.
 . "$(dirname "$0")/common.sh"
@@ -132,7 +130,7 @@ case "$TOOL_NAME" in
     PRIMARY_FILE=${FILE_PATH%%,*}
     # Refine project via file path's git repo
     FILE_REPO=$(cd "$(dirname "$PRIMARY_FILE")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-    [ -n "$FILE_REPO" ] && PROJECT=$(basename "$FILE_REPO")
+    [ -n "$FILE_REPO" ] && PROJECT=$(cartographer_project "$FILE_REPO")
 
     # Skip noisy paths (node_modules, .git, lock files)
     case "$PRIMARY_FILE" in
@@ -255,7 +253,7 @@ case "$TOOL_NAME" in
       # panel, the profile's work-shape) only asks what changed.
       PRIMARY_FILE=${BASH_WRITES%%,*}
       FILE_REPO=$(cd "$(dirname "$PRIMARY_FILE")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-      [ -n "$FILE_REPO" ] && PROJECT=$(basename "$FILE_REPO")
+      [ -n "$FILE_REPO" ] && PROJECT=$(cartographer_project "$FILE_REPO")
       SUMMARY="Modified: $BASH_WRITES (via bash)"
       TYPE="tool_file_edit"
       SALIENCE="0.4"

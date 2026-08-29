@@ -28,11 +28,9 @@ PROVIDER=$(detect_provider "$INPUT")
 PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
 
 GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-if [ -n "$GIT_REPO" ]; then
-    PROJECT=$(basename "$GIT_REPO")
-else
-    PROJECT=$(basename "$CWD")
-fi
+# A worktree's basename is a throwaway name; resolve to the parent repo.
+. "$(dirname "$0")/common.sh"
+PROJECT=$(cartographer_project "$CWD")
 
 # Encode the transcript path for URL safety
 ENCODED_PATH=$(echo "$TRANSCRIPT" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=''))" 2>/dev/null || echo "$TRANSCRIPT")
