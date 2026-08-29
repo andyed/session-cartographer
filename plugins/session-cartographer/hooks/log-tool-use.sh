@@ -4,7 +4,9 @@
 #
 # Logs:
 #   Edit/Write → file path modified
-#   Bash       → command run (truncated to 200 chars)
+#   Bash       → command run (truncated to 200 chars), OR a file edit when the
+#                command writes files (`sed -i`, `>`/`>>`, `tee`, python open-w) —
+#                auto mode edits through Bash, so those are real work, not noise.
 #
 # Gated by CARTOGRAPHER_LOG_TOOL_USE=true (opt-in to avoid noise).
 # Output: tool-use-log.jsonl + changelog.jsonl
@@ -39,6 +41,86 @@ PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
 
 SALIENCE="0.5"  # default; per-branch overrides below
 
+# ── Bash-as-editor detection ──────────────────────────────────────────────────
+# Under auto mode the harness prefers Bash over Edit/Write, so most real edits
+# arrive as `cd <repo> && python3 - <<PY …` or `sed -i` or `cat > f <<EOF`.
+# Before 2026-08-28 none of that was recorded: the noise filter matched the FIRST
+# TOKEN of a compound command, so every `cd …` hop was dropped outright, and what
+# survived logged as generic `tool_bash` (salience 0.2). Measured on session
+# 7c9b94b3 — ~1,050 lines changed across 11 files, of which the log captured 4
+# file edits, all of them Write-tool calls. session-digest's `files` panel was
+# reporting a fraction of the work and reading as if that were the whole session.
+
+# Paths a command WRITES to; empty when it only reads. Order matters at the call
+# site: a write must outrank the noise filter, because `cat > src/f.js <<EOF` is
+# both a real edit and a `cat `.
+bash_written_paths() {
+  local cmd="$1" raw=""
+  # `> path` / `>> path` — plain redirects and heredoc writes. Refusing a leading
+  # `&` keeps fd dups (`2>&1`) out.
+  raw="$raw
+$(printf '%s' "$cmd" | grep -oE '>>?[[:space:]]*[^ &|;<>()]+' | sed -E 's/^>>?[[:space:]]*//')"
+  # `sed -i … target` — the target is the last token of the sed clause.
+  raw="$raw
+$(printf '%s' "$cmd" | grep -oE 'sed -i[^|;&]*' | awk '{print $NF}')"
+  # `tee [-a] path`
+  raw="$raw
+$(printf '%s' "$cmd" | grep -oE 'tee[[:space:]]+(-a[[:space:]]+)?[^ &|;]+' | awk '{print $NF}')"
+  # python write-mode open(). Two shapes, because the idiomatic one binds the
+  # path to a variable first (`p='f.js'` … `open(p,'w')`) and a literal-only
+  # regex misses exactly the form that is most common in practice:
+  #   A) open('path', 'w')            → the literal
+  #   B) open(var, 'w') + var='path'  → harvest path-like quoted strings
+  if printf '%s' "$cmd" | grep -qE "open\([^)]*,[[:space:]]*[\"'][wa]"; then
+    raw="$raw
+$(printf '%s' "$cmd" | grep -oE "open\([\"'][^\"']+[\"'][[:space:]]*,[[:space:]]*[\"'][wa]" \
+      | sed -E "s/^open\([\"']//; s/[\"'].*$//")"
+    # Shape B (variable-bound path) is a LAST RESORT: harvest quoted path-like
+    # strings only when nothing explicit was found. Otherwise a heredoc that
+    # writes a file whose CONTENT mentions other paths reports them all —
+    # `cat > t.test.js <<EOF … open('src/app.js','w') … EOF` named both.
+    if [ -z "$(printf '%s\n' "$raw" | awk 'NF' | head -1)" ]; then
+      raw="$raw
+$(printf '%s' "$cmd" | grep -oE "[\"'][^\"' ]*(/[^\"' ]+|[^\"' /]+\.[A-Za-z0-9]{1,6})[\"']" \
+        | tr -d "\"'")"
+    fi
+  fi
+
+  printf '%s\n' "$raw" | awk 'NF' | while read -r p; do
+    case "$p" in
+      /dev/*|/tmp/*|/private/tmp/*|\&*|-*) continue ;;                 # devices, scratch, fd dups, flags
+      */node_modules/*|*/.git/*|*.lock|*lock.json) continue ;;
+      # Shell/JSON metacharacters mean this came out of quoted SOURCE TEXT, not a
+      # real target. Writing this detector logged `Modified: {",{,src/app.js`
+      # because the harvester read the test file it was creating.
+      *[\{\}\"\(\)\$\*\;]*|\'*) continue ;;
+      *) printf '%s\n' "$p" ;;
+    esac
+  done | grep -E '(/|\.[A-Za-z0-9]{1,6}$)' \
+    | awk '!seen[$0]++' | head -5 | paste -sd ',' -
+}
+
+# True when a command is only noise. Strips leading `cd … &&` hops first so the
+# verdict is about what actually RUNS — `cd repo && ls` is noise, but
+# `cd repo && python3 …` is the session's actual work.
+bash_is_noise() {
+  local probe="$1" next=""
+  while :; do
+    case "$probe" in
+      cd\ *"&&"*)
+        next=$(printf '%s' "$probe" | sed 's/^cd [^&]*&&[[:space:]]*//')
+        [ "$next" = "$probe" ] && break
+        probe="$next" ;;
+      *) break ;;
+    esac
+  done
+  case "$probe" in
+    # `ls*` used to swallow lsof/lsblk/lsattr too — anchored now.
+    ls|ls\ *|cat\ *|echo\ *|pwd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) return 0 ;;
+  esac
+  return 1
+}
+
 case "$TOOL_NAME" in
   Edit|Write|apply_patch)
     if [ "$TOOL_NAME" = "apply_patch" ]; then
@@ -66,10 +148,17 @@ case "$TOOL_NAME" in
     # become one-line summaries — downstream TSV/embedding paths are line-based.
     COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 500 | tr '\n\t\r' '   ' | tr -s ' ')
     [ -z "$COMMAND" ] && exit 0
-    # Skip noisy commands (ls, cat, echo, pwd)
-    case "$COMMAND" in
-      ls*|cat\ *|echo\ *|pwd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) exit 0 ;;
-    esac
+    # Detection reads the FULL command; only the SUMMARY is truncated. A long
+    # heredoc puts its `open(p,'w')` well past 500 chars, so detecting against the
+    # truncated copy missed precisely the largest edits — a real CHANGELOG.md
+    # rewrite logged as `tool_bash` while a short one was caught. Capped well
+    # above any real command so a pathological paste can't stall the hook.
+    COMMAND_FULL=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 20000 | tr '\n\t\r' '   ' | tr -s ' ')
+    # A write outranks the noise filter — see bash_written_paths().
+    BASH_WRITES=$(bash_written_paths "$COMMAND_FULL")
+    if [ -z "$BASH_WRITES" ] && bash_is_noise "$COMMAND"; then
+      exit 0
+    fi
 
     # Detect git commit — extract commit hash, message, and changed files
     if echo "$COMMAND" | grep -q "git commit"; then
@@ -160,6 +249,16 @@ case "$TOOL_NAME" in
       SUMMARY="Pushed: $COMMAND"
       TYPE="git_push"
       SALIENCE="0.6"
+    elif [ -n "$BASH_WRITES" ]; then
+      # Same type/salience as an Edit/Write call — the tool used to change the
+      # file is an implementation detail, and downstream (session-digest's `files`
+      # panel, the profile's work-shape) only asks what changed.
+      PRIMARY_FILE=${BASH_WRITES%%,*}
+      FILE_REPO=$(cd "$(dirname "$PRIMARY_FILE")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+      [ -n "$FILE_REPO" ] && PROJECT=$(basename "$FILE_REPO")
+      SUMMARY="Modified: $BASH_WRITES (via bash)"
+      TYPE="tool_file_edit"
+      SALIENCE="0.4"
     else
       SUMMARY="Ran: $(echo "$COMMAND" | head -c 200)"
       TYPE="tool_bash"

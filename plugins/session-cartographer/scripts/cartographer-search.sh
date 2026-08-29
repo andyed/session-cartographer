@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # cartographer-search.sh — Unified search across all Claude Code session history.
 #
-# Usage: cartographer-search.sh <query> [--project NAME] [--limit N]
+# Usage: cartographer-search.sh <query> [--project NAME] [--limit N] [--format text|jsonl]
 #
 # Searches (in order):
 #   1. Qdrant semantic search (if available)
@@ -36,13 +36,13 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--format text|jsonl] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
        WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).
        --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. The query argument is ignored (pass any placeholder).
-       --purpose KIND: telemetry purpose (remember, focus, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
        --call-id ID: stable search-call identifier. Pass the same ID to --touch for exact attribution; otherwise --touch infers the latest call that served the event.
        --touch EVENT_IDS: record result use (comma-separated ids) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
 shift
@@ -66,10 +66,12 @@ PURPOSE="${CARTOGRAPHER_PURPOSE:-manual}"
 # transcript fallback stays off by default. Pass --transcript to opt in when
 # semantic is unavailable or the query is a grep-style needle.
 INCLUDE_TRANSCRIPTS=0
+OUTPUT_FORMAT="text"
 while [ $# -gt 0 ]; do
   case "$1" in
     --project)        PROJECT="$2"; shift 2 ;;
     --limit)          LIMIT="$2"; shift 2 ;;
+    --format)         OUTPUT_FORMAT="$2"; shift 2 ;;
     --transcript)     INCLUDE_TRANSCRIPTS=1; shift ;;
     --no-transcript)  INCLUDE_TRANSCRIPTS=0; shift ;;
     --since)          SINCE="$2"; shift 2 ;;
@@ -86,9 +88,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+case "$OUTPUT_FORMAT" in
+  text|jsonl) ;;
+  *)
+    echo "cartographer-search: --format must be 'text' or 'jsonl'" >&2
+    exit 2
+    ;;
+esac
+
 case "$PURPOSE" in
-  remember|focus|eval|audit|manual) ;;
-  *) echo "Error: --purpose must be remember, focus, eval, audit, or manual" >&2; exit 2 ;;
+  remember|focus|feed|eval|audit|manual) ;;
+  *) echo "Error: --purpose must be remember, focus, feed, eval, audit, or manual" >&2; exit 2 ;;
 esac
 case "$CALL_ID" in
   *[!A-Za-z0-9_.:-]*|-) echo "Error: malformed --call-id '$CALL_ID'" >&2; exit 2 ;;
@@ -316,6 +326,10 @@ REUSE_WEIGHT="${CARTOGRAPHER_REUSE_WEIGHT:-0.3}"
 # out by rank and source. Skipped entirely for --thread/--touch calls (no
 # results are served) and when --all is dry-running a reset.
 SERVED_LOG="${CARTOGRAPHER_SERVED_LOG:-$DEV/served-log.jsonl}"
+if [ -n "$SERVED_LOG" ] && ! ( : >> "$SERVED_LOG" ) 2>/dev/null; then
+  echo "cartographer-search: warning: cannot write served log at $SERVED_LOG; continuing without served-result telemetry" >&2
+  SERVED_LOG=""
+fi
 SERVE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [ -z "$TOUCH_IDS" ] && [ -z "$CALL_ID" ]; then
   CALL_ID="call-$(date -u +%Y%m%dT%H%M%S)-$$"
@@ -706,7 +720,8 @@ rank_fuse_and_display() {
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
       -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
       -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
-      -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" '
+      -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
+      -v output_format="$OUTPUT_FORMAT" '
   BEGIN {
     # Delta-serving: load already-served event_ids for this session
     if (served_in != "") {
@@ -764,6 +779,14 @@ rank_fuse_and_display() {
     if (mo > 2 && y % 4 == 0) days_from_month++
     total_days = days_from_year + days_from_month + da - 1
     return total_days * 86400 + h * 3600 + mi * 60
+  }
+  function json_escape(value) {
+    gsub(/\\/, "\\\\", value)
+    gsub(/\"/, "\\\"", value)
+    gsub(/\r/, "\\r", value)
+    gsub(/\n/, "\\n", value)
+    gsub(/\t/, "\\t", value)
+    return value
   }
 
   {
@@ -887,7 +910,7 @@ rank_fuse_and_display() {
 
     # ─── Faceting: summarize top fusion_depth results ───
     facet_n = (n < fusion_depth) ? n : fusion_depth
-    if (facet_n > 0) {
+    if (output_format == "text" && facet_n > 0) {
       # Count by project, source, type, time
       delete proj_count
       delete src_count
@@ -1057,28 +1080,35 @@ rank_fuse_and_display() {
       # Reuse marker: events with recorded accesses show a visible (used xN)
       # tag — the glass-box cue for why a result may rank above fresher ones.
       reuse_tag = (acc_n[k] + 0 > 0) ? sprintf(" (used x%d)", acc_n[k]) : ""
-      printf "[%s] [%s] %s%s\n", timestamp[k], sources[k], k, reuse_tag
+      if (output_format == "jsonl") {
+        printf "{\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"rank\":%d,\"extras\":\"%s\"}\n", \
+          json_escape(timestamp[k]), json_escape(sources[k]), json_escape(k), \
+          json_escape(summaries[k]), json_escape(project[k]), json_escape(etype_map[k]), \
+          salience_map[k] + 0, shown + 1, json_escape(extra[k])
+      } else {
+        printf "[%s] [%s] %s%s\n", timestamp[k], sources[k], k, reuse_tag
 
-      # Truncate summary to 200 chars
-      s = summaries[k]
-      if (length(s) > 200) s = substr(s, 1, 200) "..."
-      printf "  %s\n", s
-      printf "  project: %s\n", project[k]
+        # Truncate summary to 200 chars
+        s = summaries[k]
+        if (length(s) > 200) s = substr(s, 1, 200) "..."
+        printf "  %s\n", s
+        printf "  project: %s\n", project[k]
 
-      # Parse extras (pipe-separated key:value pairs)
-      split(extra[k], pairs, "|")
-      for (p in pairs) {
-        if (pairs[p] == "") continue
-        nkv = split(pairs[p], kv, ":")
-        # Rejoin value in case it contained colons (URLs)
-        val = ""
-        for (v = 2; v <= nkv; v++) {
-          if (v > 2) val = val ":"
-          val = val kv[v]
+        # Parse extras (pipe-separated key:value pairs)
+        split(extra[k], pairs, "|")
+        for (p in pairs) {
+          if (pairs[p] == "") continue
+          nkv = split(pairs[p], kv, ":")
+          # Rejoin value in case it contained colons (URLs)
+          val = ""
+          for (v = 2; v <= nkv; v++) {
+            if (v > 2) val = val ":"
+            val = val kv[v]
+          }
+          if (val != "") printf "  %s: %s\n", kv[1], val
         }
-        if (val != "") printf "  %s: %s\n", kv[1], val
+        printf "\n"
       }
-      printf "\n"
       shown++
 
       # Delta-serving: record this displayed key so subsequent calls in
@@ -1104,7 +1134,7 @@ rank_fuse_and_display() {
 
     # Surface a hint when delta-serving suppressed material so the user
     # knows to use --all if they want to re-see it.
-    if (suppressed_count > 0) {
+    if (output_format == "text" && suppressed_count > 0) {
       printf "(delta serving: %d already-shown result%s suppressed; --all to see)\n", \
         suppressed_count, (suppressed_count == 1 ? "" : "s")
     }
@@ -1226,9 +1256,11 @@ if [ -n "$THREAD_ID" ]; then
 fi
 
 # ─── Run searches ───
-echo "=== Searching for: \"$QUERY\" ==="
-[ -n "$PROJECT" ] && echo "=== Project filter: $PROJECT ==="
-echo ""
+if [ "$OUTPUT_FORMAT" = "text" ]; then
+  echo "=== Searching for: \"$QUERY\" ==="
+  [ -n "$PROJECT" ] && echo "=== Project filter: $PROJECT ==="
+  echo ""
+fi
 
 # Collect keyword results from all JSONL sources + (optionally) transcripts
 keyword_search() {
@@ -1255,7 +1287,7 @@ wait $PID_SEM
 
 # Phase 3: fuse everything through RRF
 SEMANTIC_COUNT=$(wc -l < "$TMPDIR/semantic_results.tsv" | tr -d ' ')
-if [ "$SEMANTIC_COUNT" -gt 0 ]; then
+if [ "$OUTPUT_FORMAT" = "text" ] && [ "$SEMANTIC_COUNT" -gt 0 ]; then
   echo "(hybrid: keyword + semantic)"
   echo ""
 fi
@@ -1276,7 +1308,7 @@ if [ -n "$SERVED_FILE" ] && [ -f "$SERVED_OUT" ]; then
 fi
 
 # ─── Cold start guidance ───
-if [ "$FOUND" -eq 0 ]; then
+if [ "$FOUND" -eq 0 ] && [ "$OUTPUT_FORMAT" = "text" ]; then
   echo "No results found."
   echo ""
 
@@ -1340,8 +1372,10 @@ if [ "$FOUND" -eq 0 ]; then
   fi
 fi
 
-echo ""
-echo "=== Done ==="
+if [ "$OUTPUT_FORMAT" = "text" ]; then
+  echo ""
+  echo "=== Done ==="
+fi
 
 # ─── Context-window fill report (concise) ───
 # Restore real stdout so the tee child can flush, then read the captured
@@ -1350,7 +1384,7 @@ echo "=== Done ==="
 exec 1>&3
 exec 3>&-
 wait "$TEE_PID"
-if [ -s "$OUTPUT_CAPTURE" ]; then
+if [ "$OUTPUT_FORMAT" = "text" ] && [ -s "$OUTPUT_CAPTURE" ]; then
   chars=$(wc -c < "$OUTPUT_CAPTURE" | tr -d ' ')
   # Rough English heuristic: 1 token ≈ 4 chars. Good to ±20% for prose;
   # less accurate for dense JSON/code (more like 3 chars/token), but the

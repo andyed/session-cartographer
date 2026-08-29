@@ -2,6 +2,224 @@
 
 ## Unreleased
 
+## 0.6.0 — 2026-08-29
+
+### fix(hooks): the noise filter matched a compound command by its first token
+
+`log-tool-use.sh` skipped noise with a prefix match:
+
+```
+case "$COMMAND" in
+  ls*|cat\ *|echo\ *|pwd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) exit 0 ;;
+esac
+```
+
+In a multi-repo workspace nearly every command is `cd <repo> && <real work>`, and
+that matches `cd\ *`. So the hook was dropping — not misclassifying, **dropping**
+— the majority of a session's activity, keeping only the commands that happened
+to start with a verb it did not recognise.
+
+Three classes of loss, all silent:
+
+- **Edits.** Under auto mode the harness prefers Bash over Edit/Write, so real
+  edits arrive as `cd <repo> && python3 - <<PY …`, `sed -i`, or
+  `cat > f <<EOF`. Measured on session `7c9b94b3`: ~1,050 lines changed across 11
+  files, of which the log captured 4 file edits — all four of them Write-tool
+  calls. `session-digest`'s `files` panel reported that fraction as the session.
+- **Commits and pushes.** `cd <repo> && git commit` and `cd <repo> && git push`
+  matched the same `cd\ *` arm and never reached the git-detection branch below
+  it. The 3,398 `git_commit` events in the changelog are only those issued
+  without a `cd` prefix.
+- **`lsof`, `lsblk`, `lsattr`.** The `ls*` arm was unanchored.
+
+Fixed on both axes:
+
+- **Noise is now judged by what actually runs.** Leading `cd … &&` hops are
+  stripped before the noise test, so `cd repo && ls` is still noise while
+  `cd repo && python3 …` is not. `ls*` is anchored to `ls|ls *`.
+- **Bash-as-editor is detected.** `>`/`>>` redirects (including heredoc writes),
+  `sed -i`, `tee`, and python `open(path,'w'|'a')` now emit `tool_file_edit` with
+  the resolved path, at the same 0.4 salience as an Edit/Write call, with the
+  project re-resolved from the written file's repo. Devices (`/dev/*`), scratch
+  (`/tmp`, `/private/tmp`), fd dups (`2>&1`), lockfiles and `node_modules` are
+  excluded, so `npm test 2>&1 | tail -5` and `node build.js > /dev/null` stay
+  `tool_bash`.
+
+Ordering matters and is asserted: a write outranks the noise filter, because
+`cat > src/f.js <<EOF` is both a real edit and a `cat `.
+
+Known limitation: a command that writes a file whose *content* contains
+write-shaped code (this fix's own test file, for instance) may list a secondary
+path harvested from that content. The primary path — and therefore the project
+attribution — is still the real target. Shell/JSON metacharacters and
+extensionless tokens are filtered, so the earlier `Modified: {",{,src/app.js`
+and `Modified: path` shapes no longer occur.
+
+**Historical data is not recoverable** — dropped events were never written. The
+corpus under-represents bash-driven work and `cd`-prefixed commits for every
+session before this fix.
+
+Detection reads the FULL command; only the summary is truncated to 500 chars. A
+long heredoc puts its `open(p,'w')` well past that cap, so detecting against the
+truncated copy missed precisely the largest edits — a real CHANGELOG.md rewrite
+logged as `tool_bash` while a two-line one was caught.
+
+Regression test: `tests/unit/log-tool-use-bash-edits.test.js` (9 cases; 4 fail
+against the pre-fix hook, including the git-commit case).
+
+The source and checked-in plugin runtime carry the same fix, and the release
+smoke test installs from the generated archive rather than the checkout.
+
+### feat(feed): add bounded machine-readable recall
+
+`cartographer-search.sh --format jsonl` exposes the ranked result set without
+human display chrome. `cartographer-feed.sh` builds on it to create a compact
+Markdown pulse for another local agent or scheduled job, but only after the
+caller supplies an explicit project allowlist. An unscoped whole-corpus feed
+fails closed.
+
+Feed searches are summary-only, bounded by time and result count, and disable
+served-result and access-ledger writes so automated reads do not distort human
+`/remember` telemetry. Event IDs and transcript pointers preserve the path back
+to exact evidence when a summary materially affects downstream work.
+
+### feat(web): ship a canonical social preview card
+
+The Explorer now declares complete Open Graph and Twitter card metadata and
+ships a 1200x630 preview showing keyword and semantic retrieval converging at
+RRF. The deterministic generator, SVG source, deployable PNG, and checked-in
+plugin mirror travel together; smoke tests assert dimensions, metadata, and
+source/plugin parity. The older GitHub-only social bitmap is removed.
+
+### feat(trustmap): derive auto mode's `autoMode.environment` from the corpus
+
+Auto mode's classifier trusts the working directory and the current repo's
+remotes, and blocks everything else as a potential exfiltration target until
+`autoMode.environment` names it. Claude Code drafts that block by rescanning the
+machine on acceptance — walking transcripts under a byte cap, taking the leading
+word of each shell-history line, and enumerating git repos under `$HOME`, which
+its own output labels "CANDIDATES, not vetted context."
+
+Cartographer already extracted that corpus, so `/trustmap` answers the same
+question from events instead. Three differences follow from that: proposals are
+usage-weighted (a repo pushed to 27 times outranks one that merely exists under
+`$HOME`), Codex sessions and backfilled git history are in scope, and every
+proposal is diffed against current settings so an update proposes only the
+delta rather than a fresh draft.
+
+This is the *update* path, not a replacement for the built-in wizard. On a fresh
+install the wizard is strictly better — it reads the machine, this reads a
+corpus that doesn't exist yet — and the digest now says so rather than serving a
+confident-looking panel built from forty events. When two of three signals trip
+— under ~200 shell events, fewer than two repos with remotes, under 500 events
+total — it prints a `COLD START` block naming which ones are missing and points
+at the wizard, with `trust-digest.js --template` as the fill-in fallback for
+answering the slots directly.
+
+Usage and the slot-by-slot walkthrough are in `docs/AUTO_MODE.md`.
+
+`scripts/trust-digest.js` emits identifiers, never arguments — commands reduce
+to their leading word, URLs to their host — so the panel is pasteable into a
+settings file without a secret review. Two heuristics there were wrong on the
+first pass and both were replaced with facts rather than stoplists:
+
+- Splitting compound lines on shell separators also splits the inside of inline
+  `node -e` and `python -c` payloads, so language keywords surfaced as
+  executables: `const` (1,528 hits) and `then` (374) outranked `adb` (966) and
+  `xcodebuild` (436). Tokens now resolve against `PATH`.
+- Event summaries clip at ~200 characters, so a URL near the end yields a
+  fragment. `huggingfa`, `static-user-manual-h5`, and a bare `127` all read as
+  single-label internal hostnames, and were the entire content of the internal
+  hosts section. Hostnames are now shape-checked, and 51 loopback endpoints
+  collapse to one context line instead of proposing 38 dev-server ports as
+  trusted domains.
+
+Sensitive-data locations are derived rather than hardcoded. Naming only
+cartographer's own event logs would have named the lesser store while implying
+the greater one was considered: on the reference corpus the top result is a
+7.8 GB per-participant eye-tracking dataset. Each store is reported with its
+git-ignore state, since a data directory that is not ignored is the finding,
+and paths the corpus references but that no longer exist on disk are marked and
+excluded — naming a missing directory grants trust to whatever recreates it.
+
+### feat(trustmap): verify repository visibility with `gh`, for every repo you write to
+
+The classifier assumes a repository is private unless told otherwise, and that
+assumption fails in the unsafe direction: confidential material is acceptable in
+a private repo and publishing it to a public one is not. Visibility is not
+recoverable from the corpus — a log records what happened, not what a repo's
+settings are now — and this file was treating that as a reason not to check.
+
+That was a line drawn in the wrong place. The digest already leaves the corpus
+to read git remotes and `check-ignore` state from disk; one more live probe is
+the same class of operation. It now runs `gh repo view` for each repo you write
+to, capped at 12 (`--gh-cap`, `--no-gh` to skip), and degrades to `unknown` with
+a warning when `gh` is missing or unauthenticated rather than failing.
+
+The scope difference is the point: the wizard checks the repo you are standing
+in. This checks every repo the corpus shows you committing to. On the reference
+machine that surfaced five public repos among twelve, one of them holding paper
+drafts.
+
+### fix(trustmap): a project's repo was resolved from its most recent `cwd`
+
+Sessions `cd` into other repositories to read things, and those events keep the
+session's own `project` while carrying the other repo's `cwd`. Taking the latest
+one attributed `session-cartographer`'s rows to `attentional-foraging`'s remote —
+so the tool proposed trusting a repo on the strength of activity that happened
+somewhere else, and paid a `gh` call to confirm the wrong answer.
+
+Resolution is now by frequency, preferring a directory whose basename matches
+the project name, and repos are de-duplicated by resolved root so one repository
+reached from two project names is listed and probed once.
+
+### feat(trustmap): provenance-stamped entries, so two tools can share one array
+
+`autoMode.environment` has more than one author — Claude Code's setup wizard
+writes it, `/trustmap` writes it, and you edit it by hand. The first cut assigned
+the array wholesale, so whoever ran last silently discarded the others. Pure
+appending would have been no better in the other direction: nothing could then
+correct its own stale entry, and the block would grow monotonically until it
+contradicted itself.
+
+Entries this skill authors now carry a dated marker — `[trustmap 2026-08-15]` —
+and the merge rebuilds the array as `$defaults` + foreign entries verbatim +
+this run's stamped set. Entries are free-form prose, so the marker is legal and
+the classifier reads past it. Running the wizard and `/trustmap` in either order
+now converges rather than clobbering, and a re-run corrects its own entries
+instead of duplicating them.
+
+This also makes removal possible for the first time. Nothing in this pipeline
+had ever retired an entry, so a host you stopped using kept granting trust
+indefinitely. The digest flags entries it wrote whose identifiers no longer
+appear anywhere in the corpus, and the skill asks before dropping one — absence
+from a 365-day window is not proof the thing is gone. Context entries that name
+no identifiers are never proposed for retirement, since absence of an identifier
+is not evidence against a description.
+
+### fix(release): the plugin runtime copy is what installed skills actually run
+
+Skills resolve their scripts against `CLAUDE_PLUGIN_ROOT`, which points at
+`plugins/session-cartographer/` — a directory carrying its own copy of the
+runtime assembled by `copy-plugin-runtime.sh`. A new script added only at the
+repository root is invisible there. `/trustmap` worked from a checkout and
+would have failed at step 0 for anyone who installed the plugin, which is
+everyone who isn't developing it.
+
+Caught while cutting this release rather than by a test: nothing verifies that
+every script a skill references exists under the plugin root. Worth adding
+before the next skill lands.
+
+### fix(gitignore): `.carto/` was committable
+
+Cartographer's event logs are agent-session transcripts, which auto mode's
+classifier treats as sensitive data belonging in no repo — this one included.
+The directory was empty here, so nothing had leaked and `git status` stayed
+clean, but any event written to it would have landed as untracked repo content.
+A project that wants its history versioned deliberately un-ignores its own path;
+the default for a repo that merely runs cartographer stays "don't commit the
+logs."
+
 ## 0.5.1 — 2026-08-14
 
 ### fix(profile): "Durable decisions" drew from two records while 508 went unread

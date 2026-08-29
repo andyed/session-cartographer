@@ -7,8 +7,8 @@
   "plugins": [
     {
       "name": "session-cartographer",
-      "description": "Hooks log events, /remember searches them, /carto opens the Explorer, /focus orients on a project",
-      "version": "0.5.1",
+      "description": "Hooks log events, /remember searches them, /carto opens the Explorer, /focus orients on a project, /trustmap maps your trust boundary for auto mode",
+      "version": "0.6.0",
       "author": {
         "name": "Andy Edmonds"
       },
