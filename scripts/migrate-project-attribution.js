@@ -35,6 +35,21 @@ const LOGS = ['changelog.jsonl', 'research-log.jsonl',
 
 const resolveCache = new Map();
 
+/** The worktree's own root, or null — what the buggy hook used to record. */
+function ownToplevel(dir) {
+  const key = 'T' + dir;
+  if (resolveCache.has(key)) return resolveCache.get(key);
+  let out = null;
+  try {
+    if (fs.existsSync(dir) && fs.statSync(dir).isDirectory()) {
+      out = execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
+        { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+    }
+  } catch { /* not a repo */ }
+  resolveCache.set(key, out);
+  return out;
+}
+
 /** Parent-repo name for a directory, or null. Mirrors cartographer_project in common.sh. */
 function parentRepo(dir) {
   if (resolveCache.has(dir)) return resolveCache.get(dir);
@@ -66,7 +81,14 @@ function shouldRepoint(ev) {
   if (ev.project_repointed_from) return null;            // idempotent: already done
   const parent = parentRepo(cwd);
   if (!parent || parent === ev.project) return null;
-  if (ev.project !== path.basename(cwd)) return null;    // not the bug's signature
+  // The buggy hook derived project from `--show-toplevel`, which is the worktree
+  // ROOT however deep the cwd was. So an event recorded in a subdirectory carries
+  // project === basename(worktree root) with a deeper cwd, and matching only
+  // basename(cwd) silently under-repairs those.
+  if (ev.project !== path.basename(cwd)) {
+    const own = ownToplevel(cwd);
+    if (!own || ev.project !== path.basename(own)) return null;   // not the signature
+  }
   return parent;
 }
 

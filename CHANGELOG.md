@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.1 — 2026-08-29
+
+### fix(migration): events recorded in a worktree SUBDIRECTORY were not repaired
+
+`migrate-project-attribution.js` only repointed a record when `project` equalled
+`basename(cwd)`. But the hook it repairs derived the project from
+`--show-toplevel`, which returns the worktree **root** however deep the working
+directory was — so an event recorded in, say,
+`…/worktrees/confident-yalow-e1cdc6/apps/capacitor/android` carried the worktree
+name as its project and a much deeper `cwd`, and was silently skipped.
+
+The signature check now also accepts a `project` matching the basename of the
+cwd's own toplevel. Measured on the development corpus, the 0.7.0 migration left
+18 recoverable events behind across 2 phantom projects.
+
+The docstring already described the intended behaviour ("or of that cwd's own
+toplevel"); only the implementation was narrower. Re-running the migration is
+safe and idempotent — it picks up exactly the records the previous pass missed.
+
 ## 0.7.0 — 2026-08-29
 
 ### fix(hooks): sessions run in a worktree were filed under a throwaway name

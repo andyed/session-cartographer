@@ -77,6 +77,21 @@ test('--apply repoints a worktree event to its parent repo', () => {
   assert.equal(a1.cwd, wt, 'cwd is accurate history and must not be rewritten');
 });
 
+test('an event recorded in a SUBDIRECTORY of a worktree is still repointed', () => {
+  // The buggy hook used --show-toplevel, which returns the worktree root however
+  // deep the cwd was. Matching only basename(cwd) under-repairs those: measured at
+  // 18 recoverable events missed on the development corpus by the 0.7.0 version.
+  const deep = path.join(wt, 'apps', 'capacitor', 'android');
+  fs.mkdirSync(deep, { recursive: true });
+  fs.appendFileSync(path.join(dev, 'changelog.jsonl'),
+    JSON.stringify({ event_id: 'evt-deep', project: 'brave-thompson-40e495',
+                     cwd: deep, summary: 'recorded from a subdirectory' }) + '\n');
+  run(dev, '--apply');
+  const deepEv = readLog(dev).find(e => e.event_id === 'evt-deep');
+  assert.equal(deepEv.project, 'myproject');
+  assert.equal(deepEv.project_repointed_from, 'brave-thompson-40e495');
+});
+
 test('an event whose project did not come from its cwd is left alone', () => {
   // log-tool-use derives some events from FILE_REPO rather than cwd. Repointing
   // those would be collateral damage, so the signature check requires
