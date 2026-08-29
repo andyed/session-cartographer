@@ -25,10 +25,12 @@ for required in \
   "$PLUGIN/hooks/hooks.json" \
   "$PLUGIN/hooks/log-compact-summary.sh" \
   "$PLUGIN/scripts/cartographer-search.sh" \
+  "$PLUGIN/scripts/cartographer-feed.sh" \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
   "$PLUGIN/scripts/infer-codex-project.js" \
   "$PLUGIN/scripts/cooccurrence-graph.js" \
+  "$PLUGIN/explorer/public/og-card-1200x630.png" \
   "$PLUGIN/explorer/server/index.js" \
   "$PLUGIN/project-registry.json"; do
   [ -f "$required" ] || { echo "Missing release file: $required" >&2; exit 1; }
@@ -49,7 +51,9 @@ printf '%s\n' \
   '{"event_id":"evt-release-noise-1","timestamp":"2026-07-13T12:01:00Z","type":"milestone","provider":"claude","project":"release-smoke","summary":"unrelated alpha fixture"}' \
   '{"event_id":"evt-release-noise-2","timestamp":"2026-07-13T12:02:00Z","type":"milestone","provider":"codex","project":"release-smoke","summary":"unrelated beta fixture"}' \
   > "$DEV/changelog.jsonl"
-RESULT=$(CARTOGRAPHER_DEV_DIR="$DEV" bash "$PLUGIN/scripts/cartographer-search.sh" "self contained release" --limit 5)
+RESULT=$(CARTOGRAPHER_DEV_DIR="$DEV" \
+  CARTOGRAPHER_QDRANT_URL="http://127.0.0.1:1" \
+  bash "$PLUGIN/scripts/cartographer-search.sh" "self contained release" --limit 5)
 printf '%s' "$RESULT" | LC_ALL=C grep -q 'evt-release-smoke'
 
 # When Codex is available (developer machines), exercise the real local

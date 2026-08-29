@@ -26,6 +26,7 @@ cp "$ROOT/explorer/package.json" "$ROOT/explorer/package-lock.json" "$PLUGIN/exp
 cp "$ROOT/explorer/index.html" "$ROOT/explorer/postcss.config.js" "$PLUGIN/explorer/"
 cp "$ROOT/explorer/tailwind.config.js" "$ROOT/explorer/vite.config.js" "$PLUGIN/explorer/"
 cp "$ROOT/explorer/public/favicon.ico" "$PLUGIN/explorer/public/favicon.ico"
+cp "$ROOT/explorer/public/og-card-1200x630.png" "$PLUGIN/explorer/public/og-card-1200x630.png"
 cp "$ROOT/explorer/public/js/"*.js "$PLUGIN/explorer/public/js/"
 cp -R "$ROOT/explorer/server/." "$PLUGIN/explorer/server/"
 cp -R "$ROOT/explorer/src/." "$PLUGIN/explorer/src/"

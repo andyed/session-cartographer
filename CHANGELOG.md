@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.6.0 — 2026-08-29
+
 ### fix(hooks): the noise filter matched a compound command by its first token
 
 `log-tool-use.sh` skipped noise with a prefix match:
@@ -65,12 +67,29 @@ logged as `tool_bash` while a two-line one was caught.
 Regression test: `tests/unit/log-tool-use-bash-edits.test.js` (9 cases; 4 fail
 against the pre-fix hook, including the git-commit case).
 
-Applied to the live plugin cache (`0.6.0`) as well as source, since the installed
-copy is what actually runs and it was byte-identical to the pre-fix source; the
-previous copy is kept alongside as `log-tool-use.sh.pre-bashfix-backup`. The next
-release regenerates it from source normally.
+The source and checked-in plugin runtime carry the same fix, and the release
+smoke test installs from the generated archive rather than the checkout.
 
-## 0.6.0 — 2026-08-15
+### feat(feed): add bounded machine-readable recall
+
+`cartographer-search.sh --format jsonl` exposes the ranked result set without
+human display chrome. `cartographer-feed.sh` builds on it to create a compact
+Markdown pulse for another local agent or scheduled job, but only after the
+caller supplies an explicit project allowlist. An unscoped whole-corpus feed
+fails closed.
+
+Feed searches are summary-only, bounded by time and result count, and disable
+served-result and access-ledger writes so automated reads do not distort human
+`/remember` telemetry. Event IDs and transcript pointers preserve the path back
+to exact evidence when a summary materially affects downstream work.
+
+### feat(web): ship a canonical social preview card
+
+The Explorer now declares complete Open Graph and Twitter card metadata and
+ships a 1200x630 preview showing keyword and semantic retrieval converging at
+RRF. The deterministic generator, SVG source, deployable PNG, and checked-in
+plugin mirror travel together; smoke tests assert dimensions, metadata, and
+source/plugin parity. The older GitHub-only social bitmap is removed.
 
 ### feat(trustmap): derive auto mode's `autoMode.environment` from the corpus
 

@@ -28,7 +28,7 @@ running both beats either. They're authoritative about different things:
 | Repo visibility | Verified via authenticated `gh` | Verified via `gh`, for every repo you write to |
 | Branch protection, rulesets | Queried via `gh` | No equivalent |
 | CI/CD targets | Scans `.github/workflows` | No equivalent |
-| Classifier-bypassing allow rules | **Audits `permissions.allow` and proposes removals** | No equivalent |
+| Classifier-bypassing allow rules | Audits `permissions.allow` in `settings.json` — but see the caveat below | No equivalent |
 | CLI coverage | What its scope saw | Frequency-ranked across the whole corpus |
 | Repos and orgs | Candidates under `$HOME`, self-labeled "CANDIDATES, not vetted context" | Usage-weighted by commits and pushes |
 | Providers | Claude Code sessions | Claude Code + Codex + backfilled git history |
@@ -68,6 +68,60 @@ The lesson isn't that one tool wins. It's that the wizard's scope prompt
 silently decides whether your config knows about 3 CLIs or 25, and the narrower
 option is the one that sounds safer. Run the wizard for live state, `/trustmap`
 for accumulated usage, and merge the two.
+
+### A second run, and what a narrow scope actually costs (2026-08-16)
+
+The first comparison measured what each tool *found*. A later run measured what
+a narrow scope *writes*, which is the more expensive half.
+
+The wizard was run at `scope=project` from inside a git worktree, and wrote to
+`~/.claude/settings.json`. Two entries that are dynamic in the built-in defaults
+came back pinned to that one project:
+
+| slot | built-in default | what the run wrote |
+|---|---|---|
+| `Trusted repo` | "The git repository the agent started in and its remotes" | a literal path to one project's worktree |
+| `Primary use of Claude Code` | "software development" | that project's specific subject matter |
+
+Both are user-global. On a machine running several projects at once, every other
+session now reads a trust boundary drawn around a repo it isn't in. A third
+entry went further and asserted a negative — `Source control: … (no additional
+orgs configured)` — derived from standing in a checkout with no remote, against
+a corpus holding 30 repos under one GitHub org and two Overleaf remotes.
+
+**A git worktree gets its own transcript directory.** That is the mechanism
+behind most of it. The run's own note read *"Only 1 transcript with 148 Bash
+commands was available for this project"*:
+
+```
+9 transcripts  ~/.claude/projects/-Users-…-<project>
+1 transcript   ~/.claude/projects/-Users-…-<project>--claude-worktrees-<name>
+```
+
+The parent project had nine. Scanning from a worktree is a narrower scope than
+`scope=project` sounds, and nothing in the prompt says so. Against that
+1-transcript sample the run reported `None configured` for internal domains
+(the corpus has a LAN host at 4 hits) and for org-specific CLIs (the corpus has
+15 above the threshold, led by `curl` 1868, `ffmpeg` 1072, `adb` 966).
+
+**The allow audit did not hold on the re-run.** It proposed removing
+`Bash(python3 -c ":*)` — the finding quoted above from 2026-08-15 — and the
+receipt came back `permissionsAllowNotFound`: no such rule existed any more. A
+no-op removal, reported as a finding. It also reads `settings.json` only, while
+`settings.local.json` carries `permissions.allow` too and, on the reference
+machine, was where the rules that actually bypass the classifier lived —
+wildcarded `curl`, `printenv`, `echo`, a Keychain read, and one rule with a
+literal API key embedded in its text. Treat the table row above as "checks one
+file," not "audits your allow rules."
+
+**This is the counterpart to `COLD START`.** `/trustmap` refuses to draft from a
+thin corpus because the gaps would be invisible. The wizard has no equivalent
+refusal: given a thin scan it writes confident `None configured` entries and
+narrows the dynamic slots, at global scope. Same failure, opposite tool, and the
+only defense is checking its scope before accepting the write — verify it saw
+the parent project rather than a worktree, and re-read the `Trusted repo` and
+`Primary use` entries specifically, since those two are worse pinned than left
+alone.
 
 If your corpus is thin, `/trustmap` says so — it prints a `COLD START` block
 naming which signal is missing and sends you to the wizard. Deriving a trust
@@ -219,6 +273,20 @@ past it. On merge the array is rebuilt as `$defaults` + foreign entries verbatim
 - **Stamped entries are corrected, not duplicated** — a host whose description
   changed ends up with one accurate entry, not two contradictory ones.
 - **`$defaults` is re-asserted every run**, so an edit can't drop it.
+
+**What it does not do is resolve a conflict.** Foreign entries are preserved
+verbatim, which is the right default for an entry `/trustmap` merely lacks
+evidence about — but it is the wrong answer for a foreign entry that is *wrong*.
+A wizard run that wrote `Source control: … (no additional orgs configured)` at
+global scope will still say that after a `/trustmap` run appends the org it
+found; the array then holds both, and the classifier reads a contradiction
+rather than a correction.
+
+So the merge has to detect collisions, not just avoid clobbering. When a
+proposed entry addresses a slot a foreign entry already claims, name both and
+ask which survives. Rewriting a foreign entry without asking is the clobbering
+this design exists to prevent; leaving it silently is how a stale global
+boundary outlives the tool that wrote it.
 
 ### Retiring entries
 

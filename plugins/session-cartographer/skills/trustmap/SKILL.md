@@ -184,6 +184,32 @@ Three properties this buys, none of which the old wholesale assignment had:
   changed gets one accurate entry rather than two contradictory ones.
 - **`$defaults` is re-asserted every time**, so it can't be lost by an edit.
 
+### When a foreign entry contradicts your proposal
+
+Preserving foreign entries verbatim is right when you merely lack evidence about
+one. It is wrong when the foreign entry is *false*, and appending next to it
+leaves the classifier reading a contradiction instead of a correction.
+
+Before writing, read `provenance.foreign` and check each entry you're about to
+add against it. Three slots are worth checking every run, because the built-in
+wizard writes all three and a narrow scan gets all three wrong in the same
+direction:
+
+- **`Trusted repo`** — the built-in default is dynamic ("the git repository the
+  agent started in"). A wizard run pins it to whatever repo it scanned. Pinned
+  to one path at user scope, it is a downgrade for every other project.
+- **`Primary use of Claude Code`** — same shape: "software development" narrowed
+  to one project's subject matter.
+- **`Source control`** — a scan of a checkout with no remote can write "no
+  additional orgs configured" as a positive claim, which your digest's org rows
+  directly contradict.
+
+When you find a collision, **show both texts and ask which survives.** Don't
+rewrite a foreign entry silently — that's the clobbering this merge exists to
+prevent. If the user replaces it, drop it from the `FOREIGN` array you pass to
+`jq` and write your own stamped entry in its place; if they keep it, carry it
+forward and say plainly that the contradiction is still there.
+
 ### Retiring stale entries
 
 Nothing else in this pipeline ever removes an entry, so a host you stopped using
