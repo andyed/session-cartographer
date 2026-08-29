@@ -98,7 +98,7 @@ fi
 # every real result.
 SUMMARY=$(printf 'Investigated: %s — %s' "$SYMPTOM" "$HYPOTHESIS" | tr '\n\t' '  ')
 
-jq -nc \
+INVESTIGATION_EVENT=$(jq -nc \
   --arg eid "$EVENT_ID" \
   --arg ts "$TIMESTAMP" \
   --arg session "$SESSION_ID" \
@@ -113,12 +113,16 @@ jq -nc \
   '{event_id:$eid, timestamp:$ts, type:"investigation", provider:$provider,
     session_id:$session, project:$project, cwd:$cwd, transcript_path:$transcript,
     summary:$summary, symptom:$symptom, hypothesis:$hypothesis,
-    root_cause_layer:$layer, salience:0.8}' \
-  >> "$DEV/changelog.jsonl"
+    root_cause_layer:$layer, salience:0.8}')
+
+[ -z "$INVESTIGATION_EVENT" ] && { echo "error: investigation JSON not built" >&2; exit 1; }
+printf '%s\n' "$INVESTIGATION_EVENT" >> "$DEV/changelog.jsonl"
 
 # Index it, or it is keyword-only and invisible to intent-match recall.
+# Pipe the event just built rather than re-reading the log: concurrent sessions
+# append to the same file, so a re-read can index a neighbour's event instead.
 ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
-tail -1 "$DEV/changelog.jsonl" | bash "$ROOT/scripts/index-event.sh"
+printf '%s\n' "$INVESTIGATION_EVENT" | bash "$ROOT/scripts/index-event.sh"
 ```
 
 Then present the hypothesis to the user and **stop**. Do not touch code until they confirm the diagnosis or redirect.

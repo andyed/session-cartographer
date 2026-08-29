@@ -20,6 +20,7 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { createHash } from 'crypto';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
@@ -72,14 +73,17 @@ function eventId(event) {
   return event.event_id || `${event.timestamp}-${event.type || event.milestone || 'unknown'}`;
 }
 
-// Stable numeric hash from string for Qdrant point ID
+// Stable numeric point ID from an event_id: first 13 hex chars of SHA-256 = 52
+// bits. Must stay byte-identical to cartographer_point_id() in index-event.sh —
+// before 0.6.1 these two diverged (djb2-truncated-to-31-bits here, POSIX cksum
+// there), so the collection was split across two incompatible key schemes and
+// the same event indexed by different paths landed at different points.
+// 52 bits keeps the value an exact JS Number (< 2^53); the old 31/32-bit space
+// expected ~1-2 collisions at 96k points, and a collision silently overwrites an
+// unrelated event on upsert.
 function hashToInt(str) {
-  let hash = 0n;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5n) - hash) + BigInt(str.charCodeAt(i));
-    hash &= 0x7FFFFFFFFFFFFFFFn; // keep positive 64-bit
-  }
-  return Number(hash & 0x7FFFFFFFn); // fit in u32 range
+  const hex = createHash('sha256').update(str).digest('hex').slice(0, 13);
+  return parseInt(hex, 16);
 }
 
 async function getEmbeddings(texts) {

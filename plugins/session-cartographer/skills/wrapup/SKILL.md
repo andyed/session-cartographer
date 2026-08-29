@@ -107,7 +107,7 @@ UNRESOLVED=$(printf '%s\n' \
   | jq -R . | jq -s 'map(select(length > 0))')
 KEY_INSIGHT="THE_ONE_THING_WORTH_REMEMBERING"
 
-jq -n -c \
+MILESTONE_EVENT=$(jq -n -c \
   --argjson digest "$DIGEST" \
   --argjson decisions "$DECISIONS" \
   --argjson unresolved "$UNRESOLVED" \
@@ -125,18 +125,33 @@ jq -n -c \
   --arg event "Wrapup" \
   --arg branch "$GIT_BRANCH" \
   '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, digest: $digest,
-    decisions: $decisions, unresolved: $unresolved, key_insight: $insight}' \
-  >> "$DEV/session-milestones.jsonl"
+    decisions: $decisions, unresolved: $unresolved, key_insight: $insight}')
+
+[ -z "$MILESTONE_EVENT" ] && { echo "error: milestone JSON not built — nothing written" >&2; exit 1; }
+printf '%s\n' "$MILESTONE_EVENT" >> "$DEV/session-milestones.jsonl"
+
+# Index in this SAME block, piping the event just built. Never `tail -1` the log:
+# with 3-5 concurrent sessions appending to it, a re-read routinely picks up a
+# neighbouring session's event and leaves this one unindexed — and because
+# index-event.sh has a novelty gate that also exits 0, the loss is invisible.
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
+printf '%s\n' "$MILESTONE_EVENT" | bash "$ROOT/scripts/index-event.sh"
+echo "logged + indexed: $EVENT_ID"
 ```
 
 Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph. It must be a **single line** — the pipeline is TSV/line-based and a literal newline splits the row.
 
-## Step 2: Index it
+## Step 2: Confirm it landed
 
 ```bash
-ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
-tail -1 "$DEV/session-milestones.jsonl" | bash "$ROOT/scripts/index-event.sh"
+POINT_ID=$((16#$(printf '%s' "$EVENT_ID" | shasum -a 256 | cut -c1-13)))
+curl -s "http://localhost:6333/collections/session-cartographer/points/$POINT_ID" \
+  | jq -r '.result.payload.event_id // "NOT INDEXED"'
 ```
+
+If it prints `NOT INDEXED`, the novelty gate rejected it as too similar to an
+existing entry (expected for a routine session) or Qdrant is down — check
+`$DEV/.carto/index-errors.jsonl`. The JSONL line is written either way.
 
 ## Step 3: Update memory if warranted
 

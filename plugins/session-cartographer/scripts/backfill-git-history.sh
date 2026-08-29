@@ -102,7 +102,7 @@ process_repo() {
       echo "  [${timestamp}] ${project}: ${summary}" | head -c 120
       echo ""
     else
-      jq -n -c \
+      CHANGELOG_EVENT=$(jq -n -c \
         --arg eid "$event_id" \
         --arg ts "$timestamp" \
         --arg type "git_commit" \
@@ -113,12 +113,12 @@ process_repo() {
         --arg url "$commit_url" \
         --arg files "$files" \
         --argjson diff_shape "$diff_shape" \
-        '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, commit_hash: $hash, author: $author, url: $url, files_changed: $files, diff_shape: $diff_shape, related_ids: []}' \
-        >> "$CHANGELOG"
+        '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, commit_hash: $hash, author: $author, url: $url, files_changed: $files, diff_shape: $diff_shape, related_ids: []}')
+      if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
       # Real-time indexing
       if [ -x "$INDEXER" ]; then
-        tail -1 "$CHANGELOG" | "$INDEXER" 2>/dev/null &
+        [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" 2>/dev/null &
       fi
     fi
 

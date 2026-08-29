@@ -114,8 +114,23 @@ command -v jq &>/dev/null || exit 0
 VECTOR=$(echo "$EMBED_RESPONSE" | jq -c '.data[0].embedding // empty' 2>/dev/null)
 [ -z "$VECTOR" ] && { fail_index "embedding_missing_vector"; exit $?; }
 
+# Stable point ID from event_id: first 13 hex chars of SHA-256 = 52 bits.
+# Must stay byte-identical to embed-events.js hashToInt(). 52 bits keeps the
+# value an exact JS Number (< 2^53) while making collisions vanish: the old
+# 32-bit cksum expected ~1 collision at 96k points, and a collision silently
+# overwrites an unrelated event on upsert.
+cartographer_point_id() {
+  local _hex
+  if command -v shasum >/dev/null 2>&1; then
+    _hex=$(printf '%s' "$1" | shasum -a 256 | cut -c1-13)
+  else
+    _hex=$(printf '%s' "$1" | sha256sum | cut -c1-13)
+  fi
+  printf '%s' "$((16#$_hex))"
+}
+
 # Hash event_id to numeric point ID (same as embed-events.js)
-POINT_ID=$(echo -n "$EVENT_ID" | cksum | awk '{print $1}')
+POINT_ID=$(cartographer_point_id "$EVENT_ID")
 
 # Prediction error gate: skip if too similar to an existing entry
 PE_GATE_REJECT="${PE_GATE_REJECT:-0.85}"

@@ -29,20 +29,23 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 SUMMARY="Did something interesting"
 
 # Write to changelog (the envelope format)
-jq -n -c \
+CHANGELOG_EVENT=$(jq -n -c \
     --arg eid "$EVENT_ID" \
     --arg ts "$TIMESTAMP" \
     --arg type "custom_my_event" \
     --arg session "$SESSION_ID" \
     --arg project "$PROJECT" \
     --arg summary "$SUMMARY" \
-    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, summary: $summary, related_ids: []}' \
-    >> "$CHANGELOG"
+    '{event_id: $eid, timestamp: $ts, type: $type, session_id: $session, project: $project, summary: $summary, related_ids: []}')
+if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
-# Real-time indexing (optional — silent fail if services aren't running)
+# Real-time indexing (optional — silent fail if services aren't running).
+# Pipe the event you just built, never `tail -1` the log: with concurrent
+# sessions appending to the same file, a re-read can pick up a neighbour's
+# event and leave yours unindexed.
 INDEXER="$HOME/Documents/dev/session-cartographer/scripts/index-event.sh"
 if [ -x "$INDEXER" ]; then
-  tail -1 "$CHANGELOG" | "$INDEXER" &
+  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
 fi
 
 exit 0

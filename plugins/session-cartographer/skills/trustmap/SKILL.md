@@ -259,7 +259,7 @@ PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
 [ "$PROVIDER" = "unknown" ] && [ -n "$CLAUDE_SID" ] && PROVIDER="claude"
 [ "$SESSION_ID" = "unknown" ] && echo "warning: session id unresolved — this milestone will not link to a transcript" >&2
 
-jq -n -c \
+TRUSTMAP_EVENT=$(jq -n -c \
   --arg eid "evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)" \
   --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
   --arg session "$SESSION_ID" \
@@ -269,10 +269,14 @@ jq -n -c \
   --arg description "TRUSTMAP_SYNTHESIS_HERE" \
   '{event_id: $eid, timestamp: $ts, milestone: "trustmap_update", event: "Trustmap",
     provider: $provider, description: $description, summary: $description,
-    session_id: $session, project: $project, cwd: $cwd}' \
-  >> "$DEV/session-milestones.jsonl"
+    session_id: $session, project: $project, cwd: $cwd}')
 
-tail -1 "$DEV/session-milestones.jsonl" | bash "$ROOT/scripts/index-event.sh"
+[ -z "$TRUSTMAP_EVENT" ] && { echo "error: trustmap JSON not built" >&2; exit 1; }
+printf '%s\n' "$TRUSTMAP_EVENT" >> "$DEV/session-milestones.jsonl"
+
+# Pipe the event just built rather than re-reading the log: concurrent sessions
+# append to the same file, so a re-read can index a neighbour's event instead.
+printf '%s\n' "$TRUSTMAP_EVENT" | bash "$ROOT/scripts/index-event.sh"
 ```
 
 Replace `TRUSTMAP_SYNTHESIS_HERE` with one line naming what you added and why —

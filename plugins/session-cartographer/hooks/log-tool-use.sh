@@ -294,7 +294,7 @@ jq -n -c \
     >> "$LOG_FILE"
 
 # Write to unified changelog
-jq -n -c \
+CHANGELOG_EVENT=$(jq -n -c \
     --arg eid "$EVENT_ID" \
     --arg ts "$TIMESTAMP" \
     --arg type "$TYPE" \
@@ -310,13 +310,13 @@ jq -n -c \
     --argjson salience "${SALIENCE:-0.5}" \
     '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: [], salience: $salience}
      + if $commit_type != "" then {commit_type: $commit_type} else {} end
-     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
-    >> "$CHANGELOG"
+     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
+if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
 # Real-time indexing (silent fail if services aren't running)
 INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
-  tail -1 "$CHANGELOG" | "$INDEXER" &
+  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
 fi
 
 exit 0

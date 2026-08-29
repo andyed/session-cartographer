@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+### fix(indexing): hooks indexed whichever event landed last, not their own
+
+Every hook wrote its event and then re-read the file to index it:
+
+```
+jq -n -c ... >> "$CHANGELOG"
+tail -1 "$CHANGELOG" | "$INDEXER" &
+```
+
+With several agent sessions running against one workspace they all append to the
+same `changelog.jsonl`, so the re-read is a race. Under a bounded reproduction —
+60 writes against a concurrent writer — only 15 of the 60 `tail -1` reads
+returned the writer's own event; the rest indexed a neighbouring session's event
+and silently dropped their own.
+
+The loss was invisible because `index-event.sh` also exits 0 when its novelty
+gate rejects an event as too similar to an existing one. A dropped event and a
+deliberately skipped duplicate are indistinguishable from outside, so nothing
+ever surfaced.
+
+Hooks, backfills, and the `/wrapup`, `/investigate`, and `/trustmap` skills now
+pipe the event they just built. `docs/CUSTOM_HOOKS.md` is updated so the pattern
+stops propagating into user-authored hooks. The same reproduction scores 20/20
+after the change.
+
+### fix(indexing): unify the Qdrant point ID and widen it past 32 bits
+
+`index-event.sh` and `embed-events.js` derived point IDs with *different* hash
+functions, despite a comment in the former claiming parity:
+
+- `index-event.sh` — POSIX `cksum`, a 32-bit CRC
+- `embed-events.js` — a djb2 variant truncated to 31 bits
+
+Across 4,000 event IDs the two agreed zero times, so a collection written by both
+paths was split across two incompatible key spaces: 89,646 points on one, 6,820
+on the other. The same event indexed by different paths landed at different
+points, and any ID-based lookup silently missed whichever half it was not built
+for.
+
+Both spaces were also too small. At 96k points a 32-bit space expects roughly one
+birthday collision and a 31-bit space about two, and a collision is not an error —
+Qdrant upserts, so one event silently overwrites an unrelated one. The corpus had
+got there on luck: a sweep of all 87,949 distinct event IDs found zero actual
+collisions against 0.90 expected.
+
+Both writers now use the first 13 hex characters of SHA-256, a 52-bit value that
+stays an exact JavaScript `Number` and is byte-identical between the shell and
+Node implementations.
+
+`scripts/migrate-point-ids.js` moves an existing collection onto the unified
+scheme. Vectors are read back from Qdrant, so nothing is re-embedded. It defaults
+to a dry run, reports the scheme breakdown and any collision in the new space, and
+leaves points it cannot classify untouched. Run the upgrade before the migration
+so new events land on the new scheme and are never orphaned.
+
+
 ### fix(metrics): record result-access order explicitly
 
 Multi-result `--get` and `--touch` operations previously stamped every access
