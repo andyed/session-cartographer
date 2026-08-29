@@ -52,11 +52,95 @@ function toMs(iso) {
 
 function rankBucket(rank) {
   const value = Number(rank);
-  if (!Number.isFinite(value)) return 'unknown';
+  if (!Number.isFinite(value) || value <= 0) return 'unknown';
   if (value <= 3) return '1-3';
   if (value <= 7) return '4-7';
   if (value <= 15) return '8-15';
   return '16+';
+}
+
+function accessRecord(row, index) {
+  const ordinal = Number(row.access_ordinal);
+  return {
+    index,
+    timestampMs: toMs(row.timestamp),
+    batchId: typeof row.access_batch_id === 'string' && row.access_batch_id ? row.access_batch_id : null,
+    ordinal: Number.isInteger(ordinal) && ordinal > 0 ? ordinal : null,
+  };
+}
+
+function resolveAccessBoundary(accesses, edge) {
+  if (accesses.length === 0) return { status: 'none', rank: null };
+  const uniqueEvents = new Set(accesses.map((access) => access.eventId));
+  if (uniqueEvents.size === 1) {
+    const rank = accesses.find((access) => access.rank !== null)?.rank ?? null;
+    return rank === null ? { status: 'unknown', rank: null } : { status: 'resolved', rank };
+  }
+
+  const validTimes = accesses.filter((access) => access.timestampMs !== null);
+  if (validTimes.length !== accesses.length) return { status: 'unknown', rank: null };
+  const boundaryMs = edge === 'first'
+    ? Math.min(...validTimes.map((access) => access.timestampMs))
+    : Math.max(...validTimes.map((access) => access.timestampMs));
+  const boundary = validTimes.filter((access) => access.timestampMs === boundaryMs);
+  const boundaryEvents = new Set(boundary.map((access) => access.eventId));
+  if (boundaryEvents.size === 1) {
+    const rank = boundary.find((access) => access.rank !== null)?.rank ?? null;
+    return rank === null ? { status: 'unknown', rank: null } : { status: 'resolved', rank };
+  }
+
+  const batchIds = new Set(boundary.map((access) => access.batchId));
+  const hasOrderedBatch = batchIds.size === 1
+    && !batchIds.has(null)
+    && boundary.every((access) => access.ordinal !== null);
+  if (!hasOrderedBatch) return { status: 'unknown', rank: null };
+  const targetOrdinal = edge === 'first'
+    ? Math.min(...boundary.map((access) => access.ordinal))
+    : Math.max(...boundary.map((access) => access.ordinal));
+  const candidates = boundary.filter((access) => access.ordinal === targetOrdinal);
+  if (new Set(candidates.map((access) => access.eventId)).size !== 1) {
+    return { status: 'unknown', rank: null };
+  }
+  const rank = candidates.find((access) => access.rank !== null)?.rank ?? null;
+  return rank === null ? { status: 'unknown', rank: null } : { status: 'resolved', rank };
+}
+
+function summarizeAccessMrr(instances) {
+  let firstReciprocalRankSum = 0;
+  let lastReciprocalRankSum = 0;
+  let measuredInstances = 0;
+  let unknownInstances = 0;
+  let firstUnknownInstances = 0;
+  let lastUnknownInstances = 0;
+  const firstDistribution = new Map();
+  const lastDistribution = new Map();
+  for (const instance of instances.values()) {
+    const first = resolveAccessBoundary(instance.accesses, 'first');
+    const last = resolveAccessBoundary(instance.accesses, 'last');
+    const firstBucket = first.status === 'resolved' ? rankBucket(first.rank) : first.status;
+    const lastBucket = last.status === 'resolved' ? rankBucket(last.rank) : last.status;
+    firstDistribution.set(firstBucket, (firstDistribution.get(firstBucket) || 0) + 1);
+    lastDistribution.set(lastBucket, (lastDistribution.get(lastBucket) || 0) + 1);
+    if (first.status === 'unknown') firstUnknownInstances++;
+    if (last.status === 'unknown') lastUnknownInstances++;
+    if (first.status === 'unknown' || last.status === 'unknown') {
+      unknownInstances++;
+      continue;
+    }
+    measuredInstances++;
+    if (first.status === 'resolved') firstReciprocalRankSum += 1 / first.rank;
+    if (last.status === 'resolved') lastReciprocalRankSum += 1 / last.rank;
+  }
+  return {
+    firstValue: measuredInstances > 0 ? firstReciprocalRankSum / measuredInstances : null,
+    lastValue: measuredInstances > 0 ? lastReciprocalRankSum / measuredInstances : null,
+    measuredInstances,
+    unknownInstances,
+    firstUnknownInstances,
+    lastUnknownInstances,
+    firstDistribution,
+    lastDistribution,
+  };
 }
 
 function pct(numerator, denominator) {
@@ -83,17 +167,23 @@ if (served.length === 0) {
 }
 
 // Exact attribution for new records: call_id + event_id is the join key.
-const exactUses = new Set();
-for (const use of allUses) {
-  if (use.call_id && use.event_id) exactUses.add(`${use.call_id}\0${use.event_id}`);
+const exactAccessByPair = new Map();
+for (let index = 0; index < allUses.length; index++) {
+  const use = allUses[index];
+  if (!use.call_id || !use.event_id) continue;
+  const key = `${use.call_id}\0${use.event_id}`;
+  if (!exactAccessByPair.has(key)) exactAccessByPair.set(key, []);
+  exactAccessByPair.get(key).push(accessRecord(use, index));
 }
 
 // Legacy attribution is opt-in. Assign every touch without a call_id to the
 // single latest preceding serve for that event inside the time window.
-const legacyHitRows = new Set();
+const legacyAccessByRow = new Map();
 if (INCLUDE_LEGACY) {
   const windowMs = WINDOW_MIN * 60 * 1000;
-  for (const use of allUses.filter((row) => !row.call_id && row.event_id)) {
+  for (let useIndex = 0; useIndex < allUses.length; useIndex++) {
+    const use = allUses[useIndex];
+    if (use.call_id || !use.event_id) continue;
     const useMs = toMs(use.timestamp);
     if (useMs === null) continue;
     let bestIndex = -1;
@@ -109,7 +199,10 @@ if (INCLUDE_LEGACY) {
         bestIndex = index;
       }
     }
-    if (bestIndex >= 0) legacyHitRows.add(bestIndex);
+    if (bestIndex >= 0) {
+      if (!legacyAccessByRow.has(bestIndex)) legacyAccessByRow.set(bestIndex, []);
+      legacyAccessByRow.get(bestIndex).push(accessRecord(use, useIndex));
+    }
   }
 }
 
@@ -124,9 +217,10 @@ const instances = new Map();
 
 for (let index = 0; index < served.length; index++) {
   const row = served[index];
-  const hit = row.call_id
-    ? exactUses.has(`${row.call_id}\0${row.event_id}`)
-    : legacyHitRows.has(index);
+  const accesses = row.call_id
+    ? exactAccessByPair.get(`${row.call_id}\0${row.event_id}`) || []
+    : legacyAccessByRow.get(index) || [];
+  const hit = accesses.length > 0;
   const rank = Number(row.rank);
   const purpose = row.purpose || 'legacy';
   const instanceKey = row.call_id || `legacy:${row.timestamp}\0${row.query || ''}`;
@@ -156,21 +250,20 @@ for (let index = 0; index < served.length; index++) {
   byQuery.get(query).served++;
   if (hit) byQuery.get(query).hit++;
 
-  if (!instances.has(instanceKey)) instances.set(instanceKey, { bestRank: null, purpose });
-  if (hit && Number.isFinite(rank)) {
+  if (!instances.has(instanceKey)) instances.set(instanceKey, { accesses: [], accessKeys: new Set(), purpose });
+  if (hit) {
     const instance = instances.get(instanceKey);
-    if (instance.bestRank === null || rank < instance.bestRank) instance.bestRank = rank;
+    const accessedRank = Number.isFinite(rank) && rank > 0 ? rank : null;
+    for (const access of accesses) {
+      const accessKey = `${access.index}\0${row.event_id}`;
+      if (instance.accessKeys.has(accessKey)) continue;
+      instance.accessKeys.add(accessKey);
+      instance.accesses.push({ ...access, eventId: row.event_id, rank: accessedRank });
+    }
   }
 }
 
-let reciprocalRankSum = 0;
-const firstHitDist = new Map();
-for (const { bestRank } of instances.values()) {
-  reciprocalRankSum += bestRank === null ? 0 : 1 / bestRank;
-  const bucket = bestRank === null ? 'none' : rankBucket(bestRank);
-  firstHitDist.set(bucket, (firstHitDist.get(bucket) || 0) + 1);
-}
-const mrr = instances.size ? reciprocalRankSum / instances.size : null;
+const accessMrr = summarizeAccessMrr(instances);
 const deadWeight = sortedRows(byEvent).filter(([, value]) => value.served >= 3 && value.hit === 0).slice(0, 15);
 const zeroHitQueries = sortedRows(byQuery).filter(([, value]) => value.served >= 2 && value.hit === 0).slice(0, 15);
 
@@ -179,7 +272,21 @@ const report = {
   includeLegacy: INCLUDE_LEGACY,
   legacyWindowMinutes: WINDOW_MIN,
   overall: { ...overall, hitRate: overall.served ? overall.hit / overall.served : null },
-  mrr: { value: mrr, instances: instances.size, firstHitRankDistribution: Object.fromEntries(firstHitDist) },
+  mrr: {
+    value: accessMrr.firstValue,
+    firstAccessValue: accessMrr.firstValue,
+    lastAccessValue: accessMrr.lastValue,
+    instances: instances.size,
+    orderedInstances: accessMrr.measuredInstances,
+    orderUnknownInstances: accessMrr.unknownInstances,
+    firstAccessMeasuredInstances: accessMrr.measuredInstances,
+    lastAccessMeasuredInstances: accessMrr.measuredInstances,
+    firstAccessUnknownInstances: accessMrr.firstUnknownInstances,
+    lastAccessUnknownInstances: accessMrr.lastUnknownInstances,
+    firstAccessRankDistribution: Object.fromEntries(accessMrr.firstDistribution),
+    lastAccessRankDistribution: Object.fromEntries(accessMrr.lastDistribution),
+    firstHitRankDistribution: Object.fromEntries(accessMrr.firstDistribution),
+  },
   byRank: Object.fromEntries(byRank),
   bySource: Object.fromEntries(bySource),
   byProject: Object.fromEntries(byProject),
@@ -196,13 +303,14 @@ if (AS_JSON) {
 console.log(`Session Cartographer — explicit result-use report (purpose: ${PURPOSE_FILTER})`);
 console.log('='.repeat(66));
 console.log(`Overall: ${overall.hit}/${overall.served} served results used — ${pct(overall.hit, overall.served)}`);
-console.log(`MRR: ${mrr === null ? '—' : mrr.toFixed(3)} across ${instances.size} attributed call${instances.size === 1 ? '' : 's'}`);
+console.log(`First-access MRR: ${accessMrr.firstValue === null ? '—' : accessMrr.firstValue.toFixed(3)} across ${accessMrr.measuredInstances}/${instances.size} jointly ordered call${instances.size === 1 ? '' : 's'}`);
+console.log(`Last-access MRR:  ${accessMrr.lastValue === null ? '—' : accessMrr.lastValue.toFixed(3)} across ${accessMrr.measuredInstances}/${instances.size} jointly ordered call${instances.size === 1 ? '' : 's'}`);
 if (INCLUDE_LEGACY) console.log(`Legacy rows included; unmatched touches use latest-serve attribution within ${WINDOW_MIN} minutes.`);
 
-console.log('\nFirst useful result:');
-for (const bucket of ['1-3', '4-7', '8-15', '16+', 'none']) {
-  if (!firstHitDist.has(bucket)) continue;
-  const count = firstHitDist.get(bucket);
+console.log('\nFirst accessed result:');
+for (const bucket of ['1-3', '4-7', '8-15', '16+', 'unknown', 'none']) {
+  if (!accessMrr.firstDistribution.has(bucket)) continue;
+  const count = accessMrr.firstDistribution.get(bucket);
   console.log(`  ${bucket.padEnd(8)} ${count} call${count === 1 ? '' : 's'} (${pct(count, instances.size)})`);
 }
 

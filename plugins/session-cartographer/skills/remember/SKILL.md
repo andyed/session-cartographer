@@ -239,6 +239,8 @@ CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --to
 ```
 
 Touch only what you used, not everything that was served. A result you read and discarded as irrelevant should NOT be touched — false vouching pollutes future rankings.
+When touching more than one result, list the IDs in the order you accessed them.
+The access ledger records that order for first- and last-access MRR.
 
 ## Examples
 
