@@ -17,6 +17,11 @@ the conventional checkout as a legacy fallback.
 
 Deliberate end-of-session preservation. The hooks capture mechanical facts (files changed, commits made, session ended). This skill captures **strategic context** — the decisions, discoveries, and unfinished threads that make the next session productive.
 
+Not every session needs an authored synthesis. Transcripts and lifecycle hooks
+are the automatic substrate; `/wrapup` promotes a material session into durable
+strategic memory. Use `node "$ROOT/scripts/wrapup-coverage.js"` to see material
+sessions that still lack that synthesis.
+
 Wrapup serves two audiences at once. The **log** gets a synthesis paragraph that `/remember` can recall months later. The **human** gets a digest panel they can verify at a glance — every line traces back to a logged event or to `git`, so a wrong claim is visible rather than merely plausible.
 
 ## Step 0: Render the digest — do this first
@@ -128,15 +133,34 @@ MILESTONE_EVENT=$(jq -n -c \
     decisions: $decisions, unresolved: $unresolved, key_insight: $insight}')
 
 [ -z "$MILESTONE_EVENT" ] && { echo "error: milestone JSON not built — nothing written" >&2; exit 1; }
-printf '%s\n' "$MILESTONE_EVENT" >> "$DEV/session-milestones.jsonl"
 
-# Index in this SAME block, piping the event just built. Never `tail -1` the log:
-# with 3-5 concurrent sessions appending to it, a re-read routinely picks up a
-# neighbouring session's event and leaves this one unindexed — and because
-# index-event.sh has a novelty gate that also exits 0, the loss is invisible.
+# The helper preserves the JSONL write and semantic-index result as separate
+# states, verifies the exact Qdrant event id, and returns one JSON receipt. Never
+# append here and then `tail -1`: concurrent sessions share the milestone log.
 ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
-printf '%s\n' "$MILESTONE_EVENT" | bash "$ROOT/scripts/index-event.sh"
-echo "logged + indexed: $EVENT_ID"
+WRAPUP_STATUS=0
+WRAPUP_RECEIPT=$(printf '%s\n' "$MILESTONE_EVENT" \
+  | bash "$ROOT/scripts/record-wrapup.sh") || WRAPUP_STATUS=$?
+
+LOG_OUTCOME=$(printf '%s' "$WRAPUP_RECEIPT" | jq -r '.log_outcome // "unknown"')
+INDEX_OUTCOME=$(printf '%s' "$WRAPUP_RECEIPT" | jq -r '.index.outcome // "unknown"')
+INDEX_STAGE=$(printf '%s' "$WRAPUP_RECEIPT" | jq -r '.index.stage // "unknown"')
+
+case "$LOG_OUTCOME:$INDEX_OUTCOME" in
+  written:indexed|already_present:indexed)
+    echo "logged + indexed + verified: $EVENT_ID"
+    ;;
+  written:*|already_present:*)
+    echo "logged, not indexed: $EVENT_ID ($INDEX_OUTCOME at $INDEX_STAGE)" >&2
+    ;;
+  *)
+    echo "wrapup not logged: $EVENT_ID ($LOG_OUTCOME; $INDEX_STAGE)" >&2
+    ;;
+esac
+
+# Preserve this for Step 2 and for an exact diagnostic if anything failed.
+printf '%s\n' "$WRAPUP_RECEIPT" | jq .
+[ "$WRAPUP_STATUS" -eq 0 ] || echo "index/write status: $WRAPUP_STATUS" >&2
 ```
 
 Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph. It must be a **single line** — the pipeline is TSV/line-based and a literal newline splits the row.
@@ -144,14 +168,28 @@ Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph. It must be a **s
 ## Step 2: Confirm it landed
 
 ```bash
-POINT_ID=$((16#$(printf '%s' "$EVENT_ID" | shasum -a 256 | cut -c1-13)))
-curl -s "http://localhost:6333/collections/session-cartographer/points/$POINT_ID" \
-  | jq -r '.result.payload.event_id // "NOT INDEXED"'
+INDEX_OUTCOME=$(printf '%s' "$WRAPUP_RECEIPT" | jq -r '.index.outcome // "unknown"')
+if [ "$INDEX_OUTCOME" = "indexed" ]; then
+  POINT_ID=$(printf '%s' "$WRAPUP_RECEIPT" | jq -r '.index.point_id // empty')
+  QDRANT_URL="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
+  COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
+  VERIFIED_EVENT_ID=$(curl -sf "$QDRANT_URL/collections/$COLLECTION/points/$POINT_ID" \
+    | jq -r '.result.payload.event_id // empty')
+  if [ "$VERIFIED_EVENT_ID" = "$EVENT_ID" ]; then
+    echo "verified indexed: $EVENT_ID"
+  else
+    echo "verification failed: expected $EVENT_ID, got ${VERIFIED_EVENT_ID:-nothing}" >&2
+  fi
+else
+  printf '%s' "$WRAPUP_RECEIPT" \
+    | jq -r '"not indexed: \(.index.outcome) at \(.index.stage)"' >&2
+fi
 ```
 
-If it prints `NOT INDEXED`, the novelty gate rejected it as too similar to an
-existing entry (expected for a routine session) or Qdrant is down — check
-`$DEV/.carto/index-errors.jsonl`. The JSONL line is written either way.
+Verification is always by the exact `event_id`; Qdrant payloads do not need a
+`milestone` field. A failed semantic index never removes the JSONL synthesis.
+Check `$DEV/.carto/index-errors.jsonl` for precondition and service failures or
+`$DEV/.carto/index-rejects.jsonl` for ordinary non-wrapup novelty rejections.
 
 ## Step 3: Update memory if warranted
 

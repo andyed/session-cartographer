@@ -14,7 +14,7 @@ Fusion — then facets the results by project, event type, source, and time.
 - **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
-- **`/wrapup`** — Renders a [session digest](#the-session-digest) you can verify at a glance, then writes the synthesis *against it*: decisions, discoveries, and unfinished threads, as a searchable milestone. Structured `decisions[]` feed the standing profile.
+- **`/wrapup`** — Promotes a material session into strategic memory. It renders a [session digest](#the-session-digest), then records decisions, discoveries, and unfinished threads with separate, verified receipts for the durable JSONL write and semantic index. Structured `decisions[]` feed the standing profile; ordinary sessions remain preserved by transcripts and hooks without requiring manual synthesis.
 - **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus: the source-control orgs, LAN hosts, buckets, data stores, and non-standard CLIs your work actually touches, each with a hit count. **Not a replacement for Claude Code's built-in setup wizard** — on a fresh install that wizard is the better tool, since it scans the machine directly and needs no history. Check what it scanned before accepting its write, though: a run scoped to one project — or to a git worktree, which gets its own transcript directory — pins the otherwise-dynamic `Trusted repo` and `Primary use` entries to that project, at user scope. This is the *update* path: once a corpus exists, proposals are usage-weighted (a repo you pushed to twenty-seven times outranks one that merely exists under `$HOME`), span Codex as well as Claude sessions, and are diffed against your current settings so a re-run proposes only the delta. On a thin corpus it says so and hands you a fill-in template instead of a confident-looking panel built from forty events.
 - **`/investigate`** — Diagnosis gate for bug work. Forces a written root-cause hypothesis (cause + mechanism + disproof) before any fix code, and logs it as a searchable event for later recall.
 - **`.carto/profile.md`** — A derived standing summary of the whole corpus: active projects, standing preferences, durable decisions, work shape, cadence. Start recall here when the question is about the shape of the work rather than one past moment. Rebuild with `node scripts/build-profile.js`; never hand-edit — it regenerates.
@@ -79,6 +79,26 @@ its own memory of it. Run it directly on any session:
 ```bash
 node scripts/session-digest.js --session <id>     # or --json for the raw numbers
 ```
+
+### Wrapup coverage
+
+`/wrapup` is selective curation, not the ingestion layer. Transcripts and hooks
+preserve every observable session automatically; a synthesis is useful when a
+completed session contains edits, commits, compaction, multiple projects, or
+enough duration/activity to carry decisions worth recovering. A derived report
+keeps that selection bias visible without adding another mutable queue:
+
+```bash
+node scripts/wrapup-coverage.js                    # pending material sessions
+node scripts/wrapup-coverage.js --session <id>     # one session's status
+node scripts/wrapup-coverage.js --json             # coverage + queue for tooling
+```
+
+The denominator is completed or stale **material** sessions, not every short
+question. Active material sessions and trivial sessions are reported outside
+the percentage. Defaults are tunable with
+`CARTOGRAPHER_WRAPUP_MIN_EVENTS`, `CARTOGRAPHER_WRAPUP_MIN_MINUTES`, and
+`CARTOGRAPHER_WRAPUP_STALE_HOURS`.
 
 ## Co-occurrence graph & maneuver map
 
@@ -174,7 +194,7 @@ Session Cartographer is installed. Skills:
 - `/remember <query>` — search past session history (decisions, research, fixes)
 - `/focus <project>` — orient on a project before diving in
 - `/carto` — open the Explorer web app for visual browsing
-- `/wrapup` — end-of-session synthesis (decisions, discoveries, next steps)
+- `/wrapup` — promote a material session into strategic memory (decisions, discoveries, next steps)
 - `/investigate <bug>` — root-cause diagnosis gate before writing fix code
 - `/trustmap` — derive or update auto mode's `autoMode.environment` from the corpus
 

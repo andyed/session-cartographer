@@ -109,7 +109,12 @@ Both search paths gate at row ingestion, *before* scoring — the position is th
 
 ### #6 — Pending-index queue for Qdrant resilience
 
-When Qdrant is down, `index-event.sh` silently fails — events end up in JSONL but not the semantic index until manual backfill. Add `pending-index.jsonl` that hooks append to on non-200 responses; `index-event.sh` drains on next successful invocation; startup check drains on Qdrant come-back.
+When Qdrant is down, `index-event.sh` records the stage in
+`.carto/index-errors.jsonl` and returns retryable exit 75, but detached live
+hooks still have no durable retry queue — events remain in JSONL and miss the
+semantic index until manual backfill. Add `pending-index.jsonl` that hooks
+append to on non-200 responses; `index-event.sh` drains on next successful
+invocation; startup check drains on Qdrant come-back.
 
 ### #7 — Content-hash dedup at write time
 

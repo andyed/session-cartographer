@@ -29,6 +29,8 @@ for required in \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
   "$PLUGIN/scripts/infer-codex-project.js" \
+  "$PLUGIN/scripts/record-wrapup.sh" \
+  "$PLUGIN/scripts/wrapup-coverage.js" \
   "$PLUGIN/scripts/cooccurrence-graph.js" \
   "$PLUGIN/explorer/public/og-card-1200x630.png" \
   "$PLUGIN/explorer/server/index.js" \

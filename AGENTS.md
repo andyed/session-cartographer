@@ -27,6 +27,8 @@ scripts/
   embed-events.js               — Batch index JSONL events into Qdrant
   semantic-search.js             — Query Qdrant by vector similarity
   index-event.sh                — Real-time single-event indexing (called by hooks)
+  record-wrapup.sh              — Durable wrapup write + verified index receipt
+  wrapup-coverage.js            — Derived material-session coverage + pending queue
   backfill-git-history.sh       — Import git commits into event logs
   backfill-memories.sh          — Index Codex memory files
   backfill-app-sessions.js      — Import desktop-app/Cowork session metadata (titles + VM-session prompts)
@@ -79,7 +81,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Transcripts are first-class citizens in RRF.** They compete equally with event log results. Do not append them at the bottom.
 - **`LC_ALL=C` on grep and awk** prevents multibyte errors on unicode in JSONL.
 - **Transcript search uses `find -exec grep {} +`** to batch file matching in one process. Do not revert to per-file subprocess loops (1,839 files = 40x slower).
-- **Hooks call `index-event.sh` for real-time Qdrant indexing.** Qdrant remains optional, but failures are recorded in `.carto/index-errors.jsonl` and return nonzero so backfills do not checkpoint incomplete sessions.
+- **Hooks call `index-event.sh` for real-time Qdrant indexing.** Qdrant remains optional, but failures are recorded in `.carto/index-errors.jsonl` and return nonzero so backfills do not checkpoint incomplete sessions. Novelty rejects are recorded separately in `.carto/index-rejects.jsonl`; synchronous callers opt into a JSON receipt with `CARTOGRAPHER_INDEX_RECEIPT=1`.
 - **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Path traversal protection on transcript endpoints. DOMPurify on rendered content.
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.

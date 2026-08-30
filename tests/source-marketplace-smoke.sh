@@ -19,6 +19,8 @@ for required in \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
   "$PLUGIN/scripts/infer-codex-project.js" \
+  "$PLUGIN/scripts/record-wrapup.sh" \
+  "$PLUGIN/scripts/wrapup-coverage.js" \
   "$PLUGIN/scripts/cooccurrence-graph.js" \
   "$PLUGIN/explorer/server/index.js" \
   "$PLUGIN/project-registry.json"; do

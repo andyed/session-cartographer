@@ -1,22 +1,23 @@
 # Session Cartographer — TODO
 
-## Indexing outcomes are unobservable — reject vs fail vs skip (added 2026-08-30)
+## [x] Indexing outcomes are unobservable — reject vs fail vs skip (resolved 2026-08-30)
 
-`index-event.sh` has **three** `exit 0` paths and a caller that cannot tell them
-apart, so a milestone that never reached Qdrant reports the same as one that
-did. Genuine failures are the only well-handled case: they go through
-`fail_index` → `record_failure` → exit 75 and land in `.carto/index-errors.jsonl`.
-Everything else is silent.
+Before this fix, `index-event.sh` had **three** `exit 0` paths and a caller that
+could not tell them apart, so a milestone that never reached Qdrant reported
+the same as one that did. Genuine failures were the only well-handled case:
+they went through
+`fail_index` → `record_failure` → exit 75 and landed in `.carto/index-errors.jsonl`.
+Everything else was silent.
 
-- **Gate reject** (line ~161). `PE_GATE_REJECT` defaults to 0.85 cosine; above
-  it the script does a bare `exit 0`. Deliberate, but unrecorded — the score
+- **Gate reject** (old line ~161). `PE_GATE_REJECT` defaults to 0.85 cosine;
+  above it the script did a bare `exit 0`. Deliberate, but unrecorded — the score
   that caused it is discarded, so the threshold has never been tunable against
   evidence, and nobody can answer "how much are we dropping."
-- **Precondition skip** (lines ~60, ~94, ~127). Missing `jq`, or an empty
-  `EVENT_ID`/`TEXT` after parse, exits 0 with **no record at all**. This is a
+- **Precondition skip** (old lines ~60, ~94, ~127). Missing `jq`, or an empty
+  `EVENT_ID`/`TEXT` after parse, exited 0 with **no record at all**. This was a
   real failure wearing a success exit code. A malformed record and a healthy
   one are indistinguishable from outside.
-- **Success** (line ~198).
+- **Success** (old line ~198).
 
 **Evidence.** 572 wrapups in `session-milestones.jsonl`. Sampling 8 across two
 months, 3 are absent from Qdrant (07-11, 07-25, 08-16) — so this is
@@ -27,22 +28,21 @@ milestone path rather than the pipeline. Practical cost: those syntheses are
 durable in the JSONL and invisible to semantic `/remember`, which is the
 retrieval path they exist to serve.
 
-**Wanted:** make the outcome legible to the caller. Either distinct exit codes
-(success / gate-reject / precondition-skip / fail) or, better, a one-line JSON
-receipt on stdout carrying `event_id`, `outcome`, and the gate `score` when it
-rejected. Record gate rejections somewhere — `.carto/index-rejects.jsonl`
-alongside the error log — so the 0.85 default can finally be argued from data.
-Then fix the callers: the `/wrapup` skill prints `logged + indexed` regardless
-of what happened.
+**Resolved:** `index-event.sh` now offers an opt-in one-line JSON receipt with
+`event_id`, `outcome`, stage, point id, and gate score/threshold where relevant.
+Malformed input is a nonzero precondition failure, service failures remain
+retryable exit 75, ordinary novelty rejection stays exit 0 but is recorded in
+`.carto/index-rejects.jsonl`, and success is emitted only after Qdrant read-back
+confirms the exact event id. Authored `session_wrapup` milestones bypass the
+generic novelty gate.
 
-- **[ ] Also fix `/wrapup` Step 2, which cannot verify its own write.** It
-  derives a point id by hashing the event id and GETs it, and interprets a miss
-  as "novelty gate or Qdrant down" — conflating exactly the cases above. Worse,
-  the payload schema it implies does not exist: indexed points carry
-  `session`, `summary`, `source` and `salience`, and **no `milestone` field**,
-  so a scroll filtered on `milestone` returns zero against 97k points and reads
-  as total failure. Verification should filter on `event_id` and report the
-  receipt above.
+- **[x] Fix `/wrapup` Step 2 and its write/index boundary.** The old direct GET
+  did read `payload.event_id`, but reduced every miss to the same ambiguous
+  `NOT INDEXED` result; a separate diagnostic attempt to scroll on `milestone`
+  was invalid because the indexed payload does not carry that field.
+  `record-wrapup.sh` now reports durable JSONL logging and semantic indexing as
+  separate states, while Step 2 verifies the configured collection against the
+  exact event id from that receipt.
 
 ## Trustmap follow-ups (added 2026-08-15)
 
