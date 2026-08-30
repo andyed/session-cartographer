@@ -7,8 +7,8 @@
   "plugins": [
     {
       "name": "session-cartographer",
-      "description": "Hooks log events, /remember searches them, /carto opens the Explorer, /focus orients on a project, /trustmap maps your trust boundary for auto mode",
-      "version": "0.7.1",
+      "description": "Hooks preserve shared Claude Code and Codex history; /remember recalls it and /turbo manages optional fast recall for both agents",
+      "version": "0.7.2",
       "author": {
         "name": "Andy Edmonds"
       },

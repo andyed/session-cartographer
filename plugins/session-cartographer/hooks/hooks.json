@@ -9,6 +9,11 @@
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/start-transcript-catch-up.sh",
             "timeout": 5,
             "statusMessage": "Refreshing shared session history"
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/surface-turbo-on-start.sh",
+            "timeout": 2
           }
         ]
       },

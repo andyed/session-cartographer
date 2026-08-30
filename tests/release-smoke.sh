@@ -5,6 +5,7 @@ set -euo pipefail
 # that inherits a live session id silently loses repeat results and fails on
 # runs that are actually fine. Tests must be hermetic.
 unset CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID
+export CARTOGRAPHER_TURBO=0
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 VERSION=${1:-$(node -p "require('$ROOT/package.json').version")}
@@ -24,16 +25,24 @@ for required in \
   "$PLUGIN/.claude-plugin/plugin.json" \
   "$PLUGIN/hooks/hooks.json" \
   "$PLUGIN/hooks/log-compact-summary.sh" \
+  "$PLUGIN/hooks/surface-turbo-on-start.sh" \
+  "$PLUGIN/skills/turbo/SKILL.md" \
   "$PLUGIN/scripts/cartographer-search.sh" \
   "$PLUGIN/scripts/cartographer-feed.sh" \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
+  "$PLUGIN/scripts/cartographer-turbo.js" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
   "$PLUGIN/scripts/infer-codex-project.js" \
   "$PLUGIN/scripts/record-wrapup.sh" \
   "$PLUGIN/scripts/wrapup-coverage.js" \
+  "$PLUGIN/scripts/turbo-common.js" \
+  "$PLUGIN/scripts/turbo-search-client.js" \
+  "$PLUGIN/scripts/turbo-server.js" \
   "$PLUGIN/scripts/cooccurrence-graph.js" \
   "$PLUGIN/explorer/public/og-card-1200x630.png" \
   "$PLUGIN/explorer/server/index.js" \
+  "$PLUGIN/explorer/server/recall-contract.js" \
+  "$PLUGIN/explorer/server/recall.js" \
   "$PLUGIN/project-registry.json"; do
   [ -f "$required" ] || { echo "Missing release file: $required" >&2; exit 1; }
 done
@@ -69,6 +78,7 @@ if command -v codex >/dev/null 2>&1; then
   INSTALLED="$CODEX_HOME/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
 fi
 
 # Exercise Claude Code's managed-cache path when its CLI is available. A
@@ -81,6 +91,7 @@ if command -v claude >/dev/null 2>&1; then
   INSTALLED="$CLAUDE_CONFIG_DIR/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
 fi
 
 echo "Release smoke test passed: $VERSION"

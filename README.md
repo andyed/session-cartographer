@@ -12,6 +12,7 @@ Fusion — then facets the results by project, event type, source, and time.
 ## What you get
 
 - **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
+- **`/turbo` in Claude Code or `$session-cartographer:turbo` in Codex** — Discover, enable, disable, or inspect the experimental warm recall backend. One opt-in covers ordinary `/remember` queries from both agents.
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — Promotes a material session into strategic memory. It renders a [session digest](#the-session-digest), then records decisions, discoveries, and unfinished threads with separate, verified receipts for the durable JSONL write and semantic index. Structured `decisions[]` feed the standing profile; ordinary sessions remain preserved by transcripts and hooks without requiring manual synthesis.
@@ -99,6 +100,39 @@ question. Active material sessions and trivial sessions are reported outside
 the percentage. Defaults are tunable with
 `CARTOGRAPHER_WRAPUP_MIN_EVENTS`, `CARTOGRAPHER_WRAPUP_MIN_MINUTES`, and
 `CARTOGRAPHER_WRAPUP_STALE_HOURS`.
+
+### Turbo Mode: one opt-in for both agents
+
+Turbo Mode routes ordinary `/remember` queries through a warm in-memory index.
+It stays off by default. Enabling it writes one provider-neutral user setting,
+starts a zero-dependency headless recall service, and applies to future Claude
+Code and Codex sessions alike:
+
+In Claude Code, invoke `/turbo` with `enable`, `status`, or `disable`. In Codex,
+invoke `$session-cartographer:turbo` and ask for the same action. The skill
+resolves its installed runtime, so users do not need to locate a plugin cache.
+The underlying controller remains available to checkout developers as
+`node scripts/cartographer-turbo.js enable|status|disable`.
+
+The preference lives at `~/.config/session-cartographer/config.json` (override
+with `CARTOGRAPHER_CONFIG`), not in either agent's settings. Each standard query
+reuses an already-compatible Explorer API or the managed headless service.
+At session start, an enabled preference injects a small agent-only reminder to
+use `remember` or `focus` when the task depends on prior work—not for
+self-contained requests, and without automatically running either skill. One
+exposure receipt per session is written to
+`$CARTOGRAPHER_DEV_DIR/.carto/turbo-awareness.jsonl` so adoption can be measured
+against explicit result use rather than raw query volume.
+Restricted Codex sandboxes use a private file request transport when loopback
+HTTP is unavailable, so the same opt-in still applies. A failed or incompatible
+warm request falls back once to the portable CLI; `--no-turbo` forces that
+control path for one call. Exact `--get`/`--touch`/`--thread`, intent-only, and
+raw-transcript operations remain portable by design.
+
+This is the experimental 0.7.x opt-in. Backend-attributed call telemetry is
+written to `$CARTOGRAPHER_DEV_DIR/.carto/search-calls.jsonl`; graduation to the
+0.8 supported surface remains gated on measured recall utility, not latency
+alone.
 
 ## Co-occurrence graph & maneuver map
 

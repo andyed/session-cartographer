@@ -1,7 +1,7 @@
 {
   "name": "session-cartographer",
-  "version": "0.7.1",
-  "description": "Search and explore coding-agent session history across Claude Code and Codex",
+  "version": "0.7.2",
+  "description": "Search and explore Claude Code and Codex session history, with a discoverable Turbo skill for optional shared fast recall",
   "author": {
     "name": "Andy Edmonds"
   },
@@ -20,8 +20,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Session Cartographer",
-    "shortDescription": "Search and explore coding-agent history",
-    "longDescription": "Capture, search, and explore session history from Claude Code and Codex through a shared JSONL event index.",
+    "shortDescription": "Recall agent history, optionally faster",
+    "longDescription": "Capture, search, and explore Claude Code and Codex session history through a shared event index, with an optional globally shared Turbo recall backend.",
     "developerName": "Andy Edmonds",
     "category": "Productivity",
     "capabilities": [
@@ -33,7 +33,8 @@
     "defaultPrompt": [
       "Remember what we decided last time.",
       "Orient me on this project's recent work.",
-      "Open the session history explorer."
+      "Open the session history explorer.",
+      "Show me Turbo Mode status."
     ],
     "brandColor": "#2563EB"
   }

@@ -51,7 +51,10 @@ async function semanticSearch(query, { project, limit }) {
 
   const body = { vector, limit, with_payload: true, score_threshold: SEMANTIC_SCORE_THRESHOLD };
   if (project) {
-    body.filter = { must: [{ key: 'project', match: { value: project } }] };
+    const projects = project.split('|').map((value) => value.trim()).filter(Boolean);
+    body.filter = projects.length === 1
+      ? { must: [{ key: 'project', match: { value: projects[0] } }] }
+      : { must: [{ should: projects.map((value) => ({ key: 'project', match: { value } })) }] };
   }
 
   const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
@@ -347,16 +350,25 @@ export function computeFacets(items) {
  * Returns full fusion pool (up to 500) + facets. Client paginates.
  */
 export async function hybridSearch(index, query, { project = '', sinceMs = null, beforeMs = null } = {}) {
+  const started = performance.now();
   const FUSION_DEPTH = 500;
   // Always run BM25 and get full pool
+  const keywordStarted = performance.now();
   const bm25All = scoreBM25(index, query, { project });
+  const keywordMs = performance.now() - keywordStarted;
 
   // Try semantic search
   let semanticAll = [];
+  let semanticStatus = 'available';
+  const semanticStarted = performance.now();
   try {
     semanticAll = await semanticSearch(query, { project, limit: FUSION_DEPTH });
-  } catch {}
+  } catch (error) {
+    semanticStatus = 'unavailable';
+  }
+  const semanticMs = performance.now() - semanticStarted;
 
+  const fusionStarted = performance.now();
   let fusedItems = [];
   let keywordCount = bm25All.total;
   let semanticCount = semanticAll.length;
@@ -394,6 +406,7 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
     const minScore = topScore * 0.1;
     fusedItems = fusedItems.filter(item => item._score >= minScore);
   }
+  const fusionMs = performance.now() - fusionStarted;
 
   return {
     items: fusedItems,
@@ -401,5 +414,12 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
     keywordCount,
     semanticCount,
     facets: computeFacets(fusedItems),
+    semanticStatus,
+    stagesMs: {
+      keyword: Number(keywordMs.toFixed(3)),
+      semantic: Number(semanticMs.toFixed(3)),
+      fusion_activation: Number(fusionMs.toFixed(3)),
+      total: Number((performance.now() - started).toFixed(3)),
+    },
   };
 }

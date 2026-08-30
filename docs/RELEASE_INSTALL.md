@@ -47,6 +47,27 @@ npm run dev
 
 The Explorer binds to `127.0.0.1` on ports 2526 and 2527.
 
+## Optional global Turbo Mode
+
+Turbo Mode is off by default and does not require Explorer's npm dependencies.
+After starting a fresh session, enable it through the installed skill:
+
+- Claude Code: invoke `/turbo enable`.
+- Codex: invoke `$session-cartographer:turbo` and ask it to enable Turbo.
+
+The same skill accepts `status` and `disable`; users do not need to find the
+agent's managed plugin cache or run a script from the extracted marketplace.
+
+The provider-neutral preference in
+`~/.config/session-cartographer/config.json` applies to ordinary `/remember`
+queries in all future Claude Code and Codex sessions. A zero-dependency
+headless process starts on demand; if a sandbox blocks loopback HTTP, the same
+process serves a private file request channel. Queries fall back to the
+portable CLI when the warm service is unavailable.
+
+Before uninstalling, invoke the skill with `disable` to opt out and stop the
+verified managed process.
+
 ## Verify the download
 
 The GitHub release includes a matching `.sha256` file:

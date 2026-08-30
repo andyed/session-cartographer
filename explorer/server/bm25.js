@@ -19,8 +19,8 @@ export function tokenize(text) {
 }
 
 /**
- * Extract searchable text from an event using the field fallback chain.
- * Matches bm25-search.awk get_search_text().
+ * Extract searchable text from an event. Human-readable fields drive most
+ * matches, while identifiers remain addressable for exact recall.
  */
 export function extractSearchText(event) {
   // Concatenate all text fields — URL should always be searchable
@@ -33,8 +33,10 @@ export function extractSearchText(event) {
     event.url,
     event.query,
     event.title,
+    event.event_id,
+    event.milestone,
   ].filter(Boolean);
-  return parts.join(' ') || event.event_id || event.milestone || '';
+  return parts.join(' ');
 }
 
 /**
@@ -135,10 +137,15 @@ export function scoreBM25(index, query, { project, limit = 15 } = {}) {
   if (N === 0) return [];
 
   const results = [];
+  const projectNames = String(project || '')
+    .split('|')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
 
   for (const [id, doc] of index.docs) {
     // Project filter
-    if (project && !(doc.event.project || '').toLowerCase().includes(project.toLowerCase())) {
+    const documentProject = (doc.event.project || '').toLowerCase();
+    if (projectNames.length > 0 && !projectNames.some((name) => documentProject.includes(name))) {
       continue;
     }
 

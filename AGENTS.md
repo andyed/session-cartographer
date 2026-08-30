@@ -82,6 +82,8 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **`LC_ALL=C` on grep and awk** prevents multibyte errors on unicode in JSONL.
 - **Transcript search uses `find -exec grep {} +`** to batch file matching in one process. Do not revert to per-file subprocess loops (1,839 files = 40x slower).
 - **Hooks call `index-event.sh` for real-time Qdrant indexing.** Qdrant remains optional, but failures are recorded in `.carto/index-errors.jsonl` and return nonzero so backfills do not checkpoint incomplete sessions. Novelty rejects are recorded separately in `.carto/index-rejects.jsonl`; synchronous callers opt into a JSON receipt with `CARTOGRAPHER_INDEX_RECEIPT=1`.
+- **Turbo opt-in is user-global and provider-neutral.** Claude Code and Codex read the same `~/.config/session-cartographer/config.json`; do not add separate agent settings as competing sources of truth. Ordinary recall may use HTTP or the sandbox-safe private file transport, while control operations retain the portable CLI path.
+- **Turbo awareness is guidance, not automatic retrieval.** When the shared preference is active, SessionStart may remind the agent to use `remember` or `focus` for tasks that depend on prior work. Do not turn that into unconditional startup search; measure deduplicated session exposures against explicit result use.
 - **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Path traversal protection on transcript endpoints. DOMPurify on rendered content.
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.

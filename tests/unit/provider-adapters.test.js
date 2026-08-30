@@ -102,6 +102,7 @@ describe('shared hook configuration', () => {
     assert.ok(config.hooks.SessionStart);
     assert.ok(config.hooks.PostCompact);
     assert.match(JSON.stringify(config.hooks.SessionStart), /start-transcript-catch-up\.sh/);
+    assert.match(JSON.stringify(config.hooks.SessionStart), /surface-turbo-on-start\.sh/);
     assert.match(JSON.stringify(config.hooks.PostCompact), /log-compact-summary\.sh/);
     assert.doesNotMatch(JSON.stringify(config), /"async"/);
   });

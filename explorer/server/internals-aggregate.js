@@ -4,7 +4,7 @@ import { homedir } from 'os';
 import { join } from 'path';
 import { performance } from 'perf_hooks';
 
-export const INTERNALS_SCHEMA_VERSION = 2;
+export const INTERNALS_SCHEMA_VERSION = 4;
 export const INTERNALS_WINDOWS = Object.freeze({
   '7d': 7,
   '30d': 30,
@@ -47,6 +47,7 @@ export function internalsSourcePaths(env = process.env) {
   return {
     served: env.CARTOGRAPHER_SERVED_LOG || join(devDir, 'served-log.jsonl'),
     access: env.CARTOGRAPHER_ACCESS_LEDGER || join(devDir, 'access-ledger.jsonl'),
+    searchCalls: env.CARTOGRAPHER_SEARCH_CALL_LOG || join(devDir, '.carto', 'search-calls.jsonl'),
     indexErrors: env.CARTOGRAPHER_INDEX_ERROR_LOG
       || env.CARTOGRAPHER_INDEX_ERRORS
       || join(devDir, '.carto', 'index-errors.jsonl'),
@@ -131,6 +132,26 @@ function positiveRank(value) {
   return Number.isFinite(rank) && rank > 0 ? rank : null;
 }
 
+function nonNegativeNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function normalizeBackend(value) {
+  const backend = String(value || '').trim().toLowerCase();
+  if (backend === 'explorer' || backend === 'turbo') return 'explorer';
+  if (backend === 'cli' || backend === 'portable') return 'cli';
+  return 'unknown';
+}
+
+function percentile(values, probability) {
+  const sorted = values.filter(Number.isFinite).sort((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  const index = Math.max(0, Math.ceil(probability * sorted.length) - 1);
+  return sorted[index];
+}
+
 function rankBucket(value) {
   const rank = positiveRank(value);
   if (rank === null) return 'unknown';
@@ -184,6 +205,88 @@ function resolveAccessBoundary(accesses, edge) {
   }
   const rank = candidates.find((access) => access.rank !== null)?.rank ?? null;
   return rank === null ? { status: 'unknown', rank: null } : { status: 'resolved', rank };
+}
+
+function summarizeCalls(callValues) {
+  const calls = [...callValues];
+  const firstAccessRank = Object.fromEntries(FIRST_RANK_BUCKETS.map((bucket) => [bucket, 0]));
+  const lastAccessRank = Object.fromEntries(FIRST_RANK_BUCKETS.map((bucket) => [bucket, 0]));
+  let callsWithUse = 0;
+  let servedRows = 0;
+  let usedRows = 0;
+  let firstAccessReciprocalRankSum = 0;
+  let lastAccessReciprocalRankSum = 0;
+  let orderedCalls = 0;
+  let orderUnknownCalls = 0;
+  let firstAccessUnknownCalls = 0;
+  let lastAccessUnknownCalls = 0;
+  let hitsConsumed = 0;
+  let consumptionDepthUnknownCalls = 0;
+  const consumptionDepthRanks = [];
+
+  for (const call of calls) {
+    servedRows += call.servedRows;
+    usedRows += call.usedRows;
+    if (call.used) callsWithUse++;
+    const consumedEvents = new Map();
+    for (const access of call.accesses) {
+      if (!consumedEvents.has(access.eventId)) consumedEvents.set(access.eventId, []);
+      if (access.rank !== null) consumedEvents.get(access.eventId).push(access.rank);
+    }
+    hitsConsumed += consumedEvents.size;
+    if (consumedEvents.size > 0) {
+      const consumedRanks = [...consumedEvents.values()]
+        .flat()
+        .filter((rank) => positiveRank(rank) !== null);
+      if (consumedRanks.length > 0) consumptionDepthRanks.push(Math.max(...consumedRanks));
+      else consumptionDepthUnknownCalls++;
+    }
+    const first = resolveAccessBoundary(call.accesses, 'first');
+    const last = resolveAccessBoundary(call.accesses, 'last');
+    firstAccessRank[first.status === 'resolved' ? rankBucket(first.rank) : first.status]++;
+    lastAccessRank[last.status === 'resolved' ? rankBucket(last.rank) : last.status]++;
+    if (first.status === 'unknown') firstAccessUnknownCalls++;
+    if (last.status === 'unknown') lastAccessUnknownCalls++;
+    if (first.status === 'unknown' || last.status === 'unknown') {
+      orderUnknownCalls++;
+      continue;
+    }
+    orderedCalls++;
+    if (first.status === 'resolved') firstAccessReciprocalRankSum += 1 / first.rank;
+    if (last.status === 'resolved') lastAccessReciprocalRankSum += 1 / last.rank;
+  }
+
+  return {
+    calls: calls.length,
+    callsWithUse,
+    callSuccessRate: ratio(callsWithUse, calls.length),
+    servedRows,
+    usedRows,
+    resultUseRate: ratio(usedRows, servedRows),
+    hitsConsumed,
+    hitsConsumedPerCall: ratio(hitsConsumed, calls.length),
+    hitsConsumedPerSuccessfulCall: ratio(hitsConsumed, callsWithUse),
+    consumptionDepth: {
+      samples: consumptionDepthRanks.length,
+      p50Rank: percentile(consumptionDepthRanks, 0.5),
+      p95Rank: percentile(consumptionDepthRanks, 0.95),
+      averageRank: consumptionDepthRanks.length > 0
+        ? consumptionDepthRanks.reduce((sum, rank) => sum + rank, 0) / consumptionDepthRanks.length
+        : null,
+      maxRank: consumptionDepthRanks.length > 0 ? Math.max(...consumptionDepthRanks) : null,
+      unknownCalls: consumptionDepthUnknownCalls,
+    },
+    mrr: orderedCalls > 0 ? firstAccessReciprocalRankSum / orderedCalls : null,
+    firstAccessMrr: orderedCalls > 0 ? firstAccessReciprocalRankSum / orderedCalls : null,
+    lastAccessMrr: orderedCalls > 0 ? lastAccessReciprocalRankSum / orderedCalls : null,
+    orderedCalls,
+    orderUnknownCalls,
+    firstAccessUnknownCalls,
+    lastAccessUnknownCalls,
+    firstAccessRank,
+    lastAccessRank,
+    firstUsefulRank: firstAccessRank,
+  };
 }
 
 function ratio(numerator, denominator) {
@@ -240,6 +343,7 @@ function fileCoverage(identity, parsed) {
 export function aggregateInternalsRecords({
   servedRows = [],
   accessRows = [],
+  searchCallRows = [],
   indexErrorRows = [],
   window = '30d',
   purpose = 'remember',
@@ -257,6 +361,14 @@ export function aggregateInternalsRecords({
     return normalizedPurpose === 'all' || String(row.purpose || '').toLowerCase() === normalizedPurpose;
   });
   const exactServed = selectedServed.filter((row) => row.call_id && row.event_id);
+  const selectedSearchCalls = searchCallRows.filter((row) => {
+    if (!inWindow(row, cutoffMs)) return false;
+    return normalizedPurpose === 'all' || String(row.purpose || '').toLowerCase() === normalizedPurpose;
+  });
+  const searchCallById = new Map();
+  for (const row of selectedSearchCalls) {
+    if (row.call_id) searchCallById.set(String(row.call_id), row);
+  }
   const selectedErrors = indexErrorRows.filter((row) => inWindow(row, cutoffMs));
 
   const exactUseKeys = new Set();
@@ -278,7 +390,6 @@ export function aggregateInternalsRecords({
   const projectGroups = new Map();
   const dailyGroups = new Map();
 
-  let usedRows = 0;
   let sessionAttributedRows = 0;
   for (const row of exactServed) {
     const callId = String(row.call_id);
@@ -290,11 +401,23 @@ export function aggregateInternalsRecords({
     const project = String(row.project || '(none)');
     const rowPurpose = String(row.purpose || '(missing)');
 
-    if (used) usedRows++;
     if (row.session_id || row.session || row.sessionId) sessionAttributedRows++;
 
-    if (!calls.has(callId)) calls.set(callId, { used: false, accesses: [], accessKeys: new Set() });
+    if (!calls.has(callId)) {
+      calls.set(callId, {
+        used: false,
+        accesses: [],
+        accessKeys: new Set(),
+        servedRows: 0,
+        usedRows: 0,
+        servedBackends: new Set(),
+      });
+    }
     const call = calls.get(callId);
+    call.servedRows++;
+    if (used) call.usedRows++;
+    const servedBackend = normalizeBackend(row.backend);
+    if (servedBackend !== 'unknown') call.servedBackends.add(servedBackend);
     if (used) {
       call.used = true;
       for (const access of accesses) {
@@ -311,31 +434,76 @@ export function aggregateInternalsRecords({
     addGroup(dailyGroups, day, callId, used);
   }
 
-  const firstAccessRank = Object.fromEntries(FIRST_RANK_BUCKETS.map((bucket) => [bucket, 0]));
-  const lastAccessRank = Object.fromEntries(FIRST_RANK_BUCKETS.map((bucket) => [bucket, 0]));
-  let callsWithUse = 0;
-  let firstAccessReciprocalRankSum = 0;
-  let lastAccessReciprocalRankSum = 0;
-  let orderedCalls = 0;
-  let orderUnknownCalls = 0;
-  let firstAccessUnknownCalls = 0;
-  let lastAccessUnknownCalls = 0;
-  for (const call of calls.values()) {
-    if (call.used) callsWithUse++;
-    const first = resolveAccessBoundary(call.accesses, 'first');
-    const last = resolveAccessBoundary(call.accesses, 'last');
-    firstAccessRank[first.status === 'resolved' ? rankBucket(first.rank) : first.status]++;
-    lastAccessRank[last.status === 'resolved' ? rankBucket(last.rank) : last.status]++;
-    if (first.status === 'unknown') firstAccessUnknownCalls++;
-    if (last.status === 'unknown') lastAccessUnknownCalls++;
-    if (first.status === 'unknown' || last.status === 'unknown') {
-      orderUnknownCalls++;
-      continue;
+  // Search-call timing rows are the authoritative mode/backend record. Add
+  // zero-result calls here so they remain visible as no-use outcomes instead
+  // of disappearing from latency and MRR denominators.
+  for (const callId of searchCallById.keys()) {
+    if (!calls.has(callId)) {
+      calls.set(callId, {
+        used: false,
+        accesses: [],
+        accessKeys: new Set(),
+        servedRows: 0,
+        usedRows: 0,
+        servedBackends: new Set(),
+      });
     }
-    orderedCalls++;
-    if (first.status === 'resolved') firstAccessReciprocalRankSum += 1 / first.rank;
-    if (last.status === 'resolved') lastAccessReciprocalRankSum += 1 / last.rank;
   }
+
+  for (const [callId, call] of calls) {
+    const telemetry = searchCallById.get(callId);
+    let selectedBackend = normalizeBackend(telemetry?.selected_backend || telemetry?.backend);
+    if (selectedBackend === 'unknown' && call.servedBackends.size === 1) {
+      selectedBackend = [...call.servedBackends][0];
+    }
+    let requestedBackend = normalizeBackend(telemetry?.requested_backend);
+    if (requestedBackend === 'unknown') requestedBackend = selectedBackend;
+    call.selectedBackend = selectedBackend;
+    call.requestedBackend = requestedBackend;
+    call.elapsedMs = nonNegativeNumber(telemetry?.elapsed_ms);
+    call.stageTotalMs = nonNegativeNumber(telemetry?.stages_ms?.total);
+    call.fallbackReason = telemetry?.fallback_reason || null;
+  }
+
+  const utility = summarizeCalls(calls.values());
+  const modeCalls = new Map();
+  for (const call of calls.values()) {
+    if (!modeCalls.has(call.requestedBackend)) modeCalls.set(call.requestedBackend, []);
+    modeCalls.get(call.requestedBackend).push(call);
+  }
+  const modeOrder = new Map([['explorer', 0], ['cli', 1], ['unknown', 2]]);
+  const modeCohorts = [...modeCalls.entries()].map(([key, cohortCalls]) => {
+    const cohortUtility = summarizeCalls(cohortCalls);
+    const elapsed = cohortCalls.map((call) => call.elapsedMs).filter(Number.isFinite);
+    const stageTotals = cohortCalls.map((call) => call.stageTotalMs).filter(Number.isFinite);
+    const selectedBackends = {};
+    let fallbackCalls = 0;
+    for (const call of cohortCalls) {
+      selectedBackends[call.selectedBackend] = (selectedBackends[call.selectedBackend] || 0) + 1;
+      if (call.fallbackReason || (
+        call.requestedBackend !== 'unknown'
+        && call.selectedBackend !== 'unknown'
+        && call.requestedBackend !== call.selectedBackend
+      )) fallbackCalls++;
+    }
+    return {
+      key,
+      requestedBackend: key,
+      ...cohortUtility,
+      latency: {
+        samples: elapsed.length,
+        p50Ms: percentile(elapsed, 0.5),
+        p95Ms: percentile(elapsed, 0.95),
+      },
+      stageLatency: {
+        samples: stageTotals.length,
+        p50Ms: percentile(stageTotals, 0.5),
+        p95Ms: percentile(stageTotals, 0.95),
+      },
+      selectedBackends,
+      fallbackCalls,
+    };
+  }).sort((a, b) => (modeOrder.get(a.key) ?? 99) - (modeOrder.get(b.key) ?? 99));
 
   const errorByStage = new Map();
   const errorByDay = new Map();
@@ -399,30 +567,17 @@ export function aggregateInternalsRecords({
         totalRows: indexErrorRows.length,
         selectedRows: selectedErrors.length,
       },
-      latencySamples: 0,
+      searchCalls: {
+        totalRows: searchCallRows.length,
+        selectedRows: selectedSearchCalls.length,
+        exactCallIdRows: selectedSearchCalls.filter((row) => row.call_id).length,
+      },
+      latencySamples: modeCohorts.reduce((sum, cohort) => sum + cohort.latency.samples, 0),
     },
-    utility: {
-      calls: calls.size,
-      callsWithUse,
-      callSuccessRate: ratio(callsWithUse, calls.size),
-      servedRows: exactAttributedRows,
-      usedRows,
-      resultUseRate: ratio(usedRows, exactAttributedRows),
-      // Keep `mrr` as the compatibility field, but define it correctly as the
-      // rank of the first exact access—not the best rank among every result
-      // eventually accessed in the call. Both metrics use one jointly ordered
-      // cohort; historical tied batches without ordinals are reported unknown.
-      mrr: orderedCalls > 0 ? firstAccessReciprocalRankSum / orderedCalls : null,
-      firstAccessMrr: orderedCalls > 0 ? firstAccessReciprocalRankSum / orderedCalls : null,
-      lastAccessMrr: orderedCalls > 0 ? lastAccessReciprocalRankSum / orderedCalls : null,
-      orderedCalls,
-      orderUnknownCalls,
-      firstAccessUnknownCalls,
-      lastAccessUnknownCalls,
-      firstAccessRank,
-      lastAccessRank,
-      firstUsefulRank: firstAccessRank,
-    },
+    // Keep `mrr` as the compatibility field. It is first-access MRR: the
+    // top-heavy precision proxy. Last-access MRR is the recall-depth proxy.
+    utility,
+    modeCohorts,
     purposes: finalizeGroups(purposeGroups),
     sources: finalizeGroups(sourceGroups),
     projects: finalizeGroups(projectGroups),
@@ -451,10 +606,12 @@ export function buildInternalsSnapshotFromFiles({
   const started = performance.now();
   const served = parseJsonl(paths.served);
   const access = parseJsonl(paths.access);
+  const searchCalls = parseJsonl(paths.searchCalls);
   const errors = parseJsonl(paths.indexErrors);
   const aggregate = aggregateInternalsRecords({
     servedRows: served.rows,
     accessRows: access.rows,
+    searchCallRows: searchCalls.rows,
     indexErrorRows: errors.rows,
     window,
     purpose,
@@ -464,6 +621,7 @@ export function buildInternalsSnapshotFromFiles({
   const files = {
     served: fileCoverage(fingerprint.files.served, served),
     access: fileCoverage(fingerprint.files.access, access),
+    searchCalls: fileCoverage(fingerprint.files.searchCalls, searchCalls),
     indexErrors: fileCoverage(fingerprint.files.indexErrors, errors),
   };
 
@@ -482,6 +640,7 @@ export function buildInternalsSnapshotFromFiles({
       files,
     },
     utility: aggregate.utility,
+    modeCohorts: aggregate.modeCohorts,
     purposes: aggregate.purposes,
     sources: aggregate.sources,
     projects: aggregate.projects,
@@ -490,7 +649,17 @@ export function buildInternalsSnapshotFromFiles({
       files,
       indexErrors: aggregate.indexErrors,
       semanticCoverage: { available: false, reason: 'not measured by internals aggregation' },
-      queryLatency: { available: false, samples: 0, reason: 'search stage timings are not persisted' },
+      queryLatency: {
+        available: aggregate.coverage.latencySamples > 0,
+        samples: aggregate.coverage.latencySamples,
+        byMode: aggregate.modeCohorts.map((cohort) => ({
+          key: cohort.key,
+          requestedBackend: cohort.requestedBackend,
+          ...cohort.latency,
+          fallbackCalls: cohort.fallbackCalls,
+        })),
+        reason: aggregate.coverage.latencySamples > 0 ? null : 'search stage timings are not persisted',
+      },
     },
   };
 }

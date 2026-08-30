@@ -22,6 +22,7 @@ function fixturePaths(dir) {
   return {
     served: path.join(dir, 'served.jsonl'),
     access: path.join(dir, 'access.jsonl'),
+    searchCalls: path.join(dir, 'search-calls.jsonl'),
     indexErrors: path.join(dir, 'errors.jsonl'),
   };
 }
@@ -60,6 +61,12 @@ test('internals metrics use exact attribution and preserve no-use calls', () => 
   assert.equal(aggregate.utility.callSuccessRate, 0.5);
   assert.equal(aggregate.utility.servedRows, 2);
   assert.equal(aggregate.utility.usedRows, 1);
+  assert.equal(aggregate.utility.hitsConsumed, 1);
+  assert.equal(aggregate.utility.hitsConsumedPerCall, 0.5);
+  assert.equal(aggregate.utility.hitsConsumedPerSuccessfulCall, 1);
+  assert.equal(aggregate.utility.consumptionDepth.samples, 1);
+  assert.equal(aggregate.utility.consumptionDepth.p50Rank, 1);
+  assert.equal(aggregate.utility.consumptionDepth.p95Rank, 1);
   assert.equal(aggregate.utility.mrr, 0.5);
   assert.equal(aggregate.utility.firstAccessMrr, 0.5);
   assert.equal(aggregate.utility.lastAccessMrr, 0.5);
@@ -98,6 +105,10 @@ test('MRR follows recorded access ordinals instead of file or rank order', () =>
   assert.equal(aggregate.utility.mrr, 1 / 8);
   assert.equal(aggregate.utility.firstAccessMrr, 1 / 8);
   assert.equal(aggregate.utility.lastAccessMrr, 1 / 2);
+  assert.equal(aggregate.utility.hitsConsumed, 3);
+  assert.equal(aggregate.utility.hitsConsumedPerCall, 3);
+  assert.equal(aggregate.utility.consumptionDepth.p50Rank, 8);
+  assert.equal(aggregate.utility.consumptionDepth.p95Rank, 8);
   assert.equal(aggregate.utility.orderedCalls, 1);
   assert.equal(aggregate.utility.orderUnknownCalls, 0);
   assert.equal(aggregate.utility.firstAccessRank['8-15'], 1);
@@ -138,6 +149,65 @@ test('historical tied multi-result accesses stay unknown and use one shared MRR 
   assert.equal(aggregate.utility.lastAccessRank.unknown, 1);
 });
 
+test('Turbo-on and portable cohorts split latency and ordered MRR without hiding fallbacks', () => {
+  const base = {
+    timestamp: '2026-08-28T10:00:00Z',
+    purpose: 'remember',
+    project: 'cartographer',
+    source: 'semantic',
+  };
+  const aggregate = aggregateInternalsRecords({
+    nowMs: NOW,
+    window: '30d',
+    purpose: 'remember',
+    servedRows: [
+      { ...base, call_id: 'turbo-used', event_id: 'turbo-first', rank: 4, backend: 'explorer' },
+      { ...base, call_id: 'turbo-used', event_id: 'turbo-last', rank: 2, backend: 'explorer' },
+      { ...base, call_id: 'turbo-unused', event_id: 'turbo-none', rank: 1, backend: 'cli' },
+      { ...base, call_id: 'cli-used', event_id: 'cli-first', rank: 1, backend: 'cli' },
+      { ...base, call_id: 'cli-used', event_id: 'cli-last', rank: 5, backend: 'cli' },
+      { ...base, call_id: 'cli-unused', event_id: 'cli-none', rank: 1, backend: 'cli' },
+    ],
+    accessRows: [
+      { timestamp: '2026-08-28T10:02:00Z', call_id: 'turbo-used', event_id: 'turbo-first', access_batch_id: 'turbo-batch', access_ordinal: 1 },
+      { timestamp: '2026-08-28T10:02:00Z', call_id: 'turbo-used', event_id: 'turbo-last', access_batch_id: 'turbo-batch', access_ordinal: 2 },
+      { timestamp: '2026-08-28T10:03:00Z', call_id: 'cli-used', event_id: 'cli-first', access_batch_id: 'cli-batch', access_ordinal: 1 },
+      { timestamp: '2026-08-28T10:03:00Z', call_id: 'cli-used', event_id: 'cli-last', access_batch_id: 'cli-batch', access_ordinal: 2 },
+    ],
+    searchCallRows: [
+      { ...base, call_id: 'turbo-used', requested_backend: 'explorer', selected_backend: 'explorer', elapsed_ms: 10, stages_ms: { total: 4 } },
+      { ...base, call_id: 'turbo-unused', requested_backend: 'explorer', selected_backend: 'cli', elapsed_ms: 30, stages_ms: { total: 20 }, fallback_reason: 'turbo_unavailable' },
+      { ...base, call_id: 'cli-used', requested_backend: 'cli', selected_backend: 'cli', elapsed_ms: 1000, stages_ms: { total: 900 } },
+      { ...base, call_id: 'cli-unused', requested_backend: 'cli', selected_backend: 'cli', elapsed_ms: 2000, stages_ms: { total: 1800 } },
+    ],
+  });
+
+  const turbo = aggregate.modeCohorts.find((cohort) => cohort.key === 'explorer');
+  const portable = aggregate.modeCohorts.find((cohort) => cohort.key === 'cli');
+  assert.equal(turbo.calls, 2);
+  assert.equal(turbo.latency.p50Ms, 10);
+  assert.equal(turbo.latency.p95Ms, 30);
+  assert.equal(turbo.firstAccessMrr, 1 / 8);
+  assert.equal(turbo.lastAccessMrr, 1 / 4);
+  assert.equal(turbo.hitsConsumed, 2);
+  assert.equal(turbo.hitsConsumedPerCall, 1);
+  assert.equal(turbo.hitsConsumedPerSuccessfulCall, 2);
+  assert.equal(turbo.consumptionDepth.p50Rank, 4);
+  assert.equal(turbo.consumptionDepth.p95Rank, 4);
+  assert.equal(turbo.fallbackCalls, 1);
+  assert.deepEqual(turbo.selectedBackends, { explorer: 1, cli: 1 });
+  assert.equal(portable.calls, 2);
+  assert.equal(portable.latency.p50Ms, 1000);
+  assert.equal(portable.latency.p95Ms, 2000);
+  assert.equal(portable.firstAccessMrr, 1 / 2);
+  assert.equal(portable.lastAccessMrr, 1 / 10);
+  assert.equal(portable.hitsConsumed, 2);
+  assert.equal(portable.hitsConsumedPerCall, 1);
+  assert.equal(portable.consumptionDepth.p50Rank, 5);
+  assert.equal(portable.consumptionDepth.p95Rank, 5);
+  assert.equal(aggregate.coverage.latencySamples, 4);
+});
+
 test('source normalization removes repeated fusion components deterministically', () => {
   assert.equal(
     normalizeSourceLabel('semantic+milestones+milestones+semantic'),
@@ -154,6 +224,7 @@ test('fingerprint cache coalesces refreshes and missing sources stay honest', as
     event_id: 'evt-a', rank: 1, source: 'semantic', project: 'cartographer',
   }]);
   writeJsonl(paths.access, []);
+  writeJsonl(paths.searchCalls, []);
   writeJsonl(paths.indexErrors, []);
 
   try {
@@ -174,6 +245,7 @@ test('fingerprint cache coalesces refreshes and missing sources stay honest', as
     assert.equal(missing.utility.calls, 0);
     assert.equal(missing.coverage.files.served.exists, false);
     assert.equal(missing.coverage.files.access.exists, false);
+    assert.equal(missing.coverage.files.searchCalls.exists, false);
     assert.equal(missing.coverage.files.indexErrors.exists, false);
   } finally {
     clearInternalsCache();

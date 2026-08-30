@@ -51,6 +51,13 @@ computed per search call from the rank of the first explicitly accessed result;
 last-access MRR is reported separately as an exploration-depth diagnostic. A
 no-use call contributes zero.
 
+Internals describes first-access MRR as a **precision proxy** because it is
+top-heavy: it rewards putting the first result actually used near rank 1.
+Last-access MRR is a **recall-depth proxy** because it shows how deep the caller
+had to explore before its final use. These are directional product labels, not
+literal precision or recall; Cartographer does not yet have relevance judgments
+for every result needed to calculate those information-retrieval metrics.
+
 Multi-result fetches and touches record `access_batch_id` plus a 1-based
 `access_ordinal`, preserving the caller's result order even when every row has
 the same timestamp. Historical same-time batches without ordinals remain
@@ -59,6 +66,26 @@ either boundary is ambiguous, the call is excluded from both MRR denominators
 so first and last remain a matched comparison. No-use calls stay in that shared
 cohort as zero. The report exposes measured and unknown instance counts beside
 both values.
+
+New standard recalls also append one call row to `.carto/search-calls.jsonl`.
+Internals splits response p50/p95 and both access-order MRR values by requested
+mode: Turbo on (`requested_backend=explorer`) versus Turbo off
+(`requested_backend=cli`). A failed Turbo attempt that falls back to the CLI
+remains in the Turbo-on cohort, so the comparison reflects the latency and
+ranking experience produced by the setting the user enabled. The row retains
+`selected_backend` and `fallback_reason` for diagnosis. Historical calls with
+no backend or timing field remain visibly unclassified rather than being
+backfilled by guesswork.
+
+Internals also reports **hits consumed** and **consumption depth** for the same
+overall and mode cohorts. Hits consumed counts distinct `call_id + event_id`
+pairs that were explicitly fetched or touched, so repeated access-ledger rows do
+not inflate it. Per-call averages include no-use calls as zero; the companion
+successful-call average describes breadth after at least one hit was consumed.
+Consumption depth is the deepest served rank reached within each call,
+regardless of access order, and is summarized as p50/p95 across calls with a
+known consumed rank. It complements last-access MRR: the final click and the
+deepest-ranked click can be different results.
 
 ## Semantic search (Qdrant cosine similarity)
 

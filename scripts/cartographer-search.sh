@@ -22,6 +22,10 @@
 #   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~30-day half-life)
 #   CARTOGRAPHER_SERVED_LOG      — default: $DEV/served-log.jsonl (every displayed result)
 #   CARTOGRAPHER_ACCESS_LEDGER   — default: $DEV/access-ledger.jsonl (every --touch)
+#   CARTOGRAPHER_SEARCH_CALL_LOG — default: $DEV/.carto/search-calls.jsonl (standard calls)
+#   CARTOGRAPHER_CONFIG          — default: ~/.config/session-cartographer/config.json
+#   CARTOGRAPHER_TURBO           — explicit 1/0 override for the shared Turbo preference
+#   CARTOGRAPHER_TURBO_URL       — default: http://127.0.0.1:2526
 #
 # Every displayed result is appended to CARTOGRAPHER_SERVED_LOG (query, rank,
 # source, event_id). Joined against the access ledger, this is the input to
@@ -36,7 +40,60 @@
 
 set -o pipefail
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--format text|jsonl] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
+clock_ms() {
+  if command -v perl >/dev/null 2>&1; then
+    perl -MTime::HiRes=time -e 'printf "%d\n", int(time() * 1000)'
+  elif command -v node >/dev/null 2>&1; then
+    node -e 'process.stdout.write(`${Date.now()}\n`)'
+  else
+    printf '%s000\n' "$(date +%s)"
+  fi
+}
+
+append_portable_call_log() {
+  local timestamp="$1"
+  local requested_backend="$2"
+  local elapsed_ms="$3"
+  local stage_total_ms="$4"
+  local result_count="$5"
+  local fallback_reason="$6"
+  local log_dir
+
+  [ -n "$SEARCH_CALL_LOG" ] || return 0
+  case "$SEARCH_CALL_LOG" in
+    */*) log_dir=${SEARCH_CALL_LOG%/*}; mkdir -p "$log_dir" 2>/dev/null || true ;;
+  esac
+
+  if ! { LC_ALL=C awk \
+    -v timestamp="$timestamp" -v call_id="$CALL_ID" \
+    -v requested_backend="$requested_backend" -v purpose="$PURPOSE" \
+    -v session_id="$CONTEXT_SESSION_ID" -v provider="$CONTEXT_PROVIDER" \
+    -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
+    -v result_count="$result_count" -v elapsed_ms="$elapsed_ms" \
+    -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" '
+      function esc(value) {
+        gsub(/\\/, "\\\\", value)
+        gsub(/"/, "\\\"", value)
+        gsub(/\r/, "\\r", value)
+        gsub(/\n/, "\\n", value)
+        gsub(/\t/, "\\t", value)
+        return value
+      }
+      function quoted(value) { return "\"" esc(value) "\"" }
+      BEGIN {
+        fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
+        printf "{\"timestamp\":%s,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s}\n", \
+          quoted(timestamp), quoted(call_id), quoted(requested_backend), quoted(purpose), \
+          quoted(session_id), quoted(provider), quoted(query), quoted(project), quoted(since), \
+          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback
+      }
+    ' >> "$SEARCH_CALL_LOG"; } 2>/dev/null; then
+    echo "cartographer-search: warning: cannot write search-call telemetry at $SEARCH_CALL_LOG; continuing" >&2
+  fi
+  return 0
+}
+
+QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
        WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
@@ -44,6 +101,7 @@ QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit 
        --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. The query argument is ignored (pass any placeholder).
        --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
        --call-id ID: stable search-call identifier. Pass the same ID to --touch for exact attribution; otherwise --touch infers the latest call that served the event.
+       --turbo / --no-turbo: use or bypass warm Explorer recall for this standard query. A shared user preference otherwise applies across Claude and Codex.
        --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
 shift
 
@@ -60,6 +118,7 @@ GET_IDS=""
 TOUCH_IDS=""
 CALL_ID=""
 PURPOSE="${CARTOGRAPHER_PURPOSE:-manual}"
+TURBO_FLAG=""
 # Transcript fallback is expensive (turn-grouping awk runs per-query on raw
 # transcripts; one 100MB+ session can hang search for minutes). Qdrant
 # already holds turn-grouped embeddings for the semantic path, so the keyword
@@ -84,6 +143,8 @@ while [ $# -gt 0 ]; do
     --touch)          TOUCH_IDS="$2"; shift 2 ;;
     --call-id)        CALL_ID="$2"; shift 2 ;;
     --purpose)        PURPOSE="$2"; shift 2 ;;
+    --turbo)          TURBO_FLAG=1; shift ;;
+    --no-turbo)       TURBO_FLAG=0; shift ;;
     *) shift ;;
   esac
 done
@@ -276,7 +337,7 @@ fi
 # the per-session list. --all bypasses both reading and writing.
 SERVED_FILE=""
 SERVED_OUT=""
-ACTIVE_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-}}"
+ACTIVE_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-}}}"
 if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
   SERVED_DIR="${TMPDIR_BASE:-/tmp}/cartographer-served"
   mkdir -p "$SERVED_DIR" 2>/dev/null
@@ -317,6 +378,7 @@ COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
 # disable the boost without losing the ledger.
 ACCESS_LEDGER="${CARTOGRAPHER_ACCESS_LEDGER:-$DEV/access-ledger.jsonl}"
 REUSE_WEIGHT="${CARTOGRAPHER_REUSE_WEIGHT:-0.3}"
+SEARCH_CALL_LOG="${CARTOGRAPHER_SEARCH_CALL_LOG:-$DEV/.carto/search-calls.jsonl}"
 
 # ─── Served log ───
 # Append-only JSONL of "this result was displayed to the agent," one line per
@@ -495,11 +557,12 @@ fi
 FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
+REQUEST_STARTED_MS=$(clock_ms)
 
-# Delta serving's scratch file lives in the temp dir we own, so the trap cleans
-# it up. Deferred to here because $TMPDIR does not exist at the point the
-# served-list is resolved.
-[ -n "$SERVED_FILE" ] && SERVED_OUT="$TMPDIR/served-this-call.txt"
+# The scratch list supplies both delta serving and exact per-call result counts.
+# It lives in the temp dir we own, so the trap cleans it up.
+SERVED_OUT="$TMPDIR/served-this-call.txt"
+: > "$SERVED_OUT"
 
 # ─── Capture stdout so we can report context-window fill at the end ───
 # /remember and /focus pipe this output into agent context — surface how much
@@ -1164,7 +1227,7 @@ rank_fuse_and_display() {
         gsub(/\\/, "\\\\", esc_src); gsub(/"/, "\\\"", esc_src)
         esc_proj = (project[k] != "" ? project[k] : serve_project)
         gsub(/\\/, "\\\\", esc_proj); gsub(/"/, "\\\"", esc_proj)
-        printf "{\"timestamp\":\"%s\",\"call_id\":\"%s\",\"purpose\":\"%s\",\"session_id\":\"%s\",\"provider\":\"%s\",\"query\":\"%s\",\"event_id\":\"%s\",\"rank\":%d,\"source\":\"%s\",\"project\":\"%s\"}\n", \
+        printf "{\"timestamp\":\"%s\",\"call_id\":\"%s\",\"purpose\":\"%s\",\"session_id\":\"%s\",\"provider\":\"%s\",\"query\":\"%s\",\"event_id\":\"%s\",\"rank\":%d,\"source\":\"%s\",\"project\":\"%s\",\"backend\":\"cli\"}\n", \
           serve_ts, call_id, purpose, context_session, context_provider, esc_q, k, i, esc_src, esc_proj >> served_log
       }
     }
@@ -1292,6 +1355,56 @@ if [ -n "$THREAD_ID" ]; then
   exit $?
 fi
 
+# ─── Turbo backend selection ───
+# Both Claude Code and Codex install the same runtime, so a provider-neutral
+# user config is the one durable opt-in. Precedence is per-call flag, explicit
+# environment override, shared config, then off. Control operations above and
+# explicit transcript/intent searches stay on the portable path.
+TURBO_CONTROL="$(dirname "$0")/cartographer-turbo.js"
+TURBO_CLIENT="$(dirname "$0")/turbo-search-client.js"
+TURBO_ENABLED=0
+TURBO_AUTO_START=1
+TURBO_URL="${CARTOGRAPHER_TURBO_URL:-http://127.0.0.1:2526}"
+TURBO_TIMEOUT_MS="${CARTOGRAPHER_TURBO_TIMEOUT_MS:-1500}"
+
+if command -v node >/dev/null 2>&1 && [ -f "$TURBO_CONTROL" ]; then
+  TURBO_RESOLVED=$(node "$TURBO_CONTROL" resolve 2>/dev/null || true)
+  if [ -n "$TURBO_RESOLVED" ]; then
+    saved_ifs=$IFS
+    IFS='	'
+    set -- $TURBO_RESOLVED
+    IFS=$saved_ifs
+    TURBO_ENABLED="${1:-0}"
+    TURBO_AUTO_START="${2:-1}"
+    [ -n "${CARTOGRAPHER_TURBO_URL:-}" ] || TURBO_URL="${3:-$TURBO_URL}"
+    [ -n "${CARTOGRAPHER_TURBO_TIMEOUT_MS:-}" ] || TURBO_TIMEOUT_MS="${4:-$TURBO_TIMEOUT_MS}"
+  fi
+fi
+
+if [ "${CARTOGRAPHER_TURBO+x}" = "x" ]; then
+  case "$CARTOGRAPHER_TURBO" in
+    1|true|yes|on) TURBO_ENABLED=1 ;;
+    0|false|no|off|'') TURBO_ENABLED=0 ;;
+    *) echo "cartographer-search: CARTOGRAPHER_TURBO must be 1 or 0" >&2; exit 2 ;;
+  esac
+fi
+[ -n "$TURBO_FLAG" ] && TURBO_ENABLED="$TURBO_FLAG"
+
+case "${CARTOGRAPHER_SEARCH_BACKEND:-}" in
+  cli) TURBO_ENABLED=0 ;;
+  explorer) TURBO_ENABLED=1 ;;
+  '') ;;
+  *) echo "cartographer-search: CARTOGRAPHER_SEARCH_BACKEND must be cli or explorer" >&2; exit 2 ;;
+esac
+
+if [ -n "$INTENT" ] || [ "$INCLUDE_TRANSCRIPTS" = "1" ]; then
+  TURBO_ENABLED=0
+fi
+
+REQUESTED_BACKEND=cli
+[ "$TURBO_ENABLED" = "1" ] && REQUESTED_BACKEND=explorer
+TURBO_FALLBACK_REASON=""
+
 # ─── Run searches ───
 if [ "$OUTPUT_FORMAT" = "text" ]; then
   echo "=== Searching for: \"$QUERY\" ==="
@@ -1345,25 +1458,79 @@ keyword_search() {
   return "$keyword_status"
 }
 
-# Phase 1 & 2: Run keyword and semantic searches in parallel
-keyword_search > "$TMPDIR/keyword_results.tsv" &
-PID_KW=$!
-
-semantic_search_to_tsv > "$TMPDIR/semantic_results.tsv" 2>/dev/null &
-PID_SEM=$!
-
-wait $PID_KW
-wait $PID_SEM
-
-# Phase 3: fuse everything through RRF
-SEMANTIC_COUNT=$(wc -l < "$TMPDIR/semantic_results.tsv" | tr -d ' ')
-if [ "$OUTPUT_FORMAT" = "text" ] && [ "$SEMANTIC_COUNT" -gt 0 ]; then
-  echo "(hybrid: keyword + semantic)"
-  echo ""
+TURBO_HANDLED=0
+if [ "$TURBO_ENABLED" = "1" ]; then
+  if command -v node >/dev/null 2>&1 && [ -f "$TURBO_CLIENT" ]; then
+    if [ "$TURBO_AUTO_START" = "1" ] && [ -f "$TURBO_CONTROL" ]; then
+      node "$TURBO_CONTROL" ensure >/dev/null 2>"$TMPDIR/turbo-start.err" || true
+    fi
+    if node "$TURBO_CLIENT" \
+      --query "$QUERY" \
+      --project "$PROJECT" \
+      --since "$SINCE" \
+      --before "$BEFORE" \
+      --limit "$LIMIT" \
+      --format "$OUTPUT_FORMAT" \
+      --purpose "$PURPOSE" \
+      --call-id "$CALL_ID" \
+      --session-id "$CONTEXT_SESSION_ID" \
+      --provider "$CONTEXT_PROVIDER" \
+      --url "$TURBO_URL" \
+      --timeout "$TURBO_TIMEOUT_MS" \
+      --served-in "$SERVED_FILE" \
+      --served-out "$SERVED_OUT" \
+      --served-log "$SERVED_LOG" \
+      --call-log "$SEARCH_CALL_LOG" \
+      --count-out "$TMPDIR/turbo-count"; then
+      TURBO_HANDLED=1
+      TURBO_COUNT=$(cat "$TMPDIR/turbo-count" 2>/dev/null || echo 0)
+      [ "$TURBO_COUNT" -gt 0 ] && FOUND=1
+    else
+      TURBO_FALLBACK_REASON="turbo_unavailable"
+      echo "(turbo unavailable; portable CLI fallback)" >&2
+      if [ -s "$TMPDIR/turbo-start.err" ]; then
+        sed -n '1p' "$TMPDIR/turbo-start.err" >&2
+      fi
+    fi
+  else
+    TURBO_FALLBACK_REASON="turbo_runtime_unavailable"
+    echo "(turbo runtime unavailable; portable CLI fallback)" >&2
+  fi
 fi
 
-cat "$TMPDIR/keyword_results.tsv" "$TMPDIR/semantic_results.tsv" | rank_fuse_and_display
-[ $? -eq 0 ] && FOUND=1
+if [ "$TURBO_HANDLED" = "0" ]; then
+  PORTABLE_STARTED_MS=$(clock_ms)
+  # Phase 1 & 2: Run keyword and semantic searches in parallel
+  keyword_search > "$TMPDIR/keyword_results.tsv" &
+  PID_KW=$!
+
+  semantic_search_to_tsv > "$TMPDIR/semantic_results.tsv" 2>/dev/null &
+  PID_SEM=$!
+
+  wait $PID_KW
+  wait $PID_SEM
+
+  # Phase 3: fuse everything through RRF
+  SEMANTIC_COUNT=$(wc -l < "$TMPDIR/semantic_results.tsv" | tr -d ' ')
+  if [ "$OUTPUT_FORMAT" = "text" ] && [ "$SEMANTIC_COUNT" -gt 0 ]; then
+    echo "(hybrid: keyword + semantic)"
+    echo ""
+  fi
+
+  cat "$TMPDIR/keyword_results.tsv" "$TMPDIR/semantic_results.tsv" | rank_fuse_and_display
+  [ $? -eq 0 ] && FOUND=1
+
+  PORTABLE_ENDED_MS=$(clock_ms)
+  PORTABLE_RESULT_COUNT=$(wc -l < "$SERVED_OUT" 2>/dev/null | tr -d ' ')
+  PORTABLE_RESULT_COUNT=${PORTABLE_RESULT_COUNT:-0}
+  append_portable_call_log \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    "$REQUESTED_BACKEND" \
+    "$((PORTABLE_ENDED_MS - REQUEST_STARTED_MS))" \
+    "$((PORTABLE_ENDED_MS - PORTABLE_STARTED_MS))" \
+    "$PORTABLE_RESULT_COUNT" \
+    "$TURBO_FALLBACK_REASON"
+fi
 
 # ─── Delta-serving: append this calls served keys to the per-session list ───
 # Capped at the most recent 200 unique entries so old served IDs eventually

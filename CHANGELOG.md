@@ -1,5 +1,43 @@
 # Changelog
 
+## 0.7.2 — unreleased
+
+### feat(recall): one Turbo opt-in now covers Claude Code and Codex
+
+Turbo Mode is available as an experimental global opt-in before its planned
+0.8 graduation. `cartographer-turbo.js enable` writes one provider-neutral
+setting, starts a zero-dependency warm recall service on demand, and makes
+ordinary `/remember` queries from both agents use it. A private file transport
+keeps that promise inside Codex sandboxes that cannot reach loopback HTTP;
+failed warm requests still fall back once to the portable CLI. Exact fetch,
+touch, thread, intent-only, and raw-transcript operations remain controls.
+
+The new versioned `/api/recall` contract, backend-attributed served rows, and
+`.carto/search-calls.jsonl` make the experiment measurable. `--no-turbo` is the
+per-call escape hatch; `cartographer-turbo.js disable` opts out and stops the
+managed process.
+
+The new `/turbo` skill in Claude Code and `$session-cartographer:turbo` skill in
+Codex expose `enable`, `status`, and `disable` without requiring users to locate
+the installed plugin cache. Turbo is also named in both plugin descriptions and
+the installation quickstart rather than being discoverable only in reference
+documentation.
+
+Enabled sessions now receive a small agent-only startup reminder to use
+`remember` or `focus` when prior work matters, while explicitly self-contained
+requests remain outside recall. The hook never runs a search and records one
+deduplicated exposure receipt per session in `.carto/turbo-awareness.jsonl` for
+later utility analysis.
+
+### fix(wrapup): make durable logging and semantic indexing independently true
+
+`index-event.sh` now distinguishes indexed, gate-rejected,
+precondition-failed, and retryable service-failed outcomes. Authored wrapups
+bypass the generic novelty gate, `record-wrapup.sh` returns separate durable
+and semantic receipts, and successful indexing is reported only after exact
+Qdrant readback. `wrapup-coverage.js` derives the completed/stale material
+session denominator without pretending every short session needs synthesis.
+
 ## 0.7.1 — 2026-08-29
 
 ### fix(migration): events recorded in a worktree SUBDIRECTORY were not repaired

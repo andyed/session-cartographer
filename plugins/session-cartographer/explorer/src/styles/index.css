@@ -94,6 +94,18 @@ body {
 .internals-rank-track span { display: block; height: 100%; min-width: 2px; background: var(--internals-cyan); }
 .internals-rank-row.is-caveat .internals-rank-track span { background: var(--internals-amber); }
 
+.internals-mode-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+.internals-mode-card { min-width: 0; padding: 18px; border: 1px solid var(--internals-line); border-top: 2px solid var(--internals-cyan); background: rgba(16, 17, 23, 0.72); }
+.internals-mode-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 15px; }
+.internals-mode-card-header h3 { margin: 0; color: var(--internals-text); font-size: 19px; font-weight: 600; }
+.internals-mode-card-header p { margin: 5px 0 0; color: var(--internals-muted); font-size: 15px; line-height: 1.35; }
+.internals-mode-card-header > span { flex-shrink: 0; color: var(--internals-cyan); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; }
+.internals-mode-card-header > span.is-caveat { color: var(--internals-amber); }
+.internals-mode-card .internals-metric { padding-top: 15px; padding-bottom: 15px; }
+.internals-mode-card .internals-metric-value { font-size: clamp(21px, 2.1vw, 29px); }
+.internals-mode-card .internals-metric-detail { font-size: 14px; }
+.internals-metric.is-caveat .internals-metric-value { color: var(--internals-amber); }
+
 .internals-diagnostic-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 340px); gap: clamp(32px, 5vw, 76px); }
 .internals-main-diagnostics { min-width: 0; }
 .internals-rail { padding-left: 26px; border-left: 1px solid var(--internals-line-strong); }
@@ -147,6 +159,7 @@ body {
   .internals-pipeline-flow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .internals-stage-arrow { display: none; }
   .internals-outcome-layout { grid-template-columns: 1fr; }
+  .internals-mode-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .internals-diagnostic-grid { grid-template-columns: 1fr; }
   .internals-rail { padding-left: 0; border-left: 0; }
 }
@@ -159,6 +172,7 @@ body {
   .internals-pipeline-flow { grid-template-columns: 1fr; gap: 14px; }
   .internals-section-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
   .internals-section-heading > p { text-align: left; }
+  .internals-mode-grid { grid-template-columns: 1fr; }
   .internals-scoreline { grid-template-columns: 1fr; }
   .internals-metric, .internals-metric:first-child { padding: 16px 0; border-right: 0; border-bottom: 1px solid var(--internals-line); }
   .internals-metric:last-child { border-bottom: 0; }

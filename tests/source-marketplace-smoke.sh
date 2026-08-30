@@ -5,6 +5,7 @@ set -euo pipefail
 # that inherits a live session id silently loses repeat results and fails on
 # runs that are actually fine. Tests must be hermetic.
 unset CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID
+export CARTOGRAPHER_TURBO=0
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 PLUGIN="$ROOT/plugins/session-cartographer"
@@ -14,15 +15,23 @@ for required in \
   "$PLUGIN/.codex-plugin/plugin.json" \
   "$PLUGIN/.claude-plugin/plugin.json" \
   "$PLUGIN/hooks/hooks.json" \
+  "$PLUGIN/hooks/surface-turbo-on-start.sh" \
+  "$PLUGIN/skills/turbo/SKILL.md" \
   "$PLUGIN/scripts/cartographer-search.sh" \
   "$PLUGIN/scripts/cartographer-feed.sh" \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
+  "$PLUGIN/scripts/cartographer-turbo.js" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
   "$PLUGIN/scripts/infer-codex-project.js" \
   "$PLUGIN/scripts/record-wrapup.sh" \
   "$PLUGIN/scripts/wrapup-coverage.js" \
+  "$PLUGIN/scripts/turbo-common.js" \
+  "$PLUGIN/scripts/turbo-search-client.js" \
+  "$PLUGIN/scripts/turbo-server.js" \
   "$PLUGIN/scripts/cooccurrence-graph.js" \
   "$PLUGIN/explorer/server/index.js" \
+  "$PLUGIN/explorer/server/recall-contract.js" \
+  "$PLUGIN/explorer/server/recall.js" \
   "$PLUGIN/project-registry.json"; do
   [ -f "$required" ] || {
     echo "Source marketplace is missing: $required" >&2
@@ -149,6 +158,7 @@ if command -v codex >/dev/null 2>&1; then
   INSTALLED="$WORK/codex/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
   RESULT=$(CARTOGRAPHER_DEV_DIR="$DEV" bash "$INSTALLED/scripts/cartographer-search.sh" "repository marketplace search" --limit 5)
   printf '%s' "$RESULT" | LC_ALL=C grep -q 'evt-source-smoke'
 fi
@@ -160,6 +170,7 @@ if command -v claude >/dev/null 2>&1; then
   INSTALLED="$WORK/claude/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
 fi
 
 echo "Source marketplace smoke test passed: $VERSION"

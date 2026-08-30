@@ -50,7 +50,7 @@ function cleanEnv(overrides = {}) {
   // creating it therefore work on a dev machine and fail in CI. Drop it so this
   // suite runs under the stricter of the two environments everywhere.
   delete env.TMPDIR;
-  return { ...env, ...overrides };
+  return { ...env, CARTOGRAPHER_TURBO: '0', ...overrides };
 }
 
 /**

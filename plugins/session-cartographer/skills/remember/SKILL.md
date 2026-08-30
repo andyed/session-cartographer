@@ -21,6 +21,16 @@ If none is set, derive it from this skill's reported base directory (`../..`
 from `skills/remember`). Use the conventional checkout only as a legacy
 fallback. Verify that `$ROOT/scripts/cartographer-search.sh` exists.
 
+### Backend selection is shared, not provider-specific
+
+`cartographer-search.sh` reads one user-level Cartographer preference for both
+Claude Code and Codex. When Turbo Mode is globally enabled, run the ordinary
+commands below unchanged; the wrapper selects the warm backend, starts the
+headless service on demand, and falls back to the portable CLI if necessary.
+Do not add `--turbo` to every call. `--no-turbo` is the one-call diagnostic
+escape hatch. Exact fetch, touch, thread traversal, intent-only search, and raw
+transcript search remain portable control operations.
+
 ## What can be remembered
 
 Hooks determine what's in the searchable index:

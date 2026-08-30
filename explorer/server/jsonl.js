@@ -205,6 +205,10 @@ export function watchFiles(onNewEvents) {
 
     try {
       const w = watch(filePath, handleChange);
+      // A long-lived recall service must not crash if the host temporarily
+      // exhausts watcher handles. The current index remains usable; a restart
+      // re-reads the complete append-only logs.
+      w.on('error', () => {});
       watchers.push(w);
     } catch {
       // File doesn't exist yet — that's fine

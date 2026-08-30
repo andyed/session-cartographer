@@ -99,8 +99,28 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_CATCHUP_INTERVAL_SECONDS` | `900` | Minimum interval between successful automatic catch-up runs |
 | `CARTOGRAPHER_CATCHUP_LIMIT_DAYS` | `7` | Recent transcript window scanned by automatic catch-up |
 | `CARTOGRAPHER_GRAPH` | `$CARTOGRAPHER_DEV_DIR/cooccurrence-graph.json` | Where the co-occurrence graph JSON is written |
+| `CARTOGRAPHER_CONFIG` | `~/.config/session-cartographer/config.json` | Provider-neutral settings shared by Claude Code and Codex |
+| `CARTOGRAPHER_TURBO` | unset | Explicit `1`/`0` override for the persistent Turbo preference |
+| `CARTOGRAPHER_TURBO_URL` | `http://127.0.0.1:2526` | Loopback recall endpoint; file transport is used when a sandbox blocks it |
+| `CARTOGRAPHER_TURBO_TIMEOUT_MS` | `1500` | Warm request budget before portable fallback |
+| `CARTOGRAPHER_SEARCH_CALL_LOG` | `$CARTOGRAPHER_DEV_DIR/.carto/search-calls.jsonl` | Backend-attributed Turbo call telemetry |
 
 Set these in your shell profile or Claude Code settings for your work machine.
+
+Turbo Mode should normally be configured once through
+`/turbo enable` in Claude Code or `$session-cartographer:turbo` in Codex, rather
+than by duplicating an environment variable in both agents' settings. The same
+skill accepts `status` to inspect the shared preference and managed process, or
+`disable` to turn it off and stop the managed headless service. Checkout
+developers can call `node scripts/cartographer-turbo.js enable|status|disable`
+directly.
+
+When Turbo is active, the shared SessionStart hook gives the agent a concise
+reminder to use `remember` or `focus` only when prior work matters. It does not
+run a search or show a recurring user-facing banner. Exposure receipts are
+deduplicated per session in `.carto/turbo-awareness.jsonl`; join their session
+ids to search-call and access telemetry when evaluating whether awareness led
+to useful recall.
 
 ### Codex hook trust
 
@@ -205,17 +225,21 @@ Nothing is modified without `--write`, and `--write` copies the file to `<name>.
 
 ## Verify Skills
 
-`claude install` should symlink all three skills into `~/.claude/skills/`. If any are missing, create the symlink manually:
+Legacy symlink installs should expose all seven skills in `~/.claude/skills/`.
+Managed plugin installs load them from the plugin cache instead. For a legacy
+install, check the inventory and repair any missing link:
 
 ```bash
 # Check which skills are installed
-ls -la ~/.claude/skills/{remember,focus,carto} 2>&1
+ls -la ~/.claude/skills/{remember,focus,carto,wrapup,investigate,trustmap,turbo} 2>&1
 
-# Fix any missing ones (replace <skill> with remember, focus, or carto)
+# Fix any missing one using its name from the list above
 ln -s /path/to/session-cartographer/plugins/session-cartographer/skills/<skill> ~/.claude/skills/<skill>
 ```
 
-All three should be present: `/remember` (search), `/focus` (project orientation), `/carto` (Explorer UI).
+All seven should be present. Turbo is `/turbo` in Claude Code and
+`$session-cartographer:turbo` in Codex; it manages the shared optional recall
+backend without requiring users to locate the installed cache.
 
 ## Disk Usage
 

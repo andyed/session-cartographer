@@ -109,6 +109,7 @@ test('duplicate rows in one source contribute to RRF only once', () => {
       encoding: 'utf8',
       env: {
         ...process.env,
+        CARTOGRAPHER_TURBO: '0',
         CARTOGRAPHER_DEV_DIR: dir,
         CARTOGRAPHER_SERVED_LOG: servedLog,
         CARTOGRAPHER_ACCESS_LEDGER: accessLedger,
@@ -154,6 +155,7 @@ test('candidate-filtered pass 2 preserves fallback ids from the source file', ()
       encoding: 'utf8',
       env: {
         ...process.env,
+        CARTOGRAPHER_TURBO: '0',
         CARTOGRAPHER_DEV_DIR: dir,
         CARTOGRAPHER_SERVED_LOG: servedLog,
         CARTOGRAPHER_ACCESS_LEDGER: accessLedger,

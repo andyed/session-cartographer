@@ -16,7 +16,7 @@ function readJsonl(filePath) {
 function runSearch(args, env) {
   return spawnSync('bash', [SEARCH, ...args], {
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, CARTOGRAPHER_TURBO: '0', ...env },
   });
 }
 
@@ -66,6 +66,56 @@ test('--get preserves requested result order in fetched-access telemetry', () =>
     assert.deepEqual(rows.map((row) => row.access_ordinal), [1, 2]);
     assert.equal(new Set(rows.map((row) => row.access_batch_id)).size, 1);
     assert.ok(rows[0].access_batch_id.startsWith('get-'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('portable recall records CLI backend and end-to-end call latency', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'carto-cli-latency-'));
+  const served = path.join(dir, 'served.jsonl');
+  const calls = path.join(dir, 'search-calls.jsonl');
+  try {
+    const corpus = [
+      {
+        event_id: 'evt-latency',
+        timestamp: '2026-08-29T10:00:00Z',
+        project: 'demo',
+        summary: 'portable latency fixture',
+      },
+      ...Array.from({ length: 7 }, (_, index) => ({
+        event_id: `evt-filler-${index}`,
+        timestamp: `2026-08-2${index}T09:00:00Z`,
+        project: 'demo',
+        summary: `unrelated corpus filler ${index}`,
+      })),
+    ];
+    fs.writeFileSync(path.join(dir, 'changelog.jsonl'), `${corpus.map(JSON.stringify).join('\n')}\n`);
+    fs.writeFileSync(path.join(dir, 'research-log.jsonl'), '');
+    fs.writeFileSync(path.join(dir, 'session-milestones.jsonl'), '');
+    fs.writeFileSync(path.join(dir, 'tool-use-log.jsonl'), '');
+
+    const result = runSearch(['portable latency fixture', '--limit', '1', '--all', '--call-id', 'call-cli'], {
+      CARTOGRAPHER_DEV_DIR: dir,
+      CARTOGRAPHER_SERVED_LOG: served,
+      CARTOGRAPHER_SEARCH_CALL_LOG: calls,
+      CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1',
+      CARTOGRAPHER_EMBED_URL: 'http://127.0.0.1:1',
+      CARTOGRAPHER_PURPOSE: 'remember',
+    });
+    assert.equal(result.status, 0, result.stderr);
+
+    const servedRows = readJsonl(served);
+    const callRows = readJsonl(calls);
+    assert.equal(servedRows.length, 1, `${result.stdout}\n${result.stderr}`);
+    assert.equal(servedRows[0].backend, 'cli');
+    assert.equal(callRows.length, 1);
+    assert.equal(callRows[0].call_id, 'call-cli');
+    assert.equal(callRows[0].requested_backend, 'cli');
+    assert.equal(callRows[0].selected_backend, 'cli');
+    assert.equal(callRows[0].result_count, 1);
+    assert.ok(Number.isFinite(callRows[0].elapsed_ms));
+    assert.ok(callRows[0].elapsed_ms >= callRows[0].stages_ms.total);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

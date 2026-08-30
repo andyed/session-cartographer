@@ -1,6 +1,6 @@
 # Turbo Mode — utility-first Explorer recall
 
-Status: draft for implementation · 2026-08-29
+Status: experimental global opt-in implemented for 0.7.x; utility graduation pending · 2026-08-30
 
 ## Decision
 
@@ -237,30 +237,32 @@ ledger.
 
 ## Opt-in and backend selection
 
-The user-facing contract is deliberately small:
+The user-facing contract is deliberately small. The persistent preference is
+provider-neutral: Claude Code and Codex read the same Cartographer config, so
+opting in once applies to ordinary recall in every session from either agent.
 
 | Setting | Meaning |
 |---|---|
 | `--turbo` | Enable Turbo Mode for one `/remember` call. |
-| `CARTOGRAPHER_TURBO=1` | Persistently opt this environment into Turbo Mode. |
+| `node scripts/cartographer-turbo.js enable` | Persistently opt this user into Turbo Mode and start the managed service. |
 | `--no-turbo` | Force the portable CLI for one call. |
-| unset / `CARTOGRAPHER_TURBO=0` | Default: portable CLI, with no service start or probe. |
+| `node scripts/cartographer-turbo.js disable` | Persistently opt out and stop the managed service. |
+| no shared preference | Default: portable CLI, with no service start or probe. |
 
-Precedence is `--no-turbo`, then `--turbo`, then `CARTOGRAPHER_TURBO`. When
-enabled, Turbo Mode uses a compatible healthy Explorer backend and otherwise
-falls back once to the portable CLI. Control operations always bypass Turbo.
+The setting is stored in `~/.config/session-cartographer/config.json` (or
+`CARTOGRAPHER_CONFIG`). Precedence is the per-call flag, explicit
+`CARTOGRAPHER_TURBO=1|0`, shared config, then off. When enabled, Turbo Mode uses
+a compatible healthy Explorer backend and otherwise falls back once to the
+portable CLI. Control operations always bypass Turbo.
 
 Developer and canary controls remain underneath that product surface:
 
 | Setting | Meaning |
 |---|---|
 | `CARTOGRAPHER_SEARCH_BACKEND=cli` | Portable control cohort. |
-| `CARTOGRAPHER_SEARCH_BACKEND=explorer` | Strict Turbo backend; surface an error instead of falling back. |
-| `CARTOGRAPHER_SEARCH_BACKEND=canary` | Select Explorer or CLI by stable session/query hash. |
+| `CARTOGRAPHER_SEARCH_BACKEND=explorer` | Force a Turbo attempt while retaining the safety fallback. |
 | `CARTOGRAPHER_TURBO_URL` | Defaults to `http://127.0.0.1:2526`. |
-| `CARTOGRAPHER_TURBO_TIMEOUT_MS` | Warm request budget; provisional default 1000 ms. |
-| `CARTOGRAPHER_TURBO_CANARY_RATE` | Explorer share in canary mode; provisional default 0.8. |
-| `CARTOGRAPHER_TURBO_SHADOW_RATE` | Optional non-blocking CLI replay rate from 0 to 1. |
+| `CARTOGRAPHER_TURBO_TIMEOUT_MS` | Warm request budget; default 1500 ms. |
 
 ## Implementation sequence
 
@@ -361,18 +363,18 @@ Acceptance:
 - no change is accepted solely because it increases overlap with the CLI;
 - checked-in fixtures lock the intended difference after it proves useful.
 
-### Slice 5 — graduate the opt-in and make it on-demand
+### Slice 5 — global opt-in and on-demand runtime
 
 Owner: runtime and packaging.
 
-1. Document `--turbo` and `CARTOGRAPHER_TURBO=1` as a supported opt-in after the
-   utility gate passes. Do not make them the default.
+1. Keep Turbo explicitly off by default and persist one provider-neutral opt-in
+   for every Claude Code and Codex session.
 2. First reuse an already-running Explorer API; do not require the React/Vite
    process for agent recall.
-3. Add a headless API start command and a bounded on-demand bootstrap only after
-   the canary proves that persistent memory buys utility.
-4. Keep idle lifetime explicit: always-on, idle timeout, or manual stop must be
-   a configuration choice informed by observed usage gaps.
+3. Ship a zero-dependency headless API with bounded on-demand bootstrap. Use a
+   private file request transport when a Codex sandbox cannot reach loopback.
+4. The opt-in owns the managed service lifetime: `enable` starts on demand and
+   `disable` stops it. Revisit idle timeout after observing real usage gaps.
 5. Start no background process and make no health probe when Turbo Mode is
    disabled.
 6. Expose Turbo status, process state, index freshness, memory, and backend

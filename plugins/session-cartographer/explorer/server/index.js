@@ -2,6 +2,8 @@ import express from 'express';
 import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
+import { executeRecall, recallHealth } from './recall.js';
+import { RecallContractError } from './recall-contract.js';
 import { isAllowedTranscriptPath, normalizeTranscriptEntries, transcriptRoots } from './transcripts.js';
 import { getInternalsSnapshot, normalizeInternalsPurpose, normalizeInternalsWindow } from './internals.js';
 import { statSync } from 'fs';
@@ -11,6 +13,7 @@ import { performance } from 'perf_hooks';
 
 const PORT = parseInt(process.env.CARTOGRAPHER_API_PORT || '2526', 10);
 const app = express();
+app.use(express.json({ limit: '1mb' }));
 
 // ─── Load events + build BM25 index ───
 console.log('Loading events...');
@@ -72,6 +75,20 @@ app.get('/api/health', async (_req, res) => {
   } catch {}
 
   res.json({ status: 'ok', events: events.length, files, qdrant, embed });
+});
+
+app.get('/api/recall/health', (_req, res) => {
+  res.json(recallHealth({ events, index }));
+});
+
+app.post('/api/recall', async (req, res) => {
+  try {
+    res.json(await executeRecall({ events, index }, req.body));
+  } catch (error) {
+    const status = error instanceof RecallContractError ? error.status : 500;
+    if (status === 500) console.error('[recall]', error.message);
+    res.status(status).json({ error: error.message || 'recall failed' });
+  }
 });
 
 app.get('/api/internals', async (req, res) => {

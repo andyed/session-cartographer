@@ -33,6 +33,21 @@ function formatNumber(value) {
   return Number.isFinite(value) ? Math.round(value).toLocaleString() : '—';
 }
 
+function formatDecimal(value) {
+  return Number.isFinite(value) ? value.toFixed(2) : '—';
+}
+
+function formatRank(value) {
+  return Number.isFinite(value) ? `#${Math.round(value).toLocaleString()}` : '—';
+}
+
+function formatMilliseconds(value) {
+  if (!Number.isFinite(value)) return '—';
+  if (value < 1000) return `${Math.round(value).toLocaleString()} ms`;
+  const seconds = value / 1000;
+  return `${seconds.toFixed(seconds < 10 ? 2 : 1)} s`;
+}
+
 function formatBytes(value) {
   if (!Number.isFinite(value)) return '—';
   const units = ['B', 'KB', 'MB', 'GB'];
@@ -138,6 +153,33 @@ function normalizeDaily(value) {
   }));
 }
 
+function normalizeModeCohorts(value) {
+  const order = new Map([['explorer', 0], ['cli', 1], ['unknown', 2]]);
+  return asRows(value, ['key', 'requestedBackend', 'requested_backend', 'backend']).map(item => {
+    const key = cleanLabel(firstValue(item, ['key', 'requestedBackend', 'requested_backend', 'backend']), 'unknown').toLowerCase();
+    const selectedBackends = firstValue(item, ['selectedBackends', 'selected_backends']) || {};
+    return {
+      key,
+      label: key === 'explorer' ? 'Turbo on' : key === 'cli' ? 'Turbo off' : 'Historical / unclassified',
+      calls: firstNumber(item, ['calls', 'callCount', 'call_count']),
+      samples: firstNumber(item, ['latency.samples', 'latencySamples', 'latency_samples']),
+      p50Ms: firstNumber(item, ['latency.p50Ms', 'latency.p50_ms', 'p50Ms', 'p50_ms']),
+      p95Ms: firstNumber(item, ['latency.p95Ms', 'latency.p95_ms', 'p95Ms', 'p95_ms']),
+      firstAccessMrr: firstNumber(item, ['firstAccessMrr', 'first_access_mrr', 'mrr']),
+      lastAccessMrr: firstNumber(item, ['lastAccessMrr', 'last_access_mrr']),
+      orderedCalls: firstNumber(item, ['orderedCalls', 'ordered_calls']),
+      hitsConsumed: firstNumber(item, ['hitsConsumed', 'hits_consumed']),
+      hitsConsumedPerCall: firstNumber(item, ['hitsConsumedPerCall', 'hits_consumed_per_call']),
+      hitsConsumedPerSuccessfulCall: firstNumber(item, ['hitsConsumedPerSuccessfulCall', 'hits_consumed_per_successful_call']),
+      consumptionDepthSamples: firstNumber(item, ['consumptionDepth.samples', 'consumption_depth.samples']),
+      consumptionDepthP50Rank: firstNumber(item, ['consumptionDepth.p50Rank', 'consumption_depth.p50_rank']),
+      consumptionDepthP95Rank: firstNumber(item, ['consumptionDepth.p95Rank', 'consumption_depth.p95_rank']),
+      fallbackCalls: firstNumber(item, ['fallbackCalls', 'fallback_calls']),
+      selectedBackends,
+    };
+  }).sort((a, b) => (order.get(a.key) ?? 99) - (order.get(b.key) ?? 99));
+}
+
 function Metric({ label, value, detail, caveat = false }) {
   return (
     <div className={`internals-metric${caveat ? ' is-caveat' : ''}`}>
@@ -145,6 +187,47 @@ function Metric({ label, value, detail, caveat = false }) {
       <span className="internals-metric-label">{label}</span>
       {detail && <span className="internals-metric-detail">{detail}</span>}
     </div>
+  );
+}
+
+function ModeCohorts({ rows }) {
+  if (!rows.length) return null;
+  return (
+    <section className="internals-section" aria-labelledby="internals-mode-heading">
+      <div className="internals-section-heading">
+        <div>
+          <p className="internals-kicker">Turbo experiment</p>
+          <h2 id="internals-mode-heading">Latency and use by mode</h2>
+        </div>
+        <p>Cohorts follow the requested mode, so a Turbo fallback stays charged to Turbo-on user experience.</p>
+      </div>
+      <div className="internals-mode-grid">
+        {rows.map(row => {
+          const selections = Object.entries(row.selectedBackends)
+            .filter(([, count]) => Number.isFinite(Number(count)) && Number(count) > 0)
+            .map(([backend, count]) => `${backend === 'explorer' ? 'Explorer' : backend === 'cli' ? 'CLI' : 'unknown'} ${formatNumber(Number(count))}`)
+            .join(' · ');
+          const lowSample = Number.isFinite(row.samples) && row.samples > 0 && row.samples < 10;
+          const latencyUnavailable = !Number.isFinite(row.samples) || row.samples === 0;
+          return (
+            <article className="internals-mode-card" key={row.key}>
+              <div className="internals-mode-card-header">
+                <div><h3>{row.label}</h3><p>{selections || 'Backend attribution unavailable'}</p></div>
+                <span className={lowSample || latencyUnavailable ? 'is-caveat' : ''}>{formatNumber(row.calls)} calls{lowSample ? ' · low sample' : latencyUnavailable ? ' · latency unavailable' : ''}</span>
+              </div>
+              <div className="internals-scoreline">
+                <Metric label="Response p50" value={formatMilliseconds(row.p50Ms)} detail={`${formatNumber(row.samples)} timed calls`} caveat={lowSample} />
+                <Metric label="Response p95" value={formatMilliseconds(row.p95Ms)} detail={row.fallbackCalls ? `${formatNumber(row.fallbackCalls)} fallbacks` : 'no recorded fallback'} caveat={lowSample} />
+                <Metric label="Hits consumed" value={formatNumber(row.hitsConsumed)} detail={`${formatDecimal(row.hitsConsumedPerCall)} per call · ${formatDecimal(row.hitsConsumedPerSuccessfulCall)} per successful call`} />
+                <Metric label="Consumption depth" value={formatRank(row.consumptionDepthP50Rank)} detail={`p50 deepest rank · p95 ${formatRank(row.consumptionDepthP95Rank)} · ${formatNumber(row.consumptionDepthSamples)} calls`} />
+                <Metric label="First-access MRR" value={row.firstAccessMrr === null ? '—' : row.firstAccessMrr.toFixed(3)} detail="precision proxy · first used rank" />
+                <Metric label="Last-access MRR" value={row.lastAccessMrr === null ? '—' : row.lastAccessMrr.toFixed(3)} detail={`recall-depth proxy · ${formatNumber(row.orderedCalls)} ordered calls`} />
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -362,7 +445,7 @@ function OperationsRail({ data, purposeRows }) {
       <div className="internals-rail-section">
         <h3>Instrumentation</h3>
         <dl className="internals-definition-list">
-          <div><dt>Historical stage latency</dt><dd>{!latencySamples ? 'Not instrumented' : `${formatNumber(latencySamples)} samples`}</dd></div>
+          <div><dt>Search response latency</dt><dd>{!latencySamples ? 'Not instrumented' : `${formatNumber(latencySamples)} samples`}</dd></div>
           <div><dt>Semantic index coverage</dt><dd>{semanticAvailable ? `${formatNumber(semanticIndexed)} documents` : 'Unavailable'}</dd></div>
           <div><dt>Index error events</dt><dd>{errorCount === null ? 'Unavailable' : formatNumber(errorCount)}</dd></div>
         </dl>
@@ -436,12 +519,19 @@ export default function Internals({ isActive = true }) {
         lastAccessMrr: firstNumber(utility, ['lastAccessMrr', 'last_access_mrr']),
         orderedCalls: firstNumber(utility, ['orderedCalls', 'ordered_calls', 'mrrOrderedCalls', 'mrr_ordered_calls']),
         orderUnknownCalls: firstNumber(utility, ['orderUnknownCalls', 'order_unknown_calls', 'mrrOrderUnknownCalls', 'mrr_order_unknown_calls']),
+        hitsConsumed: firstNumber(utility, ['hitsConsumed', 'hits_consumed']),
+        hitsConsumedPerCall: firstNumber(utility, ['hitsConsumedPerCall', 'hits_consumed_per_call']),
+        hitsConsumedPerSuccessfulCall: firstNumber(utility, ['hitsConsumedPerSuccessfulCall', 'hits_consumed_per_successful_call']),
+        consumptionDepthSamples: firstNumber(utility, ['consumptionDepth.samples', 'consumption_depth.samples']),
+        consumptionDepthP50Rank: firstNumber(utility, ['consumptionDepth.p50Rank', 'consumption_depth.p50_rank']),
+        consumptionDepthP95Rank: firstNumber(utility, ['consumptionDepth.p95Rank', 'consumption_depth.p95_rank']),
       },
       firstUse: normalizeFirstUse(firstValue(data, ['firstAccessRank', 'first_access_rank', 'firstUse', 'first_use', 'firstUseDistribution', 'first_use_distribution', 'utility.firstAccessRank', 'utility.first_access_rank', 'utility.firstUsefulRank', 'utility.firstUse', 'utility.first_use_rank'])),
       sources: normalizeBreakdown(firstValue(data, ['sources', 'breakdowns.sources', 'utility.sources']), 'source'),
       projects: normalizeBreakdown(firstValue(data, ['projects', 'breakdowns.projects', 'utility.projects']), 'project'),
       purposes: normalizeBreakdown(firstValue(data, ['purposes', 'breakdowns.purposes', 'utility.purposes']), 'purpose'),
       daily: normalizeDaily(firstValue(data, ['daily', 'dailyTrend', 'daily_trend', 'trend.daily'])),
+      modeCohorts: normalizeModeCohorts(firstValue(data, ['modeCohorts', 'mode_cohorts', 'backendCohorts', 'backend_cohorts'])),
     };
   }, [resource.data]);
 
@@ -517,8 +607,10 @@ export default function Internals({ isActive = true }) {
               <div className="internals-outcome-layout">
                 <div className="internals-scoreline">
                   <Metric label="Recall success" value={formatRate(model.utility.recallRate)} detail={`${formatNumber(model.utility.callsWithUse)} of ${formatNumber(model.utility.calls)} calls`} />
-                  <Metric label="First-access MRR" value={model.utility.firstAccessMrr === null ? '—' : model.utility.firstAccessMrr.toFixed(3)} detail={model.utility.orderedCalls === null ? 'primary · no-use calls score zero' : `${formatNumber(model.utility.orderedCalls)} of ${formatNumber(model.utility.calls)} jointly ordered · no-use calls zero`} />
-                  <Metric label="Last-access MRR" value={model.utility.lastAccessMrr === null ? '—' : model.utility.lastAccessMrr.toFixed(3)} detail={model.utility.orderUnknownCalls ? `same cohort · ${formatNumber(model.utility.orderUnknownCalls)} order unknown` : 'same jointly ordered cohort · final accessed rank'} />
+                  <Metric label="Hits consumed" value={formatNumber(model.utility.hitsConsumed)} detail={`${formatDecimal(model.utility.hitsConsumedPerCall)} per call · ${formatDecimal(model.utility.hitsConsumedPerSuccessfulCall)} per successful call`} />
+                  <Metric label="Consumption depth" value={formatRank(model.utility.consumptionDepthP50Rank)} detail={`p50 deepest rank · p95 ${formatRank(model.utility.consumptionDepthP95Rank)} · ${formatNumber(model.utility.consumptionDepthSamples)} calls`} />
+                  <Metric label="First-access MRR" value={model.utility.firstAccessMrr === null ? '—' : model.utility.firstAccessMrr.toFixed(3)} detail={model.utility.orderedCalls === null ? 'precision proxy · no-use calls score zero' : `precision proxy · ${formatNumber(model.utility.orderedCalls)} of ${formatNumber(model.utility.calls)} jointly ordered`} />
+                  <Metric label="Last-access MRR" value={model.utility.lastAccessMrr === null ? '—' : model.utility.lastAccessMrr.toFixed(3)} detail={model.utility.orderUnknownCalls ? `recall-depth proxy · ${formatNumber(model.utility.orderUnknownCalls)} order unknown` : 'recall-depth proxy · final accessed rank'} />
                   <Metric label="Result-row use" value={formatRate(model.utility.resultRate)} detail="used rows / served rows" />
                 </div>
                 <div className="internals-rank-panel">
@@ -527,6 +619,8 @@ export default function Internals({ isActive = true }) {
                 </div>
               </div>
             </section>
+
+            <ModeCohorts rows={model.modeCohorts} />
 
             <div className="internals-diagnostic-grid">
               <div className="internals-main-diagnostics">

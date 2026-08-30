@@ -40,8 +40,10 @@ test('an unwritable served log does not suppress valid search results', () => {
       encoding: 'utf8',
       env: {
         ...process.env,
+        CARTOGRAPHER_TURBO: '0',
         CARTOGRAPHER_DEV_DIR: dir,
         CARTOGRAPHER_SERVED_LOG: '/dev/null/served-log.jsonl',
+        CARTOGRAPHER_SEARCH_CALL_LOG: '/dev/null/search-calls.jsonl',
         CARTOGRAPHER_ACCESS_LEDGER: path.join(dir, 'access-ledger.jsonl'),
         CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'no-transcripts'),
         CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1',
@@ -52,6 +54,7 @@ test('an unwritable served log does not suppress valid search results', () => {
     assert.match(result.stdout, /evt-telemetryfixture01/);
     assert.doesNotMatch(result.stdout, /No results found\./);
     assert.match(result.stderr, /cannot write served log/);
+    assert.match(result.stderr, /cannot write search-call telemetry/);
     assert.doesNotMatch(result.stderr, /awk: can't open file/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
