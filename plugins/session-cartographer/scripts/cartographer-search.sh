@@ -14,6 +14,7 @@
 #   CARTOGRAPHER_DEV_DIR         — default: ~/Documents/dev
 #   CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR — default: ~/.claude/projects
 #   CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR  — default: ~/.codex/sessions
+#   CARTOGRAPHER_CODEX_ARCHIVED_DIR     — default: ~/.codex/archived_sessions
 #   CARTOGRAPHER_TRANSCRIPTS_DIR        — legacy Claude-only override
 #   CARTOGRAPHER_QDRANT_URL      — default: http://localhost:6333
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
@@ -357,6 +358,10 @@ DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
+# Codex MOVES a session out of sessions/ into archived_sessions/ — it does not
+# delete it. A recorded transcript_path therefore goes stale while the data is
+# still on disk, which reads as "transcript missing" unless this root is scanned.
+CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
 
 # Resolve project aliases from registry
@@ -513,8 +518,35 @@ if [ -n "$GET_IDS" ]; then
 
     # jq gives the exact record with nested diff_shape intact; without it the
     # raw line is still an exact answer, just denser.
+    # Self-heal a stale transcript_path at display time. Codex archives finished
+    # sessions rather than deleting them, so a path stamped at event time can
+    # stop resolving while the transcript is still readable one directory away.
+    # repair-transcript-paths.js fixes the logs in bulk; this covers records
+    # written since the last repair run.
+    #
+    # The recorded value is preserved and the live one added alongside it —
+    # --get promises the complete record, so rewriting a field in place would
+    # quietly break that contract. A consumer reads transcript_path_resolved
+    # when present; provenance stays visible either way.
+    get_tpath=""
     if command -v jq >/dev/null 2>&1; then
-      echo "$line" | jq '.' 2>/dev/null || echo "$line"
+      get_tpath=$(printf '%s' "$line" | jq -r '.transcript_path // ""' 2>/dev/null)
+    fi
+    get_resolved=""
+    if [ -n "$get_tpath" ] && [ ! -f "$get_tpath" ]; then
+      get_resolved=$("$(dirname "$0")/resolve-transcript.sh" "$get_tpath" 2>/dev/null || true)
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+      if [ -n "$get_resolved" ]; then
+        printf '%s' "$line" | jq --arg r "$get_resolved" \
+          '. + {transcript_path_resolved: $r, transcript_path_status: "archived"}' 2>/dev/null \
+          || echo "$line"
+      elif [ -n "$get_tpath" ] && [ ! -f "$get_tpath" ]; then
+        printf '%s' "$line" | jq '. + {transcript_path_status: "missing"}' 2>/dev/null || echo "$line"
+      else
+        echo "$line" | jq '.' 2>/dev/null || echo "$line"
+      fi
     else
       echo "$line"
     fi
@@ -727,7 +759,7 @@ grep_jsonl_to_tsv() {
 }
 
 grep_transcripts_to_tsv() {
-  [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || return 0
+  [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || [ -d "$CODEX_ARCHIVED" ] || return 0
 
   # Per-line grep, no turn-grouping, no BM25. Turn-extraction is an
   # indexing-layer concern (Qdrant embeddings); the CLI keyword path is
@@ -740,7 +772,7 @@ grep_transcripts_to_tsv() {
     local provider project_dir session_file session_id session_cwd
     session_file=$(basename "$transcript")
     case "$transcript" in
-      "$CODEX_TRANSCRIPTS"/*)
+      "$CODEX_TRANSCRIPTS"/*|"$CODEX_ARCHIVED"/*)
         provider="codex"
         session_id=$(jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' "$transcript" 2>/dev/null | head -1)
         session_id="${session_id:-${session_file%.jsonl}}"
@@ -784,11 +816,13 @@ grep_transcripts_to_tsv() {
       {
         [ -d "$CLAUDE_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CLAUDE_TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null
         [ -d "$CODEX_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CODEX_TRANSCRIPTS" --glob '*.jsonl' --max-depth 5 2>/dev/null
+        [ -d "$CODEX_ARCHIVED" ] && rg -l "$GREP_QUERY" "$CODEX_ARCHIVED" --glob '*.jsonl' --max-depth 5 2>/dev/null
       } | head -20
     else
       {
         [ -d "$CLAUDE_TRANSCRIPTS" ] && find "$CLAUDE_TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
         [ -d "$CODEX_TRANSCRIPTS" ] && find "$CODEX_TRANSCRIPTS" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+        [ -d "$CODEX_ARCHIVED" ] && find "$CODEX_ARCHIVED" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
       } | head -20
     fi
   )
@@ -1561,7 +1595,7 @@ if [ "$FOUND" -eq 0 ] && [ "$OUTPUT_FORMAT" = "text" ]; then
     echo "compaction, or session end."
     echo ""
     echo "To search raw session transcripts now:"
-    echo "  grep -r -i \"$QUERY\" $CLAUDE_TRANSCRIPTS/ $CODEX_TRANSCRIPTS/ --include='*.jsonl' -l"
+    echo "  grep -r -i \"$QUERY\" $CLAUDE_TRANSCRIPTS/ $CODEX_TRANSCRIPTS/ $CODEX_ARCHIVED/ --include='*.jsonl' -l"
   else
     # ─── Phantom detection (LongMemEval abstention) ───
     # Empty result + entity-shaped tokens in the query is a different failure

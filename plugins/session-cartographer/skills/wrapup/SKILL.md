@@ -84,7 +84,7 @@ GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "none")
 # Find transcript path
 TRANSCRIPT=$(find ~/.claude/projects -name "${SESSION_ID}.jsonl" 2>/dev/null | head -1)
 if [ -z "$TRANSCRIPT" ] && [ "$SESSION_ID" != "unknown" ]; then
-  TRANSCRIPT=$(find ~/.codex/sessions -name "*${SESSION_ID}*.jsonl" 2>/dev/null | head -1)
+  TRANSCRIPT=$(find ~/.codex/archived_sessions ~/.codex/sessions -name "*${SESSION_ID}*.jsonl" 2>/dev/null | head -1)
   [ -n "$TRANSCRIPT" ] && PROVIDER="codex"
 fi
 ENCODED_PATH=$(echo "$TRANSCRIPT" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=''))" 2>/dev/null || echo "$TRANSCRIPT")

@@ -5,6 +5,9 @@ export function transcriptRoots(env = process.env, home = homedir()) {
   return [
     resolve(env.CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR || env.CARTOGRAPHER_TRANSCRIPTS_DIR || `${home}/.claude/projects`),
     resolve(env.CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR || `${home}/.codex/sessions`),
+    // Codex moves finished sessions here instead of deleting them. Without this
+    // root, isAllowedTranscriptPath() rejects every archived transcript.
+    resolve(env.CARTOGRAPHER_CODEX_ARCHIVED_DIR || `${home}/.codex/archived_sessions`),
   ];
 }
 

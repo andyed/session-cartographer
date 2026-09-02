@@ -1,6 +1,56 @@
 # Changelog
 
-## 0.7.2 — unreleased
+## 0.7.3 — unreleased
+
+### fix(recall): follow Codex sessions into the archive
+
+Codex does not delete a finished session, it moves it from
+`~/.codex/sessions/<y>/<m>/<d>/` into the flat `~/.codex/archived_sessions/`.
+Every `transcript_path` the hooks stamp therefore went stale the moment a
+session was archived, while the transcript itself stayed fully readable one
+directory away. Nothing errored: `/remember` surfaced the event, the agent
+stat'd the recorded path, found nothing, and reported the conversation as aged
+out. Silent recall failure on data that was never gone.
+
+`hooks/common.sh` already recognised the archive when detecting a provider; no
+lookup path did. `CARTOGRAPHER_CODEX_ARCHIVED_DIR` now sits alongside the
+sessions dir everywhere transcripts are scanned or served —
+`cartographer-search.sh`, `retro-index.sh`, `trust-digest.js`, and the
+Explorer's `transcriptRoots()`, whose boundary check had been rejecting every
+archived path.
+
+`scripts/resolve-transcript.sh` is the single resolver: recorded path, then
+archive basename, then a session-id hunt across every store. The `remember`,
+`investigate`, and `wrapup` skills used a bare `find ~/.codex/sessions`, which
+missed every archived session; they now go through the resolver or search both
+roots.
+
+`--get` self-heals a stale path at display time, adding
+`transcript_path_resolved` and `transcript_path_status: "archived"` rather than
+rewriting the recorded value — the command promises the complete record, so the
+original stays visible as provenance. Genuinely unrecoverable paths are marked
+`"missing"` instead of silently resolving to something plausible.
+
+### fix(recall): repair the paths already written
+
+`scripts/repair-transcript-paths.js` rewrites the stale paths in bulk, dry-run
+by default. On the development corpus it repaired 60,420 records across the four
+event logs, taking resolvable transcript paths from 102,988 to 163,416.
+
+The event logs are only half the corpus. Semantic results are served from Qdrant
+payloads, which carry their own copy of `transcript_path`, so repairing the logs
+alone left every semantic hit still pointing at the pre-archive path — 6,258
+broken points across 253 sessions. `--qdrant` repairs that side under the same
+policy: a path is rewritten only when it does not resolve and exactly one file
+of that basename exists in the archive. Ambiguity is refused, and Claude paths
+are never touched, because Claude Code deletes rather than archives and
+rewriting one would be a fabrication.
+
+The log pass re-stats each file before writing and refuses if it grew during the
+run. Several concurrent agent sessions append to these logs continuously, and a
+read-modify-write would otherwise drop anything written mid-pass.
+
+## 0.7.2 — 2026-08-30
 
 ### feat(recall): one Turbo opt-in now covers Claude Code and Codex
 

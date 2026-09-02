@@ -42,6 +42,8 @@ esac
 # override. New code should prefer the provider-specific variables.
 CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
+# Codex archives sessions rather than deleting them; index that root too.
+CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
 SCRIPT_DIR="$(dirname "$0")"
 INDEXER="$SCRIPT_DIR/index-event.sh"
 CLAUDE_TURN_GROUPER="$SCRIPT_DIR/transcript-to-turns.awk"

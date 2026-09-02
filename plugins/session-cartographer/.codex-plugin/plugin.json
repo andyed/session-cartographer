@@ -1,6 +1,6 @@
 {
   "name": "session-cartographer",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Search and explore Claude Code and Codex session history, with a discoverable Turbo skill for optional shared fast recall",
   "author": {
     "name": "Andy Edmonds"
