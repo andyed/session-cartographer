@@ -17,14 +17,22 @@ app.use(express.json({ limit: '1mb' }));
 
 // ─── Load events + build BM25 index ───
 console.log('Loading events...');
-const events = readAllEvents();
-const index = buildIndex(events);
+let events = readAllEvents();
+let index = buildIndex(events);
 console.log(`Loaded ${events.length} events, ${index.docs.size} docs in BM25 corpus (avgdl: ${index.avgdl.toFixed(1)} tokens).`);
 
 // ─── SSE clients ───
 const sseClients = new Set();
 
 // ─── Watch for new events ───
+// A rewrite of history cannot be repaired by appending: every already-indexed
+// record keeps its stale value. Reload from disk instead.
+function reloadCorpus(source) {
+  events = readAllEvents();
+  index = buildIndex(events);
+  console.log(`Reloaded corpus after in-place rewrite of ${source}: ${events.length} events`);
+}
+
 const stopWatching = watchFiles((newEvents) => {
   for (const event of newEvents) {
     events.unshift(event); // newest first
@@ -38,7 +46,7 @@ const stopWatching = watchFiles((newEvents) => {
       res.write(`data: ${JSON.stringify(event)}\n\n`);
     }
   }
-});
+}, reloadCorpus);
 
 process.on('SIGINT', () => {
   stopWatching();
@@ -568,7 +576,19 @@ app.get('/api/transcript/analysis', async (req, res) => {
 });
 
 // ─── Start ───
-app.listen(PORT, '127.0.0.1', () => {
+// turbo-server.js binds this same port and serves only the recall contract, so
+// a headless Turbo left running makes the Explorer UI unstartable. Say what to
+// do about it instead of printing a bare EADDRINUSE stack.
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`Cartographer API: http://127.0.0.1:${PORT}`);
   console.log(`Health: http://127.0.0.1:${PORT}/api/health`);
+});
+
+server.on('error', (error) => {
+  if (error.code !== 'EADDRINUSE') throw error;
+  console.error(`Port ${PORT} is already in use.`);
+  console.error('If a headless Turbo server holds it, stop that first:');
+  console.error('  node scripts/cartographer-turbo.js stop');
+  console.error('The Explorer serves the recall contract itself, so Turbo stays warm without it.');
+  process.exit(1);
 });

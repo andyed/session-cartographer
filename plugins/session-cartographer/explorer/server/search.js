@@ -24,6 +24,17 @@ const ACCESS_LEDGER = process.env.CARTOGRAPHER_ACCESS_LEDGER ||
   join(process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev'), 'access-ledger.jsonl');
 const REUSE_WEIGHT = parseFloat(process.env.CARTOGRAPHER_REUSE_WEIGHT || '0.3');
 
+// Opt out of the semantic leg entirely. Hybrid search reaches a live Qdrant
+// instance, which is right in production and wrong anywhere the caller wants a
+// deterministic keyword-only answer: unit tests handed a fixture index, offline
+// work, CI, or debugging BM25 ranking without fusion noise. Without this the
+// only way to isolate the leg was to point the URL at a dead port and rely on
+// the connection being refused — which made a passing test depend on a service
+// being *absent*, so the same suite passed on CI and failed on a dev box.
+// Read at call time, not module load: ES imports are hoisted, so a module-level
+// const is fixed before an importing test can set the variable.
+const semanticEnabled = () => process.env.CARTOGRAPHER_SEMANTIC !== '0';
+
 /**
  * Get embedding vector for a query string.
  */
@@ -359,12 +370,15 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
 
   // Try semantic search
   let semanticAll = [];
-  let semanticStatus = 'available';
+  const useSemantic = semanticEnabled();
+  let semanticStatus = useSemantic ? 'available' : 'disabled';
   const semanticStarted = performance.now();
-  try {
-    semanticAll = await semanticSearch(query, { project, limit: FUSION_DEPTH });
-  } catch (error) {
-    semanticStatus = 'unavailable';
+  if (useSemantic) {
+    try {
+      semanticAll = await semanticSearch(query, { project, limit: FUSION_DEPTH });
+    } catch (error) {
+      semanticStatus = 'unavailable';
+    }
   }
   const semanticMs = performance.now() - semanticStarted;
 

@@ -18,9 +18,18 @@ const spoolOnly = process.env.CARTOGRAPHER_TURBO_SPOOL_ONLY === '1';
 
 fs.mkdirSync(paths.requests, { recursive: true, mode: 0o700 });
 
-const events = readAllEvents();
-const index = buildIndex(events);
-const eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+let events = readAllEvents();
+let index = buildIndex(events);
+let eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+// See jsonl.js: an in-place rewrite invalidates everything already indexed,
+// so appending cannot repair it. Reload.
+function reloadCorpus(source) {
+  events = readAllEvents();
+  index = buildIndex(events);
+  eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+  console.error(`turbo: reloaded corpus after in-place rewrite of ${source} (${events.length} events)`);
+}
+
 const stopWatching = watchFiles((newEvents) => {
   for (const event of newEvents) {
     if (event.event_id && eventIds.has(event.event_id)) continue;
@@ -28,7 +37,7 @@ const stopWatching = watchFiles((newEvents) => {
     events.unshift(event);
     addToIndex(index, event);
   }
-});
+}, reloadCorpus);
 
 function errorPayload(error) {
   return {

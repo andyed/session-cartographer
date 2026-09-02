@@ -60,10 +60,32 @@ async function waitForReady(pid, timeoutMs, env = process.env) {
   return null;
 }
 
+// The full Explorer (explorer/server/index.js) is a strict superset of
+// turbo-server.js: it serves /api/recall and /api/recall/health as well as every
+// UI endpoint, and both bind the same port. Spawning Turbo while an Explorer is
+// up cannot succeed, and spawning it FIRST is worse — Turbo wins the port and
+// the Explorer web UI then 404s on every data call while looking like it loaded.
+// Probe the contract before spawning anything and reuse whatever already serves it.
+async function recallContractAlreadyServed(url) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 400);
+    const res = await fetch(new URL('/api/recall/health', url), { signal: controller.signal });
+    clearTimeout(timer);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function ensureRunning(env = process.env) {
   const settings = effectiveTurboSettings(env);
   let current = managedServerRecord(env);
   if (current.compatible) return { started: false, pid: current.record.pid, ready: current.ready };
+
+  if (!current.alive && await recallContractAlreadyServed(settings.url)) {
+    return { started: false, pid: null, ready: null, reused: 'external' };
+  }
 
   if (current.alive) {
     if (!processLooksManaged(current.record, env)) {
@@ -112,10 +134,19 @@ async function ensureRunning(env = process.env) {
 function processLooksManaged(record, env = process.env) {
   if (!record || !processIsAlive(Number(record.pid))) return false;
   const ready = readJson(turboPaths(env).ready, null);
+  // Authority comes from the instance-token handshake: a >=32 byte token in the
+  // pid file that matches the ready file in a 0700 state dir. Requiring the
+  // recorded server_script to equal THIS control script's sibling additionally
+  // demanded that both came from the same install directory — so a server
+  // started by the installed plugin could not be stopped from the checkout (or
+  // vice versa), and the operator was told it "is not the managed Turbo server"
+  // when it plainly was. Match on the script's name instead; the token still
+  // carries the security property.
   return Boolean(
     typeof record.instance_token === 'string'
     && record.instance_token.length >= 32
-    && record.server_script === serverScript
+    && typeof record.server_script === 'string'
+    && path.basename(record.server_script) === path.basename(serverScript)
     && ready
     && Number(ready.pid) === Number(record.pid)
     && ready.instance_token === record.instance_token,
@@ -131,7 +162,12 @@ async function stopManaged(env = process.env) {
     return { stopped: false, reason: 'not_running' };
   }
   if (!processLooksManaged(record, env)) {
-    throw new Error(`refusing to stop pid ${record.pid}: it is not the managed Turbo server`);
+    const from = record.server_script ? ` (recorded server_script: ${record.server_script})` : '';
+    throw new Error(
+      `refusing to stop pid ${record.pid}: its instance-token handshake does not match `
+      + `this state dir${from}. If it is a Turbo server from another install, stop it there, `
+      + `or kill the pid directly.`,
+    );
   }
   process.kill(Number(record.pid), 'SIGTERM');
   const deadline = Date.now() + 3000;

@@ -1,6 +1,7 @@
 import { readFileSync, statSync, watch, openSync, readSync, closeSync } from 'fs';
 import { join, resolve } from 'path';
 import { homedir } from 'os';
+import { createHash } from 'node:crypto';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
 
@@ -135,20 +136,55 @@ export function readAllEvents(logFiles = LOG_FILES) {
  * lines appear. Uses byte offsets to avoid re-reading entire files.
  * Returns a cleanup function.
  */
-export function watchFiles(onNewEvents) {
+// Bytes of the pre-offset boundary region fingerprinted to detect a rewrite.
+// The offset alone cannot: repairing history in place changes bytes BEFORE the
+// offset, and if the file also grows (e.g. rewriting a path to a longer one)
+// the size check reads the shifted tail as if it were fresh appends while every
+// already-indexed record silently keeps its stale value.
+const BOUNDARY_BYTES = 4096;
+
+function boundaryHash(filePath, offset) {
+  if (!offset) return '';
+  const start = Math.max(0, offset - BOUNDARY_BYTES);
+  const length = offset - start;
+  if (length <= 0) return '';
+  const buffer = Buffer.alloc(length);
+  let fd;
+  try {
+    fd = openSync(filePath, 'r');
+    readSync(fd, buffer, 0, length, start);
+    closeSync(fd);
+  } catch {
+    if (fd !== undefined) { try { closeSync(fd); } catch {} }
+    return '';
+  }
+  return createHash('sha1').update(buffer).digest('hex');
+}
+
+/**
+ * @param onNewEvents  called with newly appended events
+ * @param onRewrite    optional; called with the source name when history was
+ *                     rewritten in place. Appending cannot repair that, so the
+ *                     consumer must reload from disk. Without a handler the
+ *                     watcher re-baselines and keeps going, which is the old
+ *                     behaviour: stale in memory, no signal.
+ */
+export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
   const offsets = {};
+  const boundaries = {};
   const watchers = [];
 
   // Initialize offsets to current file sizes (don't replay history)
-  for (const [source, filePath] of Object.entries(LOG_FILES)) {
+  for (const [source, filePath] of Object.entries(logFiles)) {
     try {
       offsets[source] = statSync(filePath).size;
     } catch {
       offsets[source] = 0;
     }
+    boundaries[source] = boundaryHash(filePath, offsets[source]);
   }
 
-  for (const [source, filePath] of Object.entries(LOG_FILES)) {
+  for (const [source, filePath] of Object.entries(logFiles)) {
     let debounceTimer = null;
 
     const handleChange = () => {
@@ -164,9 +200,17 @@ export function watchFiles(onNewEvents) {
           return;
         }
 
-        // Detect truncation/rotation
-        if (size < offsets[source]) {
-          offsets[source] = 0;
+        // Truncation/rotation, or history rewritten underneath us.
+        const truncated = size < offsets[source];
+        const rewritten = !truncated
+          && offsets[source] > 0
+          && boundaryHash(filePath, offsets[source]) !== boundaries[source];
+
+        if (truncated || rewritten) {
+          offsets[source] = size;
+          boundaries[source] = boundaryHash(filePath, size);
+          if (onRewrite) onRewrite(source);
+          return;
         }
 
         if (size <= offsets[source]) return;
@@ -185,6 +229,7 @@ export function watchFiles(onNewEvents) {
         }
 
         offsets[source] = size;
+        boundaries[source] = boundaryHash(filePath, size);
 
         // Parse new lines
         const newEvents = [];

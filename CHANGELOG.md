@@ -1,6 +1,57 @@
 # Changelog
 
-## 0.7.3 — unreleased
+## 0.7.4 — unreleased
+
+### fix(recall): the warm index goes stale when history is rewritten
+
+The Explorer/Turbo watcher tracked byte offsets and only ever read the tail. It
+detected truncation, but an in-place rewrite of history was invisible: bytes
+before the offset changed while the file also grew, so the shifted tail was read
+as fresh appends and every already-indexed record silently kept its stale value.
+repair-transcript-paths.js is exactly that shape of write, and a warm server
+served pre-repair paths for hours afterwards with nothing to signal it.
+
+`watchFiles` now fingerprints the 4 KB boundary region before the offset and
+calls a new `onRewrite` handler when it changes; both the Explorer and
+turbo-server reload the corpus and rebuild the index in response. It also takes
+a `logFiles` override, matching `readAllEvents`, so the behaviour is testable
+without env gymnastics.
+
+### fix(turbo): stop refusing to manage a server from another install
+
+`processLooksManaged` required the recorded `server_script` to equal the control
+script's own sibling path, so a Turbo server started by the installed plugin
+could not be stopped from the checkout — the operator was told it "is not the
+managed Turbo server" when it plainly was, and had to kill the pid by hand. The
+instance-token handshake is the authority; path equality only asserted that both
+copies lived in the same directory. Matching on the script name keeps the
+security property and drops the false negative. The refusal message now names
+the recorded script and what to do instead.
+
+### fix(turbo): stop contending with the Explorer for one port
+
+The full Explorer is a strict superset of turbo-server — it serves the entire
+recall contract plus every UI endpoint — and both bind the same port. Starting
+Turbo headless first won the port and left the Explorer UI unstartable, so
+`/carto` rendered a shell that 404'd on every data call. `start` now probes
+`/api/recall/health` before spawning and reuses whatever already answers,
+reporting `reused: "external"`. The Explorer, for its part, explains the
+conflict and names the fix rather than printing a bare EADDRINUSE.
+
+### fix(test): two suites depended on the environment they ran in
+
+`hybridSearch` fuses BM25 over the index it is handed with a semantic leg
+against a live Qdrant, so recall tests holding a six-event fixture had real
+corpus ids fused into their assertions — passing wherever Qdrant was down and
+failing wherever it was up. `CARTOGRAPHER_SEMANTIC=0` now opts the leg out
+(read at call time, since ES imports are hoisted past a module-level const).
+Separately, the global opt-in test built its env from `process.env` and set only
+one provider's session variable per leg, so an inherited session id from the
+surrounding agent won the resolution chain, both legs resolved to one session,
+and delta serving suppressed the second result. All four session variables are
+now stripped.
+
+## 0.7.3 — 2026-09-02
 
 ### fix(recall): follow Codex sessions into the archive
 

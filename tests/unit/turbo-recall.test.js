@@ -1,3 +1,9 @@
+// hybridSearch fuses BM25 over the index it is handed with a semantic leg that
+// queries a live Qdrant. These tests hand it a six-event fixture, so a running
+// Qdrant leaks real corpus ids into the assertions — the suite passed wherever
+// the service was down and failed wherever it was up. Pin the leg off.
+process.env.CARTOGRAPHER_SEMANTIC = '0';
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildIndex } from '../../explorer/server/bm25.js';
