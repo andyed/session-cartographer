@@ -13,6 +13,7 @@ Fusion — then facets the results by project, event type, source, and time.
 
 - **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
 - **`/turbo` in Claude Code or `$session-cartographer:turbo` in Codex** — Discover, enable, disable, or inspect the experimental warm recall backend. One opt-in covers ordinary `/remember` queries from both agents.
+- **`$session-cartographer:setup` in Codex** — Diagnose semantic-search reachability and, with explicit consent, add least-privilege access to local Qdrant and the embedding server. Sandbox denial is reported as configuration—not as a service outage.
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — Promotes a material session into strategic memory. It renders a [session digest](#the-session-digest), then records decisions, discoveries, and unfinished threads with separate, verified receipts for the durable JSONL write and semantic index. Structured `decisions[]` feed the standing profile; ordinary sessions remain preserved by transcripts and hooks without requiring manual synthesis.
@@ -200,6 +201,21 @@ a checkpointed, non-blocking Codex transcript catch-up at most once every 15
 minutes. Changed hooks must be reviewed again because Codex trusts their content
 hash, not just the plugin name.
 
+### Codex access to local semantic services
+
+Keyword recall needs no network permission. Semantic indexing calls Qdrant and
+the embedder on loopback, which the default Codex workspace sandbox blocks.
+After installing, invoke `$session-cartographer:setup` and ask it to enable
+semantic search. With your explicit consent, it updates `~/.codex/config.toml`
+using Codex's active permission model, enables the network proxy, and allowlists
+only exact `localhost` and `127.0.0.1` destinations. Existing policy is
+preserved and backed up; ambiguous or mixed configurations are left untouched
+for manual review.
+
+Restart Codex and open a fresh task after the update, then invoke the setup
+skill again for verification. A task that reports sandbox network denial cannot
+establish that Qdrant is down, even if its curl fails.
+
 For development, clone the repository and register the checkout itself as the
 marketplace. Release archives are self-contained: installed skills, hooks,
 search scripts, and the Explorer do not reach back into a source checkout.
@@ -215,7 +231,7 @@ Then use `/carto` to open it in your browser.
 
 ### Semantic search (optional)
 
-Adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. No Docker — two binaries, under 1GB total. See [docs/SETUP.md](docs/SETUP.md).
+Adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. No Docker — two binaries, under 1GB total. Codex users also need the loopback permission step above. See [docs/SETUP.md](docs/SETUP.md).
 
 ### Add to your CLAUDE.md
 

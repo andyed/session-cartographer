@@ -81,6 +81,7 @@ esac
     FAKE_FAIL_STAGE: '',
     FAKE_GATE_SCORE: '0.2',
     FAKE_VERIFY_MISMATCH: '0',
+    CODEX_SANDBOX_NETWORK_DISABLED: '0',
     ...overrides,
   });
 
@@ -221,6 +222,26 @@ test('service failures stay retryable and name the failed stage', () => {
   assert.equal(value.stage, 'qdrant_unavailable');
   const [failure] = readJsonl(path.join(h.dev, '.carto', 'index-errors.jsonl'));
   assert.equal(failure.stage, 'qdrant_unavailable');
+});
+
+test('Codex sandbox denial is configuration missing, not a false service outage', () => {
+  const h = harness();
+  const result = h.run({
+    event_id: 'evt-sandbox-denied',
+    type: 'tool_bash',
+    summary: 'sandbox cannot reach a healthy host service',
+  }, {
+    FAKE_FAIL_STAGE: 'qdrant_health',
+    CODEX_SANDBOX_NETWORK_DISABLED: '1',
+  });
+
+  assert.equal(result.status, 75);
+  const value = receipt(result);
+  assert.equal(value.outcome, 'configuration_missing');
+  assert.equal(value.stage, 'qdrant_sandbox_denied');
+  const [failure] = readJsonl(path.join(h.dev, '.carto', 'index-errors.jsonl'));
+  assert.equal(failure.outcome, 'configuration_missing');
+  assert.equal(failure.stage, 'qdrant_sandbox_denied');
 });
 
 test('a mismatched readback is a failure rather than a false indexed receipt', () => {

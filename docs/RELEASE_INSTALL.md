@@ -23,6 +23,15 @@ desktop app, launch its bundled CLI with
 task so the approved hooks and updated skill catalog load. Repeat the review
 after any release that changes hook definitions.
 
+Keyword recall works without command-network access. To enable the optional
+local Qdrant + embedding path, invoke `$session-cartographer:setup` and ask it
+to enable semantic search. The skill first diagnoses the current task, then—on
+that explicit request—backs up and updates the user's Codex config with exact
+`localhost` and `127.0.0.1` allow rules. Restart Codex and start another fresh
+task afterward, then invoke the skill again to verify both local health
+endpoints. A sandbox-denied probe is a configuration result, not proof that a
+service is down.
+
 ## Claude Code
 
 From the extracted directory:

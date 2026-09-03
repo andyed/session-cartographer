@@ -99,6 +99,22 @@ fail_index() {
   return "$code"
 }
 
+codex_sandbox_network_disabled() {
+  case "${CODEX_SANDBOX_NETWORK_DISABLED:-}" in
+    1|true|TRUE|yes|YES) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+fail_unreachable_service() {
+  local service="$1"
+  if codex_sandbox_network_disabled; then
+    fail_index "${service}_sandbox_denied" "configuration_missing"
+  else
+    fail_index "${service}_unavailable"
+  fi
+}
+
 record_rejection() {
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   jq -n -c \
@@ -178,8 +194,8 @@ EMBED_TEXT=$(printf '%.*s' "$EMBED_TEXT_MAX" "$TEXT")
 
 # Quick health check. Hooks still degrade gracefully, but batch callers now
 # receive a non-zero status and can avoid checkpointing data that never landed.
-curl -sf "$QDRANT_URL/collections/$COLLECTION" >/dev/null 2>&1 || { fail_index "qdrant_unavailable"; exit $?; }
-curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || { fail_index "embedder_unavailable"; exit $?; }
+curl -sf "$QDRANT_URL/collections/$COLLECTION" >/dev/null 2>&1 || { fail_unreachable_service "qdrant"; exit $?; }
+curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || { fail_unreachable_service "embedder"; exit $?; }
 
 # Get embedding — body built with jq, not string interpolation: a summary
 # containing quotes or backslashes would otherwise produce invalid JSON and

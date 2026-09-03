@@ -26,11 +26,13 @@ for required in \
   "$PLUGIN/hooks/hooks.json" \
   "$PLUGIN/hooks/log-compact-summary.sh" \
   "$PLUGIN/hooks/surface-turbo-on-start.sh" \
+  "$PLUGIN/skills/setup/SKILL.md" \
   "$PLUGIN/skills/turbo/SKILL.md" \
   "$PLUGIN/scripts/cartographer-search.sh" \
   "$PLUGIN/scripts/cartographer-feed.sh" \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/cartographer-turbo.js" \
+  "$PLUGIN/scripts/codex-loopback-setup.js" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
   "$PLUGIN/scripts/infer-codex-project.js" \
   "$PLUGIN/scripts/record-wrapup.sh" \
@@ -78,6 +80,7 @@ if command -v codex >/dev/null 2>&1; then
   INSTALLED="$CODEX_HOME/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/setup/SKILL.md" ]
   [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
 fi
 
@@ -91,6 +94,7 @@ if command -v claude >/dev/null 2>&1; then
   INSTALLED="$CLAUDE_CONFIG_DIR/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/setup/SKILL.md" ]
   [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
 fi
 

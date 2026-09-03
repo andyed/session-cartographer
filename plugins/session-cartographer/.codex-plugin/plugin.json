@@ -1,7 +1,7 @@
 {
   "name": "session-cartographer",
   "version": "0.7.3",
-  "description": "Search and explore Claude Code and Codex session history, with a discoverable Turbo skill for optional shared fast recall",
+  "description": "Search and explore Claude Code and Codex session history, with guided semantic-search setup and optional shared fast recall",
   "author": {
     "name": "Andy Edmonds"
   },
@@ -27,13 +27,15 @@
     "capabilities": [
       "Search",
       "History",
-      "Hooks"
+      "Hooks",
+      "Local semantic search setup"
     ],
     "websiteURL": "https://github.com/andyed/session-cartographer",
     "defaultPrompt": [
       "Remember what we decided last time.",
       "Orient me on this project's recent work.",
       "Open the session history explorer.",
+      "Set up local semantic search safely.",
       "Show me Turbo Mode status."
     ],
     "brandColor": "#2563EB"
