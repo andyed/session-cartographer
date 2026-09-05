@@ -2,6 +2,54 @@
 
 ## 0.7.4 — unreleased
 
+### fix(turbo): the warm backend was unreachable for the callers that exist
+
+Turbo was measurably fast and quietly unusable for the one caller that ran
+every day. The recall contract capped `limit` at 100; `cartographer-feed.sh`
+fans out across every active project and clamps its own limit to 200, so every
+FrakBot daily pulse since Turbo shipped failed the contract and fell back to
+the ~11 s portable search. Raising the ceiling exposed a second blocker on the
+same path — `project` carries a pipe-delimited alternation of every expanded
+alias, and the real allowlist packs to 576 characters against a 512-character
+cap.
+
+Neither was visible in telemetry, because `fallback_reason` recorded the class
+(`turbo_unavailable`) and discarded the message. It now carries
+`fallback_detail` alongside the stable class, which is the only reason the
+second blocker was found on the first run rather than the second week.
+
+The warm service also stopped answering from the wrong corpus. It is reached
+by a fixed loopback port but indexes exactly one corpus, chosen when it
+spawned, so a caller that set `CARTOGRAPHER_DEV_DIR` elsewhere was silently
+served the shared one. `/api/recall/health` now reports `corpus_root`,
+requests may assert it, and a mismatch is refused instead of answered.
+
+`status` gained a `transport` line, and a sandbox-denied listen is reported as
+`blocked` rather than `failed` — the file spool is a complete recall path, not
+a broken server.
+
+Measured on the real FrakBot feed: 12,386 ms via CLI fallback before,
+1,915 ms through Turbo after, with no fallback recorded.
+
+### fix(turbo): warm ranking ignored salience and fused one flat list
+
+The portable fusion weights every RRF contribution by write-time salience
+(`score = 1/(60+rank) * sal`) and fuses four independent source ladders. The
+warm path did neither: one global deduplicated keyword list, `salience` read
+nowhere in `explorer/server/`. Across five targeted queries the portable path
+returned 2-6 milestone events each and the warm path returned 0-1 — the
+deliberate material `/wrapup` exists to create was the material Turbo dropped.
+
+Both halves were load-bearing. Salience alone recovered milestones on two of
+five queries; per-source laddering on three of five. Backend agreement moved
+from 2-8 of 15 to 6-12 of 15.
+
+Exact parity remains an explicit non-goal, and some divergence is deliberate —
+`jsonl.js` filters `milestone_agent_*` turn-completion noise that the portable
+path still returns. A source class disappearing because the ranking never
+modelled salience is a different thing: a defect.
+
+
 ### fix(recall): the warm index goes stale when history is rewritten
 
 The Explorer/Turbo watcher tracked byte offsets and only ever read the tail. It
