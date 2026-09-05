@@ -1397,15 +1397,36 @@ fi
 # user config is the one durable opt-in. Precedence is per-call flag, explicit
 # environment override, shared config, then off. Control operations above and
 # explicit transcript/intent searches stay on the portable path.
-TURBO_CONTROL="$(dirname "$0")/cartographer-turbo.js"
-TURBO_CLIENT="$(dirname "$0")/turbo-search-client.js"
+# Resolve this script's directory PHYSICALLY before handing paths to node.
+# ~/.claude/skills/remember is a symlink into the checkout, and the remember
+# skill derives its root as `../..` from there. The kernel resolves that `..`
+# through the symlink, so `[ -f ]` and `ls` both find the turbo scripts — but
+# node's ESM resolver collapses `..` lexically against import.meta.url first,
+# turning ~/.claude/skills/remember/../../scripts/x.js into
+# ~/.claude/scripts/x.js, which does not exist. Every `/remember` invoked
+# through the symlinked skill therefore failed to load the Turbo controller and
+# fell through to the portable path with the preference still switched on.
+TURBO_SCRIPT_DIR="$(cd -P "$(dirname "$0")" 2>/dev/null && pwd -P)" || TURBO_SCRIPT_DIR=""
+[ -n "$TURBO_SCRIPT_DIR" ] || TURBO_SCRIPT_DIR="$(dirname "$0")"
+TURBO_CONTROL="$TURBO_SCRIPT_DIR/cartographer-turbo.js"
+TURBO_CLIENT="$TURBO_SCRIPT_DIR/turbo-search-client.js"
 TURBO_ENABLED=0
 TURBO_AUTO_START=1
 TURBO_URL="${CARTOGRAPHER_TURBO_URL:-http://127.0.0.1:2526}"
 TURBO_TIMEOUT_MS="${CARTOGRAPHER_TURBO_TIMEOUT_MS:-1500}"
 
+TURBO_RESOLVE_ERROR=""
 if command -v node >/dev/null 2>&1 && [ -f "$TURBO_CONTROL" ]; then
-  TURBO_RESOLVED=$(node "$TURBO_CONTROL" resolve 2>/dev/null || true)
+  TURBO_RESOLVED=$(node "$TURBO_CONTROL" resolve 2>"$TMPDIR/turbo-resolve.err" || true)
+  # A controller that is present but unloadable is not "Turbo is off". Keep the
+  # reason: this failure mode read as a deliberate portable call for the entire
+  # life of the feature, on the one path most sessions actually use.
+  if [ -z "$TURBO_RESOLVED" ] && [ -s "$TMPDIR/turbo-resolve.err" ]; then
+    TURBO_RESOLVE_ERROR=$(
+      LC_ALL=C tr '\r\n\t' '   ' < "$TMPDIR/turbo-resolve.err" \
+        | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//' | cut -c1-300
+    )
+  fi
   if [ -n "$TURBO_RESOLVED" ]; then
     saved_ifs=$IFS
     IFS='	'
@@ -1442,6 +1463,10 @@ REQUESTED_BACKEND=cli
 [ "$TURBO_ENABLED" = "1" ] && REQUESTED_BACKEND=explorer
 TURBO_FALLBACK_REASON=""
 TURBO_FALLBACK_DETAIL=""
+if [ -n "$TURBO_RESOLVE_ERROR" ]; then
+  TURBO_FALLBACK_REASON="turbo_control_unloadable"
+  TURBO_FALLBACK_DETAIL="$TURBO_RESOLVE_ERROR"
+fi
 
 # ─── Run searches ───
 if [ "$OUTPUT_FORMAT" = "text" ]; then
