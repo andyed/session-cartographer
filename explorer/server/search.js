@@ -171,35 +171,45 @@ function eventEpochMs(item) {
 /**
  * Reciprocal Rank Fusion across two result lists.
  */
-function rrfFuse(list1, list1Source, list2, list2Source, limit) {
-  const scores = new Map();  // id → { score, sources: Set, event }
+// The portable CLI does not rank one global list: it searches changelog,
+// research, milestones, and tool-use separately and fuses four ranked ladders,
+// so an event that is 2nd-best among milestones contributes 1/(60+2) even when
+// routine tool events would bury it in a global ranking. The warm path fused a
+// single deduplicated keyword list against semantic, which is why milestone and
+// research events vanished from accelerated results: at corpus scale a /wrapup
+// milestone lands past rank 400 globally and contributes almost nothing, or
+// falls outside FUSION_DEPTH entirely. Bucket by the ingest-time `_source` tag
+// (jsonl.js resolves each event to exactly one domain source, preferring the
+// domain log over changelog) and fuse the ladders the way the CLI does.
+function bucketBySource(items) {
+  const buckets = new Map();
+  for (const item of items) {
+    const source = item.event?._source || 'changelog';
+    if (!buckets.has(source)) buckets.set(source, []);
+    buckets.get(source).push(item);
+  }
+  return [...buckets.entries()].map(([source, list]) => ({ source, list }));
+}
 
-  function addList(list, source) {
+function rrfFuseMany(ladders, limit) {
+  const scores = new Map();
+  for (const { source, list } of ladders) {
     for (let rank = 0; rank < list.length; rank++) {
       const { id, event } = list[rank];
       const rrfScore = 1 / (RRF_K + rank + 1);
-
       if (scores.has(id)) {
         const entry = scores.get(id);
         entry.score += rrfScore;
         entry.sources.add(source);
       } else {
-        scores.set(id, {
-          score: rrfScore,
-          sources: new Set([source]),
-          event,
-        });
+        scores.set(id, { score: rrfScore, sources: new Set([source]), event });
       }
     }
   }
-
-  addList(list1, list1Source);
-  addList(list2, list2Source);
-
   return [...scores.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map(entry => ({
+    .map((entry) => ({
       ...entry.event,
       _score: entry.score,
       _sources: [...entry.sources].join('+'),
@@ -251,6 +261,14 @@ function loadAccessLedger() {
  * access score exactly as before. Mirrors the awk activation block in
  * scripts/cartographer-search.sh — keep the two in sync.
  */
+function applySalience(items) {
+  for (const item of items) {
+    const salience = Number(item.salience);
+    item._score *= Number.isFinite(salience) ? salience : 0.5;
+  }
+  return items;
+}
+
 function applyActivation(items, lambda) {
   const accesses = REUSE_WEIGHT > 0 ? loadAccessLedger() : new Map();
   if (lambda <= 0 && accesses.size === 0) return items;
@@ -387,12 +405,11 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   let keywordCount = bm25All.total;
   let semanticCount = semanticAll.length;
 
-  if (semanticAll.length > 0 && bm25All.items.length > 0) {
-    fusedItems = rrfFuse(bm25All.items.slice(0, FUSION_DEPTH), 'keyword', semanticAll, 'semantic', FUSION_DEPTH);
-  } else if (bm25All.items.length > 0) {
-    fusedItems = bm25All.items.map(r => ({ ...r.event, _score: r.score, _sources: 'keyword' }));
-  } else {
-    fusedItems = semanticAll.map(r => ({ ...r.event, _score: r.score, _sources: 'semantic' }));
+  const keywordLadders = bucketBySource(bm25All.items.slice(0, FUSION_DEPTH));
+  if (semanticAll.length > 0 || keywordLadders.length > 0) {
+    const ladders = [...keywordLadders];
+    if (semanticAll.length > 0) ladders.push({ source: 'semantic', list: semanticAll });
+    fusedItems = rrfFuseMany(ladders, FUSION_DEPTH);
   }
 
   // Temporal filter: --since / --before equivalent. Drop items outside the window.
@@ -407,6 +424,18 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
       return true;
     });
   }
+
+  // Weight by write-time salience before activation, exactly as the portable
+  // fusion does at scripts/cartographer-search.sh (`score = 1/(60+rank) * sal`).
+  // Without this the warm path ranked a /wrapup milestone (0.9) and a routine
+  // bash command (0.2) identically on relevance alone, and since routine tool
+  // events outnumber deliberate ones by orders of magnitude in the corpus, every
+  // milestone and research event fell below the noise-tail cut. Measured on five
+  // targeted queries the warm path returned 0-1 milestones where the portable
+  // path returned 2-6 — the material /wrapup exists to create was the material
+  // Turbo silently dropped. Missing salience defaults to 0.5 (neutral), matching
+  // the portable default for events written before the field existed.
+  applySalience(fusedItems);
 
   // Apply activation: time-decay + promote-on-reuse weighting.
   // Applied after RRF fusion so it affects ranking but doesn't
