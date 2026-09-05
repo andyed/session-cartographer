@@ -58,6 +58,7 @@ append_portable_call_log() {
   local stage_total_ms="$4"
   local result_count="$5"
   local fallback_reason="$6"
+  local fallback_detail="$7"
   local log_dir
 
   [ -n "$SEARCH_CALL_LOG" ] || return 0
@@ -71,7 +72,8 @@ append_portable_call_log() {
     -v session_id="$CONTEXT_SESSION_ID" -v provider="$CONTEXT_PROVIDER" \
     -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
     -v result_count="$result_count" -v elapsed_ms="$elapsed_ms" \
-    -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" '
+    -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" \
+    -v fallback_detail="$fallback_detail" '
       function esc(value) {
         gsub(/\\/, "\\\\", value)
         gsub(/"/, "\\\"", value)
@@ -83,10 +85,11 @@ append_portable_call_log() {
       function quoted(value) { return "\"" esc(value) "\"" }
       BEGIN {
         fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
-        printf "{\"timestamp\":%s,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s}\n", \
+        detail = fallback_detail == "" ? "null" : quoted(fallback_detail)
+        printf "{\"timestamp\":%s,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
           quoted(timestamp), quoted(call_id), quoted(requested_backend), quoted(purpose), \
           quoted(session_id), quoted(provider), quoted(query), quoted(project), quoted(since), \
-          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback
+          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail
       }
     ' >> "$SEARCH_CALL_LOG"; } 2>/dev/null; then
     echo "cartographer-search: warning: cannot write search-call telemetry at $SEARCH_CALL_LOG; continuing" >&2
@@ -1438,6 +1441,7 @@ fi
 REQUESTED_BACKEND=cli
 [ "$TURBO_ENABLED" = "1" ] && REQUESTED_BACKEND=explorer
 TURBO_FALLBACK_REASON=""
+TURBO_FALLBACK_DETAIL=""
 
 # ─── Run searches ───
 if [ "$OUTPUT_FORMAT" = "text" ]; then
@@ -1509,21 +1513,38 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --call-id "$CALL_ID" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
+      --corpus-root "$DEV" \
       --url "$TURBO_URL" \
       --timeout "$TURBO_TIMEOUT_MS" \
       --served-in "$SERVED_FILE" \
       --served-out "$SERVED_OUT" \
       --served-log "$SERVED_LOG" \
       --call-log "$SEARCH_CALL_LOG" \
-      --count-out "$TMPDIR/turbo-count"; then
+      --count-out "$TMPDIR/turbo-count" 2>"$TMPDIR/turbo-client.err"; then
       TURBO_HANDLED=1
       TURBO_COUNT=$(cat "$TMPDIR/turbo-count" 2>/dev/null || echo 0)
       [ "$TURBO_COUNT" -gt 0 ] && FOUND=1
+      [ -s "$TMPDIR/turbo-client.err" ] && cat "$TMPDIR/turbo-client.err" >&2
     else
       TURBO_FALLBACK_REASON="turbo_unavailable"
+      # The reason class alone is not diagnosable. A contract rejection, a dead
+      # service, and a timeout all land here, and they need opposite responses:
+      # the first recurs on every identical call until someone edits code, the
+      # others clear on their own. The feed asked for 200 results against a
+      # ceiling of 100 for a week, failing daily into an ~11 s portable search,
+      # and the telemetry said only "turbo_unavailable" the whole time. Keep the
+      # class stable for grouping and carry the message beside it.
+      TURBO_FALLBACK_DETAIL=$(
+        LC_ALL=C tr -d '\000' < "$TMPDIR/turbo-client.err" 2>/dev/null \
+          | tr '\r\n\t' '   ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//' | cut -c1-300
+      )
+      cat "$TMPDIR/turbo-client.err" >&2 2>/dev/null || true
       echo "(turbo unavailable; portable CLI fallback)" >&2
       if [ -s "$TMPDIR/turbo-start.err" ]; then
         sed -n '1p' "$TMPDIR/turbo-start.err" >&2
+        [ -n "$TURBO_FALLBACK_DETAIL" ] || TURBO_FALLBACK_DETAIL=$(
+          sed -n '1p' "$TMPDIR/turbo-start.err" | tr '\r\n\t' '   ' | cut -c1-300
+        )
       fi
     fi
   else
@@ -1563,7 +1584,8 @@ if [ "$TURBO_HANDLED" = "0" ]; then
     "$((PORTABLE_ENDED_MS - REQUEST_STARTED_MS))" \
     "$((PORTABLE_ENDED_MS - PORTABLE_STARTED_MS))" \
     "$PORTABLE_RESULT_COUNT" \
-    "$TURBO_FALLBACK_REASON"
+    "$TURBO_FALLBACK_REASON" \
+    "$TURBO_FALLBACK_DETAIL"
 fi
 
 # ─── Delta-serving: append this calls served keys to the per-session list ───

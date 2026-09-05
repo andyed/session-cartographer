@@ -41,6 +41,7 @@ const request = {
   purpose: args.purpose || 'remember',
   session_id: args['session-id'] || '',
   provider: args.provider || 'unknown',
+  corpus_root: args['corpus-root'] || '',
   excluded_event_ids: readExcluded(args['served-in']),
 };
 

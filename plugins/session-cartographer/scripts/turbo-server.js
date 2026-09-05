@@ -131,6 +131,20 @@ if (!spoolOnly) {
       publishReady();
       return;
     }
+    // A sandboxed spawn (Codex seatbelt, a hardened Bash tool) is denied the
+    // listen syscall outright. That is a capability of the environment, not a
+    // fault to debug: the file transport is a complete recall path and is the
+    // one this process will serve. Say so, and keep the two cases apart so an
+    // operator reading `status` is not sent hunting for a broken server.
+    if (error.code === 'EPERM' || error.code === 'EACCES') {
+      httpStatus = 'blocked';
+      console.error(
+        `[turbo] loopback listen denied by the sandbox (${error.code}); `
+        + 'file transport is serving recall',
+      );
+      publishReady();
+      return;
+    }
     console.error(`[turbo] HTTP server error: ${error.message}`);
     httpStatus = 'failed';
     publishReady();

@@ -4,6 +4,9 @@ import { homedir } from 'os';
 import { createHash } from 'node:crypto';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
+// The warm service indexes exactly one corpus, fixed at spawn time. Consumers
+// need to be able to ask which one before trusting its answers.
+export const CORPUS_ROOT = DEV_DIR;
 
 export const LOG_FILES = {
   changelog: join(DEV_DIR, 'changelog.jsonl'),

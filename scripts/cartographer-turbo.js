@@ -224,15 +224,31 @@ try {
   } else if (command === 'status') {
     const settings = effectiveTurboSettings();
     const service = managedServerRecord();
+    // `http: "blocked"` on its own reads like a broken service. It is not:
+    // recall has two transports and the file spool is complete. Name the
+    // transport actually carrying queries so status answers "is recall working"
+    // rather than only "did the listener bind".
+    const httpState = service.ready?.http ?? null;
+    const transport = !service.alive
+      ? 'none'
+      : httpState === 'listening'
+        ? 'http'
+        : httpState === 'blocked'
+          ? 'file (loopback listen denied by the sandbox)'
+          : httpState === 'port_in_use'
+            ? 'file (port already served by another instance)'
+            : 'file';
     console.log(JSON.stringify({
       enabled: settings.enabled,
       auto_start: settings.autoStart,
       url: settings.url,
       timeout_ms: settings.timeoutMs,
       config: settings.file,
+      transport,
       service: {
         running: service.alive,
         compatible: service.compatible,
+        http: httpState,
         pid: service.record?.pid ?? null,
         ready: service.ready,
         log: service.paths.log,

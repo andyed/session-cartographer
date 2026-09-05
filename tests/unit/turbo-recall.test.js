@@ -7,8 +7,10 @@ process.env.CARTOGRAPHER_SEMANTIC = '0';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildIndex } from '../../explorer/server/bm25.js';
+import { CORPUS_ROOT } from '../../explorer/server/jsonl.js';
 import { executeRecall } from '../../explorer/server/recall.js';
-import { RecallContractError, validateRecallResponse } from '../../explorer/server/recall-contract.js';
+import { readFileSync } from 'node:fs';
+import { RECALL_LIMIT_MAX, RECALL_PROJECT_MAX, RecallContractError, validateRecallResponse } from '../../explorer/server/recall-contract.js';
 
 function fixture() {
   return [
@@ -81,5 +83,95 @@ test('unsupported contract versions fail instead of being guessed', async () => 
   await assert.rejects(
     executeRecall({ events, index: buildIndex(events) }, request({ contract_version: 2 })),
     (error) => error instanceof RecallContractError && error.status === 409,
+  );
+});
+
+// cartographer-feed.sh fans out over every active project and clamps its own
+// search limit to 200. The contract's original ceiling of 100 rejected that
+// request outright, so every daily feed run since Turbo shipped fell back to
+// the ~11 s portable search — the fallback made it invisible, not harmless.
+// The ceiling has to admit the callers that actually exist.
+test('the feed\'s maximum fan-out limit is inside the contract ceiling', async () => {
+  const feedScript = readFileSync(new URL('../../scripts/cartographer-feed.sh', import.meta.url), 'utf8');
+  const clamp = feedScript.match(/search_limit" -le (\d+) \] \|\| search_limit=(\d+)/);
+  assert.ok(clamp, 'cartographer-feed.sh no longer clamps its search limit in a recognizable form');
+  assert.equal(clamp[1], clamp[2], 'feed clamp bound and assignment disagree');
+  assert.ok(
+    Number(clamp[1]) <= RECALL_LIMIT_MAX,
+    `feed requests up to ${clamp[1]} results but the recall ceiling is ${RECALL_LIMIT_MAX}`,
+  );
+
+  const events = fixture();
+  const response = await executeRecall(
+    { events, index: buildIndex(events) },
+    request({ limit: Number(clamp[1]), purpose: 'feed' }),
+  );
+  validateRecallResponse(response);
+});
+
+test('a limit above the ceiling is rejected rather than silently clamped', async () => {
+  const events = fixture();
+  await assert.rejects(
+    executeRecall({ events, index: buildIndex(events) }, request({ limit: RECALL_LIMIT_MAX + 1 })),
+    (error) => error instanceof RecallContractError && error.status === 400,
+  );
+});
+
+// The result ceiling was only the first of two blockers. `project` carries a
+// pipe-delimited alternation of every alias in the caller's allowlist, and the
+// real daily feed packs to 576 characters against an original 512 cap — so it
+// still failed the contract, on a different field, and still fell back to the
+// ~11 s portable search. Pin the whole registry's packed width against the cap
+// so registry growth fails here rather than silently degrading the feed.
+test('the full project registry packs inside the contract project cap', async () => {
+  const registry = JSON.parse(
+    readFileSync(new URL('../../project-registry.json', import.meta.url), 'utf8'),
+  );
+  const names = new Set();
+  for (const [alias, expansions] of Object.entries(registry.aliases || {})) {
+    names.add(alias);
+    for (const name of expansions) names.add(name);
+  }
+  const packed = [...names].sort().join('|');
+  assert.ok(names.size > 0, 'project-registry.json exposed no aliases');
+  assert.ok(
+    packed.length <= RECALL_PROJECT_MAX,
+    `registry packs to ${packed.length} chars but the contract cap is ${RECALL_PROJECT_MAX}`,
+  );
+
+  const events = fixture();
+  const response = await executeRecall(
+    { events, index: buildIndex(events) },
+    request({ project: `${packed}|beta`, purpose: 'feed' }),
+  );
+  validateRecallResponse(response);
+  assert.deepEqual(response.results.map((row) => row.event_id), ['evt-beta']);
+});
+
+// The warm service is reached by a fixed loopback port but indexes exactly one
+// corpus, chosen when it spawned. A caller that pointed CARTOGRAPHER_DEV_DIR at
+// a different corpus was answered from the shared one and had no way to tell —
+// which read as authoritative results for a corpus that was never searched.
+test('a request naming a different corpus is refused, not silently answered', async () => {
+  const events = fixture();
+  await assert.rejects(
+    executeRecall(
+      { events, index: buildIndex(events) },
+      request({ corpus_root: '/tmp/some-other-corpus' }),
+    ),
+    (error) => error instanceof RecallContractError && error.status === 409,
+  );
+});
+
+test('a request naming this corpus, or naming none, is served', async () => {
+  const events = fixture();
+  const index = buildIndex(events);
+  const matching = await executeRecall({ events, index }, request({ corpus_root: CORPUS_ROOT }));
+  validateRecallResponse(matching);
+  const unstated = await executeRecall({ events, index }, request());
+  validateRecallResponse(unstated);
+  assert.deepEqual(
+    matching.results.map((row) => row.event_id),
+    unstated.results.map((row) => row.event_id),
   );
 });
