@@ -229,6 +229,22 @@ try {
     // transport actually carrying queries so status answers "is recall working"
     // rather than only "did the listener bind".
     const httpState = service.ready?.http ?? null;
+    // ready.json is written when the service starts, so its event count is a
+    // spawn-time snapshot. The watcher keeps indexing for hours afterwards, and
+    // an operator asking `status` whether the index is current was being shown
+    // the number from whenever the process happened to boot. Ask the running
+    // service when it can answer; fall back to the snapshot when it cannot
+    // (a sandbox-blocked listener has no HTTP to ask).
+    let live = null;
+    if (service.alive && httpState === 'listening') {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 500);
+        const res = await fetch(new URL('/api/recall/health', settings.url), { signal: controller.signal });
+        clearTimeout(timer);
+        if (res.ok) live = await res.json();
+      } catch {}
+    }
     const transport = !service.alive
       ? 'none'
       : httpState === 'listening'
@@ -249,6 +265,11 @@ try {
         running: service.alive,
         compatible: service.compatible,
         http: httpState,
+        events: live?.events ?? service.ready?.events ?? null,
+        indexed_docs: live?.indexed_docs ?? service.ready?.indexed_docs ?? null,
+        corpus_root: live?.corpus_root ?? null,
+        heap_used_mb: live ? Math.round(live.process.heap_used / 1048576) : null,
+        index_freshness: live ? 'live' : 'startup snapshot',
         pid: service.record?.pid ?? null,
         ready: service.ready,
         log: service.paths.log,
