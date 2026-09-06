@@ -2,6 +2,31 @@
 
 ## 0.7.2 — unreleased
 
+### fix(hooks): milestone rows now say whether their transcript is reachable
+
+`log-session-milestones.sh` took `transcript_path` verbatim from the host
+payload. That is the path the host *intends* for the session, not a promise the
+file was ever written — and sessions ending with reason `other` routinely leave
+no transcript at all.
+
+Measured on a 15,000-row log: **7,959 rows (53%) pointed at a nonexistent file**,
+and `session_end_other` alone accounted for 7,723 of them — 97% of every broken
+link, at a 78% failure rate for that one milestone type. Healthy types by
+contrast: `session_wrapup` 2%, `turn_stop` 3%, `compaction_auto` 5%. `/wrapup`
+resolves its path with `find` before recording it, which is why it stayed clean.
+
+Each broken row also carried a `claude-history://` deeplink indistinguishable
+from a working one until a human clicked it and got nothing.
+
+Rows now carry `transcript_verified: true|false`, and a deeplink is minted only
+when the path resolves. The intended path is still recorded when it does not —
+it remains evidence of what the host meant — but it no longer masquerades as
+something reachable. Existing rows are untouched; the log is append-only, and
+absence of the field means "written before this check existed", not "verified".
+
+Guarded by `tests/unit/transcript-verified.test.js` — 4 cases, all 4 failing
+against the pre-fix hook.
+
 ### feat(recall): one Turbo opt-in now covers Claude Code and Codex
 
 Turbo Mode is available as an experimental global opt-in before its planned

@@ -19,6 +19,14 @@ EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
 SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
 TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
+# The host hands us the path it INTENDS for this session; it does not promise
+# the file was ever written. Sessions that end abnormally (SessionEnd reason
+# "other") frequently leave no transcript at all — 78% of those rows pointed at
+# a nonexistent file, which is 97% of every broken link in the log. Record what
+# we were told, but say plainly whether it resolves, so consumers can tell a
+# reachable transcript from a remembered intention.
+TRANSCRIPT_VERIFIED=false
+[ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && TRANSCRIPT_VERIFIED=true
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -73,7 +81,10 @@ case "$EVENT" in
 esac
 
 DEEPLINK=""
-[ "$PROVIDER" = "claude" ] && DEEPLINK="claude-history://session/${ENCODED_PATH}"
+# Only mint a deeplink we know resolves. An unopenable claude-history:// URL is
+# indistinguishable from a working one until a human clicks it and gets nothing.
+[ "$PROVIDER" = "claude" ] && [ "$TRANSCRIPT_VERIFIED" = true ] \
+    && DEEPLINK="claude-history://session/${ENCODED_PATH}"
 
 # Salience by milestone type — wrapups are deliberate strategic synthesis,
 # compactions are mechanical noise. Tuning: docs/INDEXING_BACKLOG.md item #2.
@@ -113,6 +124,7 @@ jq -n -c \
     --arg session "$SESSION_ID" \
     --arg provider "$PROVIDER" \
     --arg transcript "$TRANSCRIPT" \
+    --argjson transcript_verified "$TRANSCRIPT_VERIFIED" \
     --arg deeplink "$DEEPLINK" \
     --arg project "$PROJECT" \
     --arg cwd "$CWD" \
@@ -123,7 +135,7 @@ jq -n -c \
     --argjson event_count "$SESSION_EVENT_COUNT" \
     --arg parent_id "$PARENT_ID" \
     --argjson salience "$SALIENCE" \
-    '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count, salience: $salience}
+    '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, transcript_verified: $transcript_verified, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count, salience: $salience}
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
     >> "$LOG_FILE"
 
@@ -146,9 +158,10 @@ CHANGELOG_EVENT=$(jq -n -c \
     --arg deeplink "$DEEPLINK" \
     --arg summary "$RICH_SUMMARY" \
     --arg transcript "$TRANSCRIPT" \
+    --argjson transcript_verified "$TRANSCRIPT_VERIFIED" \
     --arg parent_id "$PARENT_ID" \
     --argjson salience "$SALIENCE" \
-    '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
+    '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, transcript_verified: $transcript_verified, related_ids: [], salience: $salience}
      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
 if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
 
