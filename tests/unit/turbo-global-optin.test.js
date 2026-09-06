@@ -58,6 +58,16 @@ test('one persistent opt-in selects Turbo for Claude and Codex sessions', (t) =>
   };
   delete env.CARTOGRAPHER_TURBO;
   delete env.CARTOGRAPHER_SEARCH_BACKEND;
+  // env is built from process.env, and each leg below sets only its own
+  // provider's session variable. An inherited session id from the surrounding
+  // agent therefore survives into the other leg and wins the resolution chain
+  // (CARTOGRAPHER → CLAUDE → CLAUDE_CODE → CODEX), so both legs resolve to one
+  // session and delta serving suppresses the second leg's result. Strip all
+  // four so a leg's session is exactly what it declares.
+  delete env.CARTOGRAPHER_SESSION_ID;
+  delete env.CLAUDE_SESSION_ID;
+  delete env.CLAUDE_CODE_SESSION_ID;
+  delete env.CODEX_SESSION_ID;
 
   const started = run(process.execPath, [CONTROL, 'start'], env);
   assert.equal(started.status, 0, started.stderr || started.stdout);

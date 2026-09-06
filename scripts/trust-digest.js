@@ -386,6 +386,7 @@ const sensitivePaths = [
   path.join(DEV, '.carto'),
   path.join(HOME, '.claude/projects'),
   path.join(HOME, '.codex/sessions'),
+  path.join(HOME, '.codex/archived_sessions'),
 ].filter((p) => fs.existsSync(p));
 
 // ─── Existing config, so a re-run proposes only the delta ───

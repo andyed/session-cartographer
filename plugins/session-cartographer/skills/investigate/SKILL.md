@@ -87,7 +87,7 @@ PROJECT=$(basename "${GIT_REPO:-$(pwd)}")
 # Find the transcript so the record links back to this conversation.
 TRANSCRIPT=$(find ~/.claude/projects -name "${SESSION_ID}.jsonl" 2>/dev/null | head -1)
 if [ -z "$TRANSCRIPT" ] && [ "$SESSION_ID" != "unknown" ]; then
-  TRANSCRIPT=$(find ~/.codex/sessions -name "*${SESSION_ID}*.jsonl" 2>/dev/null | head -1)
+  TRANSCRIPT=$(find ~/.codex/archived_sessions ~/.codex/sessions -name "*${SESSION_ID}*.jsonl" 2>/dev/null | head -1)
   [ -n "$TRANSCRIPT" ] && PROVIDER="codex"
 fi
 

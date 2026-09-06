@@ -16,11 +16,13 @@ for required in \
   "$PLUGIN/.claude-plugin/plugin.json" \
   "$PLUGIN/hooks/hooks.json" \
   "$PLUGIN/hooks/surface-turbo-on-start.sh" \
+  "$PLUGIN/skills/setup/SKILL.md" \
   "$PLUGIN/skills/turbo/SKILL.md" \
   "$PLUGIN/scripts/cartographer-search.sh" \
   "$PLUGIN/scripts/cartographer-feed.sh" \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/cartographer-turbo.js" \
+  "$PLUGIN/scripts/codex-loopback-setup.js" \
   "$PLUGIN/scripts/codex-transcript-to-turns.awk" \
   "$PLUGIN/scripts/infer-codex-project.js" \
   "$PLUGIN/scripts/record-wrapup.sh" \
@@ -158,6 +160,7 @@ if command -v codex >/dev/null 2>&1; then
   INSTALLED="$WORK/codex/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/setup/SKILL.md" ]
   [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
   RESULT=$(CARTOGRAPHER_DEV_DIR="$DEV" bash "$INSTALLED/scripts/cartographer-search.sh" "repository marketplace search" --limit 5)
   printf '%s' "$RESULT" | LC_ALL=C grep -q 'evt-source-smoke'
@@ -170,6 +173,7 @@ if command -v claude >/dev/null 2>&1; then
   INSTALLED="$WORK/claude/plugins/cache/session-cartographer/session-cartographer/$VERSION"
   [ -f "$INSTALLED/scripts/cartographer-search.sh" ]
   [ -f "$INSTALLED/explorer/server/index.js" ]
+  [ -f "$INSTALLED/skills/setup/SKILL.md" ]
   [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
 fi
 

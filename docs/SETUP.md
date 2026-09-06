@@ -31,6 +31,30 @@ bash scripts/start-services.sh
 
 Stop with `bash scripts/start-services.sh --stop`.
 
+### Codex: allow the local services
+
+Codex's default workspace sandbox blocks command-network access, including
+loopback. After installing the plugin, invoke `$session-cartographer:setup` and
+ask it to enable semantic search, or run this from a checkout:
+
+```bash
+node scripts/codex-loopback-setup.js doctor
+node scripts/codex-loopback-setup.js apply   # writes only after this explicit action
+```
+
+The apply command updates `~/.codex/config.toml` (or
+`$CODEX_HOME/config.toml`), makes a timestamped backup, and uses the existing
+Codex configuration model. It enables command networking behind the network
+proxy and adds exact allow rules for only `localhost` and `127.0.0.1`; it does
+not enable general Internet access. Mixed or ambiguous permission settings are
+refused for manual review.
+
+Restart Codex and start a fresh task after applying because the current task's
+permissions cannot change in place. Run `doctor` again there. Read
+`sandbox_network_denied` as missing Codex permission, not as evidence that the
+host service is down. Semantic search is ready only when both Qdrant `/healthz`
+and the embedder `/health` return HTTP success from the fresh task.
+
 ### 1. Qdrant binary
 
 Download from [qdrant.tech/documentation/guides/installation](https://qdrant.tech/documentation/guides/installation/):

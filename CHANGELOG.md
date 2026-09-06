@@ -1,6 +1,155 @@
 # Changelog
 
-## 0.7.2 — unreleased
+## 0.7.4 — unreleased
+
+### fix(turbo): the warm backend was unreachable for the callers that exist
+
+Turbo was measurably fast and quietly unusable for the one caller that ran
+every day. The recall contract capped `limit` at 100; `cartographer-feed.sh`
+fans out across every active project and clamps its own limit to 200, so every
+FrakBot daily pulse since Turbo shipped failed the contract and fell back to
+the ~11 s portable search. Raising the ceiling exposed a second blocker on the
+same path — `project` carries a pipe-delimited alternation of every expanded
+alias, and the real allowlist packs to 576 characters against a 512-character
+cap.
+
+Neither was visible in telemetry, because `fallback_reason` recorded the class
+(`turbo_unavailable`) and discarded the message. It now carries
+`fallback_detail` alongside the stable class, which is the only reason the
+second blocker was found on the first run rather than the second week.
+
+The warm service also stopped answering from the wrong corpus. It is reached
+by a fixed loopback port but indexes exactly one corpus, chosen when it
+spawned, so a caller that set `CARTOGRAPHER_DEV_DIR` elsewhere was silently
+served the shared one. `/api/recall/health` now reports `corpus_root`,
+requests may assert it, and a mismatch is refused instead of answered.
+
+`status` gained a `transport` line, and a sandbox-denied listen is reported as
+`blocked` rather than `failed` — the file spool is a complete recall path, not
+a broken server.
+
+Measured on the real FrakBot feed: 12,386 ms via CLI fallback before,
+1,915 ms through Turbo after, with no fallback recorded.
+
+### fix(turbo): warm ranking ignored salience and fused one flat list
+
+The portable fusion weights every RRF contribution by write-time salience
+(`score = 1/(60+rank) * sal`) and fuses four independent source ladders. The
+warm path did neither: one global deduplicated keyword list, `salience` read
+nowhere in `explorer/server/`. Across five targeted queries the portable path
+returned 2-6 milestone events each and the warm path returned 0-1 — the
+deliberate material `/wrapup` exists to create was the material Turbo dropped.
+
+Both halves were load-bearing. Salience alone recovered milestones on two of
+five queries; per-source laddering on three of five. Backend agreement moved
+from 2-8 of 15 to 6-12 of 15.
+
+Exact parity remains an explicit non-goal, and some divergence is deliberate —
+`jsonl.js` filters `milestone_agent_*` turn-completion noise that the portable
+path still returns. A source class disappearing because the ranking never
+modelled salience is a different thing: a defect.
+
+
+### fix(recall): the warm index goes stale when history is rewritten
+
+The Explorer/Turbo watcher tracked byte offsets and only ever read the tail. It
+detected truncation, but an in-place rewrite of history was invisible: bytes
+before the offset changed while the file also grew, so the shifted tail was read
+as fresh appends and every already-indexed record silently kept its stale value.
+repair-transcript-paths.js is exactly that shape of write, and a warm server
+served pre-repair paths for hours afterwards with nothing to signal it.
+
+`watchFiles` now fingerprints the 4 KB boundary region before the offset and
+calls a new `onRewrite` handler when it changes; both the Explorer and
+turbo-server reload the corpus and rebuild the index in response. It also takes
+a `logFiles` override, matching `readAllEvents`, so the behaviour is testable
+without env gymnastics.
+
+### fix(turbo): stop refusing to manage a server from another install
+
+`processLooksManaged` required the recorded `server_script` to equal the control
+script's own sibling path, so a Turbo server started by the installed plugin
+could not be stopped from the checkout — the operator was told it "is not the
+managed Turbo server" when it plainly was, and had to kill the pid by hand. The
+instance-token handshake is the authority; path equality only asserted that both
+copies lived in the same directory. Matching on the script name keeps the
+security property and drops the false negative. The refusal message now names
+the recorded script and what to do instead.
+
+### fix(turbo): stop contending with the Explorer for one port
+
+The full Explorer is a strict superset of turbo-server — it serves the entire
+recall contract plus every UI endpoint — and both bind the same port. Starting
+Turbo headless first won the port and left the Explorer UI unstartable, so
+`/carto` rendered a shell that 404'd on every data call. `start` now probes
+`/api/recall/health` before spawning and reuses whatever already answers,
+reporting `reused: "external"`. The Explorer, for its part, explains the
+conflict and names the fix rather than printing a bare EADDRINUSE.
+
+### fix(test): two suites depended on the environment they ran in
+
+`hybridSearch` fuses BM25 over the index it is handed with a semantic leg
+against a live Qdrant, so recall tests holding a six-event fixture had real
+corpus ids fused into their assertions — passing wherever Qdrant was down and
+failing wherever it was up. `CARTOGRAPHER_SEMANTIC=0` now opts the leg out
+(read at call time, since ES imports are hoisted past a module-level const).
+Separately, the global opt-in test built its env from `process.env` and set only
+one provider's session variable per leg, so an inherited session id from the
+surrounding agent won the resolution chain, both legs resolved to one session,
+and delta serving suppressed the second result. All four session variables are
+now stripped.
+
+## 0.7.3 — 2026-09-02
+
+### fix(recall): follow Codex sessions into the archive
+
+Codex does not delete a finished session, it moves it from
+`~/.codex/sessions/<y>/<m>/<d>/` into the flat `~/.codex/archived_sessions/`.
+Every `transcript_path` the hooks stamp therefore went stale the moment a
+session was archived, while the transcript itself stayed fully readable one
+directory away. Nothing errored: `/remember` surfaced the event, the agent
+stat'd the recorded path, found nothing, and reported the conversation as aged
+out. Silent recall failure on data that was never gone.
+
+`hooks/common.sh` already recognised the archive when detecting a provider; no
+lookup path did. `CARTOGRAPHER_CODEX_ARCHIVED_DIR` now sits alongside the
+sessions dir everywhere transcripts are scanned or served —
+`cartographer-search.sh`, `retro-index.sh`, `trust-digest.js`, and the
+Explorer's `transcriptRoots()`, whose boundary check had been rejecting every
+archived path.
+
+`scripts/resolve-transcript.sh` is the single resolver: recorded path, then
+archive basename, then a session-id hunt across every store. The `remember`,
+`investigate`, and `wrapup` skills used a bare `find ~/.codex/sessions`, which
+missed every archived session; they now go through the resolver or search both
+roots.
+
+`--get` self-heals a stale path at display time, adding
+`transcript_path_resolved` and `transcript_path_status: "archived"` rather than
+rewriting the recorded value — the command promises the complete record, so the
+original stays visible as provenance. Genuinely unrecoverable paths are marked
+`"missing"` instead of silently resolving to something plausible.
+
+### fix(recall): repair the paths already written
+
+`scripts/repair-transcript-paths.js` rewrites the stale paths in bulk, dry-run
+by default. On the development corpus it repaired 60,420 records across the four
+event logs, taking resolvable transcript paths from 102,988 to 163,416.
+
+The event logs are only half the corpus. Semantic results are served from Qdrant
+payloads, which carry their own copy of `transcript_path`, so repairing the logs
+alone left every semantic hit still pointing at the pre-archive path — 6,258
+broken points across 253 sessions. `--qdrant` repairs that side under the same
+policy: a path is rewritten only when it does not resolve and exactly one file
+of that basename exists in the archive. Ambiguity is refused, and Claude paths
+are never touched, because Claude Code deletes rather than archives and
+rewriting one would be a fabrication.
+
+The log pass re-stats each file before writing and refuses if it grew during the
+run. Several concurrent agent sessions append to these logs continuously, and a
+read-modify-write would otherwise drop anything written mid-pass.
+
+## 0.7.2 — 2026-08-30
 
 ### fix(hooks): stop writing session-end rows that record nothing
 

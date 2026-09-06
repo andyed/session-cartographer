@@ -18,9 +18,18 @@ const spoolOnly = process.env.CARTOGRAPHER_TURBO_SPOOL_ONLY === '1';
 
 fs.mkdirSync(paths.requests, { recursive: true, mode: 0o700 });
 
-const events = readAllEvents();
-const index = buildIndex(events);
-const eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+let events = readAllEvents();
+let index = buildIndex(events);
+let eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+// See jsonl.js: an in-place rewrite invalidates everything already indexed,
+// so appending cannot repair it. Reload.
+function reloadCorpus(source) {
+  events = readAllEvents();
+  index = buildIndex(events);
+  eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+  console.error(`turbo: reloaded corpus after in-place rewrite of ${source} (${events.length} events)`);
+}
+
 const stopWatching = watchFiles((newEvents) => {
   for (const event of newEvents) {
     if (event.event_id && eventIds.has(event.event_id)) continue;
@@ -28,7 +37,7 @@ const stopWatching = watchFiles((newEvents) => {
     events.unshift(event);
     addToIndex(index, event);
   }
-});
+}, reloadCorpus);
 
 function errorPayload(error) {
   return {
@@ -119,6 +128,20 @@ if (!spoolOnly) {
     if (error.code === 'EADDRINUSE') {
       httpStatus = 'port_in_use';
       console.error(`[turbo] ${url.origin} already in use; file transport remains available`);
+      publishReady();
+      return;
+    }
+    // A sandboxed spawn (Codex seatbelt, a hardened Bash tool) is denied the
+    // listen syscall outright. That is a capability of the environment, not a
+    // fault to debug: the file transport is a complete recall path and is the
+    // one this process will serve. Say so, and keep the two cases apart so an
+    // operator reading `status` is not sent hunting for a broken server.
+    if (error.code === 'EPERM' || error.code === 'EACCES') {
+      httpStatus = 'blocked';
+      console.error(
+        `[turbo] loopback listen denied by the sandbox (${error.code}); `
+        + 'file transport is serving recall',
+      );
       publishReady();
       return;
     }

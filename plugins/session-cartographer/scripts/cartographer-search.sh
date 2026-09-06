@@ -14,6 +14,7 @@
 #   CARTOGRAPHER_DEV_DIR         — default: ~/Documents/dev
 #   CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR — default: ~/.claude/projects
 #   CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR  — default: ~/.codex/sessions
+#   CARTOGRAPHER_CODEX_ARCHIVED_DIR     — default: ~/.codex/archived_sessions
 #   CARTOGRAPHER_TRANSCRIPTS_DIR        — legacy Claude-only override
 #   CARTOGRAPHER_QDRANT_URL      — default: http://localhost:6333
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
@@ -57,6 +58,7 @@ append_portable_call_log() {
   local stage_total_ms="$4"
   local result_count="$5"
   local fallback_reason="$6"
+  local fallback_detail="$7"
   local log_dir
 
   [ -n "$SEARCH_CALL_LOG" ] || return 0
@@ -70,7 +72,8 @@ append_portable_call_log() {
     -v session_id="$CONTEXT_SESSION_ID" -v provider="$CONTEXT_PROVIDER" \
     -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
     -v result_count="$result_count" -v elapsed_ms="$elapsed_ms" \
-    -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" '
+    -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" \
+    -v fallback_detail="$fallback_detail" '
       function esc(value) {
         gsub(/\\/, "\\\\", value)
         gsub(/"/, "\\\"", value)
@@ -82,10 +85,11 @@ append_portable_call_log() {
       function quoted(value) { return "\"" esc(value) "\"" }
       BEGIN {
         fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
-        printf "{\"timestamp\":%s,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s}\n", \
+        detail = fallback_detail == "" ? "null" : quoted(fallback_detail)
+        printf "{\"timestamp\":%s,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
           quoted(timestamp), quoted(call_id), quoted(requested_backend), quoted(purpose), \
           quoted(session_id), quoted(provider), quoted(query), quoted(project), quoted(since), \
-          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback
+          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail
       }
     ' >> "$SEARCH_CALL_LOG"; } 2>/dev/null; then
     echo "cartographer-search: warning: cannot write search-call telemetry at $SEARCH_CALL_LOG; continuing" >&2
@@ -357,6 +361,10 @@ DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
+# Codex MOVES a session out of sessions/ into archived_sessions/ — it does not
+# delete it. A recorded transcript_path therefore goes stale while the data is
+# still on disk, which reads as "transcript missing" unless this root is scanned.
+CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
 
 # Resolve project aliases from registry
@@ -513,8 +521,35 @@ if [ -n "$GET_IDS" ]; then
 
     # jq gives the exact record with nested diff_shape intact; without it the
     # raw line is still an exact answer, just denser.
+    # Self-heal a stale transcript_path at display time. Codex archives finished
+    # sessions rather than deleting them, so a path stamped at event time can
+    # stop resolving while the transcript is still readable one directory away.
+    # repair-transcript-paths.js fixes the logs in bulk; this covers records
+    # written since the last repair run.
+    #
+    # The recorded value is preserved and the live one added alongside it —
+    # --get promises the complete record, so rewriting a field in place would
+    # quietly break that contract. A consumer reads transcript_path_resolved
+    # when present; provenance stays visible either way.
+    get_tpath=""
     if command -v jq >/dev/null 2>&1; then
-      echo "$line" | jq '.' 2>/dev/null || echo "$line"
+      get_tpath=$(printf '%s' "$line" | jq -r '.transcript_path // ""' 2>/dev/null)
+    fi
+    get_resolved=""
+    if [ -n "$get_tpath" ] && [ ! -f "$get_tpath" ]; then
+      get_resolved=$("$(dirname "$0")/resolve-transcript.sh" "$get_tpath" 2>/dev/null || true)
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+      if [ -n "$get_resolved" ]; then
+        printf '%s' "$line" | jq --arg r "$get_resolved" \
+          '. + {transcript_path_resolved: $r, transcript_path_status: "archived"}' 2>/dev/null \
+          || echo "$line"
+      elif [ -n "$get_tpath" ] && [ ! -f "$get_tpath" ]; then
+        printf '%s' "$line" | jq '. + {transcript_path_status: "missing"}' 2>/dev/null || echo "$line"
+      else
+        echo "$line" | jq '.' 2>/dev/null || echo "$line"
+      fi
     else
       echo "$line"
     fi
@@ -727,7 +762,7 @@ grep_jsonl_to_tsv() {
 }
 
 grep_transcripts_to_tsv() {
-  [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || return 0
+  [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || [ -d "$CODEX_ARCHIVED" ] || return 0
 
   # Per-line grep, no turn-grouping, no BM25. Turn-extraction is an
   # indexing-layer concern (Qdrant embeddings); the CLI keyword path is
@@ -740,7 +775,7 @@ grep_transcripts_to_tsv() {
     local provider project_dir session_file session_id session_cwd
     session_file=$(basename "$transcript")
     case "$transcript" in
-      "$CODEX_TRANSCRIPTS"/*)
+      "$CODEX_TRANSCRIPTS"/*|"$CODEX_ARCHIVED"/*)
         provider="codex"
         session_id=$(jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' "$transcript" 2>/dev/null | head -1)
         session_id="${session_id:-${session_file%.jsonl}}"
@@ -784,11 +819,13 @@ grep_transcripts_to_tsv() {
       {
         [ -d "$CLAUDE_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CLAUDE_TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null
         [ -d "$CODEX_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CODEX_TRANSCRIPTS" --glob '*.jsonl' --max-depth 5 2>/dev/null
+        [ -d "$CODEX_ARCHIVED" ] && rg -l "$GREP_QUERY" "$CODEX_ARCHIVED" --glob '*.jsonl' --max-depth 5 2>/dev/null
       } | head -20
     else
       {
         [ -d "$CLAUDE_TRANSCRIPTS" ] && find "$CLAUDE_TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
         [ -d "$CODEX_TRANSCRIPTS" ] && find "$CODEX_TRANSCRIPTS" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+        [ -d "$CODEX_ARCHIVED" ] && find "$CODEX_ARCHIVED" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
       } | head -20
     fi
   )
@@ -1360,15 +1397,36 @@ fi
 # user config is the one durable opt-in. Precedence is per-call flag, explicit
 # environment override, shared config, then off. Control operations above and
 # explicit transcript/intent searches stay on the portable path.
-TURBO_CONTROL="$(dirname "$0")/cartographer-turbo.js"
-TURBO_CLIENT="$(dirname "$0")/turbo-search-client.js"
+# Resolve this script's directory PHYSICALLY before handing paths to node.
+# ~/.claude/skills/remember is a symlink into the checkout, and the remember
+# skill derives its root as `../..` from there. The kernel resolves that `..`
+# through the symlink, so `[ -f ]` and `ls` both find the turbo scripts — but
+# node's ESM resolver collapses `..` lexically against import.meta.url first,
+# turning ~/.claude/skills/remember/../../scripts/x.js into
+# ~/.claude/scripts/x.js, which does not exist. Every `/remember` invoked
+# through the symlinked skill therefore failed to load the Turbo controller and
+# fell through to the portable path with the preference still switched on.
+TURBO_SCRIPT_DIR="$(cd -P "$(dirname "$0")" 2>/dev/null && pwd -P)" || TURBO_SCRIPT_DIR=""
+[ -n "$TURBO_SCRIPT_DIR" ] || TURBO_SCRIPT_DIR="$(dirname "$0")"
+TURBO_CONTROL="$TURBO_SCRIPT_DIR/cartographer-turbo.js"
+TURBO_CLIENT="$TURBO_SCRIPT_DIR/turbo-search-client.js"
 TURBO_ENABLED=0
 TURBO_AUTO_START=1
 TURBO_URL="${CARTOGRAPHER_TURBO_URL:-http://127.0.0.1:2526}"
 TURBO_TIMEOUT_MS="${CARTOGRAPHER_TURBO_TIMEOUT_MS:-1500}"
 
+TURBO_RESOLVE_ERROR=""
 if command -v node >/dev/null 2>&1 && [ -f "$TURBO_CONTROL" ]; then
-  TURBO_RESOLVED=$(node "$TURBO_CONTROL" resolve 2>/dev/null || true)
+  TURBO_RESOLVED=$(node "$TURBO_CONTROL" resolve 2>"$TMPDIR/turbo-resolve.err" || true)
+  # A controller that is present but unloadable is not "Turbo is off". Keep the
+  # reason: this failure mode read as a deliberate portable call for the entire
+  # life of the feature, on the one path most sessions actually use.
+  if [ -z "$TURBO_RESOLVED" ] && [ -s "$TMPDIR/turbo-resolve.err" ]; then
+    TURBO_RESOLVE_ERROR=$(
+      LC_ALL=C tr '\r\n\t' '   ' < "$TMPDIR/turbo-resolve.err" \
+        | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//' | cut -c1-300
+    )
+  fi
   if [ -n "$TURBO_RESOLVED" ]; then
     saved_ifs=$IFS
     IFS='	'
@@ -1404,6 +1462,11 @@ fi
 REQUESTED_BACKEND=cli
 [ "$TURBO_ENABLED" = "1" ] && REQUESTED_BACKEND=explorer
 TURBO_FALLBACK_REASON=""
+TURBO_FALLBACK_DETAIL=""
+if [ -n "$TURBO_RESOLVE_ERROR" ]; then
+  TURBO_FALLBACK_REASON="turbo_control_unloadable"
+  TURBO_FALLBACK_DETAIL="$TURBO_RESOLVE_ERROR"
+fi
 
 # ─── Run searches ───
 if [ "$OUTPUT_FORMAT" = "text" ]; then
@@ -1475,21 +1538,38 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --call-id "$CALL_ID" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
+      --corpus-root "$DEV" \
       --url "$TURBO_URL" \
       --timeout "$TURBO_TIMEOUT_MS" \
       --served-in "$SERVED_FILE" \
       --served-out "$SERVED_OUT" \
       --served-log "$SERVED_LOG" \
       --call-log "$SEARCH_CALL_LOG" \
-      --count-out "$TMPDIR/turbo-count"; then
+      --count-out "$TMPDIR/turbo-count" 2>"$TMPDIR/turbo-client.err"; then
       TURBO_HANDLED=1
       TURBO_COUNT=$(cat "$TMPDIR/turbo-count" 2>/dev/null || echo 0)
       [ "$TURBO_COUNT" -gt 0 ] && FOUND=1
+      [ -s "$TMPDIR/turbo-client.err" ] && cat "$TMPDIR/turbo-client.err" >&2
     else
       TURBO_FALLBACK_REASON="turbo_unavailable"
+      # The reason class alone is not diagnosable. A contract rejection, a dead
+      # service, and a timeout all land here, and they need opposite responses:
+      # the first recurs on every identical call until someone edits code, the
+      # others clear on their own. The feed asked for 200 results against a
+      # ceiling of 100 for a week, failing daily into an ~11 s portable search,
+      # and the telemetry said only "turbo_unavailable" the whole time. Keep the
+      # class stable for grouping and carry the message beside it.
+      TURBO_FALLBACK_DETAIL=$(
+        LC_ALL=C tr -d '\000' < "$TMPDIR/turbo-client.err" 2>/dev/null \
+          | tr '\r\n\t' '   ' | sed -e 's/  */ /g' -e 's/^ //' -e 's/ $//' | cut -c1-300
+      )
+      cat "$TMPDIR/turbo-client.err" >&2 2>/dev/null || true
       echo "(turbo unavailable; portable CLI fallback)" >&2
       if [ -s "$TMPDIR/turbo-start.err" ]; then
         sed -n '1p' "$TMPDIR/turbo-start.err" >&2
+        [ -n "$TURBO_FALLBACK_DETAIL" ] || TURBO_FALLBACK_DETAIL=$(
+          sed -n '1p' "$TMPDIR/turbo-start.err" | tr '\r\n\t' '   ' | cut -c1-300
+        )
       fi
     fi
   else
@@ -1529,7 +1609,8 @@ if [ "$TURBO_HANDLED" = "0" ]; then
     "$((PORTABLE_ENDED_MS - REQUEST_STARTED_MS))" \
     "$((PORTABLE_ENDED_MS - PORTABLE_STARTED_MS))" \
     "$PORTABLE_RESULT_COUNT" \
-    "$TURBO_FALLBACK_REASON"
+    "$TURBO_FALLBACK_REASON" \
+    "$TURBO_FALLBACK_DETAIL"
 fi
 
 # ─── Delta-serving: append this calls served keys to the per-session list ───
@@ -1561,7 +1642,7 @@ if [ "$FOUND" -eq 0 ] && [ "$OUTPUT_FORMAT" = "text" ]; then
     echo "compaction, or session end."
     echo ""
     echo "To search raw session transcripts now:"
-    echo "  grep -r -i \"$QUERY\" $CLAUDE_TRANSCRIPTS/ $CODEX_TRANSCRIPTS/ --include='*.jsonl' -l"
+    echo "  grep -r -i \"$QUERY\" $CLAUDE_TRANSCRIPTS/ $CODEX_TRANSCRIPTS/ $CODEX_ARCHIVED/ --include='*.jsonl' -l"
   else
     # ─── Phantom detection (LongMemEval abstention) ───
     # Empty result + entity-shaped tokens in the query is a different failure

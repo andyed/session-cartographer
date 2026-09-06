@@ -8,13 +8,20 @@
     {
       "name": "session-cartographer",
       "description": "Hooks preserve shared Claude Code and Codex history; /remember recalls it and /turbo manages optional fast recall for both agents",
-      "version": "0.7.2",
+      "version": "0.7.3",
       "author": {
         "name": "Andy Edmonds"
       },
       "source": "./plugins/session-cartographer",
       "category": "productivity",
-      "keywords": ["search", "history", "session", "memory", "BM25", "hooks"]
+      "keywords": [
+        "search",
+        "history",
+        "session",
+        "memory",
+        "BM25",
+        "hooks"
+      ]
     }
   ]
 }

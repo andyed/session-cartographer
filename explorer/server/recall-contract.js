@@ -21,6 +21,24 @@ function requireString(value, field, { allowEmpty = false, max = 4096 } = {}) {
   return value;
 }
 
+// The ceiling tracks the largest limit a real caller asks for, not a round
+// number. cartographer-feed.sh fans out across every active project and clamps
+// its own search limit to 200; a ceiling of 100 rejected every feed run since
+// Turbo shipped, and each rejection fell back to an ~11 s portable search. A
+// rejection is the correct response to a limit above this, but the ceiling has
+// to admit the callers that exist.
+export const RECALL_LIMIT_MAX = 200;
+
+// `project` is not one name: callers pass a pipe-delimited alternation of every
+// alias a project expands to, and the bound has to cover the widest real
+// allowlist rather than the widest single name. FrakBot's daily feed expands 20
+// project names into 37 aliases packing to 576 characters — over the original
+// 512-character cap, so the feed failed the contract on `project` even after
+// the result ceiling was raised, and fell back to the ~11 s portable search
+// exactly as before. This admits the whole project registry several times over
+// and still sits far below the 1 MB request-body limit.
+export const RECALL_PROJECT_MAX = 2048;
+
 export function normalizeRecallRequest(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new RecallContractError('request body must be an object');
@@ -33,9 +51,10 @@ export function normalizeRecallRequest(raw) {
   }
 
   const limit = Number(raw.limit ?? 15);
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-    throw new RecallContractError('limit must be an integer from 1 to 100');
+  if (!Number.isInteger(limit) || limit < 1 || limit > RECALL_LIMIT_MAX) {
+    throw new RecallContractError(`limit must be an integer from 1 to ${RECALL_LIMIT_MAX}`);
   }
+
 
   const excluded = raw.excluded_event_ids ?? [];
   if (!Array.isArray(excluded) || excluded.length > 500) {
@@ -53,13 +72,20 @@ export function normalizeRecallRequest(raw) {
     contract_version: RECALL_CONTRACT_VERSION,
     call_id: requireString(raw.call_id, 'call_id', { max: 160 }),
     query: requireString(raw.query, 'query'),
-    project: requireString(raw.project ?? '', 'project', { allowEmpty: true, max: 512 }),
+    project: requireString(raw.project ?? '', 'project', { allowEmpty: true, max: RECALL_PROJECT_MAX }),
     since: requireString(raw.since ?? '', 'since', { allowEmpty: true, max: 128 }),
     before: requireString(raw.before ?? '', 'before', { allowEmpty: true, max: 128 }),
     limit,
     purpose,
     session_id: requireString(raw.session_id ?? '', 'session_id', { allowEmpty: true, max: 256 }),
     provider: requireString(raw.provider ?? 'unknown', 'provider', { max: 64 }),
+    // Optional corpus assertion. The warm service indexes one corpus, fixed when
+    // it spawned, but it is reached by a fixed loopback port — so a caller that
+    // set CARTOGRAPHER_DEV_DIR to a different corpus was silently answered from
+    // the shared one. Wrong-corpus results are worse than slow results: they look
+    // authoritative. Callers that know which corpus they mean say so, and old
+    // callers that omit it keep working.
+    corpus_root: requireString(raw.corpus_root ?? '', 'corpus_root', { allowEmpty: true, max: 4096 }),
     excluded_event_ids: [...new Set(excludedEventIds)],
   };
 }

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { computeFacets, hybridSearch, parseTimeArg } from './search.js';
+import { CORPUS_ROOT } from './jsonl.js';
 import {
   RECALL_CONTRACT_VERSION,
   RecallContractError,
@@ -31,6 +32,12 @@ function parseBound(value, field) {
 
 export async function executeRecall({ events, index }, rawRequest) {
   const request = normalizeRecallRequest(rawRequest);
+  if (request.corpus_root && request.corpus_root !== CORPUS_ROOT) {
+    throw new RecallContractError(
+      `this service indexes ${CORPUS_ROOT}, not ${request.corpus_root}`,
+      409,
+    );
+  }
   const sinceMs = parseBound(request.since, 'since');
   const beforeMs = parseBound(request.before, 'before');
 
@@ -70,6 +77,7 @@ export function recallHealth({ events, index }) {
     status: 'ok',
     contract_version: RECALL_CONTRACT_VERSION,
     backend: 'explorer',
+    corpus_root: CORPUS_ROOT,
     events: events.length,
     indexed_docs: index.docs.size,
     index_generation: recallIndexGeneration(events, index),

@@ -13,6 +13,7 @@ Fusion — then facets the results by project, event type, source, and time.
 
 - **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
 - **`/turbo` in Claude Code or `$session-cartographer:turbo` in Codex** — Discover, enable, disable, or inspect the experimental warm recall backend. One opt-in covers ordinary `/remember` queries from both agents.
+- **`$session-cartographer:setup` in Codex** — Diagnose semantic-search reachability and, with explicit consent, add least-privilege access to local Qdrant and the embedding server. Sandbox denial is reported as configuration—not as a service outage.
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — Promotes a material session into strategic memory. It renders a [session digest](#the-session-digest), then records decisions, discoveries, and unfinished threads with separate, verified receipts for the durable JSONL write and semantic index. Structured `decisions[]` feed the standing profile; ordinary sessions remain preserved by transcripts and hooks without requiring manual synthesis.
@@ -104,9 +105,18 @@ the percentage. Defaults are tunable with
 ### Turbo Mode: one opt-in for both agents
 
 Turbo Mode routes ordinary `/remember` queries through a warm in-memory index.
-It stays off by default. Enabling it writes one provider-neutral user setting,
-starts a zero-dependency headless recall service, and applies to future Claude
-Code and Codex sessions alike:
+On a ~122,000-event corpus a standard recall returns in tens of milliseconds
+where the portable search takes ~11 seconds; the daily cross-project pulse went
+from 12.4 s to 1.9 s end to end. It stays off by default, and it is still an
+experiment: the utility canary in
+[docs/TURBO_MODE_SPEC.md](docs/TURBO_MODE_SPEC.md) requires 50 exact calls per
+backend before any graduation decision, and the portable control cohort is far
+short of that. Speed is measured; *better recall* is not yet demonstrated.
+Exact ranking parity with the portable CLI is an explicit non-goal.
+
+Enabling it writes one provider-neutral user setting, starts a zero-dependency
+headless recall service, and applies to future Claude Code and Codex sessions
+alike:
 
 In Claude Code, invoke `/turbo` with `enable`, `status`, or `disable`. In Codex,
 invoke `$session-cartographer:turbo` and ask for the same action. The skill
@@ -126,7 +136,12 @@ against explicit result use rather than raw query volume.
 Restricted Codex sandboxes use a private file request transport when loopback
 HTTP is unavailable, so the same opt-in still applies. A failed or incompatible
 warm request falls back once to the portable CLI; `--no-turbo` forces that
-control path for one call. Exact `--get`/`--touch`/`--thread`, intent-only, and
+control path for one call. A fallback records both a stable
+`fallback_reason` class and the underlying `fallback_detail` message in
+`.carto/search-calls.jsonl`, so a contract rejection that recurs on every
+identical call is distinguishable from a service that was briefly down. The
+warm service indexes one corpus fixed at spawn time; a request naming a
+different `corpus_root` is refused rather than answered from the wrong one. Exact `--get`/`--touch`/`--thread`, intent-only, and
 raw-transcript operations remain portable by design.
 
 This is the experimental 0.7.x opt-in. Backend-attributed call telemetry is
@@ -200,6 +215,21 @@ a checkpointed, non-blocking Codex transcript catch-up at most once every 15
 minutes. Changed hooks must be reviewed again because Codex trusts their content
 hash, not just the plugin name.
 
+### Codex access to local semantic services
+
+Keyword recall needs no network permission. Semantic indexing calls Qdrant and
+the embedder on loopback, which the default Codex workspace sandbox blocks.
+After installing, invoke `$session-cartographer:setup` and ask it to enable
+semantic search. With your explicit consent, it updates `~/.codex/config.toml`
+using Codex's active permission model, enables the network proxy, and allowlists
+only exact `localhost` and `127.0.0.1` destinations. Existing policy is
+preserved and backed up; ambiguous or mixed configurations are left untouched
+for manual review.
+
+Restart Codex and open a fresh task after the update, then invoke the setup
+skill again for verification. A task that reports sandbox network denial cannot
+establish that Qdrant is down, even if its curl fails.
+
 For development, clone the repository and register the checkout itself as the
 marketplace. Release archives are self-contained: installed skills, hooks,
 search scripts, and the Explorer do not reach back into a source checkout.
@@ -215,7 +245,7 @@ Then use `/carto` to open it in your browser.
 
 ### Semantic search (optional)
 
-Adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. No Docker — two binaries, under 1GB total. See [docs/SETUP.md](docs/SETUP.md).
+Adds vector similarity to the keyword pipeline. Both always run, results fuse via RRF. No Docker — two binaries, under 1GB total. Codex users also need the loopback permission step above. See [docs/SETUP.md](docs/SETUP.md).
 
 ### Add to your CLAUDE.md
 

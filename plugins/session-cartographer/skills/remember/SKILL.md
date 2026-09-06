@@ -72,7 +72,16 @@ CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --ge
 ```
 
 Cheap (~0.1s) and the right move before deciding which transcript is worth
-opening. Ids that resolve to nothing are reported as missing rather than
+opening.
+
+`--get` also self-heals stale transcript paths. When a recorded `transcript_path`
+no longer resolves, the record gains:
+
+- **`transcript_path_resolved`** + `transcript_path_status: "archived"` — Codex
+  moved that session into `~/.codex/archived_sessions/`. **Read the resolved
+  path**; the recorded one is kept for provenance only.
+- **`transcript_path_status: "missing"`** — genuinely unrecoverable (a deleted
+  Claude transcript). Say so rather than answering around the gap. Ids that resolve to nothing are reported as missing rather than
 dropped — if you asked for five and got four, say so instead of answering
 around the gap.
 
@@ -218,7 +227,19 @@ that path because it is provider-neutral. If missing, resolve from `session:`
 across both provider stores:
 ```bash
 find ~/.claude/projects -name "<session-id>.jsonl" 2>/dev/null
-find ~/.codex/sessions -name "*<session-id>*.jsonl" 2>/dev/null
+bash "$ROOT/scripts/resolve-transcript.sh" "<recorded-path-or-session-id>"
+```
+
+`resolve-transcript.sh` is the one place that knows Codex **archives**
+finished sessions into `~/.codex/archived_sessions/` rather than deleting
+them — so a `transcript_path` recorded by the hooks goes stale while the file
+is still on disk. Prefer it over a hand-rolled `find`; a bare
+`find ~/.codex/sessions` misses every archived session and reports a
+recoverable transcript as missing.
+
+```bash
+# manual equivalent, if you need it
+find ~/.codex/archived_sessions ~/.codex/sessions -name "*<session-id>*.jsonl" 2>/dev/null
 ```
 
 For a Claude transcript, read around the relevant moment:
