@@ -115,6 +115,26 @@ if [ -f "$CHANGELOG" ] && [ -n "$SESSION_ID" ]; then
     case "$SESSION_EVENT_COUNT" in ''|*[!0-9]*) SESSION_EVENT_COUNT=0 ;; esac
 fi
 
+# A session-end row with no reachable transcript AND no logged activity records
+# nothing that can ever be recalled: no conversation to open, no events to join
+# to, no content indexed. Measured on a 15,000-row log, 7,646 such rows existed —
+# 51% of the whole log — all from `session_end_other`, the abnormal-exit reason.
+#
+# The activity check is what makes this safe to drop rather than merely noisy.
+# 79 rows had a dead transcript but real logged work behind them; those are a
+# lost transcript over a genuine session and are kept. Only the intersection —
+# nothing reachable and nothing done — is discarded.
+#
+# Scoped to session_end_* deliberately. That is where the evidence is; a
+# subagent or compaction row with a zero count has not been shown to be noise.
+case "$MILESTONE" in
+    session_end_*)
+        if [ "$TRANSCRIPT_VERIFIED" != true ] && [ "$SESSION_EVENT_COUNT" -eq 0 ]; then
+            exit 0
+        fi
+        ;;
+esac
+
 # Write to milestones log
 jq -n -c \
     --arg eid "$EVENT_ID" \

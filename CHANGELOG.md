@@ -2,6 +2,30 @@
 
 ## 0.7.2 — unreleased
 
+### fix(hooks): stop writing session-end rows that record nothing
+
+A session end with no reachable transcript AND no logged activity has nothing
+recallable behind it — no conversation to open, no events to join to, nothing
+indexed — yet it ranked in `/remember` at salience 0.5 and diluted
+`.carto/profile.md`. On a 15,000-row log there were **7,646 of them, 51% of the
+whole file**, all from `session_end_other`.
+
+The hook no longer writes that row. The activity check is what makes dropping
+it safe rather than lossy: 79 rows had a dead transcript over real logged work —
+a lost transcript on a genuine session — and those are kept. Only the
+intersection of "nothing reachable" and "nothing done" is discarded, and only
+for `session_end_*`, which is where the evidence is.
+
+`scripts/prune-contentless-milestones.js` applies the identical predicate to
+history, on the logs and on Qdrant payloads (which serve semantic recall from
+their own copy). Dry run by default; `--write` takes a dated `.bak` first.
+The predicate is exported and unit-tested, and importing the module runs
+nothing — an importing process with `--write` in its argv must not delete data
+as a side effect of an `import`.
+
+Guarded by `tests/unit/prune-contentless.test.js` — 7 cases, weighted toward
+the keep side, since a predicate that widens by one clause silently eats the 79.
+
 ### fix(hooks): milestone rows now say whether their transcript is reachable
 
 `log-session-milestones.sh` took `transcript_path` verbatim from the host
