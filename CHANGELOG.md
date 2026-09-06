@@ -17,8 +17,11 @@ intersection of "nothing reachable" and "nothing done" is discarded, and only
 for `session_end_*`, which is where the evidence is.
 
 `scripts/prune-contentless-milestones.js` applies the identical predicate to
-history, on the logs and on Qdrant payloads (which serve semantic recall from
-their own copy). Dry run by default; `--write` takes a dated `.bak` first.
+history. Logs only, deliberately: sampling 60 of the 7,647 removable ids found
+0 indexed in Qdrant — the indexer already rejects them as contentless, which is
+why they polluted the log and profile but never semantic search. A `--qdrant`
+flag would have matched nothing and reported success. Dry run by default;
+`--write` takes a dated `.bak` first.
 The predicate is exported and unit-tested, and importing the module runs
 nothing — an importing process with `--write` in its argv must not delete data
 as a side effect of an `import`.

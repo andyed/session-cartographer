@@ -37,12 +37,13 @@
  *   node scripts/prune-contentless-milestones.js --json
  *   node scripts/prune-contentless-milestones.js --write
  *   node scripts/prune-contentless-milestones.js --file <path>
- *   node scripts/prune-contentless-milestones.js --qdrant          # report points
- *   node scripts/prune-contentless-milestones.js --qdrant --write  # delete them
  *
- * Qdrant carries its own copy of these rows, so pruning the log alone leaves
- * semantic recall still serving them. --qdrant removes that side under the
- * identical predicate.
+ * Logs only, deliberately. The sibling repair-transcript-paths.js also repairs
+ * Qdrant because stale paths reach the index — these rows never do. Sampling 60
+ * of the 7,647 removed ids found 0 indexed: the indexer already rejects them as
+ * contentless (see .carto/index-rejects.jsonl), which is why they polluted the
+ * log and the profile but not semantic search. A --qdrant flag here would match
+ * nothing and report success, which is worse than not offering it.
  */
 import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'fs';
 import { homedir } from 'os';
@@ -52,11 +53,8 @@ import { fileURLToPath } from 'url';
 const args = process.argv.slice(2);
 const DO_WRITE = args.includes('--write');
 const AS_JSON = args.includes('--json');
-const DO_QDRANT = args.includes('--qdrant');
 const fileArg = args.indexOf('--file');
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev');
-const QDRANT = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
-const COLLECTION = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
 
 const TARGETS = fileArg !== -1 && args[fileArg + 1]
   ? [args[fileArg + 1]]
@@ -84,10 +82,10 @@ export function isContentless(r) {
 // Executing on import would run the tool — and with --write in an importing
 // process's argv, would delete data as a side effect of a `import` statement.
 // The predicate above is the only thing meant to be importable.
-async function main() {
+function main() {
   const summary = { scanned: 0, removed: 0, kept_activity: 0, kept_reachable: 0, files: [] };
 
-  for (const TARGET of (DO_QDRANT ? [] : TARGETS)) {
+  for (const TARGET of TARGETS) {
     if (!existsSync(TARGET)) {
       if (!AS_JSON) console.log(`skip ${TARGET} (not found)`);
       continue;
@@ -117,53 +115,19 @@ async function main() {
     }
   }
 
-  if (DO_QDRANT) {
-    let cursor = null, scanned = 0;
-    const doomed = [];
-    do {
-      const res = await fetch(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 1000, offset: cursor, with_payload: true }),
-      });
-      if (!res.ok) { console.error(`qdrant scroll failed: ${res.status}`); process.exit(1); }
-      const j = await res.json();
-      for (const p of j.result.points) {
-        scanned++;
-        const pl = p.payload || {};
-        // Qdrant payloads carry `summary`, not `description`; the predicate only
-        // reads fields both sides share.
-        if (isContentless(pl)) doomed.push(p.id);
-      }
-      cursor = j.result.next_page_offset;
-    } while (cursor);
-    summary.scanned = scanned;
-    summary.removed = doomed.length;
-    if (DO_WRITE && doomed.length) {
-      const del = await fetch(`${QDRANT}/collections/${COLLECTION}/points/delete?wait=true`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ points: doomed }),
-      });
-      if (!del.ok) { console.error(`qdrant delete failed: ${del.status}`); process.exit(1); }
-    }
-  }
-
   if (AS_JSON) {
-    console.log(JSON.stringify({ ...summary, wrote: DO_WRITE, target: DO_QDRANT ? 'qdrant' : 'logs' }, null, 2));
+    console.log(JSON.stringify({ ...summary, wrote: DO_WRITE }, null, 2));
   } else {
-    console.log(`\ncontentless session-end milestones (${DO_QDRANT ? 'qdrant' : 'logs'})`);
+    console.log('\ncontentless session-end milestones');
     console.log(`  scanned                 ${summary.scanned}`);
     console.log(`  removable               ${summary.removed}`);
-    if (!DO_QDRANT) {
-      console.log(`  kept — real activity    ${summary.kept_activity}`);
-      console.log(`  kept — transcript ok    ${summary.kept_reachable}`);
-    }
+    console.log(`  kept — real activity    ${summary.kept_activity}`);
+    console.log(`  kept — transcript ok    ${summary.kept_reachable}`);
     if (!DO_WRITE) console.log('\n  DRY RUN — re-run with --write to apply.');
   }
 
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  await main();
+  main();
 }
