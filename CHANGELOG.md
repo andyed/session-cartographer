@@ -1,6 +1,59 @@
 # Changelog
 
-## 0.7.4 — unreleased
+## 0.7.4 — 2026-09-05
+
+### fix(hooks): stop writing session-end rows that record nothing
+
+A session end with no reachable transcript AND no logged activity has nothing
+recallable behind it — no conversation to open, no events to join to, nothing
+indexed — yet it ranked in `/remember` at salience 0.5 and diluted
+`.carto/profile.md`. On a 15,000-row log there were **7,646 of them, 51% of the
+whole file**, all from `session_end_other`.
+
+The hook no longer writes that row. The activity check is what makes dropping
+it safe rather than lossy: 79 rows had a dead transcript over real logged work —
+a lost transcript on a genuine session — and those are kept. Only the
+intersection of "nothing reachable" and "nothing done" is discarded, and only
+for `session_end_*`, which is where the evidence is.
+
+`scripts/prune-contentless-milestones.js` applies the identical predicate to
+history. Logs only, deliberately: sampling 60 of the 7,647 removable ids found
+0 indexed in Qdrant — the indexer already rejects them as contentless, which is
+why they polluted the log and profile but never semantic search. A `--qdrant`
+flag would have matched nothing and reported success. Dry run by default;
+`--write` takes a dated `.bak` first.
+The predicate is exported and unit-tested, and importing the module runs
+nothing — an importing process with `--write` in its argv must not delete data
+as a side effect of an `import`.
+
+Guarded by `tests/unit/prune-contentless.test.js` — 7 cases, weighted toward
+the keep side, since a predicate that widens by one clause silently eats the 79.
+
+### fix(hooks): milestone rows now say whether their transcript is reachable
+
+`log-session-milestones.sh` took `transcript_path` verbatim from the host
+payload. That is the path the host *intends* for the session, not a promise the
+file was ever written — and sessions ending with reason `other` routinely leave
+no transcript at all.
+
+Measured on a 15,000-row log: **7,959 rows (53%) pointed at a nonexistent file**,
+and `session_end_other` alone accounted for 7,723 of them — 97% of every broken
+link, at a 78% failure rate for that one milestone type. Healthy types by
+contrast: `session_wrapup` 2%, `turn_stop` 3%, `compaction_auto` 5%. `/wrapup`
+resolves its path with `find` before recording it, which is why it stayed clean.
+
+Each broken row also carried a `claude-history://` deeplink indistinguishable
+from a working one until a human clicked it and got nothing.
+
+Rows now carry `transcript_verified: true|false`, and a deeplink is minted only
+when the path resolves. The intended path is still recorded when it does not —
+it remains evidence of what the host meant — but it no longer masquerades as
+something reachable. Existing rows are untouched; the log is append-only, and
+absence of the field means "written before this check existed", not "verified".
+
+Guarded by `tests/unit/transcript-verified.test.js` — 4 cases, all 4 failing
+against the pre-fix hook.
+
 
 ### fix(turbo): the warm backend was unreachable for the callers that exist
 
@@ -150,58 +203,6 @@ run. Several concurrent agent sessions append to these logs continuously, and a
 read-modify-write would otherwise drop anything written mid-pass.
 
 ## 0.7.2 — 2026-08-30
-
-### fix(hooks): stop writing session-end rows that record nothing
-
-A session end with no reachable transcript AND no logged activity has nothing
-recallable behind it — no conversation to open, no events to join to, nothing
-indexed — yet it ranked in `/remember` at salience 0.5 and diluted
-`.carto/profile.md`. On a 15,000-row log there were **7,646 of them, 51% of the
-whole file**, all from `session_end_other`.
-
-The hook no longer writes that row. The activity check is what makes dropping
-it safe rather than lossy: 79 rows had a dead transcript over real logged work —
-a lost transcript on a genuine session — and those are kept. Only the
-intersection of "nothing reachable" and "nothing done" is discarded, and only
-for `session_end_*`, which is where the evidence is.
-
-`scripts/prune-contentless-milestones.js` applies the identical predicate to
-history. Logs only, deliberately: sampling 60 of the 7,647 removable ids found
-0 indexed in Qdrant — the indexer already rejects them as contentless, which is
-why they polluted the log and profile but never semantic search. A `--qdrant`
-flag would have matched nothing and reported success. Dry run by default;
-`--write` takes a dated `.bak` first.
-The predicate is exported and unit-tested, and importing the module runs
-nothing — an importing process with `--write` in its argv must not delete data
-as a side effect of an `import`.
-
-Guarded by `tests/unit/prune-contentless.test.js` — 7 cases, weighted toward
-the keep side, since a predicate that widens by one clause silently eats the 79.
-
-### fix(hooks): milestone rows now say whether their transcript is reachable
-
-`log-session-milestones.sh` took `transcript_path` verbatim from the host
-payload. That is the path the host *intends* for the session, not a promise the
-file was ever written — and sessions ending with reason `other` routinely leave
-no transcript at all.
-
-Measured on a 15,000-row log: **7,959 rows (53%) pointed at a nonexistent file**,
-and `session_end_other` alone accounted for 7,723 of them — 97% of every broken
-link, at a 78% failure rate for that one milestone type. Healthy types by
-contrast: `session_wrapup` 2%, `turn_stop` 3%, `compaction_auto` 5%. `/wrapup`
-resolves its path with `find` before recording it, which is why it stayed clean.
-
-Each broken row also carried a `claude-history://` deeplink indistinguishable
-from a working one until a human clicked it and got nothing.
-
-Rows now carry `transcript_verified: true|false`, and a deeplink is minted only
-when the path resolves. The intended path is still recorded when it does not —
-it remains evidence of what the host meant — but it no longer masquerades as
-something reachable. Existing rows are untouched; the log is append-only, and
-absence of the field means "written before this check existed", not "verified".
-
-Guarded by `tests/unit/transcript-verified.test.js` — 4 cases, all 4 failing
-against the pre-fix hook.
 
 ### feat(recall): one Turbo opt-in now covers Claude Code and Codex
 
