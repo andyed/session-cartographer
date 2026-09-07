@@ -3,8 +3,9 @@ import { readFileSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { performance } from 'perf_hooks';
+import { isResolved } from '../../scripts/sentinels.js';
 
-export const INTERNALS_SCHEMA_VERSION = 4;
+export const INTERNALS_SCHEMA_VERSION = 5;
 export const INTERNALS_WINDOWS = Object.freeze({
   '7d': 7,
   '30d': 30,
@@ -13,6 +14,7 @@ export const INTERNALS_WINDOWS = Object.freeze({
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FIRST_RANK_BUCKETS = ['1-3', '4-7', '8-15', '16+', 'unknown', 'none'];
+const SEMANTIC_STATUSES = ['available', 'unavailable', 'unknown'];
 
 export function normalizeInternalsWindow(value = '30d') {
   const normalized = String(value || '30d').trim().toLowerCase();
@@ -165,7 +167,8 @@ function accessRecord(row, index) {
   const ordinal = Number(row.access_ordinal);
   return {
     index,
-    timestampMs: timestampMs(row.timestamp),
+    source: row.source,
+    timestampMs: nonNegativeNumber(row.timestamp_ms) ?? timestampMs(row.timestamp),
     batchId: typeof row.access_batch_id === 'string' && row.access_batch_id ? row.access_batch_id : null,
     ordinal: Number.isInteger(ordinal) && ordinal > 0 ? ordinal : null,
   };
@@ -207,7 +210,7 @@ function resolveAccessBoundary(accesses, edge) {
   return rank === null ? { status: 'unknown', rank: null } : { status: 'resolved', rank };
 }
 
-function summarizeCalls(callValues) {
+function summarizeCalls(callValues, accessSource = null) {
   const calls = [...callValues];
   const firstAccessRank = Object.fromEntries(FIRST_RANK_BUCKETS.map((bucket) => [bucket, 0]));
   const lastAccessRank = Object.fromEntries(FIRST_RANK_BUCKETS.map((bucket) => [bucket, 0]));
@@ -223,13 +226,29 @@ function summarizeCalls(callValues) {
   let hitsConsumed = 0;
   let consumptionDepthUnknownCalls = 0;
   const consumptionDepthRanks = [];
+  const firstAccessTimes = [];
+  let missingStartCalls = 0;
+  let missingAccessTimeCalls = 0;
+  let negativeSamples = 0;
 
   for (const call of calls) {
+    const accesses = accessSource === null
+      ? call.accesses
+      : call.accesses.filter((access) => access.source === accessSource);
     servedRows += call.servedRows;
-    usedRows += call.usedRows;
-    if (call.used) callsWithUse++;
+    usedRows += new Set(accesses.map((access) => access.eventId)).size;
+    if (accesses.length > 0) callsWithUse++;
+    if (accesses.length > 0) {
+      if (call.requestStartedMs === null) missingStartCalls++;
+      else if (accesses.some((access) => access.timestampMs === null)) missingAccessTimeCalls++;
+      else {
+        const elapsedMs = Math.min(...accesses.map((access) => access.timestampMs)) - call.requestStartedMs;
+        if (elapsedMs < 0) negativeSamples++;
+        else firstAccessTimes.push(elapsedMs);
+      }
+    }
     const consumedEvents = new Map();
-    for (const access of call.accesses) {
+    for (const access of accesses) {
       if (!consumedEvents.has(access.eventId)) consumedEvents.set(access.eventId, []);
       if (access.rank !== null) consumedEvents.get(access.eventId).push(access.rank);
     }
@@ -241,8 +260,8 @@ function summarizeCalls(callValues) {
       if (consumedRanks.length > 0) consumptionDepthRanks.push(Math.max(...consumedRanks));
       else consumptionDepthUnknownCalls++;
     }
-    const first = resolveAccessBoundary(call.accesses, 'first');
-    const last = resolveAccessBoundary(call.accesses, 'last');
+    const first = resolveAccessBoundary(accesses, 'first');
+    const last = resolveAccessBoundary(accesses, 'last');
     firstAccessRank[first.status === 'resolved' ? rankBucket(first.rank) : first.status]++;
     lastAccessRank[last.status === 'resolved' ? rankBucket(last.rank) : last.status]++;
     if (first.status === 'unknown') firstAccessUnknownCalls++;
@@ -286,11 +305,64 @@ function summarizeCalls(callValues) {
     firstAccessRank,
     lastAccessRank,
     firstUsefulRank: firstAccessRank,
+    timeToFirstAccess: {
+      ...summarizeLatency(firstAccessTimes),
+      missingStartCalls,
+      missingAccessTimeCalls,
+      negativeSamples,
+    },
   };
 }
 
 function ratio(numerator, denominator) {
   return denominator > 0 ? numerator / denominator : null;
+}
+
+function summarizeUtility(callValues) {
+  const calls = [...callValues];
+  const attributedCalls = calls.filter((call) => call.sessionAttributed).length;
+  return {
+    ...summarizeCalls(calls),
+    // Fetching is inspection; only result_used records assert use. Unknown
+    // historical sources remain in the compatibility union, never inferred.
+    fetched: summarizeCalls(calls, 'result_fetched'),
+    explicitUse: summarizeCalls(calls, 'result_used'),
+    sessionAttribution: {
+      attributedCalls,
+      missingCalls: calls.length - attributedCalls,
+      attributionRate: ratio(attributedCalls, calls.length),
+    },
+  };
+}
+
+function summarizeLatency(values) {
+  const samples = values.filter(Number.isFinite);
+  return {
+    samples: samples.length,
+    p50Ms: percentile(samples, 0.5),
+    p95Ms: percentile(samples, 0.95),
+    maxMs: samples.length > 0 ? Math.max(...samples) : null,
+  };
+}
+
+function summarizeCohort(calls) {
+  const selectedBackends = {};
+  let fallbackCalls = 0;
+  for (const call of calls) {
+    selectedBackends[call.selectedBackend] = (selectedBackends[call.selectedBackend] || 0) + 1;
+    if (call.fallbackReason || (
+      call.requestedBackend !== 'unknown'
+      && call.selectedBackend !== 'unknown'
+      && call.requestedBackend !== call.selectedBackend
+    )) fallbackCalls++;
+  }
+  return {
+    ...summarizeUtility(calls),
+    latency: summarizeLatency(calls.map((call) => call.elapsedMs)),
+    stageLatency: summarizeLatency(calls.map((call) => call.stageTotalMs)),
+    selectedBackends,
+    fallbackCalls,
+  };
 }
 
 function makeGroup() {
@@ -360,7 +432,13 @@ export function aggregateInternalsRecords({
     if (!inWindow(row, cutoffMs)) return false;
     return normalizedPurpose === 'all' || String(row.purpose || '').toLowerCase() === normalizedPurpose;
   });
-  const exactServed = selectedServed.filter((row) => row.call_id && row.event_id);
+  const attributedServed = selectedServed.filter((row) => row.call_id && row.event_id);
+  const servedByPair = new Map();
+  for (const row of attributedServed) {
+    const key = `${row.call_id}\0${row.event_id}`;
+    if (!servedByPair.has(key)) servedByPair.set(key, row);
+  }
+  const exactServed = [...servedByPair.values()];
   const selectedSearchCalls = searchCallRows.filter((row) => {
     if (!inWindow(row, cutoffMs)) return false;
     return normalizedPurpose === 'all' || String(row.purpose || '').toLowerCase() === normalizedPurpose;
@@ -401,7 +479,8 @@ export function aggregateInternalsRecords({
     const project = String(row.project || '(none)');
     const rowPurpose = String(row.purpose || '(missing)');
 
-    if (row.session_id || row.session || row.sessionId) sessionAttributedRows++;
+    const hasSession = [row.session_id, row.session, row.sessionId].some(isResolved);
+    if (hasSession) sessionAttributedRows++;
 
     if (!calls.has(callId)) {
       calls.set(callId, {
@@ -414,6 +493,7 @@ export function aggregateInternalsRecords({
       });
     }
     const call = calls.get(callId);
+    if (hasSession) call.sessionAttributed = true;
     call.servedRows++;
     if (used) call.usedRows++;
     const servedBackend = normalizeBackend(row.backend);
@@ -463,9 +543,15 @@ export function aggregateInternalsRecords({
     call.elapsedMs = nonNegativeNumber(telemetry?.elapsed_ms);
     call.stageTotalMs = nonNegativeNumber(telemetry?.stages_ms?.total);
     call.fallbackReason = telemetry?.fallback_reason || null;
+    call.semanticStatus = SEMANTIC_STATUSES.includes(telemetry?.semantic_status)
+      ? telemetry.semantic_status : 'unknown';
+    call.sessionAttributed = Boolean(call.sessionAttributed
+      || [telemetry?.session_id, telemetry?.session, telemetry?.sessionId].some(isResolved));
+    call.requestStartedMs = nonNegativeNumber(telemetry?.request_started_ms)
+      ?? (telemetry?.request_started_at ? timestampMs(telemetry.request_started_at) : null);
   }
 
-  const utility = summarizeCalls(calls.values());
+  const utility = summarizeUtility(calls.values());
   const modeCalls = new Map();
   for (const call of calls.values()) {
     if (!modeCalls.has(call.requestedBackend)) modeCalls.set(call.requestedBackend, []);
@@ -473,35 +559,26 @@ export function aggregateInternalsRecords({
   }
   const modeOrder = new Map([['explorer', 0], ['cli', 1], ['unknown', 2]]);
   const modeCohorts = [...modeCalls.entries()].map(([key, cohortCalls]) => {
-    const cohortUtility = summarizeCalls(cohortCalls);
-    const elapsed = cohortCalls.map((call) => call.elapsedMs).filter(Number.isFinite);
-    const stageTotals = cohortCalls.map((call) => call.stageTotalMs).filter(Number.isFinite);
-    const selectedBackends = {};
-    let fallbackCalls = 0;
-    for (const call of cohortCalls) {
-      selectedBackends[call.selectedBackend] = (selectedBackends[call.selectedBackend] || 0) + 1;
-      if (call.fallbackReason || (
-        call.requestedBackend !== 'unknown'
-        && call.selectedBackend !== 'unknown'
-        && call.requestedBackend !== call.selectedBackend
-      )) fallbackCalls++;
-    }
+    const semanticCohorts = SEMANTIC_STATUSES.map((semanticStatus) => {
+      const semanticCalls = cohortCalls.filter((call) => call.semanticStatus === semanticStatus);
+      return { key: semanticStatus, semanticStatus, ...summarizeCohort(semanticCalls) };
+    }).filter((cohort) => cohort.calls > 0);
+    const availableCalls = semanticCohorts.find((cohort) => cohort.key === 'available')?.calls || 0;
+    const unavailableCalls = semanticCohorts.find((cohort) => cohort.key === 'unavailable')?.calls || 0;
+    const unknownCalls = semanticCohorts.find((cohort) => cohort.key === 'unknown')?.calls || 0;
+    const measuredCalls = availableCalls + unavailableCalls;
     return {
       key,
       requestedBackend: key,
-      ...cohortUtility,
-      latency: {
-        samples: elapsed.length,
-        p50Ms: percentile(elapsed, 0.5),
-        p95Ms: percentile(elapsed, 0.95),
+      ...summarizeCohort(cohortCalls),
+      semanticCohorts,
+      semanticAvailability: {
+        availableCalls,
+        unavailableCalls,
+        unknownCalls,
+        measuredCalls,
+        availableRate: ratio(availableCalls, measuredCalls),
       },
-      stageLatency: {
-        samples: stageTotals.length,
-        p50Ms: percentile(stageTotals, 0.5),
-        p95Ms: percentile(stageTotals, 0.95),
-      },
-      selectedBackends,
-      fallbackCalls,
     };
   }).sort((a, b) => (modeOrder.get(a.key) ?? 99) - (modeOrder.get(b.key) ?? 99));
 
@@ -537,7 +614,7 @@ export function aggregateInternalsRecords({
     }
   }
 
-  const exactAttributedRows = exactServed.length;
+  const exactAttributedRows = attributedServed.length;
   return {
     window: {
       key: normalizedWindow,
@@ -551,11 +628,13 @@ export function aggregateInternalsRecords({
         totalRows: servedRows.length,
         selectedRows: selectedServed.length,
         exactAttributedRows,
+        exactUniquePairs: exactServed.length,
+        duplicateExactPairs: attributedServed.length - exactServed.length,
         exactAttributionRate: ratio(exactAttributedRows, selectedServed.length),
         missingCallIdRows: selectedServed.filter((row) => !row.call_id).length,
         missingEventIdRows: selectedServed.filter((row) => !row.event_id).length,
         sessionAttributedRows,
-        sessionAttributionRate: ratio(sessionAttributedRows, exactAttributedRows),
+        sessionAttributionRate: ratio(sessionAttributedRows, exactServed.length),
       },
       access: {
         totalRows: accessRows.length,

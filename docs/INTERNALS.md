@@ -12,7 +12,7 @@ as exact only when it has both `call_id` and `event_id`. A use is credited only
 when `access-ledger.jsonl` contains the same pair. Legacy proximity inference is
 not used in the Explorer.
 
-- **Recall success**: calls with at least one exact use / exact-attributed calls.
+- **Calls with access**: calls with at least one exact fetch or use / exact-attributed calls. The API retains `callSuccessRate` for compatibility.
 - **Result-row use**: exact used rows / exact served rows.
 - **First-access MRR**: `1 / first-accessed-rank` over the jointly ordered call
   cohort. Calls with no observed use remain in the denominator as zero. This is
@@ -25,9 +25,23 @@ not used in the Explorer.
 - **Attribution coverage**: rows carrying the identifiers needed for exact
   joins. Coverage is a trust guardrail, not a product outcome.
 
-An observed use means a result was fetched or touched. It does not establish
-that the result was helpful. Purposes that do not emit comparable use records
-must not be compared as if their zero-use counts were outcomes.
+An observed access means a result was fetched or touched. Fetching is inspection;
+`--touch` is the caller's statement that the result contributed to the answer.
+Neither is a relevance judgment or proof that the intended episode was recovered.
+Purposes that do not emit comparable access records must not be compared as if
+their zero-access counts were outcomes.
+
+The API preserves the existing access metrics and adds `fetched` and `explicitUse`
+under `utility` and every mode cohort. Each has the same call, result, rank, and
+MRR fields, filtering respectively to `source=result_fetched` and
+`source=result_used`. Each retains the full call denominator, including calls
+with no results. These measures overlap: a result fetched and later marked used
+appears once in each, and only once in the combined access metric. Historical
+access rows without a source remain in the combined metric only.
+
+The UI places access and explicit-use rates/MRR side by side. It never labels
+fetches as successful recall. No-use calls contribute zero in each measure;
+ambiguous access ordering is handled independently for each evidence category.
 
 New multi-result access rows carry an `access_batch_id` and 1-based
 `access_ordinal`; the ordinal resolves first and last within a tied batch.
@@ -79,10 +93,33 @@ that makes startup quadratic on overlapping six-figure corpora.
 
 ## Honest gaps
 
-Historical search-stage latency is not yet persisted, and semantic-index
-coverage is not currently queryable through this aggregation. The UI renders
-both as unavailable rather than synthesizing a trend or treating missing data
-as zero.
+Search-call telemetry supplies response and stage latency for newer calls.
+Historical calls without timing remain unavailable. Semantic *index coverage*
+is not known; it is distinct from semantic *availability at request time*.
+
+Each mode cohort includes `semanticCohorts` for recorded `available`,
+`unavailable`, and `unknown` states, with access/use metrics and latency in each.
+The availability rate uses only measured available/unavailable calls; unknown
+counts stay visible. Faster keyword-only responses must not imply equivalent
+full-search quality. Response maximum and fallback counts remain visible even
+when a rare slow fallback sits beyond p95. A fallback stays in the requested
+mode and keeps unknown semantic state when the CLI does not measure it.
+
+Session attribution is reported independently of exact call/result IDs. Missing
+session identity limits reformulation and adoption analyses; an exact join alone
+does not establish that the last query caused the use. Historical ledgers are
+never rewritten to manufacture missing provenance.
+
+New calls record request-start and result-served timestamps; new accesses include
+millisecond timestamps. `timeToFirstAccess` reports samples, p50/p95/maximum,
+missing-start counts, missing-access-time counts, and negative samples excluded.
+The same measure under `explicitUse` ends at the first explicit use. Historical
+response timestamps are never treated as request start, and no-use calls remain
+in the paired call-success denominator.
+
+The 50-call-per-mode floor is a prerequisite for comparing Turbo and CLI, not
+proof that the cohorts are matched. Query/task/provider mix and semantic
+availability still need to be considered.
 
 ## Verification
 

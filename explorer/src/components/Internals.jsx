@@ -153,6 +153,17 @@ function normalizeDaily(value) {
   }));
 }
 
+function normalizeEvidence(value) {
+  return {
+    callsWithUse: firstNumber(value, ['callsWithUse']),
+    callSuccessRate: firstNumber(value, ['callSuccessRate']),
+    hitsConsumed: firstNumber(value, ['hitsConsumed']),
+    firstAccessMrr: firstNumber(value, ['firstAccessMrr']),
+    lastAccessMrr: firstNumber(value, ['lastAccessMrr']),
+    orderedCalls: firstNumber(value, ['orderedCalls']),
+  };
+}
+
 function normalizeModeCohorts(value) {
   const order = new Map([['explorer', 0], ['cli', 1], ['unknown', 2]]);
   return asRows(value, ['key', 'requestedBackend', 'requested_backend', 'backend']).map(item => {
@@ -176,6 +187,20 @@ function normalizeModeCohorts(value) {
       consumptionDepthP95Rank: firstNumber(item, ['consumptionDepth.p95Rank', 'consumption_depth.p95_rank']),
       fallbackCalls: firstNumber(item, ['fallbackCalls', 'fallback_calls']),
       selectedBackends,
+      accessedRate: firstNumber(item, ['callSuccessRate']),
+      maxMs: firstNumber(item, ['latency.maxMs']),
+      explicitUse: normalizeEvidence(item.explicitUse),
+      fetched: normalizeEvidence(item.fetched),
+      sessionAttribution: item.sessionAttribution,
+      semanticCohorts: asRows(item.semanticCohorts, ['key']).map(cohort => ({
+        key: cohort.key,
+        calls: firstNumber(cohort, ['calls']),
+        p50Ms: firstNumber(cohort, ['latency.p50Ms']),
+        p95Ms: firstNumber(cohort, ['latency.p95Ms']),
+        accessedRate: firstNumber(cohort, ['callSuccessRate']),
+        firstAccessMrr: firstNumber(cohort, ['firstAccessMrr']),
+        explicitUse: normalizeEvidence(cohort.explicitUse),
+      })),
     };
   }).sort((a, b) => (order.get(a.key) ?? 99) - (order.get(b.key) ?? 99));
 }
@@ -190,6 +215,26 @@ function Metric({ label, value, detail, caveat = false }) {
   );
 }
 
+function formatMrr(value) {
+  return Number.isFinite(value) ? value.toFixed(3) : '—';
+}
+
+function SemanticCohorts({ rows }) {
+  if (!rows.length) return <EmptyState>Semantic availability was not recorded for these calls.</EmptyState>;
+  return (
+    <div className="internals-semantic-cohorts">
+      <h4>Semantic search at request time</h4>
+      {rows.map(row => (
+        <div className={`internals-semantic-row${row.key === 'unavailable' ? ' is-caveat' : ''}`} key={row.key}>
+          <div><strong>{row.key === 'available' ? 'Available' : row.key === 'unavailable' ? 'Unavailable' : 'Unknown'}</strong><span>{formatNumber(row.calls)} calls</span></div>
+          <p>Response {formatMilliseconds(row.p50Ms)} p50 · {formatMilliseconds(row.p95Ms)} p95</p>
+          <p>Access MRR {formatMrr(row.firstAccessMrr)} · explicit-use MRR {formatMrr(row.explicitUse.firstAccessMrr)}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function ModeCohorts({ rows }) {
   if (!rows.length) return null;
   return (
@@ -199,7 +244,7 @@ function ModeCohorts({ rows }) {
           <p className="internals-kicker">Turbo experiment</p>
           <h2 id="internals-mode-heading">Latency and use by mode</h2>
         </div>
-        <p>Cohorts follow the requested mode, so a Turbo fallback stays charged to Turbo-on user experience.</p>
+        <p>Compare equivalent search conditions. A Turbo fallback stays in Turbo on; each mode needs at least 50 calls before comparison.</p>
       </div>
       <div className="internals-mode-grid">
         {rows.map(row => {
@@ -207,7 +252,7 @@ function ModeCohorts({ rows }) {
             .filter(([, count]) => Number.isFinite(Number(count)) && Number(count) > 0)
             .map(([backend, count]) => `${backend === 'explorer' ? 'Explorer' : backend === 'cli' ? 'CLI' : 'unknown'} ${formatNumber(Number(count))}`)
             .join(' · ');
-          const lowSample = Number.isFinite(row.samples) && row.samples > 0 && row.samples < 10;
+          const lowSample = row.key !== 'unknown' && Number.isFinite(row.calls) && row.calls < 50;
           const latencyUnavailable = !Number.isFinite(row.samples) || row.samples === 0;
           return (
             <article className="internals-mode-card" key={row.key}>
@@ -217,12 +262,16 @@ function ModeCohorts({ rows }) {
               </div>
               <div className="internals-scoreline">
                 <Metric label="Response p50" value={formatMilliseconds(row.p50Ms)} detail={`${formatNumber(row.samples)} timed calls`} caveat={lowSample} />
-                <Metric label="Response p95" value={formatMilliseconds(row.p95Ms)} detail={row.fallbackCalls ? `${formatNumber(row.fallbackCalls)} fallbacks` : 'no recorded fallback'} caveat={lowSample} />
-                <Metric label="Hits consumed" value={formatNumber(row.hitsConsumed)} detail={`${formatDecimal(row.hitsConsumedPerCall)} per call · ${formatDecimal(row.hitsConsumedPerSuccessfulCall)} per successful call`} />
+                <Metric label="Response p95" value={formatMilliseconds(row.p95Ms)} detail={`${formatNumber(row.fallbackCalls)} fallbacks · max ${formatMilliseconds(row.maxMs)}`} caveat={lowSample} />
+                <Metric label="Calls with access" value={formatRate(row.accessedRate)} detail="fetched or marked used" />
+                <Metric label="Calls marked used" value={formatRate(row.explicitUse.callSuccessRate)} detail={`${formatNumber(row.explicitUse.callsWithUse)} of ${formatNumber(row.calls)} calls`} />
+                <Metric label="First-access MRR" value={formatMrr(row.firstAccessMrr)} detail="first fetched or marked-used rank" />
+                <Metric label="Explicit-use MRR" value={formatMrr(row.explicitUse.firstAccessMrr)} detail={`${formatNumber(row.explicitUse.orderedCalls)} ordered calls · no-use calls score zero`} />
                 <Metric label="Consumption depth" value={formatRank(row.consumptionDepthP50Rank)} detail={`p50 deepest rank · p95 ${formatRank(row.consumptionDepthP95Rank)} · ${formatNumber(row.consumptionDepthSamples)} calls`} />
-                <Metric label="First-access MRR" value={row.firstAccessMrr === null ? '—' : row.firstAccessMrr.toFixed(3)} detail="precision proxy · first used rank" />
-                <Metric label="Last-access MRR" value={row.lastAccessMrr === null ? '—' : row.lastAccessMrr.toFixed(3)} detail={`recall-depth proxy · ${formatNumber(row.orderedCalls)} ordered calls`} />
+                <Metric label="Last-access MRR" value={row.lastAccessMrr === null ? '—' : row.lastAccessMrr.toFixed(3)} detail={`${formatNumber(row.orderedCalls)} ordered calls · includes fetches`} />
               </div>
+              {row.sessionAttribution && <p className="internals-evidence-note">Session attributed: {formatNumber(row.sessionAttribution.attributedCalls)} / {formatNumber(row.calls)} calls</p>}
+              <SemanticCohorts rows={row.semanticCohorts} />
             </article>
           );
         })}
@@ -257,7 +306,7 @@ function Pipeline({ data, windowLabel }) {
     { label: 'Capture', value: captured, detail: 'live event corpus' },
     { label: 'Index', value: indexed, detail: 'keyword documents in memory' },
     { label: 'Serve', value: served, detail: `${windowLabel} exact result rows` },
-    { label: 'Use', value: used, detail: `${windowLabel} explicit use rows` },
+    { label: 'Access', value: used, detail: `${windowLabel} fetched or marked used` },
   ];
 
   return (
@@ -265,7 +314,7 @@ function Pipeline({ data, windowLabel }) {
       <div className="internals-section-heading">
         <div>
           <p className="internals-kicker">System path</p>
-          <h2 id="internals-pipeline-heading">Capture → index → serve → use</h2>
+          <h2 id="internals-pipeline-heading">Capture → index → serve → access</h2>
         </div>
         <p>Each stage keeps its own denominator. Bar width compares observed counts; it is not a conversion rate.</p>
       </div>
@@ -299,7 +348,7 @@ function DailyTrace({ rows }) {
   const primaryKey = hasCalls ? 'calls' : 'served';
   const secondaryKey = rows.some(row => row.usedCalls !== null) ? 'usedCalls' : 'usedRows';
   const primaryLabel = hasCalls ? 'calls' : 'served rows';
-  const secondaryLabel = secondaryKey === 'usedCalls' ? 'calls with use' : 'used rows';
+  const secondaryLabel = secondaryKey === 'usedCalls' ? 'calls with access' : 'accessed rows';
   const width = 760;
   const height = 170;
   const padX = 12;
@@ -372,7 +421,7 @@ function ContributionBars({ rows, empty }) {
               <span title={row.label}>{row.label}</span>
               <span>
                 {row.served !== null ? `${formatNumber(row.served)} served` : row.calls !== null ? `${formatNumber(row.calls)} calls` : 'served —'}
-                {' · '}{row.used !== null ? `${formatNumber(row.used)} used` : 'use unavailable'}
+                {' · '}{row.used !== null ? `${formatNumber(row.used)} accessed` : 'use unavailable'}
               </span>
             </div>
             <div className="internals-contribution-track" aria-hidden="true">
@@ -476,7 +525,7 @@ function OperationsRail({ data, purposeRows }) {
           <h3>Purpose coverage</h3>
           <ul className="internals-file-list">
             {purposeRows.slice(0, 6).map(row => (
-              <li key={row.label}><span>{row.label}</span><strong>{formatNumber(row.served)} served · {formatNumber(row.used)} used</strong></li>
+              <li key={row.label}><span>{row.label}</span><strong>{formatNumber(row.served)} served · {formatNumber(row.used)} accessed</strong></li>
             ))}
           </ul>
           <p className="internals-caveat">A zero use count is comparable only where that purpose emits explicit use signals.</p>
@@ -512,6 +561,8 @@ export default function Internals({ isActive = true }) {
       data,
       utility: {
         calls,
+        fetched: normalizeEvidence(utility.fetched),
+        explicitUse: normalizeEvidence(utility.explicitUse),
         callsWithUse,
         recallRate,
         resultRate,
@@ -551,7 +602,7 @@ export default function Internals({ isActive = true }) {
           <div>
             <p className="internals-kicker">Cartographer / Internals</p>
             <h1>Retrieval metabolism</h1>
-            <p className="internals-intro">How Cartographer captures, retrieves, serves, and observes use—kept separate from the chronology of your work.</p>
+            <p className="internals-intro">How Cartographer retrieves history, what gets inspected, and what is marked useful.</p>
           </div>
           <div className="internals-controls">
             <div className="internals-window-switch" aria-label="Aggregation window">
@@ -602,19 +653,21 @@ export default function Internals({ isActive = true }) {
                   <p className="internals-kicker">Exact-attributed /remember cohort</p>
                   <h2 id="internals-outcomes-heading">Retrieval outcomes</h2>
                 </div>
-                <p>“Use” is an explicit fetch or touch—not a claim that a result was helpful.</p>
+                <p>Fetching means inspected. Marking used means the caller says it contributed. Neither establishes that the intended answer was correct.</p>
               </div>
               <div className="internals-outcome-layout">
                 <div className="internals-scoreline">
-                  <Metric label="Recall success" value={formatRate(model.utility.recallRate)} detail={`${formatNumber(model.utility.callsWithUse)} of ${formatNumber(model.utility.calls)} calls`} />
-                  <Metric label="Hits consumed" value={formatNumber(model.utility.hitsConsumed)} detail={`${formatDecimal(model.utility.hitsConsumedPerCall)} per call · ${formatDecimal(model.utility.hitsConsumedPerSuccessfulCall)} per successful call`} />
-                  <Metric label="Consumption depth" value={formatRank(model.utility.consumptionDepthP50Rank)} detail={`p50 deepest rank · p95 ${formatRank(model.utility.consumptionDepthP95Rank)} · ${formatNumber(model.utility.consumptionDepthSamples)} calls`} />
-                  <Metric label="First-access MRR" value={model.utility.firstAccessMrr === null ? '—' : model.utility.firstAccessMrr.toFixed(3)} detail={model.utility.orderedCalls === null ? 'precision proxy · no-use calls score zero' : `precision proxy · ${formatNumber(model.utility.orderedCalls)} of ${formatNumber(model.utility.calls)} jointly ordered`} />
-                  <Metric label="Last-access MRR" value={model.utility.lastAccessMrr === null ? '—' : model.utility.lastAccessMrr.toFixed(3)} detail={model.utility.orderUnknownCalls ? `recall-depth proxy · ${formatNumber(model.utility.orderUnknownCalls)} order unknown` : 'recall-depth proxy · final accessed rank'} />
-                  <Metric label="Result-row use" value={formatRate(model.utility.resultRate)} detail="used rows / served rows" />
+                  <Metric label="Calls with access" value={formatRate(model.utility.recallRate)} detail={`${formatNumber(model.utility.callsWithUse)} of ${formatNumber(model.utility.calls)} calls · fetch or use`} />
+                  <Metric label="Calls marked used" value={formatRate(model.utility.explicitUse.callSuccessRate)} detail={`${formatNumber(model.utility.explicitUse.callsWithUse)} of ${formatNumber(model.utility.calls)} calls · explicit use only`} />
+                  <Metric label="First-access MRR" value={formatMrr(model.utility.firstAccessMrr)} detail={`${formatNumber(model.utility.orderedCalls)} ordered calls · includes fetches`} />
+                  <Metric label="Explicit-use MRR" value={formatMrr(model.utility.explicitUse.firstAccessMrr)} detail={`${formatNumber(model.utility.explicitUse.orderedCalls)} ordered calls · no-use calls score zero`} />
+                  <Metric label="Fetched results" value={formatNumber(model.utility.fetched.hitsConsumed)} detail="distinct call/result pairs inspected" />
+                  <Metric label="Marked-used results" value={formatNumber(model.utility.explicitUse.hitsConsumed)} detail="distinct call/result pairs marked used" />
+                  <Metric label="Last-access MRR" value={formatMrr(model.utility.lastAccessMrr)} detail={model.utility.orderUnknownCalls ? `${formatNumber(model.utility.orderUnknownCalls)} order unknown` : 'final access · includes fetches'} />
+                  <Metric label="Last-use MRR" value={formatMrr(model.utility.explicitUse.lastAccessMrr)} detail="final explicitly used rank" />
                 </div>
                 <div className="internals-rank-panel">
-                  <h3>First access rank</h3>
+                  <h3>First access rank</h3><p className="internals-evidence-note">Includes fetches. An inspected result may later be discarded.</p>
                   <FirstUse rows={model.firstUse} />
                 </div>
               </div>
@@ -634,8 +687,8 @@ export default function Internals({ isActive = true }) {
 
                 <section className="internals-section" aria-labelledby="internals-source-heading">
                   <div className="internals-section-heading is-compact">
-                    <div><p className="internals-kicker">Contribution versus use</p><h2 id="internals-source-heading">Sources</h2></div>
-                    <div className="internals-legend"><span><i className="is-served" />served</span><span><i className="is-use" />used</span></div>
+                    <div><p className="internals-kicker">Contribution versus access</p><h2 id="internals-source-heading">Sources</h2></div>
+                    <div className="internals-legend"><span><i className="is-served" />served</span><span><i className="is-use" />accessed</span></div>
                   </div>
                   <ContributionBars rows={model.sources} empty="Source contribution is unavailable for this window." />
                 </section>

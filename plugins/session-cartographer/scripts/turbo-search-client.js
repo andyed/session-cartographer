@@ -120,6 +120,14 @@ function renderFacet(label, entries, max = 8) {
 
 function renderText(response, transport) {
   let out = `(turbo: warm Explorer via ${transport} · ${response.stages_ms.total.toFixed(1)} ms)\n\n`;
+  if (response.semantic_status === 'unavailable') {
+    out += '(semantic search unavailable; keyword results only)\n\n';
+  } else if (response.semantic_status === 'disabled') {
+    out += '(semantic search disabled; keyword results only)\n\n';
+  } else if (response.semantic_status !== 'available') {
+    out += '(semantic search status unknown)\n\n';
+  }
+  out += `(call_id: ${request.call_id}; carry to --get/--touch)\n\n`;
   const facets = response.facets || {};
   const total = response.meta?.eligible_count ?? response.results.length;
   if (total > 0) {
@@ -158,6 +166,8 @@ function renderText(response, transport) {
 
 function renderJsonl(response) {
   return response.results.map((item, index) => JSON.stringify({
+    call_id: request.call_id,
+    semantic_status: response.semantic_status || 'unknown',
     timestamp: item.timestamp || '?',
     source: item._sources || 'keyword',
     event_id: item.event_id,
@@ -171,6 +181,9 @@ function renderJsonl(response) {
 }
 
 const started = Date.now();
+const requestedStart = Number(args['request-started-ms']);
+const requestStartedMs = Number.isFinite(requestedStart) && requestedStart > 0 && requestedStart <= started
+  ? requestedStart : started;
 let response;
 let transport;
 let httpError;
@@ -200,7 +213,8 @@ if (args['served-out']) {
   fs.writeFileSync(args['served-out'], response.results.map((item) => item.event_id).join('\n') + (response.results.length ? '\n' : ''));
 }
 
-const servedAt = new Date().toISOString();
+const resultsServedMs = Date.now();
+const servedAt = new Date(resultsServedMs).toISOString();
 for (const [index, item] of response.results.entries()) {
   appendJsonl(args['served-log'], {
     timestamp: servedAt,
@@ -219,6 +233,10 @@ for (const [index, item] of response.results.entries()) {
 
 appendJsonl(args['call-log'], {
   timestamp: servedAt,
+  request_started_at: new Date(requestStartedMs).toISOString(),
+  results_served_at: servedAt,
+  request_started_ms: requestStartedMs,
+  results_served_ms: resultsServedMs,
   call_id: request.call_id,
   requested_backend: 'explorer',
   selected_backend: 'explorer',

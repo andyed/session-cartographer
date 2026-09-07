@@ -208,6 +208,141 @@ test('Turbo-on and portable cohorts split latency and ordered MRR without hiding
   assert.equal(aggregate.coverage.latencySamples, 4);
 });
 
+test('fetch and explicit-use summaries retain no-use and zero-result calls without cross-credit', () => {
+  const base = { timestamp: '2026-08-28T10:00:00Z', purpose: 'remember', backend: 'explorer' };
+  const fetched = { ...base, call_id: 'inspect', event_id: 'candidate', rank: 1 };
+  const aggregate = aggregateInternalsRecords({
+    nowMs: NOW,
+    servedRows: [fetched, fetched, { ...base, call_id: 'inspect', event_id: 'answer', rank: 4 },
+      { ...base, call_id: 'unused', event_id: 'unused', rank: 1 }],
+    accessRows: [
+      { ...base, call_id: 'inspect', event_id: 'candidate', source: 'result_fetched' },
+      { ...base, call_id: 'inspect', event_id: 'candidate', source: 'result_fetched' },
+      { ...base, timestamp: '2026-08-28T10:01:00Z', call_id: 'inspect', event_id: 'answer', source: 'result_used' },
+      // A historical untyped access stays in the union but is never explicit use.
+      { ...base, call_id: 'unused', event_id: 'unused' },
+    ],
+    searchCallRows: [{ ...base, call_id: 'zero-results', result_count: 0 }],
+  });
+  const { utility } = aggregate;
+  assert.equal(utility.calls, 3);
+  assert.equal(utility.callsWithUse, 2);
+  assert.equal(utility.servedRows, 3);
+  assert.equal(utility.usedRows, 3);
+  assert.equal(aggregate.coverage.served.duplicateExactPairs, 1);
+  assert.equal(utility.fetched.calls, 3);
+  assert.equal(utility.fetched.callsWithUse, 1);
+  assert.equal(utility.fetched.usedRows, 1);
+  assert.equal(utility.fetched.firstAccessMrr, 1 / 3);
+  assert.equal(utility.explicitUse.calls, 3);
+  assert.equal(utility.explicitUse.callsWithUse, 1);
+  assert.equal(utility.explicitUse.firstAccessMrr, 1 / 12);
+  assert.equal(utility.explicitUse.firstAccessRank.none, 2);
+});
+
+test('semantic cohorts keep unavailable, unknown, zero-result and fallback calls visible', () => {
+  const base = { timestamp: '2026-08-28T10:00:00Z', purpose: 'remember', requested_backend: 'explorer' };
+  const aggregate = aggregateInternalsRecords({
+    nowMs: NOW,
+    servedRows: [{ ...base, call_id: 'used', event_id: 'answer', rank: 2, session_id: 'session-a' }],
+    accessRows: [{ ...base, call_id: 'used', event_id: 'answer', source: 'result_used' }],
+    searchCallRows: [
+      { ...base, call_id: 'used', semantic_status: 'available', selected_backend: 'explorer', elapsed_ms: 200 },
+      { ...base, call_id: 'unused', semantic_status: 'available', selected_backend: 'explorer', elapsed_ms: 300 },
+      { ...base, call_id: 'fallback', semantic_status: 'unavailable', selected_backend: 'cli', elapsed_ms: 23000, fallback_reason: 'timeout', session_id: 'session-b' },
+      { ...base, call_id: 'unknown', selected_backend: 'explorer', elapsed_ms: 100 },
+      { ...base, call_id: 'future-status', semantic_status: 'new-value', selected_backend: 'explorer', elapsed_ms: 50 },
+    ],
+  });
+  const mode = aggregate.modeCohorts[0];
+  assert.equal(mode.calls, 5);
+  assert.equal(mode.explicitUse.firstAccessMrr, 0.1);
+  assert.deepEqual(mode.semanticAvailability, {
+    availableCalls: 2, unavailableCalls: 1, unknownCalls: 2, measuredCalls: 3, availableRate: 2 / 3,
+  });
+  assert.deepEqual(mode.sessionAttribution, { attributedCalls: 2, missingCalls: 3, attributionRate: 0.4 });
+  const [available, unavailable, unknown] = mode.semanticCohorts;
+  assert.equal(available.explicitUse.firstAccessMrr, 0.25);
+  assert.equal(unavailable.calls, 1);
+  assert.equal(unavailable.explicitUse.firstAccessMrr, 0);
+  assert.equal(unavailable.fallbackCalls, 1);
+  assert.deepEqual(unavailable.selectedBackends, { cli: 1 });
+  assert.equal(unavailable.latency.maxMs, 23000);
+  assert.equal(mode.latency.maxMs, 23000);
+  assert.equal(unknown.key, 'unknown');
+  assert.equal(unknown.calls, 2);
+  assert.equal(unknown.latency.samples, 2);
+  assert.equal(unknown.explicitUse.firstAccessRank.none, 2);
+});
+
+test('filtered access ordering is independent of ledger order and repeated records', () => {
+  const base = { timestamp: '2026-08-28T10:00:00Z', purpose: 'remember', call_id: 'ordered' };
+  const servedRows = [{ ...base, event_id: 'first', rank: 1 }, { ...base, event_id: 'last', rank: 8 }];
+  const accessRows = [
+    { ...base, event_id: 'first', source: 'result_fetched', access_batch_id: 'fetch', access_ordinal: 1 },
+    { ...base, event_id: 'last', source: 'result_fetched', access_batch_id: 'fetch', access_ordinal: 2 },
+    { ...base, event_id: 'first', source: 'result_used', access_batch_id: 'use', access_ordinal: 2 },
+    { ...base, event_id: 'last', source: 'result_used', access_batch_id: 'use', access_ordinal: 1 },
+  ];
+  const first = aggregateInternalsRecords({ nowMs: NOW, servedRows, accessRows }).utility;
+  const repeated = aggregateInternalsRecords({ nowMs: NOW, servedRows: [...servedRows].reverse(), accessRows: [...accessRows, ...accessRows].reverse() }).utility;
+  assert.deepEqual(first, repeated);
+  assert.equal(first.orderUnknownCalls, 1);
+  assert.equal(first.fetched.firstAccessMrr, 1);
+  assert.equal(first.fetched.lastAccessMrr, 1 / 8);
+  assert.equal(first.explicitUse.firstAccessMrr, 1 / 8);
+  assert.equal(first.explicitUse.lastAccessMrr, 1);
+  assert.equal(first.explicitUse.hitsConsumed, 2);
+});
+
+test('time to first access uses explicit starts and millisecond access times only', () => {
+  const start = Date.parse('2026-08-28T10:00:00Z') + 500;
+  const base = { timestamp: '2026-08-28T10:00:00Z', purpose: 'remember' };
+  const ids = ['new', 'historical', 'negative', 'missing-access-time'];
+  const aggregate = aggregateInternalsRecords({
+    nowMs: NOW,
+    servedRows: ids.map((call_id) => ({ ...base, call_id, event_id: call_id, rank: 1 })),
+    accessRows: [
+      { ...base, call_id: 'new', event_id: 'new', source: 'result_fetched', timestamp_ms: start + 200 },
+      { ...base, call_id: 'new', event_id: 'new', source: 'result_used', timestamp_ms: start + 800 },
+      { ...base, call_id: 'historical', event_id: 'historical', source: 'result_used' },
+      { ...base, call_id: 'negative', event_id: 'negative', source: 'result_used', timestamp_ms: start - 100 },
+      { call_id: 'missing-access-time', event_id: 'missing-access-time', source: 'result_used' },
+    ],
+    searchCallRows: ids.map((call_id) => ({
+      ...base, call_id, elapsed_ms: 100,
+      ...(call_id === 'historical' ? {} : { request_started_at: new Date(start).toISOString() }),
+    })),
+  });
+  assert.equal(aggregate.utility.timeToFirstAccess.p50Ms, 200);
+  assert.deepEqual(aggregate.utility.explicitUse.timeToFirstAccess, {
+    samples: 1, p50Ms: 800, p95Ms: 800, maxMs: 800,
+    missingStartCalls: 1, missingAccessTimeCalls: 1, negativeSamples: 1,
+  });
+});
+
+test('session attribution rejects unresolved sentinels and accepts resolved aliases', () => {
+  const base = { timestamp: '2026-08-28T10:00:00Z', purpose: 'remember', backend: 'explorer', rank: 1 };
+  const aggregate = aggregateInternalsRecords({
+    nowMs: NOW,
+    servedRows: [
+      { ...base, call_id: 'absent', event_id: 'absent', session_id: ' unknown ', session: '', sessionId: null },
+      { ...base, call_id: 'alias', event_id: 'alias', session_id: 'unknown', sessionId: 'valid-alias' },
+      { ...base, call_id: 'timing', event_id: 'timing', session_id: null },
+    ],
+    searchCallRows: [
+      { ...base, call_id: 'absent', session_id: 'UNKNOWN' },
+      { ...base, call_id: 'timing', session_id: 'valid-timing' },
+    ],
+  });
+  assert.equal(aggregate.coverage.served.sessionAttributedRows, 1);
+  assert.equal(aggregate.coverage.served.sessionAttributionRate, 1 / 3);
+  assert.deepEqual(aggregate.utility.sessionAttribution, {
+    attributedCalls: 2, missingCalls: 1, attributionRate: 2 / 3,
+  });
+  assert.deepEqual(aggregate.modeCohorts[0].sessionAttribution, aggregate.utility.sessionAttribution);
+});
+
 test('source normalization removes repeated fusion components deterministically', () => {
   assert.equal(
     normalizeSourceLabel('semantic+milestones+milestones+semantic'),

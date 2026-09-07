@@ -236,6 +236,9 @@ function loadAccessLedger() {
     if (!line.trim()) continue;
     let rec;
     try { rec = JSON.parse(line); } catch { continue; }
+    // Fetching is inspection, not endorsement. Preserve historical
+    // transcript_read/source-less use records, matching the portable CLI.
+    if (rec.source === 'result_fetched') continue;
     const id = rec.event_id;
     const ts = Date.parse(rec.timestamp || '');
     if (!id || isNaN(ts)) continue;
