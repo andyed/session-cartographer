@@ -402,7 +402,7 @@ SEARCH_CALL_LOG="${CARTOGRAPHER_SEARCH_CALL_LOG:-$DEV/.carto/search-calls.jsonl}
 # out by rank and source. Skipped entirely for --thread/--touch calls (no
 # results are served) and when --all is dry-running a reset.
 SERVED_LOG="${CARTOGRAPHER_SERVED_LOG:-$DEV/served-log.jsonl}"
-if [ -n "$SERVED_LOG" ] && ! ( : >> "$SERVED_LOG" ) 2>/dev/null; then
+if [ -z "$GET_IDS" ] && [ -z "$TOUCH_IDS" ] && [ -n "$SERVED_LOG" ] && ! ( : >> "$SERVED_LOG" ) 2>/dev/null; then
   echo "cartographer-search: warning: cannot write served log at $SERVED_LOG; continuing without served-result telemetry" >&2
   SERVED_LOG=""
 fi
@@ -414,7 +414,7 @@ fi
 # Resolve all accesses in one pass. A repeated serve is not evidence that the
 # later query caused an access: retain a single known fetch/use origin, or
 # require an explicit call ID when the history has more than one candidate.
-# Blank sessions never act as wildcards. Even an explicit call must have
+# Unresolved sessions never act as identities. Even an explicit call must have
 # served this exact event in the current nonempty session and purpose.
 record_accesses() {
   local source="$1" ids="$2" timestamp="$3" batch_id="$4"
@@ -428,10 +428,14 @@ record_accesses() {
   [ -f "$accessed_file" ] || accessed_file=/dev/null
   records=$(jq -n -c \
     --rawfile served "$served_file" --rawfile accessed "$accessed_file" \
-    --arg ids "$ids" --arg ts "$timestamp" --arg sid "$CONTEXT_SESSION_ID" \
+    --arg ids "$ids" --arg ts "$timestamp" --argjson timestamp_ms "$(clock_ms)" --arg sid "$CONTEXT_SESSION_ID" \
     --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
     --arg explicit "$CALL_ID" --arg source "$source" --arg batch "$batch_id" '
       def rows: split("\n") | map(fromjson? | select(type == "object"));
+      # Portable equivalent of scripts/sentinels.js:isResolved. Shared
+      # "unknown" values cannot join unrelated accesses into one session.
+      def resolved_session:
+        ascii_downcase | gsub("^\\s+|\\s+$"; "") | . != "" and . != "unknown";
       ($served | rows | map(select(.session_id == $sid and .purpose == $purpose
         and (.call_id | type == "string") and .call_id != ""))) as $serves
       | ($accessed | rows | map(select(.session_id == $sid and .purpose == $purpose
@@ -441,7 +445,7 @@ record_accesses() {
       | ([$serves[] | select(.event_id == $eid) | .call_id] | unique) as $calls
       | ([$accesses[] | select(.event_id == $eid) | .call_id
           | select(. as $id | $calls | index($id))] | unique) as $prior
-      | (if $sid == "" then {attribution_status:"no_session"}
+      | (if ($sid | resolved_session | not) then {attribution_status:"no_session"}
          elif $explicit != "" then
            if ($calls | index($explicit)) != null
            then {call_id:$explicit, attribution_status:"explicit"}
@@ -451,7 +455,7 @@ record_accesses() {
          elif ($calls | length) == 1 then {call_id:$calls[0], attribution_status:"unique_serve"}
          elif ($calls | length) > 1 then {attribution_status:"ambiguous_serve"}
          else {attribution_status:"no_compatible_serve"} end) as $attribution
-      | {event_id:$eid, timestamp:$ts, session_id:$sid, provider:$provider,
+      | {event_id:$eid, timestamp:$ts, timestamp_ms:$timestamp_ms, session_id:$sid, provider:$provider,
           purpose:$purpose, source:$source, access_batch_id:$batch,
           access_ordinal:($requested.key + 1)} + $attribution
         + if $explicit != "" then {requested_call_id:$explicit} else {} end
@@ -609,30 +613,8 @@ if [ -n "$GET_IDS" ]; then
     get_redeemed="${get_redeemed:+$get_redeemed }$gid"
   done
 
-  # Log redemptions for ids this session was served (see note above). One jq
-  # pass for the whole id set — slurping the served log per id costs ~0.4s
-  # each and turned a five-id fetch into a three-second call.
-  if [ -n "$get_redeemed" ] && [ -f "$SERVED_LOG" ] && command -v jq >/dev/null 2>&1; then
-    access_batch_id="get-${now_iso}-$$"
-    tail -2000 "$SERVED_LOG" 2>/dev/null | jq -r -s -c \
-      --arg ids "$get_redeemed" --arg ts "$now_iso" --arg sid "$CONTEXT_SESSION_ID" \
-      --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
-      --arg access_batch_id "$access_batch_id" '
-        ($ids | split(" ")) as $want
-        | [ .[]
-            # Bind the id before the pipe into index(): inside index(), `.` is
-            # $want, so a bare .event_id there reads the array, not the row,
-            # and every redemption silently fails to log.
-            | select(.event_id as $e | $e != null and ($want | index($e)) != null)
-            | select($sid == "" or (.session_id // "") == "" or .session_id == $sid) ] as $eligible
-        | ($want | to_entries[]) as $requested
-        | [ $eligible[] | select(.event_id == $requested.value) ]
-        | last
-        | select(.call_id != null and .call_id != "")
-        | {event_id, timestamp:$ts, session_id:$sid, provider:$provider,
-           purpose:$purpose, source:"result_fetched", call_id,
-           access_batch_id:$access_batch_id, access_ordinal:($requested.key + 1)}
-      ' 2>/dev/null >> "$ACCESS_LEDGER"
+  if [ -n "$get_redeemed" ]; then
+    record_accesses result_fetched "$get_redeemed" "$now_iso" "get-${now_iso}-$$"
   fi
 
   echo "($get_found fetched, $get_missing missing)"
@@ -643,7 +625,6 @@ fi
 FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
-REQUEST_STARTED_MS=$(clock_ms)
 
 # The scratch list supplies both delta serving and exact per-call result counts.
 # It lives in the temp dir we own, so the trap cleans it up.
@@ -929,14 +910,16 @@ rank_fuse_and_display() {
     }
     suppressed_count = 0
 
-    # Promote-on-reuse: load the access ledger (transcript reads recorded by
-    # --touch). Per event we keep the access count, the most recent access
+    # Promote-on-reuse: inspection via --get is not an endorsement. Exclude
+    # result_fetched; retain explicit uses and legacy transcript_read/source-less
+    # records for compatibility. Per event we keep the access count, the most recent access
     # epoch, and an ACT-R-style frequency sum  Σ 1/sqrt(days_since_access) —
     # recent rehearsals count more, repeats compound with diminishing returns.
     # Missing ledger file → getline returns -1 → zero entries → untouched
     # events score exactly as before.
     if (access_ledger != "" && reuse_weight + 0 > 0) {
       while ((getline al_line < access_ledger) > 0) {
+        if (al_line ~ /"source"[[:space:]]*:[[:space:]]*"result_fetched"/) continue
         if (match(al_line, /"event_id"[[:space:]]*:[[:space:]]*"/)) {
           al_id = substr(al_line, RSTART + RLENGTH)
           sub(/".*/, "", al_id)
@@ -1270,8 +1253,8 @@ rank_fuse_and_display() {
       # tag — the glass-box cue for why a result may rank above fresher ones.
       reuse_tag = (acc_n[k] + 0 > 0) ? sprintf(" (used x%d)", acc_n[k]) : ""
       if (output_format == "jsonl") {
-        printf "{\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"rank\":%d,\"extras\":\"%s\"}\n", \
-          json_escape(timestamp[k]), json_escape(sources[k]), json_escape(k), \
+        printf "{\"call_id\":\"%s\",\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"rank\":%d,\"extras\":\"%s\"}\n", \
+          json_escape(call_id), json_escape(timestamp[k]), json_escape(sources[k]), json_escape(k), \
           json_escape(summaries[k]), json_escape(project[k]), json_escape(etype_map[k]), \
           salience_map[k] + 0, shown + 1, json_escape(extra[k])
       } else {
@@ -1596,6 +1579,7 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --format "$OUTPUT_FORMAT" \
       --purpose "$PURPOSE" \
       --call-id "$CALL_ID" \
+      --request-started-ms "$REQUEST_STARTED_MS" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
       --corpus-root "$DEV" \
@@ -1639,6 +1623,7 @@ if [ "$TURBO_ENABLED" = "1" ]; then
 fi
 
 if [ "$TURBO_HANDLED" = "0" ]; then
+  [ "$OUTPUT_FORMAT" != "text" ] || echo "(call_id: $CALL_ID; carry to --get/--touch)"
   PORTABLE_STARTED_MS=$(clock_ms)
   # Phase 1 & 2: Run keyword and semantic searches in parallel
   keyword_search > "$TMPDIR/keyword_results.tsv" &
