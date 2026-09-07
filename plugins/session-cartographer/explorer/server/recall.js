@@ -47,8 +47,19 @@ export async function executeRecall({ events, index }, rawRequest) {
     beforeMs,
   });
 
+  // 16% of the warm index carries no event_id — 18k rows from ~/.claude/history
+  // plus ~2.4k legacy backfills in research and milestones. A single one of them
+  // in a result set failed response validation at the client, which discarded
+  // the ENTIRE answer and fell back to the ~11 s portable search. A result with
+  // no id also cannot be fetched, touched, or threaded, so it can never
+  // complete the recall workflow it interrupted. Drop them here, at the
+  // boundary that owns the contract, and report how many so the loss is visible
+  // rather than silent.
+  const identified = search.items.filter((item) => typeof item.event_id === 'string' && item.event_id !== '');
+  const unidentified = search.items.length - identified.length;
+
   const excluded = new Set(request.excluded_event_ids);
-  const eligible = search.items.filter((item) => !excluded.has(item.event_id));
+  const eligible = identified.filter((item) => !excluded.has(item.event_id));
   const results = eligible.slice(0, request.limit);
 
   return {
@@ -67,7 +78,8 @@ export async function executeRecall({ events, index }, rawRequest) {
       semantic_count: search.semanticCount,
       fused_count: search.fusedCount,
       eligible_count: eligible.length,
-      excluded_count: search.items.length - eligible.length,
+      excluded_count: identified.length - eligible.length,
+      unidentified_count: unidentified,
     },
   };
 }

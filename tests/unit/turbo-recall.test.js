@@ -175,3 +175,38 @@ test('a request naming this corpus, or naming none, is served', async () => {
     unstated.results.map((row) => row.event_id),
   );
 });
+
+// ~/.claude/history.jsonl and two legacy backfills put 20,544 id-less rows in
+// the warm index — 16% of it. One of them in a result set failed response
+// validation at the client, which threw away the whole answer and fell back to
+// the ~11 s portable search. A result with no id also cannot be fetched,
+// touched, or threaded, so it could never finish the workflow it interrupted.
+test('results without an event_id never reach the response', async () => {
+  // bm25.js synthesizes a document id for an id-less event, so it is indexed and
+  // returned with no event_id on the event itself. Enough non-matching filler to
+  // keep the probe term's IDF positive, or nothing scores at all.
+  const events = [];
+  for (let i = 0; i < 60; i++) {
+    events.push({
+      event_id: `evt-filler-${i}`,
+      timestamp: '2026-08-20T12:00:00Z',
+      project: 'noise',
+      summary: `unrelated maintenance chore ${i}`,
+    });
+  }
+  events.push({ event_id: 'evt-identified', timestamp: '2026-08-31T12:00:00Z', project: 'alpha', summary: 'zebraprobe identified row' });
+  events.push({ _source: 'claude-history', timestamp: '2026-08-31T11:00:00Z', project: 'alpha', summary: 'zebraprobe history row with no id' });
+  events.push({ event_id: '', _source: 'research', timestamp: '2026-08-31T10:00:00Z', project: 'alpha', summary: 'zebraprobe legacy row empty id' });
+
+  const response = await executeRecall({ events, index: buildIndex(events) }, request({ query: 'zebraprobe' }));
+  validateRecallResponse(response);
+  assert.ok(
+    response.results.some((row) => row.event_id === 'evt-identified'),
+    'the identified match should still be served',
+  );
+  assert.ok(
+    response.results.every((row) => typeof row.event_id === 'string' && row.event_id !== ''),
+    'an id-less result reached the client and would invalidate the whole response',
+  );
+  assert.equal(response.meta.unidentified_count, 2, 'both id-less rows must be counted, not silently lost');
+});
