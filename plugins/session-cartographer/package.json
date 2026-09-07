@@ -1,6 +1,6 @@
 {
   "name": "session-cartographer",
-  "version": "0.8.0",
+  "version": "0.7.5",
   "type": "module",
   "description": "Map and search Claude Code and Codex session history",
   "license": "MIT",

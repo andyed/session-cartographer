@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.0 — 2026-09-07
+## 0.7.5 — 2026-09-07
 
 ### feat(recall): prompt history becomes a searchable source
 
