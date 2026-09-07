@@ -402,7 +402,7 @@ SEARCH_CALL_LOG="${CARTOGRAPHER_SEARCH_CALL_LOG:-$DEV/.carto/search-calls.jsonl}
 # out by rank and source. Skipped entirely for --thread/--touch calls (no
 # results are served) and when --all is dry-running a reset.
 SERVED_LOG="${CARTOGRAPHER_SERVED_LOG:-$DEV/served-log.jsonl}"
-if [ -n "$SERVED_LOG" ] && ! ( : >> "$SERVED_LOG" ) 2>/dev/null; then
+if [ -z "$GET_IDS" ] && [ -z "$TOUCH_IDS" ] && [ -n "$SERVED_LOG" ] && ! ( : >> "$SERVED_LOG" ) 2>/dev/null; then
   echo "cartographer-search: warning: cannot write served log at $SERVED_LOG; continuing without served-result telemetry" >&2
   SERVED_LOG=""
 fi
@@ -414,7 +414,7 @@ fi
 # Resolve all accesses in one pass. A repeated serve is not evidence that the
 # later query caused an access: retain a single known fetch/use origin, or
 # require an explicit call ID when the history has more than one candidate.
-# Blank sessions never act as wildcards. Even an explicit call must have
+# Unresolved sessions never act as identities. Even an explicit call must have
 # served this exact event in the current nonempty session and purpose.
 record_accesses() {
   local source="$1" ids="$2" timestamp="$3" batch_id="$4"
@@ -428,10 +428,14 @@ record_accesses() {
   [ -f "$accessed_file" ] || accessed_file=/dev/null
   records=$(jq -n -c \
     --rawfile served "$served_file" --rawfile accessed "$accessed_file" \
-    --arg ids "$ids" --arg ts "$timestamp" --arg sid "$CONTEXT_SESSION_ID" \
+    --arg ids "$ids" --arg ts "$timestamp" --argjson timestamp_ms "$(clock_ms)" --arg sid "$CONTEXT_SESSION_ID" \
     --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
     --arg explicit "$CALL_ID" --arg source "$source" --arg batch "$batch_id" '
       def rows: split("\n") | map(fromjson? | select(type == "object"));
+      # Portable equivalent of scripts/sentinels.js:isResolved. Shared
+      # "unknown" values cannot join unrelated accesses into one session.
+      def resolved_session:
+        ascii_downcase | gsub("^\\s+|\\s+$"; "") | . != "" and . != "unknown";
       ($served | rows | map(select(.session_id == $sid and .purpose == $purpose
         and (.call_id | type == "string") and .call_id != ""))) as $serves
       | ($accessed | rows | map(select(.session_id == $sid and .purpose == $purpose
@@ -441,7 +445,7 @@ record_accesses() {
       | ([$serves[] | select(.event_id == $eid) | .call_id] | unique) as $calls
       | ([$accesses[] | select(.event_id == $eid) | .call_id
           | select(. as $id | $calls | index($id))] | unique) as $prior
-      | (if $sid == "" then {attribution_status:"no_session"}
+      | (if ($sid | resolved_session | not) then {attribution_status:"no_session"}
          elif $explicit != "" then
            if ($calls | index($explicit)) != null
            then {call_id:$explicit, attribution_status:"explicit"}
@@ -451,7 +455,7 @@ record_accesses() {
          elif ($calls | length) == 1 then {call_id:$calls[0], attribution_status:"unique_serve"}
          elif ($calls | length) > 1 then {attribution_status:"ambiguous_serve"}
          else {attribution_status:"no_compatible_serve"} end) as $attribution
-      | {event_id:$eid, timestamp:$ts, session_id:$sid, provider:$provider,
+      | {event_id:$eid, timestamp:$ts, timestamp_ms:$timestamp_ms, session_id:$sid, provider:$provider,
           purpose:$purpose, source:$source, access_batch_id:$batch,
           access_ordinal:($requested.key + 1)} + $attribution
         + if $explicit != "" then {requested_call_id:$explicit} else {} end
@@ -906,14 +910,16 @@ rank_fuse_and_display() {
     }
     suppressed_count = 0
 
-    # Promote-on-reuse: load the access ledger (transcript reads recorded by
-    # --touch). Per event we keep the access count, the most recent access
+    # Promote-on-reuse: inspection via --get is not an endorsement. Exclude
+    # result_fetched; retain explicit uses and legacy transcript_read/source-less
+    # records for compatibility. Per event we keep the access count, the most recent access
     # epoch, and an ACT-R-style frequency sum  Σ 1/sqrt(days_since_access) —
     # recent rehearsals count more, repeats compound with diminishing returns.
     # Missing ledger file → getline returns -1 → zero entries → untouched
     # events score exactly as before.
     if (access_ledger != "" && reuse_weight + 0 > 0) {
       while ((getline al_line < access_ledger) > 0) {
+        if (al_line ~ /"source"[[:space:]]*:[[:space:]]*"result_fetched"/) continue
         if (match(al_line, /"event_id"[[:space:]]*:[[:space:]]*"/)) {
           al_id = substr(al_line, RSTART + RLENGTH)
           sub(/".*/, "", al_id)
@@ -1500,7 +1506,6 @@ fi
 # ─── Run searches ───
 if [ "$OUTPUT_FORMAT" = "text" ]; then
   echo "=== Searching for: \"$QUERY\" ==="
-  echo "(call_id: $CALL_ID; carry to --get/--touch)"
   [ -n "$PROJECT" ] && echo "=== Project filter: $PROJECT ==="
   echo ""
 fi
@@ -1575,7 +1580,6 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --purpose "$PURPOSE" \
       --call-id "$CALL_ID" \
       --request-started-ms "$REQUEST_STARTED_MS" \
-      --request-started-at "$REQUEST_STARTED_AT" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
       --corpus-root "$DEV" \
@@ -1619,6 +1623,7 @@ if [ "$TURBO_ENABLED" = "1" ]; then
 fi
 
 if [ "$TURBO_HANDLED" = "0" ]; then
+  [ "$OUTPUT_FORMAT" != "text" ] || echo "(call_id: $CALL_ID; carry to --get/--touch)"
   PORTABLE_STARTED_MS=$(clock_ms)
   # Phase 1 & 2: Run keyword and semantic searches in parallel
   keyword_search > "$TMPDIR/keyword_results.tsv" &
