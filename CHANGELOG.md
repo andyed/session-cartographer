@@ -1,5 +1,85 @@
 # Changelog
 
+## 0.8.0 — 2026-09-07
+
+### feat(recall): prompt history becomes a searchable source
+
+`~/.claude/history.jsonl` holds 18,103 prompts — what was asked, not what the
+agent did. Sampling showed a meaningful share have no surviving transcript,
+because Claude Code expires transcripts after ~30 days while the prompt history
+does not expire; the full projection puts that at **2,542 records for which
+this log is the only surviving copy**. None of it was reachable: the rows carry
+no `event_id`, so both scorers minted a positional key that changed on every
+append, and the recall contract rejected them outright.
+
+`scripts/build-prompt-history.js` projects them into
+`$CARTOGRAPHER_DEV_DIR/prompt-history.jsonl`, a log we own, with the same
+content-derived stable ids as the migration — `explorer/server/stable-event-id.js`
+is now shared by both, so the two agree by construction rather than by
+convention. It never writes to Claude Code's file. 17,493 rows projected;
+568 bare slash commands (`/clear`, `/exit`, `/compact`) are dropped as interface
+actions rather than intent, and `/wrapup` with them, since the synthesis it
+produces is already in the log at salience 0.9.
+
+Both engines read it as a first-class fused source (`prompts`) with its own RRF
+ladder, `--get` resolves its ids, and `--touch` works unchanged. The Explorer's
+former `claude-history` entry is removed, so the same prompts are not indexed
+twice under two identities; that also deleted a transcript-path derivation that
+was measurably dead for the other four logs (15,456 resolutions, all from
+claude-history, 0 elsewhere) and ~19k `statSync` calls from startup, cutting
+cold load from 913 ms to 770 ms. Net index cost: −51 events, +1.3 MB heap.
+
+**Known limitation.** Default ranking is strongly recency-biased by design
+(Ebbinghaus decay at a ~30-day half-life, compounded by promote-on-reuse), so
+archival prompts do not surface on an unscoped query even on a near-exact text
+match — reach them with `--since`/`--before`, where they rank first. Fixing the
+balance is a ranking change that deserves its own measurement rather than a
+guess; the evidence is recorded in TODO.md.
+
+### feat(recall): Codex prompt history deliberately not added
+
+Measured before building: 48 of 50 sampled Codex prompts are already
+recoverable from archived rollouts and already turn-indexed, and none had a
+missing rollout. Codex archives sessions permanently where Claude Code expires
+transcripts, so the apparent asymmetry is retention behaviour, not indexing
+bias. An ingester for its 888 prompts would have been 96% duplication.
+
+
+### fix(recall): window before truncating, and never serve an id-less result
+
+Time windows were applied after the FUSION_DEPTH truncation. Ranking is global,
+so slicing first kept the 500 best matches across all time and only then asked
+which fell inside `--since`. On a six-figure corpus a 24-hour window is barely
+1% of events, so nearly everything recent was discarded before the filter saw
+it: the daily pulse returned 2 results where the portable path returned 15,
+against 1,641 changelog rows written in that same window. Windowing the keyword
+and semantic pools before truncation takes it to 22.
+
+Separately, `bm25.js` synthesizes a document id for an event that has none, so
+id-less rows were indexed and returned with no `event_id` on the event itself.
+One of them in a result set failed response validation at the client, which
+discarded the entire answer and fell back to the ~11 s portable search. Such a
+result also cannot be fetched, touched, or threaded, so it could never complete
+the workflow it interrupted. They are dropped at the boundary that owns the
+contract and counted in `meta.unidentified_count`.
+
+### feat(migration): stable event_ids for the id-less backfilled records
+
+Two backfills predating the id convention left 2,441 rows in the searched logs
+with no `event_id` — 1,630 in research-log, 810 in session-milestones, 1 in
+changelog. Both engines papered over it with a positional synthetic key
+(`src "-" source_fnr` in the awk, `${_source}-${docs.size}` in bm25.js), so one
+record answered to a different id on each engine and to a different id again
+after the next append. Nothing can be fetched, touched, or threaded through an
+id that moves.
+
+`scripts/backfill-event-ids.js` assigns a sha256 prefix over each record's own
+content and timestamp: identical on both engines, stable across appends,
+idempotent, and deterministic for byte-identical records. It backs up first,
+re-reads at the last moment to carry concurrent appends across, refuses to
+proceed if the file changed in a way that is not an append, and verifies the
+post-write row count. Applied: 2,441 assigned, 0 rows lost.
+
 ## 0.7.4 — 2026-09-05
 
 ### fix(hooks): stop writing session-end rows that record nothing

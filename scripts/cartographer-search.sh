@@ -51,6 +51,9 @@ clock_ms() {
   fi
 }
 
+REQUEST_STARTED_MS=$(clock_ms)
+REQUEST_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
 append_portable_call_log() {
   local timestamp="$1"
   local requested_backend="$2"
@@ -68,6 +71,8 @@ append_portable_call_log() {
 
   if ! { LC_ALL=C awk \
     -v timestamp="$timestamp" -v call_id="$CALL_ID" \
+    -v request_started_at="$REQUEST_STARTED_AT" -v request_started_ms="$REQUEST_STARTED_MS" \
+    -v results_served_ms="$PORTABLE_ENDED_MS" \
     -v requested_backend="$requested_backend" -v purpose="$PURPOSE" \
     -v session_id="$CONTEXT_SESSION_ID" -v provider="$CONTEXT_PROVIDER" \
     -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
@@ -86,8 +91,9 @@ append_portable_call_log() {
       BEGIN {
         fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
         detail = fallback_detail == "" ? "null" : quoted(fallback_detail)
-        printf "{\"timestamp\":%s,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
-          quoted(timestamp), quoted(call_id), quoted(requested_backend), quoted(purpose), \
+        printf "{\"timestamp\":%s,\"request_started_at\":%s,\"results_served_at\":%s,\"request_started_ms\":%.0f,\"results_served_ms\":%.0f,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
+          quoted(timestamp), quoted(request_started_at), quoted(timestamp), request_started_ms + 0, results_served_ms + 0, \
+          quoted(call_id), quoted(requested_backend), quoted(purpose), \
           quoted(session_id), quoted(provider), quoted(query), quoted(project), quoted(since), \
           quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail
       }
@@ -104,7 +110,7 @@ QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit 
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).
        --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. The query argument is ignored (pass any placeholder).
        --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
-       --call-id ID: stable search-call identifier. Pass the same ID to --touch for exact attribution; otherwise --touch infers the latest call that served the event.
+       --call-id ID: search-call identifier printed with results. Carry it to --get/--touch for exact attribution; without it, only unambiguous same-session, same-purpose provenance is credited.
        --turbo / --no-turbo: use or bypass warm Explorer recall for this standard query. A shared user preference otherwise applies across Claude and Codex.
        --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
 shift
@@ -401,9 +407,64 @@ if [ -n "$SERVED_LOG" ] && ! ( : >> "$SERVED_LOG" ) 2>/dev/null; then
   SERVED_LOG=""
 fi
 SERVE_TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-if [ -z "$TOUCH_IDS" ] && [ -z "$CALL_ID" ]; then
+if [ -z "$TOUCH_IDS" ] && [ -z "$GET_IDS" ] && [ -z "$CALL_ID" ]; then
   CALL_ID="call-$(date -u +%Y%m%dT%H%M%S)-$$"
 fi
+
+# Resolve all accesses in one pass. A repeated serve is not evidence that the
+# later query caused an access: retain a single known fetch/use origin, or
+# require an explicit call ID when the history has more than one candidate.
+# Blank sessions never act as wildcards. Even an explicit call must have
+# served this exact event in the current nonempty session and purpose.
+record_accesses() {
+  local source="$1" ids="$2" timestamp="$3" batch_id="$4"
+  local served_file="${SERVED_LOG:-/dev/null}" accessed_file="$ACCESS_LEDGER"
+  local records
+  command -v jq >/dev/null 2>&1 || {
+    echo "cartographer-search: warning: jq unavailable; access attribution not recorded" >&2
+    return 0
+  }
+  [ -f "$served_file" ] || served_file=/dev/null
+  [ -f "$accessed_file" ] || accessed_file=/dev/null
+  records=$(jq -n -c \
+    --rawfile served "$served_file" --rawfile accessed "$accessed_file" \
+    --arg ids "$ids" --arg ts "$timestamp" --arg sid "$CONTEXT_SESSION_ID" \
+    --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
+    --arg explicit "$CALL_ID" --arg source "$source" --arg batch "$batch_id" '
+      def rows: split("\n") | map(fromjson? | select(type == "object"));
+      ($served | rows | map(select(.session_id == $sid and .purpose == $purpose
+        and (.call_id | type == "string") and .call_id != ""))) as $serves
+      | ($accessed | rows | map(select(.session_id == $sid and .purpose == $purpose
+          and (.source == "result_fetched" or .source == "result_used")))) as $accesses
+      | ($ids | split(" ") | to_entries[]) as $requested
+      | $requested.value as $eid
+      | ([$serves[] | select(.event_id == $eid) | .call_id] | unique) as $calls
+      | ([$accesses[] | select(.event_id == $eid) | .call_id
+          | select(. as $id | $calls | index($id))] | unique) as $prior
+      | (if $sid == "" then {attribution_status:"no_session"}
+         elif $explicit != "" then
+           if ($calls | index($explicit)) != null
+           then {call_id:$explicit, attribution_status:"explicit"}
+           else {attribution_status:"invalid_call"} end
+         elif ($prior | length) == 1 then {call_id:$prior[0], attribution_status:"prior_access"}
+         elif ($prior | length) > 1 then {attribution_status:"ambiguous_prior_access"}
+         elif ($calls | length) == 1 then {call_id:$calls[0], attribution_status:"unique_serve"}
+         elif ($calls | length) > 1 then {attribution_status:"ambiguous_serve"}
+         else {attribution_status:"no_compatible_serve"} end) as $attribution
+      | {event_id:$eid, timestamp:$ts, session_id:$sid, provider:$provider,
+          purpose:$purpose, source:$source, access_batch_id:$batch,
+          access_ordinal:($requested.key + 1)} + $attribution
+        + if $explicit != "" then {requested_call_id:$explicit} else {} end
+    ' 2>/dev/null) || {
+      echo "cartographer-search: warning: could not resolve access attribution" >&2
+      return 0
+    }
+  if ! { printf '%s\n' "$records" >> "$ACCESS_LEDGER"; } 2>/dev/null; then
+    echo "cartographer-search: warning: cannot write access ledger at $ACCESS_LEDGER" >&2
+  fi
+  printf '%s\n' "$records" | jq -r 'select(.call_id == null)
+    | "cartographer-search: \(.event_id) access has no search attribution (\(.attribution_status))"' >&2
+}
 
 # ─── --touch: record reuse accesses and exit ───
 # Accepts comma-separated event_ids. No existence check: transcript-turn ids
@@ -413,31 +474,16 @@ fi
 if [ -n "$TOUCH_IDS" ]; then
   now_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   access_batch_id="touch-${now_iso}-$$"
-  access_ordinal=0
   touched=0
+  touch_ids=""
   for tid in $(echo "$TOUCH_IDS" | tr ',' ' '); do
     case "$tid" in
       *[!A-Za-z0-9_-]*|""|-*) echo "touch: skipping malformed id '$tid'" >&2; continue ;;
     esac
-    touch_call_id="$CALL_ID"
-    if [ -z "$touch_call_id" ] && [ -f "$SERVED_LOG" ] && command -v jq >/dev/null 2>&1; then
-      touch_call_id=$(tail -2000 "$SERVED_LOG" 2>/dev/null | jq -r -s \
-        --arg eid "$tid" --arg sid "$CONTEXT_SESSION_ID" \
-        '[.[] | select(.event_id == $eid) | select($sid == "" or (.session_id // "") == "" or .session_id == $sid)] | last | .call_id // empty' \
-        2>/dev/null)
-    fi
-    access_ordinal=$((access_ordinal + 1))
-    jq -n -c \
-      --arg eid "$tid" --arg ts "$now_iso" --arg sid "$CONTEXT_SESSION_ID" \
-      --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
-      --arg call_id "$touch_call_id" --arg access_batch_id "$access_batch_id" \
-      --argjson access_ordinal "$access_ordinal" \
-      '{event_id:$eid, timestamp:$ts, session_id:$sid, provider:$provider, purpose:$purpose, source:"result_used"}
-       + {access_batch_id:$access_batch_id, access_ordinal:$access_ordinal}
-       + if $call_id != "" then {call_id:$call_id} else {} end' \
-      >> "$ACCESS_LEDGER"
+    touch_ids="${touch_ids:+$touch_ids }$tid"
     touched=$((touched + 1))
   done
+  [ -z "$touch_ids" ] || record_accesses result_used "$touch_ids" "$now_iso" "$access_batch_id"
   echo "(recorded $touched reuse access$([ "$touched" -eq 1 ] || echo es))"
   exit 0
 fi
@@ -454,15 +500,14 @@ fi
 # silently returning four records for five ids is how an agent ends up
 # confidently answering from a gap.
 #
-# Redemption telemetry: an id that this session was actually served, and now
-# fetches in full, is the cleanest "served result got used" signal in the
-# system — stronger than --touch, which relies on the consumer remembering to
-# call it. Ids that were never served are fetched but not logged, so pasting an
-# id in from elsewhere cannot inflate the hit rate.
+# Fetch telemetry describes inspection, not meaningful use. Only an exact,
+# compatible originating call is attributed; an unserved/ambiguous id is still
+# fetched and recorded without a call_id, so it earns no search-call credit.
 if [ -n "$GET_IDS" ]; then
   get_logs=""
   for f in "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
-           "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl"; do
+           "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" \
+           "$DEV/prompt-history.jsonl"; do
     [ -f "$f" ] && get_logs="$get_logs $f"
   done
   if [ -z "$get_logs" ]; then
@@ -496,7 +541,13 @@ if [ -n "$GET_IDS" ]; then
   trap 'rm -rf "$GET_TMP"' EXIT
   for gid in $get_ids; do printf '"%s"\n' "$gid"; done > "$GET_TMP/patterns"
   if command -v rg >/dev/null 2>&1; then
-    rg -N -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
+    # -I suppresses the filename prefix. rg adds one whenever more than one
+    # file is searched, which is always here; the prefix rides through the
+    # candidate shortlist into the printed line, where it defeats the jq
+    # pretty-print (the line is no longer valid JSON) and silently breaks the
+    # "complete record" contract --get exists to keep. `grep -h` in the
+    # fallback below has always suppressed it; this is the rg equivalent.
+    rg -N -I -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
   else
     LC_ALL=C grep -h -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
   fi
@@ -558,30 +609,8 @@ if [ -n "$GET_IDS" ]; then
     get_redeemed="${get_redeemed:+$get_redeemed }$gid"
   done
 
-  # Log redemptions for ids this session was served (see note above). One jq
-  # pass for the whole id set — slurping the served log per id costs ~0.4s
-  # each and turned a five-id fetch into a three-second call.
-  if [ -n "$get_redeemed" ] && [ -f "$SERVED_LOG" ] && command -v jq >/dev/null 2>&1; then
-    access_batch_id="get-${now_iso}-$$"
-    tail -2000 "$SERVED_LOG" 2>/dev/null | jq -r -s -c \
-      --arg ids "$get_redeemed" --arg ts "$now_iso" --arg sid "$CONTEXT_SESSION_ID" \
-      --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
-      --arg access_batch_id "$access_batch_id" '
-        ($ids | split(" ")) as $want
-        | [ .[]
-            # Bind the id before the pipe into index(): inside index(), `.` is
-            # $want, so a bare .event_id there reads the array, not the row,
-            # and every redemption silently fails to log.
-            | select(.event_id as $e | $e != null and ($want | index($e)) != null)
-            | select($sid == "" or (.session_id // "") == "" or .session_id == $sid) ] as $eligible
-        | ($want | to_entries[]) as $requested
-        | [ $eligible[] | select(.event_id == $requested.value) ]
-        | last
-        | select(.call_id != null and .call_id != "")
-        | {event_id, timestamp:$ts, session_id:$sid, provider:$provider,
-           purpose:$purpose, source:"result_fetched", call_id,
-           access_batch_id:$access_batch_id, access_ordinal:($requested.key + 1)}
-      ' 2>/dev/null >> "$ACCESS_LEDGER"
+  if [ -n "$get_redeemed" ]; then
+    record_accesses result_fetched "$get_redeemed" "$now_iso" "get-${now_iso}-$$"
   fi
 
   echo "($get_found fetched, $get_missing missing)"
@@ -592,7 +621,6 @@ fi
 FOUND=0
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
-REQUEST_STARTED_MS=$(clock_ms)
 
 # The scratch list supplies both delta serving and exact per-call result counts.
 # It lives in the temp dir we own, so the trap cleans it up.
@@ -629,6 +657,7 @@ if echo "$QUERY" | grep -q '\*'; then
       matches=$(LC_ALL=C grep -ohiE "${prefix}[a-z0-9]*" \
         "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
         "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" \
+        "$DEV/prompt-history.jsonl" \
         2>/dev/null | tr '[:upper:]' '[:lower:]' | sort -u | head -20)
       if [ -n "$matches" ]; then
         EXPANDED="$EXPANDED $matches"
@@ -1218,8 +1247,8 @@ rank_fuse_and_display() {
       # tag — the glass-box cue for why a result may rank above fresher ones.
       reuse_tag = (acc_n[k] + 0 > 0) ? sprintf(" (used x%d)", acc_n[k]) : ""
       if (output_format == "jsonl") {
-        printf "{\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"rank\":%d,\"extras\":\"%s\"}\n", \
-          json_escape(timestamp[k]), json_escape(sources[k]), json_escape(k), \
+        printf "{\"call_id\":\"%s\",\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"rank\":%d,\"extras\":\"%s\"}\n", \
+          json_escape(call_id), json_escape(timestamp[k]), json_escape(sources[k]), json_escape(k), \
           json_escape(summaries[k]), json_escape(project[k]), json_escape(etype_map[k]), \
           salience_map[k] + 0, shown + 1, json_escape(extra[k])
       } else {
@@ -1471,6 +1500,7 @@ fi
 # ─── Run searches ───
 if [ "$OUTPUT_FORMAT" = "text" ]; then
   echo "=== Searching for: \"$QUERY\" ==="
+  echo "(call_id: $CALL_ID; carry to --get/--touch)"
   [ -n "$PROJECT" ] && echo "=== Project filter: $PROJECT ==="
   echo ""
 fi
@@ -1506,9 +1536,17 @@ keyword_search() {
   keyword_files+=("$keyword_file")
   grep_jsonl_to_tsv "$DEV/tool-use-log.jsonl" "tool-use" > "$keyword_file" &
   keyword_pids+=("$!")
+  # Prompt history is a first-class keyword source, fused by RRF alongside the
+  # other logs rather than appended after them. grep_jsonl_to_tsv returns
+  # immediately when the file is absent, so an install whose projector has
+  # never run behaves exactly as it did before this source existed.
+  keyword_file="$keyword_dir/04-prompts.tsv"
+  keyword_files+=("$keyword_file")
+  grep_jsonl_to_tsv "$DEV/prompt-history.jsonl" "prompts" > "$keyword_file" &
+  keyword_pids+=("$!")
 
   if [ "$INCLUDE_TRANSCRIPTS" = "1" ]; then
-    keyword_file="$keyword_dir/04-transcripts.tsv"
+    keyword_file="$keyword_dir/05-transcripts.tsv"
     keyword_files+=("$keyword_file")
     grep_transcripts_to_tsv > "$keyword_file" &
     keyword_pids+=("$!")
@@ -1536,6 +1574,8 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --format "$OUTPUT_FORMAT" \
       --purpose "$PURPOSE" \
       --call-id "$CALL_ID" \
+      --request-started-ms "$REQUEST_STARTED_MS" \
+      --request-started-at "$REQUEST_STARTED_AT" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
       --corpus-root "$DEV" \
@@ -1634,6 +1674,7 @@ if [ "$FOUND" -eq 0 ] && [ "$OUTPUT_FORMAT" = "text" ]; then
   [ -f "$DEV/changelog.jsonl" ] && local_logs=1
   [ -f "$DEV/research-log.jsonl" ] && local_logs=1
   [ -f "$DEV/session-milestones.jsonl" ] && local_logs=1
+  [ -f "$DEV/prompt-history.jsonl" ] && local_logs=1
 
   if [ "$local_logs" -eq 0 ]; then
     echo "No event logs found in $DEV/"
@@ -1656,6 +1697,7 @@ if [ "$FOUND" -eq 0 ] && [ "$OUTPUT_FORMAT" = "text" ]; then
       if ! LC_ALL=C grep -q "$eid" \
           "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
           "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" \
+          "$DEV/prompt-history.jsonl" \
           2>/dev/null; then
         UNKNOWN="${UNKNOWN:+$UNKNOWN,}$eid"
       fi
@@ -1670,6 +1712,7 @@ if [ "$FOUND" -eq 0 ] && [ "$OUTPUT_FORMAT" = "text" ]; then
       if ! LC_ALL=C grep -q -- "$path" \
           "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
           "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" \
+          "$DEV/prompt-history.jsonl" \
           2>/dev/null; then
         UNKNOWN="${UNKNOWN:+$UNKNOWN,}$path"
       fi

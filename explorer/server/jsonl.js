@@ -1,5 +1,5 @@
 import { readFileSync, statSync, watch, openSync, readSync, closeSync } from 'fs';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'node:crypto';
 
@@ -8,12 +8,24 @@ const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents',
 // need to be able to ask which one before trusting its answers.
 export const CORPUS_ROOT = DEV_DIR;
 
+// The searched logs. Every entry must live under DEV_DIR: the warm service
+// indexes exactly one corpus (CORPUS_ROOT), and a source outside it cannot be
+// swapped out by CARTOGRAPHER_DEV_DIR, so tests and alternate corpora silently
+// inherit the real machine's history.
+//
+// `prompts` supersedes the former `claude-history` entry, which read
+// ~/.claude/history.jsonl directly. Those 18,103 rows carried no event_id, so
+// they could never be fetched, touched, or threaded, and recall.js had to drop
+// every one of them at the contract boundary. build-prompt-history.js now
+// projects the same content into prompt-history.jsonl with stable ids. Do not
+// re-add the raw history file: the same prompts would be indexed twice under
+// two different identities, and the id-less copy would win nothing.
 export const LOG_FILES = {
   changelog: join(DEV_DIR, 'changelog.jsonl'),
   research: join(DEV_DIR, 'research-log.jsonl'),
   milestones: join(DEV_DIR, 'session-milestones.jsonl'),
   'tool-use': join(DEV_DIR, 'tool-use-log.jsonl'),
-  'claude-history': join(homedir(), '.claude', 'history.jsonl'),
+  prompts: join(DEV_DIR, 'prompt-history.jsonl'),
 };
 
 /**
@@ -121,12 +133,16 @@ export function readAllEvents(logFiles = LOG_FILES) {
     if (!e.summary && e.display) e.summary = e.display;
     // type fallback to source
     if (!e.type && e._source) e.type = e._source;
-    // Derive transcript_path for claude-history events
-    if (!e.transcript_path && e.session_id && e.project) {
-      const encoded = e.project.replace(/\//g, '-') || '-';
-      const candidate = resolve(homedir(), '.claude', 'projects', encoded, `${e.session_id}.jsonl`);
-      try { statSync(candidate); e.transcript_path = candidate; } catch {}
-    }
+    // NOTE: a transcript_path derivation used to live here, guessing
+    // ~/.claude/projects/<project-with-slashes-dashed>/<session_id>.jsonl. It
+    // only ever resolved for claude-history rows, whose `project` is a full cwd
+    // path; measured against the live corpus it produced 15,456 paths, all of
+    // them from that one source, and 0 from the other four logs (2,291 rows
+    // there met the guard and every candidate stat missed, because their
+    // `project` is a bare project name, not a path). With claude-history gone it
+    // is dead code that costs a statSync per event at startup. The prompts
+    // projector stamps transcript_path at write time; a resolver for stale
+    // recorded paths already exists at scripts/resolve-transcript.sh.
   }
 
   // Sort by timestamp descending (newest first)
