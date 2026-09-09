@@ -191,6 +191,19 @@ claude plugin marketplace add "$PWD"
 claude plugin install session-cartographer@session-cartographer
 ```
 
+### First, if you are not the maintainer
+
+This repo was built on one machine, and some of it ships configured for that
+machine: `project-registry.json` carries the maintainer's project aliases, the
+corpus root defaults to `~/Documents/dev`, `backfill-git-history.sh` has no
+author filter (backfill a cloned repo and you ingest every contributor's
+commits), and `integrations/hermes/` is a personal wrapper rather than a
+supported entry point. Nothing leaves your machine, but bash command lines and
+verbatim prompts do end up in event summaries.
+
+**[docs/ADOPTING.md](docs/ADOPTING.md)** — what you inherit, what you must
+configure, what leaves your machine. Ends in a checklist. Read it once.
+
 ### Required Codex hook approval
 
 Codex skips newly installed or changed command hooks until you explicitly trust
@@ -457,6 +470,7 @@ bash tests/private/benchmark.sh         # 8-query speed comparison
 
 ## See also
 
+- [docs/ADOPTING.md](docs/ADOPTING.md) — What an external adopter inherits, must configure, and what leaves the machine
 - [docs/SETUP.md](docs/SETUP.md) — Full setup, Qdrant, environment variables, disk usage
 - [docs/MIGRATION_TURNS.md](docs/MIGRATION_TURNS.md) — Existing-user migration to turn-based transcript indexing
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture

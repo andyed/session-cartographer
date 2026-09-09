@@ -19,6 +19,56 @@ claude plugin install session-cartographer@session-cartographer
 # That's it. Hooks auto-register, /remember works with grep.
 ```
 
+If you are installing this on a machine other than the maintainer's, read
+[ADOPTING.md](ADOPTING.md) once before going further. It covers the config that
+ships pre-set for someone else (project registry, corpus root), the backfill
+script that ingests other authors' commits, and what the event logs contain.
+
+## Counting facts — no Qdrant, no embedder
+
+Before installing anything in the next section, you can already ask what is true
+of your corpus. `POST /api/facts` answers counting questions — `census`,
+`tempo`, `delta` — and **needs neither Qdrant nor the embedding server**. The
+verbs are linear folds over the JSONL logs, not vector lookups
+(`explorer/server/facts.js`), so the only prerequisite is a running API process.
+
+This is the cheapest useful thing in the system and the fastest way to confirm
+your install is capturing events.
+
+```bash
+# Start the API (:2526). The headless Turbo service mounts the same endpoint.
+cd explorer && npm install && npm run dev
+
+# Is anything there at all?
+curl -s http://127.0.0.1:2526/api/facts/health
+
+# What happened in the last 24 hours, counted — not ranked, not sampled.
+node scripts/cartographer-facts.js --verb census --since 24h
+
+# Daily event volume per project over three weeks.
+node scripts/cartographer-facts.js --verb tempo --since 21d
+```
+
+Every count comes with a bounded sample of the `event_id`s behind it, so you can
+verify it instead of trusting it:
+
+```bash
+# the query argument is ignored, so any placeholder works
+bash scripts/cartographer-search.sh x --get <event-id>,<event-id>
+```
+
+Three things worth knowing before you build on it:
+
+- `cartographer-facts.js` **writes nothing** — no telemetry, no served rows.
+  `cartographer-search.sh` remains the single writer of retrieval telemetry.
+- A first `delta` call with no cursor is a **baseline**: it records a position,
+  returns zero events, and claims nothing is new.
+- `delta` cursors are byte offsets plus boundary hashes against *your* log
+  files. They do not transfer between machines; a foreign cursor is reported as
+  `stale`, not diffed. See [ADOPTING.md](ADOPTING.md#delta-cursors-are-machine-local--by-design).
+
+Full contract, bounds, and error table: [FACTS.md](FACTS.md).
+
 ## Full Setup (semantic search)
 
 ### Quick start
