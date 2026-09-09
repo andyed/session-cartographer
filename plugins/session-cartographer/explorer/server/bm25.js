@@ -3,6 +3,7 @@
  * In-memory index with incremental updates.
  */
 import { projectMatcher } from './project-filter.js';
+import { epochMsFromTimestamp } from './event-time.js';
 
 // Re-exported, not defined here. The substring rule originally lived in this
 // file, and the semantic-scope fix in search.js imports it from this path;
@@ -134,7 +135,15 @@ function expandWildcards(rawQuery, dfMap) {
   return [...new Set(expanded)]; // deduplicate
 }
 
-export function scoreBM25(index, query, { project, limit = 15 } = {}) {
+// Re-exported from event-time.js, not defined here. The window applied before
+// BM25 truncation and the window applied after fusion must not disagree about
+// what a row's time is — and neither must the facts path, which windows the
+// same corpus with the same rule. Two independently correct copies existed
+// briefly, each documented as "the one definition"; that arrangement stays
+// correct only until someone fixes one of them.
+export { epochMsFromTimestamp };
+
+export function scoreBM25(index, query, { project, limit = 15, sinceMs = null, beforeMs = null } = {}) {
   // Expand wildcards before tokenizing
   const hasWildcard = query.includes('*');
   const queryTokens = hasWildcard
@@ -151,8 +160,25 @@ export function scoreBM25(index, query, { project, limit = 15 } = {}) {
   // way to tell which one described the corpus the caller asked for.
   const matchesProject = projectMatcher(project);
 
+  const windowed = sinceMs !== null || beforeMs !== null;
+
   for (const [id, doc] of index.docs) {
     if (!matchesProject(doc.event.project)) continue;
+
+    // Time filter, applied here rather than to the returned ranking. The caller
+    // truncates this list to FUSION_DEPTH, so windowing afterwards keeps the 500
+    // globally best matches and then asks which fall inside the window — for a
+    // short window that is almost none, and the keyword ladder reached fusion
+    // empty while every stage reported success. Scoring is unaffected: N, df and
+    // avgdl come from the whole index, so an in-window document scores exactly
+    // what it scores unwindowed. A row with no parseable timestamp is dropped
+    // when a window is active, matching hybridSearch and the CLI's rank_fuse.
+    if (windowed) {
+      const ts = epochMsFromTimestamp(doc.event.timestamp);
+      if (ts === null) continue;
+      if (sinceMs !== null && ts < sinceMs) continue;
+      if (beforeMs !== null && ts > beforeMs) continue;
+    }
 
     let score = 0;
     for (const q of queryTokens) {

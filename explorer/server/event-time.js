@@ -18,16 +18,21 @@
  */
 
 /**
- * Epoch milliseconds for an event, or null when the value cannot be
+ * Epoch milliseconds for a raw timestamp value, or null when it cannot be
  * interpreted.
  *
  * Null is a real answer, not a failure to be papered over with `Date.now()` or
  * `0`. A row with no usable timestamp cannot honestly be placed inside or
  * outside a time window, so callers applying a window drop it rather than
  * guessing — mirroring `rank_fuse` in scripts/cartographer-search.sh.
+ *
+ * This is the primitive. The ranking path reached it as `epochMsFromTimestamp`
+ * exported from bm25.js and the facts path as `eventEpochMs` here, each
+ * documented as "the one definition" — two correct copies of the same rule,
+ * which is the arrangement that stays correct only until someone fixes one of
+ * them. bm25.js now re-exports this one under its established name.
  */
-export function eventEpochMs(item) {
-  const rawTs = item?.timestamp;
+export function epochMsFromTimestamp(rawTs) {
   if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
     const parsed = new Date(rawTs).getTime();
     return Number.isNaN(parsed) ? null : parsed;
@@ -40,6 +45,11 @@ export function eventEpochMs(item) {
     if (!Number.isNaN(num)) return num > 1e12 ? num : num * 1000;
   }
   return null;
+}
+
+/** Epoch milliseconds for an event, reading its `timestamp` field. */
+export function eventEpochMs(item) {
+  return epochMsFromTimestamp(item?.timestamp);
 }
 
 /** UTC calendar day (`YYYY-MM-DD`) for an epoch-ms value. */

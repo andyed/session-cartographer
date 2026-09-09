@@ -3,6 +3,7 @@
  * In-memory index with incremental updates.
  */
 import { projectMatcher } from './project-filter.js';
+import { epochMsFromTimestamp } from './event-time.js';
 
 // Re-exported, not defined here. The substring rule originally lived in this
 // file, and the semantic-scope fix in search.js imports it from this path;
@@ -134,23 +135,13 @@ function expandWildcards(rawQuery, dfMap) {
   return [...new Set(expanded)]; // deduplicate
 }
 
-/**
- * Parse an event timestamp to epoch ms. Returns null when absent or unparseable.
- * The one definition — search.js:eventEpochMs() delegates here so the window
- * applied before BM25 truncation and the window applied after fusion cannot
- * disagree about what a given row's time is.
- */
-export function epochMsFromTimestamp(rawTs) {
-  if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
-    const t = new Date(rawTs).getTime();
-    return isNaN(t) ? null : t;
-  }
-  if (rawTs) {
-    const num = Number(rawTs);
-    if (!isNaN(num)) return num > 1e12 ? num : num * 1000;
-  }
-  return null;
-}
+// Re-exported from event-time.js, not defined here. The window applied before
+// BM25 truncation and the window applied after fusion must not disagree about
+// what a row's time is — and neither must the facts path, which windows the
+// same corpus with the same rule. Two independently correct copies existed
+// briefly, each documented as "the one definition"; that arrangement stays
+// correct only until someone fixes one of them.
+export { epochMsFromTimestamp };
 
 export function scoreBM25(index, query, { project, limit = 15, sinceMs = null, beforeMs = null } = {}) {
   // Expand wildcards before tokenizing
