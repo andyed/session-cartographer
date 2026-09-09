@@ -1,0 +1,37 @@
+name: Explorer checks
+
+on:
+  workflow_call:
+
+jobs:
+  explorer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            explorer/package-lock.json
+      - name: Install locked dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --prefix explorer --no-audit --no-fund
+      - name: Install Chromium
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Build Explorer
+        run: npm run build --prefix explorer
+      - name: Verify working-memory browser flow
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: node tests/browser/memory-entry.cjs
+      - name: Preserve browser screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: memory-browser-failure
+          path: ${{ runner.temp }}/carto-memory-browser-artifacts
+          if-no-files-found: ignore

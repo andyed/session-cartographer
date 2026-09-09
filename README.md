@@ -234,11 +234,14 @@ claude plugin install session-cartographer@session-cartographer
 
 This repo was built on one machine, and some of it ships configured for that
 machine: `project-registry.json` carries the maintainer's project aliases, the
-corpus root defaults to `~/Documents/dev`, `backfill-git-history.sh` has no
-author filter (backfill a cloned repo and you ingest every contributor's
-commits), and `integrations/hermes/` is a personal wrapper rather than a
-supported entry point. Nothing leaves your machine, but bash command lines and
-verbatim prompts do end up in event summaries.
+corpus root defaults to `~/Documents/dev`, and `integrations/hermes/` is a
+personal wrapper rather than a supported entry point. Create a user-owned
+project registry to replace the shipped aliases. Git backfill imports configured
+corpus owners by default; review that owner list and a `--dry-run` before
+importing history. Use `--author "Name One,Name Two"` to override the list for
+one run, or `--all-authors` to deliberately include every contributor. Nothing
+leaves your machine, but bash command lines and verbatim prompts do end up in
+event summaries.
 
 **[docs/ADOPTING.md](docs/ADOPTING.md)** — what you inherit, what you must
 configure, what leaves your machine. Ends in a checklist. Read it once.

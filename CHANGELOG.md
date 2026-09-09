@@ -1,6 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.7.6 — Unreleased
+
+### Release preparation
+
+Git backfill now preserves full author names as single patterns, ignores empty
+comma-separated entries, and rejects empty or missing explicit author values.
+Regression tests exercise the actual shell ingest path against unrelated authors.
+Adoption guidance now matches the owner filter, user-owned registry, and Turbo
+service checks.
+
+Release metadata is aligned and checked before packaging. CI and the release
+workflow now require the Explorer build and working-memory browser regression on
+Node 22 in addition to the unit and package checks.
 
 ### feat(explorer): live working memory with session and file permalinks
 
@@ -14,7 +26,10 @@ and replay window. Older session links reopen their last recorded window. The
 UI can start or enable the managed Turbo service, and Internals remains available
 through the UI host even when headless Turbo is stopped.
 
-## 0.7.5 — 2026-09-08
+## 0.7.5 — 2026-09-08 (development snapshot)
+
+This version was used locally and was not published as a GitHub release. The
+changes below are included in the 0.7.6 candidate.
 
 ### feat(facts): a second question class on the warm corpus
 

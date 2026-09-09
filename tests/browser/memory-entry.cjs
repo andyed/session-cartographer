@@ -25,7 +25,20 @@ async function port() {
   const apiPort = await port(), uiPort = await port();
   const config = path.join(work, 'config.json');
   fs.writeFileSync(config, JSON.stringify({ turbo: { enabled: false, url: `http://127.0.0.1:${apiPort}` } }));
-  const env = { ...process.env, CARTOGRAPHER_DEV_DIR: corpus, CARTOGRAPHER_CONFIG: config, CARTOGRAPHER_TURBO_STATE_DIR: path.join(work, 'turbo'), CARTOGRAPHER_TURBO_URL: `http://127.0.0.1:${apiPort}` };
+  // A developer's telemetry paths, spool-only setting, or demo mode must not
+  // change the fixture or send its reads/writes to the real corpus.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+    !key.startsWith('CARTOGRAPHER_') && !['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'VITE_DEMO'].includes(key)));
+  Object.assign(env, {
+    CARTOGRAPHER_DEV_DIR: corpus,
+    CARTOGRAPHER_CONFIG: config,
+    CARTOGRAPHER_TURBO_STATE_DIR: path.join(work, 'turbo'),
+    CARTOGRAPHER_TURBO_URL: `http://127.0.0.1:${apiPort}`,
+    CARTOGRAPHER_SEMANTIC: '0',
+    CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1',
+    CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR: path.join(work, 'codex-sessions'),
+    CARTOGRAPHER_CODEX_ARCHIVED_DIR: path.join(work, 'codex-archives'),
+  });
   const transcriptRoot = path.join(work, 'transcripts');
   fs.mkdirSync(transcriptRoot);
   env.CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR = transcriptRoot;

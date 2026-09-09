@@ -9,7 +9,11 @@ permissions:
   contents: write
 
 jobs:
+  explorer:
+    uses: ./.github/workflows/explorer-checks.yml
+
   release:
+    needs: explorer
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,8 +26,7 @@ jobs:
         shell: bash
         run: |
           version="${GITHUB_REF_NAME#v}"
-          package_version=$(node -p "require('./package.json').version")
-          test "$version" = "$package_version"
+          node scripts/check-release-version.js "$version"
 
       - name: Run unit tests
         run: node --test tests/unit/*.test.js

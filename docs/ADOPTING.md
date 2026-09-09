@@ -5,8 +5,9 @@ What you inherit, what you must configure, and what leaves your machine.
 Session Cartographer was built and tuned on one person's machine. Most of that
 is invisible and harmless — hooks, scorers, contracts. Some of it is not: the
 project registry ships with someone else's project names, the corpus root
-defaults to one particular directory, and one backfill script will ingest other
-people's git commits as your session memory if you point it at a cloned repo.
+defaults to one particular directory, and git backfill depends on your configured
+corpus owners. Review those settings before importing history or querying a
+project family.
 
 This page is the list of those things. Read it once after installing. The rest
 of the docs assume the defaults are yours.
@@ -26,7 +27,7 @@ is the most likely way an adopter loses or leaks something.
 | | Question | Default | How you change it |
 |---|---|---|---|
 | 1 | Do my event logs get committed to a repo? | **No** — `.carto/` is gitignored | Un-ignore your own project's path; do not delete the rule |
-| 2 | Do my repos' git commits enter the corpus? | **Only if you run the backfill** — and it takes every author | `--project`, `--since`, `--limit`; there is no author filter |
+| 2 | Do my repos' git commits enter the corpus? | **Only if you run the backfill** — filtered to configured corpus owners | `CARTOGRAPHER_PROFILE_AUTHORS`, `--author`, or `--all-authors`; narrow further with `--project`, `--since`, `--limit` |
 | 3 | Which projects can a pulse or feed see? | **None** — `--projects` is required | Pass an explicit allowlist |
 
 ### 1. Whether your event logs get versioned
@@ -59,48 +60,58 @@ rule for everything.
 ### 2. Whether other people's commits become your session memory
 
 `scripts/backfill-git-history.sh` walks every directory under
-`$CARTOGRAPHER_DEV_DIR` that contains a `.git`, and runs:
+`$CARTOGRAPHER_DEV_DIR` that contains a `.git`. It filters commits to the corpus
+owner list **before writing events**, using the shared definition in
+`scripts/ownership.js`:
 
+- The default is `git config --global user.name`, plus `Claude` and `claude`.
+- `CARTOGRAPHER_PROFILE_AUTHORS="Name One,Name Two"` replaces the human names;
+  the agent names remain included.
+- `--author "Name One,Name Two"` overrides the entire list for one backfill run.
+- `--all-authors` deliberately disables the ingest filter and includes every
+  contributor, even in a cloned repository.
+
+Without Node, the script falls back to `git config --global user.name` unless
+you supply `--author`. It refuses a backfill when it cannot resolve an owner;
+`--all-authors` is the explicit alternative. Git's `--author` matches patterns
+against both name and email, rather than enforcing exact identity. Review the
+preview if names overlap or contain regular-expression characters.
+
+```bash
+# Preview the configured owners' recent commits in one repository.
+bash scripts/backfill-git-history.sh --project my-project --since 2026-01-01 --dry-run
+
+# Override the owner list for this run, keeping full names quoted.
+bash scripts/backfill-git-history.sh --project my-project --author "Ada Lovelace,Grace Hopper" --dry-run
 ```
-git log --format=%H|%aI|%s|%an --max-count=$LIMIT
-```
 
-**There is no `--author` filter, and none of the script's flags add one.** The
-flags are `--project`, `--since`, `--limit`, `--dry-run`, `--no-files`. So:
+Each imported `git_commit` event records its author. Two consumers also apply
+an owner check at read time; the others operate on the history you admitted:
 
-> Backfilling a cloned open-source repo ingests every contributor's commits into
-> your corpus, dated when they were authored, attributed to the project you
-> cloned.
-
-The author *is* recorded — each `git_commit` event carries an `author` field —
-so the data needed to filter exists. The filtering happens in two consumers, not
-at ingest:
-
-| Consumer | Filters by author? | Mechanism |
+| Consumer | Additional owner check? | Mechanism |
 |---|---|---|
-| `scripts/build-profile.js` | Yes | `isOwn()`: keep if `session_id` is set, or `author` is in `OWNERS` |
-| `scripts/trust-digest.js` | Yes | Same rule, same shape |
+| `scripts/build-profile.js` | Yes | Shared `isOwnEvent()`: keep a commit if `session_id` is set, or `author` is in the owner list |
+| `scripts/trust-digest.js` | Yes | Same shared rule |
 | `cartographer-search.sh` / `/remember` | No | — |
 | `POST /api/facts` census, tempo, delta | No | — |
 | `cartographer-pulse.sh`, `cartographer-feed.sh` | No | — |
 | Explorer UI | No | — |
 
-`OWNERS` defaults to your `git config --global user.name`, plus `Claude` and
-`claude` (agent-authored commits inside your own sessions). Override with
-`CARTOGRAPHER_PROFILE_AUTHORS` (comma-separated) if you commit under more than
-one name.
+The ingest filter does not remove commits already imported by an older version
+or a previous `--all-authors` run. Those events remain visible to search, facts,
+pulse, feeds, and Explorer.
 
 **Practical guidance:**
 
-- Run the backfill with `--project <name>` per repo you actually author in,
-  rather than the unscoped walk over `$CARTOGRAPHER_DEV_DIR/*/`.
+- Use `--project <name>` to review one repository at a time, and `--since` or
+  `--limit` to bound the import.
 - Run `--dry-run` first. It prints what it would write and touches nothing.
-- Set `CARTOGRAPHER_PROFILE_AUTHORS` before your first `build-profile.js` run if
-  your git name differs from what you expect.
-- If you already backfilled a cloned repo, the events are ordinary JSONL lines
-  in `changelog.jsonl` with `"type":"git_commit"` and an `event_id` of
-  `git-<short-hash>`. Removing them is a `grep -v` over that file plus a Qdrant
-  reindex; back the file up first.
+- Set `CARTOGRAPHER_PROFILE_AUTHORS` before backfilling if your commits use
+  additional names. The same setting is used by profile and trust reports.
+- To review an earlier broad import, inspect `changelog.jsonl` entries with
+  `"type":"git_commit"`, their `author`, and their `git-<short-hash>` event IDs.
+  Back up the log before any cleanup, and account for copies in the semantic
+  index as well.
 
 ### 3. Which projects a pulse or a feed may see
 
@@ -141,15 +152,33 @@ event logs (`psychodeli-webgl-port`, `oled-fireworks-tvos`, and so on).
 
 It is an **expansion table**, consumed by `cartographer-search.sh --project`,
 `/focus`, `cartographer-feed.sh`, `cartographer-pulse.sh`, `build-profile.js`,
-and `explorer/server/project-filter.js`. A name that is *not* an alias passes
+and other registry-aware callers. A name that is *not* an alias passes
 through as a literal project name, so an unedited registry does not break
 anything — but a name that *is* an alias expands to repositories that do not
 exist on your machine, and you get zero results for a scope you thought you had
 set. `frakbot`, for instance, expands to `nanobot`, `openclaw`, and a
 deprecated OpenClaw path.
 
-Replace the `aliases` object with your own before using `--project` with family
-names. Format and worked examples: [BRIEFINGS.md](BRIEFINGS.md#project-registry).
+Create your own registry at
+`~/.config/session-cartographer/project-registry.json`, or beside the file named
+by `CARTOGRAPHER_CONFIG`. Set `CARTOGRAPHER_PROJECT_REGISTRY` to select an explicit
+path. The first available layer wins: explicit path, user registry, then shipped
+registry. **Layers do not merge**: your registry replaces the shipped aliases.
+A selected file that is invalid is an error, rather than a silent fallback.
+
+Bootstrap from your event logs, then review the inferred groups:
+
+```bash
+node scripts/bootstrap-project-registry.js --dry-run
+node scripts/bootstrap-project-registry.js
+bash scripts/project-registry.sh --path
+```
+
+The writer refuses to overwrite an existing registry without `--force`. Edit
+the user-owned file; plugin updates can overwrite the shipped copy. Direct
+`/api/recall` calls do not expand registry aliases, so pass project names or an
+appropriate substring there. Format and worked examples:
+[BRIEFINGS.md](BRIEFINGS.md#project-registry).
 
 ### `integrations/hermes/` — a worked example, not a supported entry point
 
@@ -216,19 +245,31 @@ Port 2526 is shared by design: `scripts/turbo-server.js` (headless) and
 `explorer/server/index.js` (the Express Explorer) mount the same
 `/api/recall` and `/api/facts` on it, so whichever is running is the one a
 client reaches. `cartographer-turbo.js` handles that by probing
-`/api/recall/health` before spawning and reusing whatever already serves it.
+`/api/recall/health` before spawning and reusing a compatible service.
 
-**The probe checks only that the response status is OK.** During development an
-unrelated node process was already listening on a probed port and answered;
-Cartographer treated the port as already served. On a machine with other dev
-servers around, assume nothing about a bare port number: before trusting a
-"reused existing service" result, confirm what is actually there.
+**The probe validates both `backend: "explorer"` and the current recall contract
+version.** An unrelated process returning HTTP 200 is rejected. A compatible
+Cartographer from another checkout can still pass, however: the probe validates
+the API contract, not which branch or source tree serves it. Confirm the corpus
+and checkout before treating a reused service as your current build.
 
 ```bash
+node scripts/cartographer-turbo.js status
+curl -s http://127.0.0.1:2526/api/recall/health
+# expect backend "explorer" and a compatible contract_version
 curl -s http://127.0.0.1:2526/api/facts/health
 # expect: {"status":"ok","backend":...,"corpus_root":"...","verbs":[...],...}
-lsof -nP -iTCP:2526 -sTCP:LISTEN   # or: which process is that, really
+carto_pid=$(lsof -tnP -iTCP:2526 -sTCP:LISTEN | head -1)
+lsof -a -p "$carto_pid" -d cwd -Fn   # which checkout is that process serving?
 ```
+
+Use your configured URL and port when they differ from the defaults above.
+After changing runtime code, refresh the managed service with
+`node scripts/cartographer-turbo.js stop` followed by `start`; a running process
+still holds the previously loaded code. An externally managed Explorer must be
+restarted through its own launch process. See
+[TESTING.md](TESTING.md#know-which-server-you-are-testing) for isolated testing
+without disturbing another checkout's service.
 
 If 2526 is genuinely taken, `turbo-server.js` reports `port_in_use` and keeps
 serving over its file transport rather than failing — check
@@ -408,13 +449,14 @@ above.
 [ ] Set CARTOGRAPHER_DEV_DIR if your projects are not under ~/Documents/dev,
     before the first hook fires.
 [ ] If that directory is a git repo, gitignore .carto/ and the five *.jsonl logs.
-[ ] Replace the aliases in project-registry.json with your own projects.
+[ ] Create a user-owned project registry and verify it with
+    `bash scripts/project-registry.sh --path`; it replaces the shipped aliases.
 [ ] Set CARTOGRAPHER_PROFILE_AUTHORS if you commit under a name other than
     `git config --global user.name`.
 [ ] Backfill git history per-repo with --project, after a --dry-run.
-    Do not run the unscoped walk over a workspace containing cloned repos.
+    Review the owner list; use --all-authors only for a deliberate broad import.
 [ ] Confirm ports 2526/2527/6333/8890 are free, or override them. Verify what
-    answers on 2526 before trusting a "reused existing service" result.
+    corpus and checkout answer on 2526 before trusting a reused service.
 [ ] Try `cartographer-facts.js --verb census --since 24h` before installing
     Qdrant. It needs neither Qdrant nor the embedder.
 [ ] Read one full pulse output yourself before piping it into any scheduled

@@ -109,8 +109,11 @@ At the end of a productive session — or when a user says "wrap up" — use `/w
 
 ## Testing
 
-- `bash tests/private/run-tests.sh` — 11 tests against live data
-- `bash tests/private/run-fixture-tests.sh` — 14 tests against synthetic fixtures
-- `bash tests/private/benchmark.sh` — 8-query speed comparison (grep vs. cartographer)
-- `bash tests/private/head-to-head.sh "query"` — side-by-side comparison for a single query
-- **No MCP-based browser testing.** Test the Explorer UI manually — don't puppet Chrome via desktop-control MCP.
+Read [docs/TESTING.md](docs/TESTING.md) before writing tests. Assert on result
+composition and provenance, not merely successful responses.
+
+- `env -u CLAUDE_SESSION_ID -u CLAUDE_CODE_SESSION_ID -u CODEX_SESSION_ID -u CARTOGRAPHER_SESSION_ID node --test tests/unit/*.test.js` — portable unit suite; use Node 22 to match CI.
+- `npm run build --prefix explorer` and `node tests/browser/memory-entry.cjs` — Explorer build and isolated headless Chromium regression; install locked root/Explorer dependencies and Chromium first as documented in the testing guide.
+- `bash tests/release-smoke.sh`, `bash tests/source-marketplace-smoke.sh` — packaging and available CLI installation checks.
+- `tests/private/` is gitignored and optional, not a fresh-clone prerequisite.
+- **No MCP-based browser testing.** Use the checked-in headless browser harness and manual visual review; don't puppet Chrome via desktop-control MCP.

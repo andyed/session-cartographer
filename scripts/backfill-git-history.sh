@@ -31,6 +31,7 @@ DRY_RUN=false
 INCLUDE_FILES=true
 ALL_AUTHORS=false
 AUTHOR_OVERRIDE=""
+AUTHOR_OVERRIDE_SET=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,7 +40,12 @@ while [ $# -gt 0 ]; do
     --limit)        LIMIT="$2"; shift 2 ;;
     --dry-run)      DRY_RUN=true; shift ;;
     --no-files)     INCLUDE_FILES=false; shift ;;
-    --author)       AUTHOR_OVERRIDE="$2"; shift 2 ;;
+    --author)
+      if [ $# -lt 2 ]; then
+        printf 'backfill-git-history: --author requires a name or pattern.\n' >&2
+        exit 2
+      fi
+      AUTHOR_OVERRIDE="$2"; AUTHOR_OVERRIDE_SET=true; shift 2 ;;
     --all-authors)  ALL_AUTHORS=true; shift ;;
     *) shift ;;
   esac
@@ -50,18 +56,29 @@ done
 # second copy of the rule here is how the ingest filter and the consumers would
 # drift apart while both looked correct.
 OWNER_LIST=""
-if [ -n "$AUTHOR_OVERRIDE" ]; then
-  OWNER_LIST=$(printf '%s' "$AUTHOR_OVERRIDE" | tr ',' '\n')
-elif [ "$ALL_AUTHORS" = "false" ]; then
-  if command -v node >/dev/null 2>&1; then
-    OWNER_LIST=$(node "$(dirname "$0")/ownership.js" --authors 2>/dev/null)
+OWNER_ARGS=()
+if [ "$ALL_AUTHORS" = "false" ]; then
+  if $AUTHOR_OVERRIDE_SET; then
+    OWNER_LIST=$(printf '%s' "$AUTHOR_OVERRIDE" | tr ',' '\n')
+  else
+    if command -v node >/dev/null 2>&1; then
+      OWNER_LIST=$(node "$(dirname "$0")/ownership.js" --authors 2>/dev/null)
+    fi
+    # Fall back to git's own answer if node is unavailable. Losing the filter
+    # entirely would silently reinstate the bug this exists to prevent.
+    [ -n "$OWNER_LIST" ] || OWNER_LIST=$(git config --global user.name 2>/dev/null)
   fi
-  # Fall back to git's own answer if node is unavailable. Losing the filter
-  # entirely would silently reinstate the bug this exists to prevent, so an
-  # empty resolution is refused rather than treated as "no filter".
-  [ -n "$OWNER_LIST" ] || OWNER_LIST=$(git config --global user.name 2>/dev/null)
-  if [ -z "$OWNER_LIST" ]; then
-    printf 'backfill-git-history: cannot determine the corpus owner.\n' >&2
+
+  # Read whole names, not shell words: "Ada Lovelace" must remain one pattern.
+  # Trim comma-list padding and omit blank entries, because --author= matches
+  # every author. An explicitly empty override must not fall back to defaults.
+  while IFS= read -r owner; do
+    owner="${owner#"${owner%%[![:space:]]*}"}"
+    owner="${owner%"${owner##*[![:space:]]}"}"
+    [ -n "$owner" ] && OWNER_ARGS+=("--author=$owner")
+  done <<< "$OWNER_LIST"
+  if [ "${#OWNER_ARGS[@]}" -eq 0 ]; then
+    printf 'backfill-git-history: cannot determine a nonempty corpus owner.\n' >&2
     printf '  Set git config --global user.name, or pass --author "Name",\n' >&2
     printf '  or pass --all-authors to deliberately import every contributor.\n' >&2
     exit 2
@@ -104,13 +121,10 @@ process_repo() {
   # the corpus as the owner's own session memory — and only two downstream
   # readers ever filtered them out, so search, the facts census and tempo, the
   # pulse's commit list and the Explorer all counted strangers' work as yours.
-  # git's --author is a substring match over name and email, and repeating the
-  # flag ORs the patterns, which is exactly the owner-list semantics wanted.
+  # Git's --author uses regex matching over name and email; repeating the flag
+  # ORs the patterns. Keep those existing semantics while preserving spaces.
   if [ "$ALL_AUTHORS" = "false" ]; then
-    local owner
-    for owner in $OWNER_LIST; do
-      git_args+=("--author=$owner")
-    done
+    git_args+=("${OWNER_ARGS[@]}")
   fi
 
   local count=0

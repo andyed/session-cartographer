@@ -143,8 +143,16 @@ At the end of a productive session — or when a user says "wrap up" — use `/w
 
 ## Testing
 
-- `bash tests/private/run-tests.sh` — 11 tests against live data
-- `bash tests/private/run-fixture-tests.sh` — 14 tests against synthetic fixtures
-- `bash tests/private/benchmark.sh` — 8-query speed comparison (grep vs. cartographer)
-- `bash tests/private/head-to-head.sh "query"` — side-by-side comparison for a single query
-- **No MCP-based browser testing.** Test the Explorer UI manually — don't puppet Chrome via desktop-control MCP.
+**Read [docs/TESTING.md](docs/TESTING.md) before writing a test here.** Every real
+defect in the recall path returned a confident, well-formed, wrong answer with no
+stage reporting failure, so "it didn't error" and "it returned results" are both
+worthless as signals — assert on *composition* (which ladders contributed, whether
+a count survives an independent scan, whether an id fetches back).
+
+- `env -u CLAUDE_SESSION_ID -u CLAUDE_CODE_SESSION_ID -u CODEX_SESSION_ID -u CARTOGRAPHER_SESSION_ID node --test tests/unit/*.test.js` — portable unit suite; use Node 22 to match CI and unset session variables so delta serving does not eat repeat results.
+- `npm run build --prefix explorer` and `node tests/browser/memory-entry.cjs` — Explorer build and isolated headless Chromium regression; see the testing guide for dependencies.
+- `bash tests/release-smoke.sh`, `bash tests/source-marketplace-smoke.sh` — packaging.
+- `tests/private/` is gitignored and absent from a fresh checkout. Anything documented against it does not run for anyone who clones.
+- **A fixture must prove it exercises the defect.** These bugs are absences, so a test asserting only "results came back" passes against the broken code. Add the second assertion — that in-window rows really do fall past `FUSION_DEPTH`, that the keyword and semantic ladders agree on scope.
+- **Pin the semantic leg off** with `process.env.CARTOGRAPHER_SEMANTIC = '0'` at the top of the file, before any import, or a live Qdrant leaks corpus ids into fixture expectations and the suite passes only where the service is down.
+- **No MCP-based browser testing.** Use the checked-in headless browser harness and manual visual review; don't puppet Chrome via desktop-control MCP.

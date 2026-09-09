@@ -12,16 +12,7 @@ case "$VERSION" in
     ;;
 esac
 
-MANIFEST_VERSION=$(node -p "require('$ROOT/plugins/session-cartographer/.codex-plugin/plugin.json').version")
-CLAUDE_VERSION=$(node -p "require('$ROOT/plugins/session-cartographer/.claude-plugin/plugin.json').version")
-MARKETPLACE_VERSION=$(node -p "require('$ROOT/.claude-plugin/marketplace.json').plugins.find(p => p.name === 'session-cartographer').version")
-
-for declared in "$MANIFEST_VERSION" "$CLAUDE_VERSION" "$MARKETPLACE_VERSION"; do
-  if [ "$declared" != "$VERSION" ]; then
-    echo "Version mismatch: requested $VERSION but a manifest declares $declared" >&2
-    exit 2
-  fi
-done
+node "$ROOT/scripts/check-release-version.js" "$VERSION" >&2
 
 OUT="$ROOT/dist/release"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/session-cartographer-release.XXXXXX")

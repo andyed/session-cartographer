@@ -1,7 +1,7 @@
 {
   "name": "session-cartographer",
-  "version": "0.7.5",
-  "description": "Search and explore shared Claude Code and Codex session history \u2014 /remember recalls it, /carto opens the Explorer, and /turbo manages optional fast recall for both agents",
+  "version": "0.7.6",
+  "description": "Search and explore shared Claude Code and Codex session history — /remember recalls it, /carto opens the Explorer, and /turbo manages optional fast recall for both agents",
   "author": {
     "name": "Andy Edmonds"
   },
