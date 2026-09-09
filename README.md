@@ -347,14 +347,26 @@ node scripts/backfill-prompt-intents.js
 ## Footprint
 
 ```
-  Disk footprint (1,839 sessions, 40+ projects)
+  Disk footprint (measured 2026-09-08: 13,575 sessions, 219,634 events)
 
-  Claude Code transcripts  ████████████████████████████████████  2,900 MB
-    Cartographer log data  ▏                                      1.5 MB
-      Cartographer source  ▏                                        2 MB
+  Claude Code transcripts  ████████████████████████████████████  8,300 MB
+    Cartographer log data  ▊                                       127 MB
+      Cartographer source  ▏                                         2 MB
 
-  Cartographer adds ~1 MB per 2 GB of transcripts (1:2000)
+  Cartographer adds ~1 MB per 65 MB of transcripts (1:65)
 ```
+
+The five event logs, largest first: `changelog.jsonl` 62 MB, `tool-use-log.jsonl`
+47 MB, `session-milestones.jsonl` 8.2 MB, `prompt-history.jsonl` 6.8 MB,
+`research-log.jsonl` 3.3 MB.
+
+An earlier version of this section claimed 1.5 MB and a 1:2000 ratio. That was
+measured before tool-use logging and prompt history existed, and those two
+sources are now 84 MB of the 127 MB. Plan disk from the ratio above, and note
+that `tool-use-log.jsonl` grows with how much the agent *does*, not with how
+long you have used it — a heavy refactoring week costs more than a quiet month.
+Turbo holds the whole corpus resident; see [docs/ADOPTING.md](docs/ADOPTING.md)
+for memory.
 
 ## grep vs. cartographer
 

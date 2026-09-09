@@ -36,6 +36,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
+import { isNonProject, nonProjectNames } from './non-projects.js';
 
 // ─── Config ───
 
@@ -55,11 +56,13 @@ const MANEUVERS_OF = arg('--maneuvers', null);
 const SIGNAL_OF = arg('--signal', null);
 const KQ = parseInt(arg('--k', '8'), 10);
 
-// "Projects" that are really cwd-encoded filesystem path fragments, not real projects. Editable.
-const PROJECT_BLOCKLIST = new Set([
-  'andyed', 'Users-andyed', 'Users', 'Documents-dev', 'Documents', 'Downloads', 'Desktop', 'Library', 'home',
-  'workspace', 'images', 'tmp', 'var', 'private', 'node_modules', 'dev',
-]);
+// "Projects" that are really cwd-encoded filesystem path fragments, auto-named
+// agent worktrees, or generic container directories — not real projects. The set
+// used to be spelled here AND in build-profile.js with different members; it now
+// lives once in scripts/non-projects.js, which also carries the worktree-name
+// rule this copy never had.
+const NON_PROJECT_NAMES = nonProjectNames(process.env, DEV);
+const PROJECT_BLOCKLIST = { has: (name) => isNonProject(name, NON_PROJECT_NAMES) };
 
 // Maneuver signature catalog — [signal, regex] tested against each event's (summary + files_changed).
 // Entities for the maneuver graph. Coarse-to-specific by design; the composition graph shows the nesting.

@@ -7,6 +7,12 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SEARCH="$ROOT/scripts/cartographer-search.sh"
+# One registry resolver for every consumer — the shipped project-registry.json
+# is the maintainer's, and a user-level file replaces it. Sourced rather than
+# re-implemented: this expansion and the pulse's had to describe the same
+# corpus, and a second copy of the jq is how they stop doing so.
+# shellcheck source=./project-registry.sh
+. "$ROOT/scripts/project-registry.sh"
 
 PROJECTS=""
 SINCE="24h"
@@ -82,14 +88,7 @@ IFS=',' read -r -a project_list <<< "$PROJECTS"
 for raw_project in "${project_list[@]}"; do
   project=$(printf '%s' "$raw_project" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   [ -n "$project" ] || continue
-  if [ -f "$ROOT/project-registry.json" ] && \
-     jq -e --arg project "$project" '.aliases[$project] | type == "array"' \
-       "$ROOT/project-registry.json" >/dev/null 2>&1; then
-    jq -r --arg project "$project" '.aliases[$project][]' \
-      "$ROOT/project-registry.json" >> "$EXPANDED_PROJECT_FILE"
-  else
-    printf '%s\n' "$project" >> "$EXPANDED_PROJECT_FILE"
-  fi
+  cartographer_expand_alias "$project" >> "$EXPANDED_PROJECT_FILE"
 done
 
 expanded_projects=$(sort -u "$EXPANDED_PROJECT_FILE" | paste -sd '|' -)

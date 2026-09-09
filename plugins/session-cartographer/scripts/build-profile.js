@@ -25,7 +25,9 @@
  */
 import fs from 'fs';
 import path from 'path';
-import { execFileSync } from 'child_process';
+import { familyLookup } from './project-registry.js';
+import { isNonProject, nonProjectNames } from './non-projects.js';
+import { ownerNames, isOwnEvent } from './ownership.js';
 
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME, 'Documents/dev');
 const CHANGELOG = process.env.CARTOGRAPHER_CHANGELOG || path.join(DEV, 'changelog.jsonl');
@@ -58,50 +60,30 @@ const WINDOW_DAYS = (() => {
 })();
 
 // ─── Owner identity ───
-function gitUserName() {
-  try {
-    return execFileSync('git', ['config', '--global', 'user.name'], { encoding: 'utf8' }).trim();
-  } catch { return ''; }
-}
-const OWNERS = new Set(
-  (process.env.CARTOGRAPHER_PROFILE_AUTHORS || gitUserName())
-    .split(',').map((s) => s.trim()).filter(Boolean)
-    // Agent-authored commits made inside the owner's sessions are the owner's
-    // work for profiling purposes — they are what the owner shipped.
-    .concat(['Claude', 'claude'])
-);
+// Shared with trust-digest.js and the ingest filter in backfill-git-history.sh.
+const OWNERS = ownerNames();
 
 // ─── Non-projects ───
 // `project` is derived from the session cwd, so sessions started in the home
 // directory or the workspace root produce a "project" named after that
 // directory. Left in, `andyed` outranks every real project on event count and
-// the active surface describes the filesystem instead of the work.
-const NON_PROJECTS = new Set(
-  (process.env.CARTOGRAPHER_PROFILE_EXCLUDE || '')
-    .split(',').map((s) => s.trim()).filter(Boolean)
-    .concat([
-      path.basename(process.env.HOME || ''),
-      path.basename(DEV),
-      '/', '?', '', 'unknown', 'tmp', 'Documents',
-    ])
+// the active surface describes the filesystem instead of the work. The set
+// itself lives in scripts/non-projects.js — it was spelled here and in
+// cooccurrence-graph.js with different members before a third consumer needed it.
+const NON_PROJECT_NAMES = nonProjectNames(
+  process.env,
+  DEV,
+  (process.env.CARTOGRAPHER_PROFILE_EXCLUDE || '').split(','),
 );
+const NON_PROJECTS = { has: (name) => isNonProject(name, NON_PROJECT_NAMES) };
 
 // ─── Project family lookup ───
-const familyOf = (() => {
-  const map = new Map();
-  for (const dir of [path.join(DEV, 'session-cartographer'), process.cwd()]) {
-    const file = path.join(dir, 'project-registry.json');
-    if (!fs.existsSync(file)) continue;
-    try {
-      const registry = JSON.parse(fs.readFileSync(file, 'utf8'));
-      for (const [family, members] of Object.entries(registry.aliases || {})) {
-        for (const member of members) map.set(member, family);
-      }
-      break;
-    } catch { /* registry is optional */ }
-  }
-  return (project) => map.get(project) || '';
-})();
+// Resolved through the shared registry resolver rather than probing
+// $DEV/session-cartographer and cwd. Those two directories only ever held the
+// MAINTAINER's registry; an adopter running build-profile.js from anywhere else
+// got no families at all, and one running it inside a clone of this repo got
+// someone else's. familyLookup() reads the user-level registry when present.
+const familyOf = familyLookup(process.env);
 
 // ─── Load ───
 const now = Date.now();
@@ -136,11 +118,7 @@ if (!events.length) {
   process.exit(2);
 }
 
-function isOwn(event) {
-  if (event.type !== 'git_commit') return true;
-  if (event.session_id) return true;
-  return OWNERS.has(event.author || '');
-}
+const isOwn = (event) => isOwnEvent(event, OWNERS);
 
 const own = events.filter(isOwn);
 const corpusEnd = own.reduce((max, e) => {
