@@ -1,6 +1,95 @@
 # Changelog
 
-## 0.7.5 — 2026-09-07
+## 0.7.5 — 2026-09-08
+
+### feat(facts): a second question class on the warm corpus
+
+`/api/recall` answers "which records are relevant to this phrase." The new
+`POST /api/facts` answers "what is true of the corpus" — `census`, `tempo` and
+`delta`. Conflating the two is not a tuning problem: a ranker handed a census
+question has no relevance gradient to work with, so it returns *an* answer with
+no way for the caller to know it is not *the* answer. The daily FrakBot pulse
+surfaced **1 event** from a 24h window that deterministically held **736 events,
+22 sessions and 20 commits across four repositories**.
+
+**There are no indexes, and that was a measurement.** Loading 127k events costs
+881 ms, which the warm service already pays and holds. Once resident, a full
+linear fold costs **12–22 ms** — under 2% of the 1500 ms request budget. So
+these are folds: nothing precomputed, nothing to invalidate, and a new fact is a
+new function rather than a data structure plus its maintenance path. The
+measured exception is extraction-derived facts (file paths out of free-text
+summaries, 368 ms), which is also where the extraction heuristic is most likely
+to be confidently wrong; those verbs are deliberately absent.
+
+Every bucket carries a bounded sample of the `event_id`s it counted, so any
+number can be checked with `--get`. A deterministic answer that is silently
+wrong is strictly worse than a slow one.
+
+`delta` is a cursor over per-log byte offsets, never a `since` timestamp. The
+corpus is backfilled — `backfill-git-history.sh`, `retro-index.sh` and
+`catch-up-transcripts.sh` append events dated months in the past — so
+"timestamped after my last run" and "arrived since my last run" are different
+sets and only the second means *new*. Arrival order lives in the append-only
+logs, not in the resident array. `logPositions()`/`readAppended()` in
+`jsonl.js` reuse the existing `boundaryHash`, because a byte offset alone cannot
+tell an append from an in-place repair — and a repair that also grows the file
+makes the shifted tail read as fresh appends. A rewritten source is reported as
+`stale` and contributes nothing rather than yielding a confident wrong diff.
+
+`tempo` never scores the current UTC day: comparing a two-hour day against
+complete days reads as a collapse every time. Its z-score regime is labelled
+rather than trusted, because daily event counts are Poisson-ish and
+zero-inflated — real runs produced z=44.9 against a baseline mean of 2.33 and
+z=60.1 against 0.22. Insufficient history and zero variance return `null` with a
+stated reason, never `0.0`.
+
+The endpoint writes nothing: `cartographer-search.sh` remains the single writer
+of served and access telemetry, and facts are projections of the five logs
+rather than events, so no sixth log appears.
+
+`scripts/cartographer-facts.js` is the client, with `--cursor-file` for
+scheduled callers; it advances the stored cursor only after a successful render.
+
+### feat(pulse): counted ground truth above the relevance feed
+
+`scripts/cartographer-pulse.sh` keeps the existing search section and puts a
+census above it — totals, per-project and per-type tables, every commit in the
+window with its `event_id`, and tempo. The halves are labelled because they are
+different kinds of claim: the counted section is exhaustive within its window
+and scope, the search section is a relevance sample and must never be quoted as
+a count. It fails closed on `--projects` like the feed, and reports how many
+events fell *outside* the requested scope so the blind spot is visible. With the
+facts service unreachable it degrades to the search section and says so, rather
+than emitting a zeroed census that reads as a quiet day.
+
+The FrakBot allowlist was widened for the first time against evidence rather
+than recall: a 30-day census diffed against the registry-expanded list. The
+blind spot went from 232 events across six projects to 93 across two, both
+deliberate.
+
+### refactor(search): one definition of project scope
+
+The substring rule that decides whether an event is in scope moves to
+`explorer/server/project-filter.js`; `bm25.js` re-exports it. A census and a
+recall over the same `--project` that disagreed about scope would each be
+defensible with no way to tell which described the corpus the caller asked for.
+`resolveProjectValues()` resolves a spec against the project values actually
+present, because six of the ten aliases in `project-registry.json` have members
+that are not substrings of their key (`devtools` → `session-cartographer`) and
+the API expands the registry nowhere — so a caller naming a real alias could
+match nothing and be handed a zero that reads as "nothing happened". Responses
+now carry `project_scope`, which distinguishes an unresolved scope from a quiet
+one.
+
+### fix(turbo): an HTTP status is an answer, not an outage
+
+Both Turbo clients treated a 4xx as a transport failure and retried on the file
+spool — which reaches the same process, so it re-ran the rejection and reported
+a composite error naming two failures that did not exist. Only an unreachable
+service now earns the second attempt. The recall path keeps exit 75, because
+`cartographer-search.sh` reads any non-zero exit as "fall back to the portable
+CLI" and on a contract rejection that fallback is still correct.
+
 
 ### feat(recall): prompt history becomes a searchable source
 
