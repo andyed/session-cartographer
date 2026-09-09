@@ -2,6 +2,15 @@
  * BM25 scorer — ported from scripts/bm25-search.awk
  * In-memory index with incremental updates.
  */
+import { projectMatcher } from './project-filter.js';
+
+// Re-exported, not defined here. The substring rule originally lived in this
+// file, and the semantic-scope fix in search.js imports it from this path;
+// moving it to project-filter.js so the facts path could share one definition
+// would otherwise break that import the moment the two branches meet — an
+// import error rather than a textual conflict, so no merge tool would flag it.
+// Keep this line until every caller names project-filter.js directly.
+export { projectMatcher };
 
 const K1 = 1.2;
 const B = 0.75;
@@ -143,33 +152,6 @@ export function epochMsFromTimestamp(rawTs) {
   return null;
 }
 
-/**
- * One definition of "does this event belong to the requested project scope."
- *
- * Callers pass a pipe-delimited alternation of aliases, and the match is a
- * case-insensitive SUBSTRING so a family name selects its repositories:
- * `psychodeli` selects `psychodeli-webgl-port`. This has always been the
- * keyword ranker's behaviour; it is exported so the semantic leg can reproduce
- * it exactly instead of approximating it with equality (see
- * resolveProjectValues() in search.js).
- *
- * NOTE: spike/learning-lab is extracting this same predicate into
- * explorer/server/project-filter.js for the facts path. When that lands, both
- * should point at the one file rather than keeping two copies.
- */
-export function projectMatcher(spec) {
-  const names = String(spec || '')
-    .split('|')
-    .map((name) => name.trim().toLowerCase())
-    .filter(Boolean);
-  if (names.length === 0) return () => true;
-  return (eventProject) => {
-    const value = String(eventProject || '').toLowerCase();
-    if (!value) return false;
-    return names.some((name) => value.includes(name));
-  };
-}
-
 export function scoreBM25(index, query, { project, limit = 15, sinceMs = null, beforeMs = null } = {}) {
   // Expand wildcards before tokenizing
   const hasWildcard = query.includes('*');
@@ -182,12 +164,14 @@ export function scoreBM25(index, query, { project, limit = 15, sinceMs = null, b
   if (N === 0) return [];
 
   const results = [];
+  // Shared with the facts path. A census and a recall over the same --project
+  // that disagreed about scope would each be defensible and there would be no
+  // way to tell which one described the corpus the caller asked for.
   const matchesProject = projectMatcher(project);
 
   const windowed = sinceMs !== null || beforeMs !== null;
 
   for (const [id, doc] of index.docs) {
-    // Project filter
     if (!matchesProject(doc.event.project)) continue;
 
     // Time filter, applied here rather than to the returned ranking. The caller

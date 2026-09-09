@@ -162,7 +162,8 @@ if command -v codex >/dev/null 2>&1; then
   [ -f "$INSTALLED/explorer/server/index.js" ]
   [ -f "$INSTALLED/skills/setup/SKILL.md" ]
   [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
-  RESULT=$(CARTOGRAPHER_DEV_DIR="$DEV" bash "$INSTALLED/scripts/cartographer-search.sh" "repository marketplace search" --limit 5)
+  RESULT=$(CARTOGRAPHER_DEV_DIR="$DEV" CARTOGRAPHER_QDRANT_URL="http://127.0.0.1:1" \
+    bash "$INSTALLED/scripts/cartographer-search.sh" "repository marketplace search" --limit 5)
   printf '%s' "$RESULT" | LC_ALL=C grep -q 'evt-source-smoke'
 fi
 

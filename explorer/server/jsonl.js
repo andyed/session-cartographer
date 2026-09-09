@@ -1,5 +1,5 @@
 import { readFileSync, statSync, watch, openSync, readSync, closeSync } from 'fs';
-import { join, resolve } from 'path';
+import { join } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'node:crypto';
 
@@ -8,12 +8,24 @@ const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents',
 // need to be able to ask which one before trusting its answers.
 export const CORPUS_ROOT = DEV_DIR;
 
+// The searched logs. Every entry must live under DEV_DIR: the warm service
+// indexes exactly one corpus (CORPUS_ROOT), and a source outside it cannot be
+// swapped out by CARTOGRAPHER_DEV_DIR, so tests and alternate corpora silently
+// inherit the real machine's history.
+//
+// `prompts` supersedes the former `claude-history` entry, which read
+// ~/.claude/history.jsonl directly. Those 18,103 rows carried no event_id, so
+// they could never be fetched, touched, or threaded, and recall.js had to drop
+// every one of them at the contract boundary. build-prompt-history.js now
+// projects the same content into prompt-history.jsonl with stable ids. Do not
+// re-add the raw history file: the same prompts would be indexed twice under
+// two different identities, and the id-less copy would win nothing.
 export const LOG_FILES = {
   changelog: join(DEV_DIR, 'changelog.jsonl'),
   research: join(DEV_DIR, 'research-log.jsonl'),
   milestones: join(DEV_DIR, 'session-milestones.jsonl'),
   'tool-use': join(DEV_DIR, 'tool-use-log.jsonl'),
-  'claude-history': join(homedir(), '.claude', 'history.jsonl'),
+  prompts: join(DEV_DIR, 'prompt-history.jsonl'),
 };
 
 /**
@@ -121,12 +133,16 @@ export function readAllEvents(logFiles = LOG_FILES) {
     if (!e.summary && e.display) e.summary = e.display;
     // type fallback to source
     if (!e.type && e._source) e.type = e._source;
-    // Derive transcript_path for claude-history events
-    if (!e.transcript_path && e.session_id && e.project) {
-      const encoded = e.project.replace(/\//g, '-') || '-';
-      const candidate = resolve(homedir(), '.claude', 'projects', encoded, `${e.session_id}.jsonl`);
-      try { statSync(candidate); e.transcript_path = candidate; } catch {}
-    }
+    // NOTE: a transcript_path derivation used to live here, guessing
+    // ~/.claude/projects/<project-with-slashes-dashed>/<session_id>.jsonl. It
+    // only ever resolved for claude-history rows, whose `project` is a full cwd
+    // path; measured against the live corpus it produced 15,456 paths, all of
+    // them from that one source, and 0 from the other four logs (2,291 rows
+    // there met the guard and every candidate stat missed, because their
+    // `project` is a bare project name, not a path). With claude-history gone it
+    // is dead code that costs a statSync per event at startup. The prompts
+    // projector stamps transcript_path at write time; a resolver for stale
+    // recorded paths already exists at scripts/resolve-transcript.sh.
   }
 
   // Sort by timestamp descending (newest first)
@@ -268,4 +284,201 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
       try { w.close(); } catch {}
     }
   };
+}
+
+/**
+ * ---------------------------------------------------------------------------
+ * Positions: "what has been appended since I last looked."
+ * ---------------------------------------------------------------------------
+ *
+ * `watchFiles` already answers this for a live process, but it answers it
+ * privately and only forward from the moment it started. A caller that wants a
+ * durable answer across restarts — a scheduled agent asking "what changed since
+ * my last run twelve hours ago" — needs the same question answered from a token
+ * it can hold on disk.
+ *
+ * These export the primitive `watchFiles` uses internally rather than letting a
+ * second consumer re-derive it. The rewrite-detection rule in particular is not
+ * obvious and not optional: a byte offset alone cannot tell an append from an
+ * in-place history repair, and the failure is silent in the direction that
+ * matters — a repair that also grows the file makes the shifted tail read as
+ * fresh appends. `boundaryHash` is the guard, and there must be exactly one
+ * copy of it.
+ *
+ * Why this reads disk instead of the resident event array: the in-memory corpus
+ * has no stable arrival order. It is loaded file-by-file at spawn and only
+ * newly-appended events are unshifted to the front, so "the first N entries"
+ * means different things before and after a restart. The append-only logs *are*
+ * the arrival order. That distinction is the whole reason a delta cursor can be
+ * trusted, and it is also why a `since`-timestamp filter is not a substitute:
+ * backfills (`backfill-git-history.sh`, `retro-index.sh`,
+ * `catch-up-transcripts.sh`) append events dated months in the past, and a
+ * timestamp window silently omits every one of them.
+ */
+
+/** Current append position of every searched log. */
+export function logPositions(logFiles = LOG_FILES) {
+  const positions = {};
+  for (const [source, filePath] of Object.entries(logFiles)) {
+    let offset = 0;
+    try {
+      offset = statSync(filePath).size;
+    } catch {
+      offset = 0;
+    }
+    positions[source] = { offset, boundary: boundaryHash(filePath, offset) };
+  }
+  return positions;
+}
+
+/**
+ * Read events appended to each log since `positions`.
+ *
+ * `budget` caps how many events are returned. When it binds, each source's new
+ * offset advances only past the lines this call consumed, so the remainder is
+ * still pending on the next call. Advancing past an event that was never handed
+ * to the caller would lose it permanently and silently, which is the one
+ * outcome a durable cursor exists to prevent.
+ *
+ * "Consumed" is wider than "returned", deliberately, in two places: blank and
+ * unparseable lines are consumed while emitting nothing, because a line that is
+ * never consumed wedges the cursor at that byte forever; and a caller applying
+ * its own filter downstream still advances past what it discarded, or an agent
+ * watching one project would re-read every unrelated event on every call.
+ *
+ * A source whose history was rewritten or truncated under the cursor is
+ * reported in `stale` and contributes no events. The honest response to "your
+ * cursor no longer describes this file" is to say so, not to emit a diff
+ * computed against bytes that no longer mean what they meant — the same
+ * refuse-rather-than-guess rule `session-match.js` applies to ambiguous
+ * matches.
+ *
+ * @returns {{events: object[], positions: object, stale: object, pending: object}}
+ */
+export function readAppended(positions = {}, { budget = 500, logFiles = LOG_FILES } = {}) {
+  const nextPositions = {};
+  const stale = {};
+  const pending = {};
+  // Parsed but not yet emitted, per source, each entry carrying the byte cost
+  // of its own line so the offset can advance exactly as far as we emit.
+  const queues = {};
+
+  for (const [source, filePath] of Object.entries(logFiles)) {
+    const prior = positions[source];
+    let size;
+    try {
+      size = statSync(filePath).size;
+    } catch {
+      // A log that does not exist yet is at position zero, not stale.
+      nextPositions[source] = { offset: 0, boundary: '' };
+      queues[source] = [];
+      continue;
+    }
+
+    if (!prior || typeof prior.offset !== 'number') {
+      // No cursor for this source: baseline at the current end rather than
+      // replaying the entire log. A first call establishes a position; it does
+      // not claim the whole corpus is "new".
+      nextPositions[source] = { offset: size, boundary: boundaryHash(filePath, size) };
+      queues[source] = [];
+      continue;
+    }
+
+    if (size < prior.offset) {
+      stale[source] = 'truncated';
+      nextPositions[source] = { offset: size, boundary: boundaryHash(filePath, size) };
+      queues[source] = [];
+      continue;
+    }
+    if (prior.offset > 0 && boundaryHash(filePath, prior.offset) !== prior.boundary) {
+      stale[source] = 'rewritten';
+      nextPositions[source] = { offset: size, boundary: boundaryHash(filePath, size) };
+      queues[source] = [];
+      continue;
+    }
+    if (size === prior.offset) {
+      nextPositions[source] = { offset: size, boundary: prior.boundary };
+      queues[source] = [];
+      continue;
+    }
+
+    const buffer = Buffer.alloc(size - prior.offset);
+    let fd;
+    try {
+      fd = openSync(filePath, 'r');
+      readSync(fd, buffer, 0, buffer.length, prior.offset);
+      closeSync(fd);
+    } catch {
+      if (fd !== undefined) { try { closeSync(fd); } catch {} }
+      nextPositions[source] = { ...prior };
+      queues[source] = [];
+      continue;
+    }
+
+    // Hold the start offset; it advances per emitted line below.
+    nextPositions[source] = { offset: prior.offset, boundary: prior.boundary };
+    const queue = [];
+    const text = buffer.toString('utf-8');
+    const lines = text.split('\n');
+    // `split` leaves a final element that is either the empty string after a
+    // closing newline or a mid-flush fragment with no newline yet. Either way it
+    // is not a complete line: stop one short and leave its bytes unconsumed so
+    // the next call reads the whole record.
+    const complete = lines.length - 1;
+    for (let i = 0; i < complete; i += 1) {
+      const line = lines[i];
+      const bytes = Buffer.byteLength(line, 'utf-8') + 1;
+      if (!line.trim()) {
+        // Blank line: consume its bytes, emit nothing.
+        queue.push({ event: null, bytes });
+        continue;
+      }
+      try {
+        queue.push({ event: { ...JSON.parse(line), _source: source }, bytes });
+      } catch {
+        // Unparseable line. Consume it — a malformed row that is never consumed
+        // would wedge the cursor at this byte forever.
+        queue.push({ event: null, bytes });
+      }
+    }
+    queues[source] = queue;
+  }
+
+  // Round-robin across sources so one busy log cannot starve the others out of
+  // every delta. Draining in a fixed source order would mean a saturated
+  // changelog permanently hides new prompt history.
+  const events = [];
+  const heads = Object.fromEntries(Object.keys(queues).map((source) => [source, 0]));
+  let progressed = true;
+  while (events.length < budget && progressed) {
+    progressed = false;
+    for (const source of Object.keys(queues)) {
+      if (events.length >= budget) break;
+      const queue = queues[source];
+      let index = heads[source];
+      // Skip consumed-but-unemitted lines (blank/malformed) without spending
+      // budget on them.
+      while (index < queue.length && queue[index].event === null) {
+        nextPositions[source].offset += queue[index].bytes;
+        index += 1;
+      }
+      if (index >= queue.length) { heads[source] = index; continue; }
+      events.push(queue[index].event);
+      nextPositions[source].offset += queue[index].bytes;
+      heads[source] = index + 1;
+      progressed = true;
+    }
+  }
+
+  for (const [source, queue] of Object.entries(queues)) {
+    const remaining = queue.slice(heads[source]).filter((entry) => entry.event !== null).length;
+    if (remaining > 0) pending[source] = remaining;
+    // Recompute the boundary at whatever offset we actually reached.
+    const filePath = logFiles[source];
+    if (filePath && nextPositions[source]) {
+      nextPositions[source].boundary = boundaryHash(filePath, nextPositions[source].offset);
+    }
+  }
+
+  return { events, positions: nextPositions, stale, pending };
 }

@@ -1,5 +1,174 @@
 # Changelog
 
+## 0.7.5 — 2026-09-08
+
+### feat(facts): a second question class on the warm corpus
+
+`/api/recall` answers "which records are relevant to this phrase." The new
+`POST /api/facts` answers "what is true of the corpus" — `census`, `tempo` and
+`delta`. Conflating the two is not a tuning problem: a ranker handed a census
+question has no relevance gradient to work with, so it returns *an* answer with
+no way for the caller to know it is not *the* answer. The daily FrakBot pulse
+surfaced **1 event** from a 24h window that deterministically held **736 events,
+22 sessions and 20 commits across four repositories**.
+
+**There are no indexes, and that was a measurement.** Loading 127k events costs
+881 ms, which the warm service already pays and holds. Once resident, a full
+linear fold costs **12–22 ms** — under 2% of the 1500 ms request budget. So
+these are folds: nothing precomputed, nothing to invalidate, and a new fact is a
+new function rather than a data structure plus its maintenance path. The
+measured exception is extraction-derived facts (file paths out of free-text
+summaries, 368 ms), which is also where the extraction heuristic is most likely
+to be confidently wrong; those verbs are deliberately absent.
+
+Every bucket carries a bounded sample of the `event_id`s it counted, so any
+number can be checked with `--get`. A deterministic answer that is silently
+wrong is strictly worse than a slow one.
+
+`delta` is a cursor over per-log byte offsets, never a `since` timestamp. The
+corpus is backfilled — `backfill-git-history.sh`, `retro-index.sh` and
+`catch-up-transcripts.sh` append events dated months in the past — so
+"timestamped after my last run" and "arrived since my last run" are different
+sets and only the second means *new*. Arrival order lives in the append-only
+logs, not in the resident array. `logPositions()`/`readAppended()` in
+`jsonl.js` reuse the existing `boundaryHash`, because a byte offset alone cannot
+tell an append from an in-place repair — and a repair that also grows the file
+makes the shifted tail read as fresh appends. A rewritten source is reported as
+`stale` and contributes nothing rather than yielding a confident wrong diff.
+
+`tempo` never scores the current UTC day: comparing a two-hour day against
+complete days reads as a collapse every time. Its z-score regime is labelled
+rather than trusted, because daily event counts are Poisson-ish and
+zero-inflated — real runs produced z=44.9 against a baseline mean of 2.33 and
+z=60.1 against 0.22. Insufficient history and zero variance return `null` with a
+stated reason, never `0.0`.
+
+The endpoint writes nothing: `cartographer-search.sh` remains the single writer
+of served and access telemetry, and facts are projections of the five logs
+rather than events, so no sixth log appears.
+
+`scripts/cartographer-facts.js` is the client, with `--cursor-file` for
+scheduled callers; it advances the stored cursor only after a successful render.
+
+### feat(pulse): counted ground truth above the relevance feed
+
+`scripts/cartographer-pulse.sh` keeps the existing search section and puts a
+census above it — totals, per-project and per-type tables, every commit in the
+window with its `event_id`, and tempo. The halves are labelled because they are
+different kinds of claim: the counted section is exhaustive within its window
+and scope, the search section is a relevance sample and must never be quoted as
+a count. It fails closed on `--projects` like the feed, and reports how many
+events fell *outside* the requested scope so the blind spot is visible. With the
+facts service unreachable it degrades to the search section and says so, rather
+than emitting a zeroed census that reads as a quiet day.
+
+The FrakBot allowlist was widened for the first time against evidence rather
+than recall: a 30-day census diffed against the registry-expanded list. The
+blind spot went from 232 events across six projects to 93 across two, both
+deliberate.
+
+### refactor(search): one definition of project scope
+
+The substring rule that decides whether an event is in scope moves to
+`explorer/server/project-filter.js`; `bm25.js` re-exports it. A census and a
+recall over the same `--project` that disagreed about scope would each be
+defensible with no way to tell which described the corpus the caller asked for.
+`resolveProjectValues()` resolves a spec against the project values actually
+present, because six of the ten aliases in `project-registry.json` have members
+that are not substrings of their key (`devtools` → `session-cartographer`) and
+the API expands the registry nowhere — so a caller naming a real alias could
+match nothing and be handed a zero that reads as "nothing happened". Responses
+now carry `project_scope`, which distinguishes an unresolved scope from a quiet
+one.
+
+### fix(turbo): an HTTP status is an answer, not an outage
+
+Both Turbo clients treated a 4xx as a transport failure and retried on the file
+spool — which reaches the same process, so it re-ran the rejection and reported
+a composite error naming two failures that did not exist. Only an unreachable
+service now earns the second attempt. The recall path keeps exit 75, because
+`cartographer-search.sh` reads any non-zero exit as "fall back to the portable
+CLI" and on a contract rejection that fallback is still correct.
+
+
+### feat(recall): prompt history becomes a searchable source
+
+`~/.claude/history.jsonl` holds 18,103 prompts — what was asked, not what the
+agent did. Sampling showed a meaningful share have no surviving transcript,
+because Claude Code expires transcripts after ~30 days while the prompt history
+does not expire; the full projection puts that at **2,542 records for which
+this log is the only surviving copy**. None of it was reachable: the rows carry
+no `event_id`, so both scorers minted a positional key that changed on every
+append, and the recall contract rejected them outright.
+
+`scripts/build-prompt-history.js` projects them into
+`$CARTOGRAPHER_DEV_DIR/prompt-history.jsonl`, a log we own, with the same
+content-derived stable ids as the migration — `explorer/server/stable-event-id.js`
+is now shared by both, so the two agree by construction rather than by
+convention. It never writes to Claude Code's file. 17,493 rows projected;
+568 bare slash commands (`/clear`, `/exit`, `/compact`) are dropped as interface
+actions rather than intent, and `/wrapup` with them, since the synthesis it
+produces is already in the log at salience 0.9.
+
+Both engines read it as a first-class fused source (`prompts`) with its own RRF
+ladder, `--get` resolves its ids, and `--touch` works unchanged. The Explorer's
+former `claude-history` entry is removed, so the same prompts are not indexed
+twice under two identities; that also deleted a transcript-path derivation that
+was measurably dead for the other four logs (15,456 resolutions, all from
+claude-history, 0 elsewhere) and ~19k `statSync` calls from startup, cutting
+cold load from 913 ms to 770 ms. Net index cost: −51 events, +1.3 MB heap.
+
+**Known limitation.** Default ranking is strongly recency-biased by design
+(Ebbinghaus decay at a ~30-day half-life, compounded by promote-on-reuse), so
+archival prompts do not surface on an unscoped query even on a near-exact text
+match — reach them with `--since`/`--before`, where they rank first. Fixing the
+balance is a ranking change that deserves its own measurement rather than a
+guess; the evidence is recorded in TODO.md.
+
+### feat(recall): Codex prompt history deliberately not added
+
+Measured before building: 48 of 50 sampled Codex prompts are already
+recoverable from archived rollouts and already turn-indexed, and none had a
+missing rollout. Codex archives sessions permanently where Claude Code expires
+transcripts, so the apparent asymmetry is retention behaviour, not indexing
+bias. An ingester for its 888 prompts would have been 96% duplication.
+
+
+### fix(recall): window before truncating, and never serve an id-less result
+
+Time windows were applied after the FUSION_DEPTH truncation. Ranking is global,
+so slicing first kept the 500 best matches across all time and only then asked
+which fell inside `--since`. On a six-figure corpus a 24-hour window is barely
+1% of events, so nearly everything recent was discarded before the filter saw
+it: the daily pulse returned 2 results where the portable path returned 15,
+against 1,641 changelog rows written in that same window. Windowing the keyword
+and semantic pools before truncation takes it to 22.
+
+Separately, `bm25.js` synthesizes a document id for an event that has none, so
+id-less rows were indexed and returned with no `event_id` on the event itself.
+One of them in a result set failed response validation at the client, which
+discarded the entire answer and fell back to the ~11 s portable search. Such a
+result also cannot be fetched, touched, or threaded, so it could never complete
+the workflow it interrupted. They are dropped at the boundary that owns the
+contract and counted in `meta.unidentified_count`.
+
+### feat(migration): stable event_ids for the id-less backfilled records
+
+Two backfills predating the id convention left 2,441 rows in the searched logs
+with no `event_id` — 1,630 in research-log, 810 in session-milestones, 1 in
+changelog. Both engines papered over it with a positional synthetic key
+(`src "-" source_fnr` in the awk, `${_source}-${docs.size}` in bm25.js), so one
+record answered to a different id on each engine and to a different id again
+after the next append. Nothing can be fetched, touched, or threaded through an
+id that moves.
+
+`scripts/backfill-event-ids.js` assigns a sha256 prefix over each record's own
+content and timestamp: identical on both engines, stable across appends,
+idempotent, and deterministic for byte-identical records. It backs up first,
+re-reads at the last moment to carry concurrent appends across, refuses to
+proceed if the file changed in a way that is not an append, and verifies the
+post-write row count. Applied: 2,441 assigned, 0 rows lost.
+
 ## 0.7.4 — 2026-09-05
 
 ### fix(hooks): stop writing session-end rows that record nothing

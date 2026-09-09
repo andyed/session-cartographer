@@ -1,6 +1,6 @@
 # Claude Code Memory & Session Augmentation Landscape
 
-*Survey date: 2026-03-26; updated 2026-07-25 with Tree Ring Memory. Context: positioning session-cartographer (née CCSB fork) against existing projects.*
+*Survey date: 2026-03-26; updated through 2026-09-04 with Tree Ring Memory and Funes. Context: positioning session-cartographer (née CCSB fork) against existing projects.*
 
 ## The Problem Space
 
@@ -33,6 +33,7 @@ These let you find things from past sessions. The gap session-cartographer targe
 | [claude-history](https://github.com/raine/claude-history) | 109 | Rust TUI, fuzzy word matching over transcripts | Direct file reads | Speed (Rust). Rich TUI with tool call cycling, thinking toggles. Can fork/resume from viewer. |
 | [recall](https://github.com/joseairosa/recall) | 162 | MCP server, 7 embedding providers, named threads | Redis/Valkey or SaaS | Cloud + self-hosted. Team sharing. AES-256-GCM encryption. Subscription tiers. |
 | [claude-sessions](https://github.com/tradchenko/claude-sessions) | 0 | TUI, 3-layer memory extraction (instant/background-LLM/originals) | JSONL | Multi-agent support (Claude, Codex, Qwen, Gemini). 11-language i18n. |
+| [Funes](https://github.com/huggingface/funes) | 90 (2026-09-04 snapshot) | Deterministic cross-agent parsing; local embeddings + BM25/RRF + cross-encoder reranking; MCP `recall`/`get` | Lance; optional Hugging Face dataset sync | Reconstructs stored blocks after transcript loss and normalizes Claude, Codex, Pi, Hermes, and Parquet. Closest retrieval-substrate neighbor. |
 
 ### 3. Session Visualization & Analytics
 
@@ -111,6 +112,7 @@ For reference — what ships with Claude Code itself.
 4. **Lightweight infrastructure.** Shell scripts + JSONL + existing Qdrant (when we add embeddings). No new databases, no background services, no subscriptions.
 
 **Closest neighbors:**
+- **[Funes](https://github.com/huggingface/funes)** — Closest retrieval-substrate neighbor: deterministic local ingestion across several agent formats, stored-block reconstruction, progressive indexing tiers, and hybrid reranking. Cartographer's advantage is the layer above retrieval: structured work events with stable IDs and deep links, project/time/type facets, user-to-next-user turn units, cross-project topology, a human Explorer, exact-use telemetry, and evidence-backed strategic promotion. Borrow its storage and adapter mechanics without collapsing Cartographer into transcript-only memory.
 - **episodic-memory** (obra) — Also does cross-session transcript search with embeddings. But it's memory-focused, not navigation-focused. No event IDs, no deep links, no energy viz.
 - **claude-history** (raine) — Also navigates past sessions. But it's a standalone TUI, not an agent skill. No semantic search.
 - **claude-code-history-viewer** — Complementary, not competitive. We generate the deep links and events it renders.

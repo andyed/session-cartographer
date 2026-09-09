@@ -1,3 +1,27 @@
+## Archival recall is buried by recency weighting
+
+Evidence gathered 2026-09-07 while adding the prompt-history source.
+
+A near-exact text match on a January prompt ranks **1st in its own source
+ladder** (verified directly against `bm25-search.awk`) and still does not appear
+in an unscoped result set on either engine. Two effects compound:
+
+- Ebbinghaus decay at `CARTOGRAPHER_DECAY_LAMBDA=0.001` (~30-day half-life):
+  `exp(-0.001 * 5687h) = 0.0034` for a 237-day-old record versus ~0.98 for a
+  recent one — a ~290x handicap before relevance is considered.
+- Promote-on-reuse resets an item's effective age to its last access, so a
+  recently touched row gets a further ~50x over an untouched contemporary, and
+  the 10%-of-top-score noise trim then cuts everything below it. Observed: a
+  173-item in-window pool collapsing to 2 results.
+
+Scoping with `--since`/`--before` reaches the archive correctly (prompts rank
+1-4), so the material is not lost — only unreachable by default.
+
+A decay floor was tried and reverted: at 0.02 it left a 50x age handicap, did
+not change the observed outcome, and is a global ranking change that should not
+ship on a guess. The right fix needs a measured cohort — the truth-query
+fixtures plus live exact-use data — not another constant chosen by eye.
+
 # Session Cartographer — TODO
 
 ## [x] Indexing outcomes are unobservable — reject vs fail vs skip (resolved 2026-08-30)
@@ -67,6 +91,15 @@ exposed in the merge.
 - **[CC Switch](https://github.com/farion1231/cc-switch)** — Cross-platform desktop manager for Claude Code, Codex, OpenCode, OpenClaw, Hermes, and other coding agents. Broader than Cartographer (provider/configuration, MCP, skills, prompts, proxying, and usage), but its **Session Manager** overlaps directly: cross-source conversation-history browsing, search, and restore. Track its session/workspace information architecture and multi-agent normalization choices; treat it as an adjacent orchestration shell, not a direct memory/retrieval engine.
 - **[Claude HUD](https://github.com/jarrodwatts/claude-hud)** — Claude Code statusline plugin that derives live context health, tool activity, running-agent state, todo progress, compactions, and session timing from native statusline data plus transcript JSONL. Relevant prior art for Cartographer's live/ongoing-work lens: track its transcript-to-status state model, information compression, and stale/running-state handling. It observes the current session rather than providing Cartographer-style historical search or cross-session recall.
 - **[Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc)** — OpenAI-maintained bridge that invokes the machine's existing Codex CLI/app-server runtime from Claude Code for reviews, background delegation, job status/results, and cancellation. Its `/codex:transfer` path imports a Claude transcript into a persistent, resumable Codex thread, making it particularly relevant to Cartographer's cross-provider identity, provenance, and continuation model. Track how it maps repositories, source transcripts, background jobs, and Codex session IDs; it bridges runtimes rather than providing a shared history index.
+- **[Funes](https://github.com/huggingface/funes)** — Local cross-agent transcript indexing and retrieval for Claude, Codex, Pi, Hermes, and Parquet. It is the closest retrieval-substrate neighbor in this list: useful prior art for durable derived blocks, source normalization, and cold-start scheduling, but not a substitute for Cartographer's event IDs, project/time/type facets, cross-project topology, Explorer, or evidence-backed promotion.
+
+### Borrowable ideas from Funes ([huggingface/funes](https://github.com/huggingface/funes))
+
+Borrow the narrow ingestion and read-path mechanics while retaining Cartographer's event-centric model and user-to-next-user turn boundary.
+
+- [ ] **Stored-block reconstruction independent of transcript TTL.** Funes's `get` reconstructs complete blocks from its derived memory even after source transcripts disappear. Cartographer retains turn text in Qdrant, but `/remember` drill-down can still hard-fail after the original transcript expires. Add an index-backed exact-read path (or a bounded verbatim block artifact) with source provenance and range coordinates, while continuing to treat the original transcript as authoritative when it exists. This is the preferred first experiment for the transcript-TTL gap; lossy trace distillation should remain a fallback.
+- [ ] **Source-adapter boundary.** Prototype a `TraceSource`-like interface that enumerates source units, computes signatures/checkpoints, and parses each provider into one common block model. Prove the boundary with Claude and Codex before extending it to sources such as Hermes or Parquet. Do not inherit Funes's item-per-response turn semantics: Cartographer's user-to-next-user grouping remains canonical.
+- [ ] **Progressive text/tool/tool-result indexing.** Prioritize text and thinking first, tool uses second, and bulky tool results last under a bounded cold-start budget. Record per-source, per-tier receipts so status can distinguish usable text coverage from full completion, and never checkpoint a source as complete when a later tier failed.
 
 ### Industry benchmark: LongMemEval (ICLR 2025)
 
@@ -216,7 +249,7 @@ Reference: https://github.com/ravi-labs/mindmap-mcp-server (`src/graph.ts`), rev
   3. **Cohesion filter — the part worth stealing:** a candidate survives only if its member docs are cosine-similar to each other *after excluding the shared term* (`cosineExcluding`, threshold ~0.012). Kills spurious categories whose members share nothing else. This directly addresses the existing "Stopword model refinement" TODO — cohesion scoring is the principled version of a learned stopword list.
   4. Edges (graph view, later): inverted-index candidate pairs only, cosine ≥0.12, keep top-6 neighbors per node. Scales without pairwise N².
   - Docs unit question to settle first: events are too granular (single commits), sessions probably right, turn-groups possible via Qdrant payloads.
-- [ ] **Trace-on-decay — distill before transcript TTL.** mindmap's cold tier collapses memories to a one-line searchable `trace` instead of deleting ("recall never hard-fails"). SC's equivalent gap is documented in the /remember skill: transcripts vanish at Claude Code's ~30d TTL and the read-the-transcript step hard-fails. Maintenance pass: find events whose transcripts are near TTL, distill a compact trace into the event log (turn text already survives in Qdrant payloads — the event-log fallback is what's thin).
+- [ ] **Trace-on-decay — distill before transcript TTL.** mindmap's cold tier collapses memories to a one-line searchable `trace` instead of deleting ("recall never hard-fails"). SC's equivalent gap is documented in the /remember skill: transcripts vanish at Claude Code's ~30d TTL and the read-the-transcript step hard-fails. Maintenance pass: find events whose transcripts are near TTL, distill a compact trace into the event log (turn text already survives in Qdrant payloads — the event-log fallback is what's thin). Start with the Funes-inspired stored-block reconstruction path above so exact retained evidence is preferred; distill only when a complete block is unavailable or too costly to retain.
 - [ ] **Transcript-expiry countdown.** mindmap's audit ledger forecasts decay per memory ("→ cold trace in 20d"). SC version: show "transcript expires in Nd" on Explorer sessions and /remember results, from file mtime vs. TTL. Surfaces what's about to become unreadable while you can still act.
 
 **Explicitly NOT taking from mindmap-mcp:**

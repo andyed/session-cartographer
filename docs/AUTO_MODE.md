@@ -136,7 +136,7 @@ gaps, which is worse than declining.
 
 The skill runs five steps. What each one is for:
 
-**0 — Render the digest.** `scripts/trust-digest.js` mines the four event logs
+**0 — Render the digest.** `scripts/trust-digest.js` mines the four hook-written event logs (it does not read the derived prompt-history projection)
 and prints one panel. Every later step traces to a row in it.
 
 ```

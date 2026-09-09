@@ -68,11 +68,20 @@ display. `--get` returns the complete records for ids the search surfaced,
 including `transcript_path`, `files_changed`, and `diff_shape`:
 
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>[,<event_id>...]
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>[,<event_id>...] --call-id <originating_call_id>
 ```
 
 Cheap (~0.1s) and the right move before deciding which transcript is worth
 opening.
+
+Search prints its `call_id` (also present on each JSONL result). Keep that ID
+with the results you select, and carry it through both `--get` and `--touch`.
+Group fetches/touches by originating call if results came from different
+queries. The purpose and current session must match the search. Never invent a
+session ID to repair telemetry. Without `--call-id`, the script preserves a
+single prior fetch/use origin or a unique compatible serve; ambiguous or
+missing provenance stays unattributed and is reported. A later query that
+repeats a result is not automatically its origin.
 
 `--get` also self-heals stale transcript paths. When a recorded `transcript_path`
 no longer resolves, the record gains:
@@ -205,6 +214,12 @@ If event logs + semantic come up empty and you genuinely need raw transcript key
 
 Show results as-is from the script output. Keep it scannable.
 
+Shortlist against the episode the user is trying to recover. For an original
+decision or initial intent, a recent related fix is a lead, not proof of that
+episode. Fetch the strongest candidates before broadening the search; narrow
+time or terms when the records show you are in the wrong episode. Distinguish
+session evidence from any current repository verification in the answer.
+
 ## Step 2.5: Fetch the full record before opening a transcript
 
 When a result looks right but the truncated summary doesn't settle it, fetch the
@@ -212,7 +227,7 @@ complete record first. It costs ~0.1s against a 100MB+ transcript read, and it
 carries the `transcript_path` you need for Step 3 anyway.
 
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>,<event_id>
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>,<event_id> --call-id <originating_call_id>
 ```
 
 Often this ends the recall — a commit's full `files_changed` and `diff_shape`
@@ -266,10 +281,15 @@ jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
 When a result summary, transcript, or `--thread` arc actually contributes to the answer, touch the event_ids whose context you used — this is both the promote-on-reuse moment and the explicit result-use signal:
 
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --touch <event_id>[,<event_id>...]
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --touch <event_id>[,<event_id>...] --call-id <originating_call_id>
 ```
 
 Touch only what you used, not everything that was served. A result you read and discarded as irrelevant should NOT be touched — false vouching pollutes future rankings.
+`--get` records inspection separately; fetching a record does not mean it
+contributed to the answer and does not increase its reuse ranking boost.
+Historical `transcript_read` and source-less use records retain their boost.
+Carry the call that led you to the useful record,
+even if another query subsequently displayed it again.
 When touching more than one result, list the IDs in the order you accessed them.
 The access ledger records that order for first- and last-access MRR.
 

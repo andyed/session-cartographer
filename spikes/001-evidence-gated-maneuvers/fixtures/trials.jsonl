@@ -1,0 +1,6 @@
+{"task_id":"profile-change","variant":"baseline","verified":true,"regressions":0,"retries":2,"tokens":4100}
+{"task_id":"profile-change","variant":"shadow","verified":true,"regressions":0,"retries":1,"tokens":3300}
+{"task_id":"release-check","variant":"baseline","verified":false,"regressions":0,"retries":3,"tokens":5200}
+{"task_id":"release-check","variant":"shadow","verified":true,"regressions":0,"retries":1,"tokens":3900}
+{"task_id":"turbo-fixture","variant":"baseline","verified":true,"regressions":0,"retries":2,"tokens":4700}
+{"task_id":"turbo-fixture","variant":"shadow","verified":true,"regressions":0,"retries":1,"tokens":4100}

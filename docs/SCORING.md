@@ -87,6 +87,31 @@ regardless of access order, and is summarized as p50/p95 across calls with a
 known consumed rank. It complements last-access MRR: the final click and the
 deepest-ranked click can be different results.
 
+### Inspection, explicit use, and degraded search
+
+The default `mrr` remains first-*access* MRR for comparability: a fetch or an
+explicit use can supply its first rank. Both Internals and the command-line
+report also expose `fetched` and `explicitUse` cohorts. A fetched record that was
+subsequently discarded contributes to inspection metrics only, unless the caller
+also marked it used. Explicit use is still a behavioral proxy, not verified
+answer correctness. No-result and no-use calls remain in the denominator.
+
+Normal search output includes a call ID. Carry that ID into `--get` and `--touch`
+when several searches return the same event, using `--call-id`. The explicit pair
+must belong to the same session and purpose. Without an explicit ID, previously
+unambiguous access provenance is retained across re-serves; ambiguous cases are
+reported without an attributed call rather than credited to the latest search.
+This changes future attribution only and leaves append-only historical ledgers
+intact. Mark only records that actually contributed, not the entire shortlist. Fetch-only
+records no longer increase promote-on-reuse ranking boosts or reuse counts.
+Explicit `result_used` records and historical transcript-read/source-less access
+records retain their previous boost behavior; historical ledgers remain intact.
+
+Mode cohorts are stratified by `semantic_status`. `unavailable` and `unknown`
+remain distinct; low latency during a semantic outage must not masquerade as an
+improvement in complete-search performance. The maximum response latency exposes
+rare fallbacks that a p95 can miss.
+
 ## Semantic search (Qdrant cosine similarity)
 
 When Qdrant is running, scores are cosine similarity between query and event embeddings.

@@ -3,9 +3,15 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { buildIndex, addToIndex } from '../explorer/server/bm25.js';
-import { readAllEvents, watchFiles } from '../explorer/server/jsonl.js';
-import { executeRecall, recallHealth } from '../explorer/server/recall.js';
+import { CORPUS_ROOT, readAllEvents, watchFiles } from '../explorer/server/jsonl.js';
+import { executeRecall, recallHealth, recallIndexGeneration } from '../explorer/server/recall.js';
 import { RecallContractError } from '../explorer/server/recall-contract.js';
+import { executeFacts } from '../explorer/server/facts.js';
+import {
+  FACTS_CONTRACT_VERSION,
+  FACTS_VERBS,
+  FactsContractError,
+} from '../explorer/server/facts-contract.js';
 import { turboPaths, validateTurboUrl, writeJsonAtomic } from './turbo-common.js';
 
 const paths = turboPaths();
@@ -40,9 +46,10 @@ const stopWatching = watchFiles((newEvents) => {
 }, reloadCorpus);
 
 function errorPayload(error) {
+  const contractual = error instanceof RecallContractError || error instanceof FactsContractError;
   return {
-    status: error instanceof RecallContractError ? error.status : 500,
-    body: { error: error.message || 'recall failed' },
+    status: contractual ? error.status : 500,
+    body: { error: error.message || 'request failed' },
   };
 }
 
@@ -55,6 +62,32 @@ async function handleRecall(raw) {
   }
 }
 
+function handleFacts(raw) {
+  try {
+    return {
+      status: 200,
+      body: executeFacts({ events, index }, raw, {
+        // Passed as a thunk so the generation is sampled at answer time. The
+        // watcher mutates `events` in place, so a value captured at request
+        // entry could describe a corpus the answer was not computed over.
+        indexGeneration: () => recallIndexGeneration(events, index),
+      }),
+    };
+  } catch (error) {
+    console.error('[turbo facts]', error.message);
+    return errorPayload(error);
+  }
+}
+
+// The spool envelope predates a second endpoint, so an envelope with no `kind`
+// is a recall request from an older client. Defaulting rather than rejecting
+// keeps a packaged client working against a newer service.
+async function handleSpooled(envelope) {
+  return envelope.kind === 'facts'
+    ? handleFacts(envelope.request)
+    : handleRecall(envelope.request);
+}
+
 const processing = new Set();
 async function processRequestFile(file) {
   if (!file.endsWith('.request.json') || processing.has(file)) return;
@@ -63,7 +96,7 @@ async function processRequestFile(file) {
   const responsePath = path.join(paths.requests, file.replace(/\.request\.json$/, '.response.json'));
   try {
     const envelope = JSON.parse(fs.readFileSync(requestPath, 'utf8'));
-    const result = await handleRecall(envelope.request);
+    const result = await handleSpooled(envelope);
     writeJsonAtomic(responsePath, {
       request_token: envelope.request_token,
       ...result,
@@ -101,7 +134,25 @@ if (!spoolOnly) {
       res.end(JSON.stringify(recallHealth({ events, index })));
       return;
     }
-    if (req.method !== 'POST' || req.url !== '/api/recall') {
+    // Advertised separately so a client can discover which verbs this service
+    // answers instead of probing them. A verb added later must not look like a
+    // malformed request to an older client.
+    if (req.method === 'GET' && req.url === '/api/facts/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        contract_version: FACTS_CONTRACT_VERSION,
+        backend: 'explorer',
+        corpus_root: CORPUS_ROOT,
+        verbs: FACTS_VERBS,
+        events: events.length,
+        index_generation: recallIndexGeneration(events, index),
+      }));
+      return;
+    }
+    const isRecall = req.method === 'POST' && req.url === '/api/recall';
+    const isFacts = req.method === 'POST' && req.url === '/api/facts';
+    if (!isRecall && !isFacts) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'not found' }));
       return;
@@ -119,7 +170,7 @@ if (!spoolOnly) {
         res.end(JSON.stringify({ error: 'invalid JSON' }));
         return;
       }
-      const result = await handleRecall(body);
+      const result = isFacts ? handleFacts(body) : await handleRecall(body);
       res.writeHead(result.status, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result.body));
     });

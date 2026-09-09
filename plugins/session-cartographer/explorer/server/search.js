@@ -236,6 +236,9 @@ function loadAccessLedger() {
     if (!line.trim()) continue;
     let rec;
     try { rec = JSON.parse(line); } catch { continue; }
+    // Fetching is inspection, not endorsement. Preserve historical
+    // transcript_read/source-less use records, matching the portable CLI.
+    if (rec.source === 'result_fetched') continue;
     const id = rec.event_id;
     const ts = Date.parse(rec.timestamp || '');
     if (!id || isNaN(ts)) continue;
@@ -405,24 +408,34 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   let keywordCount = bm25All.total;
   let semanticCount = semanticAll.length;
 
-  const keywordLadders = bucketBySource(bm25All.items.slice(0, FUSION_DEPTH));
-  if (semanticAll.length > 0 || keywordLadders.length > 0) {
-    const ladders = [...keywordLadders];
-    if (semanticAll.length > 0) ladders.push({ source: 'semantic', list: semanticAll });
-    fusedItems = rrfFuseMany(ladders, FUSION_DEPTH);
-  }
-
-  // Temporal filter: --since / --before equivalent. Drop items outside the window.
-  // Items with no parseable timestamp are dropped when a filter is active —
-  // mirrors the CLI behaviour at scripts/cartographer-search.sh:rank_fuse.
-  if (sinceMs !== null || beforeMs !== null) {
-    fusedItems = fusedItems.filter(item => {
-      const ts = eventEpochMs(item);
+  // Temporal window: --since / --before equivalent. This MUST run before the
+  // FUSION_DEPTH truncation. Ranking is global, so slicing first keeps the 500
+  // best matches across all time and only then asks which fall inside the
+  // window — and on a six-figure corpus a 24-hour window is barely 1% of
+  // events, so almost everything recent was discarded before the filter ever
+  // saw it. The daily pulse returned 2 results where the portable path returned
+  // 15, against 1,641 changelog rows written in that same window.
+  // Items with no parseable timestamp are dropped when a window is active,
+  // mirroring the CLI at scripts/cartographer-search.sh:rank_fuse.
+  const windowed = (list, getEvent) => {
+    if (sinceMs === null && beforeMs === null) return list;
+    return list.filter((entry) => {
+      const ts = eventEpochMs(getEvent(entry));
       if (ts === null) return false;
       if (sinceMs !== null && ts < sinceMs) return false;
       if (beforeMs !== null && ts > beforeMs) return false;
       return true;
     });
+  };
+
+  const keywordPool = windowed(bm25All.items, (entry) => entry.event);
+  const semanticPool = windowed(semanticAll, (entry) => entry.event);
+
+  const keywordLadders = bucketBySource(keywordPool.slice(0, FUSION_DEPTH));
+  if (semanticPool.length > 0 || keywordLadders.length > 0) {
+    const ladders = [...keywordLadders];
+    if (semanticPool.length > 0) ladders.push({ source: 'semantic', list: semanticPool.slice(0, FUSION_DEPTH) });
+    fusedItems = rrfFuseMany(ladders, FUSION_DEPTH);
   }
 
   // Weight by write-time salience before activation, exactly as the portable

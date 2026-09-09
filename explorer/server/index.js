@@ -1,9 +1,15 @@
 import express from 'express';
-import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal } from './jsonl.js';
+import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal, CORPUS_ROOT } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
-import { executeRecall, recallHealth } from './recall.js';
+import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js';
 import { RecallContractError } from './recall-contract.js';
+import { executeFacts } from './facts.js';
+import {
+  FACTS_CONTRACT_VERSION,
+  FACTS_VERBS,
+  FactsContractError,
+} from './facts-contract.js';
 import { isAllowedTranscriptPath, normalizeTranscriptEntries, transcriptRoots } from './transcripts.js';
 import { getInternalsSnapshot, normalizeInternalsPurpose, normalizeInternalsWindow } from './internals.js';
 import { statSync } from 'fs';
@@ -96,6 +102,40 @@ app.post('/api/recall', async (req, res) => {
     const status = error instanceof RecallContractError ? error.status : 500;
     if (status === 500) console.error('[recall]', error.message);
     res.status(status).json({ error: error.message || 'recall failed' });
+  }
+});
+
+// Advertised separately from /api/recall/health so a client can discover which
+// verbs this service answers instead of probing them. A verb added later must
+// not look like a malformed request to an older client.
+app.get('/api/facts/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    contract_version: FACTS_CONTRACT_VERSION,
+    backend: 'explorer',
+    corpus_root: CORPUS_ROOT,
+    verbs: FACTS_VERBS,
+    events: events.length,
+    index_generation: recallIndexGeneration(events, index),
+  });
+});
+
+// The Explorer and the headless turbo service must answer the same question the
+// same way: they bind the same port by design, so whichever one is running is
+// the one a client reaches, and a facts endpoint present in only one of them
+// would make a scheduled job's answer depend on which process happens to be up.
+app.post('/api/facts', (req, res) => {
+  try {
+    res.json(executeFacts({ events, index }, req.body, {
+      // Passed as a thunk so the generation is sampled at answer time. The
+      // watcher mutates `events` in place, so a value captured at request entry
+      // could describe a corpus the answer was not computed over.
+      indexGeneration: () => recallIndexGeneration(events, index),
+    }));
+  } catch (error) {
+    const status = error instanceof FactsContractError ? error.status : 500;
+    if (status === 500) console.error('[facts]', error.message);
+    res.status(status).json({ error: error.message || 'facts failed' });
   }
 });
 
