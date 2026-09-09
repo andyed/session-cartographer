@@ -14,6 +14,10 @@ Release metadata is aligned and checked before packaging. CI and the release
 workflow now require the Explorer build and working-memory browser regression on
 Node 22 in addition to the unit and package checks.
 
+Explorer's locked dependencies include compatible security updates for Vite,
+PostCSS, shell-quote, and other affected packages. The dependency audit reports
+no known vulnerabilities for the updated root and Explorer lockfiles.
+
 ### feat(explorer): live working memory with session and file permalinks
 
 The memory tab adds Field, Wake, and Compare views over recorded sessions, with
