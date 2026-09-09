@@ -2,6 +2,15 @@
  * BM25 scorer — ported from scripts/bm25-search.awk
  * In-memory index with incremental updates.
  */
+import { projectMatcher } from './project-filter.js';
+
+// Re-exported, not defined here. The substring rule originally lived in this
+// file, and the semantic-scope fix in search.js imports it from this path;
+// moving it to project-filter.js so the facts path could share one definition
+// would otherwise break that import the moment the two branches meet — an
+// import error rather than a textual conflict, so no merge tool would flag it.
+// Keep this line until every caller names project-filter.js directly.
+export { projectMatcher };
 
 const K1 = 1.2;
 const B = 0.75;
@@ -137,17 +146,13 @@ export function scoreBM25(index, query, { project, limit = 15 } = {}) {
   if (N === 0) return [];
 
   const results = [];
-  const projectNames = String(project || '')
-    .split('|')
-    .map((name) => name.trim().toLowerCase())
-    .filter(Boolean);
+  // Shared with the facts path. A census and a recall over the same --project
+  // that disagreed about scope would each be defensible and there would be no
+  // way to tell which one described the corpus the caller asked for.
+  const matchesProject = projectMatcher(project);
 
   for (const [id, doc] of index.docs) {
-    // Project filter
-    const documentProject = (doc.event.project || '').toLowerCase();
-    if (projectNames.length > 0 && !projectNames.some((name) => documentProject.includes(name))) {
-      continue;
-    }
+    if (!matchesProject(doc.event.project)) continue;
 
     let score = 0;
     for (const q of queryTokens) {
