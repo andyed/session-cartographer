@@ -4,6 +4,28 @@
 
 `project-registry.json` maps short aliases to sets of project names as they appear in event logs. Not git-specific — any project that produces JSONL events can be listed.
 
+### Which registry is in effect
+
+Three layers, first hit wins, **no merging** — a user registry *replaces* the shipped one:
+
+| # | Location | For |
+|---|----------|-----|
+| 1 | `$CARTOGRAPHER_PROJECT_REGISTRY` | explicit path; tests and one-offs |
+| 2 | `~/.config/session-cartographer/project-registry.json` (or `$CARTOGRAPHER_CONFIG`'s directory) | **yours** |
+| 3 | the plugin's own `project-registry.json` | the maintainer's, shipped default |
+
+Layer 2 replaces layer 3 wholesale rather than merging with it. Merging would leave shipped aliases — `frakbot`, which expands to the deprecated `openclaw` — reachable in every adopter install forever, and an alias you deliberately deleted would keep resolving.
+
+Ask which one is live:
+
+```bash
+bash scripts/project-registry.sh --path
+bash scripts/project-registry.sh --aliases
+bash scripts/project-registry.sh --expand psychodeli
+```
+
+A registry that is present but unparseable is an error, not a fallback: falling back would answer your query with the maintainer's aliases and never say so.
+
 ```json
 {
   "aliases": {
@@ -50,9 +72,29 @@ entirely on that substring behaviour.
 | nanobot | nanobot |
 | wyrdforge | wyrdforge |
 
-### Adding an alias
+### Bootstrapping your own
 
-Edit `project-registry.json`:
+The table above is the **maintainer's**. An alias that is not defined falls
+through as a literal project name rather than erroring, so scoping to one of
+someone else's aliases returns zero results for a scope you think you set.
+Derive your own from your event logs:
+
+```bash
+node scripts/bootstrap-project-registry.js --dry-run   # see what it infers
+node scripts/bootstrap-project-registry.js             # write it (refuses to clobber; --force to replace)
+```
+
+It groups project names by shared stem (`psychodeli-webgl-port` +
+`psychodeli-plus-tvos` → `psychodeli`) and drops cwd-derived non-projects: the
+workspace root, your home directory, auto-named agent worktrees
+(`brave-thompson-40e495`), and bare `repo`/`dist`/`spec`. Grouping by prefix is
+a guess about how you think about your work — the script prints what it grouped
+and what it left alone, and expects you to edit the result.
+
+### Adding an alias by hand
+
+Edit your **user** registry (`~/.config/session-cartographer/project-registry.json`),
+not the plugin's — an update overwrites the shipped file:
 
 ```json
 "myalias": ["repo-name-1", "repo-name-2"]

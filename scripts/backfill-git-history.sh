@@ -10,6 +10,13 @@
 #   bash scripts/backfill-git-history.sh --since 2026-01-01 # Date filter
 #   bash scripts/backfill-git-history.sh --limit 50         # Max commits per repo
 #   bash scripts/backfill-git-history.sh --dry-run          # Preview without writing
+#   bash scripts/backfill-git-history.sh --author "Name"    # Override the owner list
+#   bash scripts/backfill-git-history.sh --all-authors      # Import every contributor
+#
+# Only the corpus owner's commits are imported by default. A cloned repository
+# contains other people's work, and importing it makes strangers' commits part
+# of your own session memory — counted by search, the facts census, tempo and
+# the pulse as activity you did. --all-authors opts into that deliberately.
 
 set -o pipefail
 
@@ -22,17 +29,44 @@ SINCE=""
 LIMIT=500
 DRY_RUN=false
 INCLUDE_FILES=true
+ALL_AUTHORS=false
+AUTHOR_OVERRIDE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --project)    PROJECT_FILTER="$2"; shift 2 ;;
-    --since)      SINCE="$2"; shift 2 ;;
-    --limit)      LIMIT="$2"; shift 2 ;;
-    --dry-run)    DRY_RUN=true; shift ;;
-    --no-files)   INCLUDE_FILES=false; shift ;;
+    --project)      PROJECT_FILTER="$2"; shift 2 ;;
+    --since)        SINCE="$2"; shift 2 ;;
+    --limit)        LIMIT="$2"; shift 2 ;;
+    --dry-run)      DRY_RUN=true; shift ;;
+    --no-files)     INCLUDE_FILES=false; shift ;;
+    --author)       AUTHOR_OVERRIDE="$2"; shift 2 ;;
+    --all-authors)  ALL_AUTHORS=true; shift ;;
     *) shift ;;
   esac
 done
+
+# Resolve the owner list from the one definition rather than re-deriving it.
+# scripts/ownership.js is what build-profile.js and trust-digest.js read; a
+# second copy of the rule here is how the ingest filter and the consumers would
+# drift apart while both looked correct.
+OWNER_LIST=""
+if [ -n "$AUTHOR_OVERRIDE" ]; then
+  OWNER_LIST=$(printf '%s' "$AUTHOR_OVERRIDE" | tr ',' '\n')
+elif [ "$ALL_AUTHORS" = "false" ]; then
+  if command -v node >/dev/null 2>&1; then
+    OWNER_LIST=$(node "$(dirname "$0")/ownership.js" --authors 2>/dev/null)
+  fi
+  # Fall back to git's own answer if node is unavailable. Losing the filter
+  # entirely would silently reinstate the bug this exists to prevent, so an
+  # empty resolution is refused rather than treated as "no filter".
+  [ -n "$OWNER_LIST" ] || OWNER_LIST=$(git config --global user.name 2>/dev/null)
+  if [ -z "$OWNER_LIST" ]; then
+    printf 'backfill-git-history: cannot determine the corpus owner.\n' >&2
+    printf '  Set git config --global user.name, or pass --author "Name",\n' >&2
+    printf '  or pass --all-authors to deliberately import every contributor.\n' >&2
+    exit 2
+  fi
+fi
 
 # Collect existing commit event IDs to avoid duplicates
 EXISTING_IDS=""
@@ -65,6 +99,19 @@ process_repo() {
   # Build git log format: hash|timestamp|subject|author
   local git_args=("log" "--format=%H|%aI|%s|%an" "--max-count=$LIMIT")
   [ -n "$SINCE" ] && git_args+=("--since=$SINCE")
+  # Ownership is applied at ingest, not left to each consumer. Without it,
+  # backfilling one cloned repository writes every contributor's commits into
+  # the corpus as the owner's own session memory — and only two downstream
+  # readers ever filtered them out, so search, the facts census and tempo, the
+  # pulse's commit list and the Explorer all counted strangers' work as yours.
+  # git's --author is a substring match over name and email, and repeating the
+  # flag ORs the patterns, which is exactly the owner-list semantics wanted.
+  if [ "$ALL_AUTHORS" = "false" ]; then
+    local owner
+    for owner in $OWNER_LIST; do
+      git_args+=("--author=$owner")
+    done
+  fi
 
   local count=0
   while IFS='|' read -r hash timestamp subject author; do

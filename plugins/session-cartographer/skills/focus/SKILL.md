@@ -33,14 +33,25 @@ CARTOGRAPHER_PURPOSE=focus bash "$ROOT/scripts/cartographer-search.sh" "recent a
 
 The `<PROJECT>` argument supports:
 - **Direct project names**: `session-cartographer`, `scrutinizer2025`
-- **Registry aliases**: `devtools`, `scrutinizer`, `psychodeli` — expanded via `project-registry.json` to match all repos in the family
+- **Registry aliases**: `devtools`, `scrutinizer`, `psychodeli` — expanded via the resolved project registry (user-level if present, else the shipped default) to match all repos in the family
 
 ## Step 1: Resolve the project
 
-If the user gives a vague name, check `project-registry.json` for aliases:
+If the user gives a vague name, list the aliases. Resolve the registry through
+the shared resolver rather than reading `$ROOT/project-registry.json` directly —
+the file that ships is the maintainer's, and a user-level registry under
+`~/.config/session-cartographer/` replaces it:
 
 ```bash
-jq -r '.aliases | keys[]' "$ROOT/project-registry.json"
+bash "$ROOT/scripts/project-registry.sh" --aliases
+bash "$ROOT/scripts/project-registry.sh" --expand psychodeli   # members, one per line
+```
+
+If the aliases name repositories that are not yours, the install is still using
+the shipped registry. Derive your own:
+
+```bash
+node "$ROOT/scripts/bootstrap-project-registry.js" --dry-run
 ```
 
 ## Step 2: Search recent activity

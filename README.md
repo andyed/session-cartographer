@@ -191,6 +191,19 @@ claude plugin marketplace add "$PWD"
 claude plugin install session-cartographer@session-cartographer
 ```
 
+### First, if you are not the maintainer
+
+This repo was built on one machine, and some of it ships configured for that
+machine: `project-registry.json` carries the maintainer's project aliases, the
+corpus root defaults to `~/Documents/dev`, `backfill-git-history.sh` has no
+author filter (backfill a cloned repo and you ingest every contributor's
+commits), and `integrations/hermes/` is a personal wrapper rather than a
+supported entry point. Nothing leaves your machine, but bash command lines and
+verbatim prompts do end up in event summaries.
+
+**[docs/ADOPTING.md](docs/ADOPTING.md)** — what you inherit, what you must
+configure, what leaves your machine. Ends in a checklist. Read it once.
+
 ### Required Codex hook approval
 
 Codex skips newly installed or changed command hooks until you explicitly trust
@@ -334,14 +347,26 @@ node scripts/backfill-prompt-intents.js
 ## Footprint
 
 ```
-  Disk footprint (1,839 sessions, 40+ projects)
+  Disk footprint (measured 2026-09-08: 13,575 sessions, 219,634 events)
 
-  Claude Code transcripts  ████████████████████████████████████  2,900 MB
-    Cartographer log data  ▏                                      1.5 MB
-      Cartographer source  ▏                                        2 MB
+  Claude Code transcripts  ████████████████████████████████████  8,300 MB
+    Cartographer log data  ▊                                       127 MB
+      Cartographer source  ▏                                         2 MB
 
-  Cartographer adds ~1 MB per 2 GB of transcripts (1:2000)
+  Cartographer adds ~1 MB per 65 MB of transcripts (1:65)
 ```
+
+The five event logs, largest first: `changelog.jsonl` 62 MB, `tool-use-log.jsonl`
+47 MB, `session-milestones.jsonl` 8.2 MB, `prompt-history.jsonl` 6.8 MB,
+`research-log.jsonl` 3.3 MB.
+
+An earlier version of this section claimed 1.5 MB and a 1:2000 ratio. That was
+measured before tool-use logging and prompt history existed, and those two
+sources are now 84 MB of the 127 MB. Plan disk from the ratio above, and note
+that `tool-use-log.jsonl` grows with how much the agent *does*, not with how
+long you have used it — a heavy refactoring week costs more than a quiet month.
+Turbo holds the whole corpus resident; see [docs/ADOPTING.md](docs/ADOPTING.md)
+for memory.
 
 ## grep vs. cartographer
 
@@ -457,6 +482,7 @@ bash tests/private/benchmark.sh         # 8-query speed comparison
 
 ## See also
 
+- [docs/ADOPTING.md](docs/ADOPTING.md) — What an external adopter inherits, must configure, and what leaves the machine
 - [docs/SETUP.md](docs/SETUP.md) — Full setup, Qdrant, environment variables, disk usage
 - [docs/MIGRATION_TURNS.md](docs/MIGRATION_TURNS.md) — Existing-user migration to turn-based transcript indexing
 - [docs/RANK_FUSION.md](docs/RANK_FUSION.md) — BM25 + RRF scoring architecture

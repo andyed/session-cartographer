@@ -33,6 +33,8 @@ FEED="$ROOT/scripts/cartographer-feed.sh"
 # without the client; when this file is present it wins, because it is the one
 # place that speaks the spool envelope and validates the response contract.
 FACTS_CLIENT="$ROOT/scripts/cartographer-facts.js"
+# shellcheck source=./project-registry.sh
+. "$ROOT/scripts/project-registry.sh"
 
 PROJECTS=""
 SINCE="24h"
@@ -125,22 +127,16 @@ trap 'rm -rf "$WORK"' EXIT
 EXPANDED_PROJECT_FILE="$WORK/projects.txt"
 : > "$EXPANDED_PROJECT_FILE"
 
-# Alias expansion is duplicated from the feed on purpose: the census and the
-# search have to describe the same corpus. If the two halves resolved
-# `psychodeli` to different alias sets, the counted section would be measuring a
-# scope the search section never looked at, and the reader has no way to tell.
+# The census and the search have to describe the same corpus. If the two halves
+# resolved `psychodeli` to different alias sets, the counted section would be
+# measuring a scope the search section never looked at, and the reader has no way
+# to tell. That used to be guaranteed by copying the feed's jq verbatim; it is
+# now guaranteed by both calling the same resolver.
 IFS=',' read -r -a project_list <<< "$PROJECTS"
 for raw_project in "${project_list[@]}"; do
   project=$(printf '%s' "$raw_project" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
   [ -n "$project" ] || continue
-  if [ -f "$ROOT/project-registry.json" ] && \
-     jq -e --arg project "$project" '.aliases[$project] | type == "array"' \
-       "$ROOT/project-registry.json" >/dev/null 2>&1; then
-    jq -r --arg project "$project" '.aliases[$project][]' \
-      "$ROOT/project-registry.json" >> "$EXPANDED_PROJECT_FILE"
-  else
-    printf '%s\n' "$project" >> "$EXPANDED_PROJECT_FILE"
-  fi
+  cartographer_expand_alias "$project" >> "$EXPANDED_PROJECT_FILE"
 done
 
 expanded_projects=$(sort -u "$EXPANDED_PROJECT_FILE" | paste -sd '|' -)

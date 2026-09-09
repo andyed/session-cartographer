@@ -373,10 +373,36 @@ CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
 
-# Resolve project aliases from registry
-REGISTRY="$(dirname "$0")/../project-registry.json"
-if [ -n "$PROJECT" ] && [ -f "$REGISTRY" ]; then
-  EXPANDED=$(jq -r --arg a "$PROJECT" '.aliases[$a] // empty | join("|")' "$REGISTRY" 2>/dev/null)
+# Resolve project aliases through the single registry resolver. The registry
+# path is NOT hardcoded here any more: a user-level registry under
+# ~/.config/session-cartographer replaces the maintainer's shipped one, so an
+# adopter's `--project devtools` scopes to their repos instead of silently
+# matching nothing. See scripts/project-registry.sh for the resolution order.
+# Sourced only when present, and its absence is only fatal for a query that
+# actually needs it. Session Cartographer runs from a cached plugin copy rather
+# than the repo, so a runtime can lag the source by an update cycle — and an
+# unconditional source under `set -e` turns a missing helper into a total recall
+# outage for every query, including the unscoped ones with no alias to expand.
+# A scoped query is different: silently not expanding is the original bug, where
+# `--project devtools` matched nothing and returned a confident empty result.
+# So: degrade where there is nothing to lose, refuse where correctness depends
+# on it.
+REGISTRY_LIB="$(dirname "$0")/project-registry.sh"
+if [ -f "$REGISTRY_LIB" ]; then
+  # shellcheck source=./project-registry.sh
+  . "$REGISTRY_LIB"
+fi
+if [ -n "$PROJECT" ]; then
+  if ! command -v cartographer_expand_alias >/dev/null 2>&1; then
+    echo "cartographer-search: project registry helper is missing from this runtime ($REGISTRY_LIB);" >&2
+    echo "  --project cannot be expanded, and scoping to an unexpanded alias would match nothing." >&2
+    echo "  Update the plugin runtime, or drop --project to search unscoped." >&2
+    exit 3
+  fi
+  if ! EXPANDED=$(cartographer_expand_alias "$PROJECT" | paste -sd '|' -); then
+    echo "cartographer-search: unusable project registry" >&2
+    exit 3
+  fi
   [ -n "$EXPANDED" ] && PROJECT="$EXPANDED"
 fi
 EMBED_URL="${CARTOGRAPHER_EMBED_URL:-http://localhost:8890/v1/embeddings}"

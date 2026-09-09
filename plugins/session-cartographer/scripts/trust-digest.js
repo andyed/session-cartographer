@@ -33,6 +33,7 @@
 import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
+import { ownerNames, isOwnEvent } from './ownership.js';
 
 const HOME = process.env.HOME || '';
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(HOME, 'Documents/dev');
@@ -62,17 +63,11 @@ const WINDOW_DAYS = (() => {
   return { d: n, w: n * 7, m: n * 30, y: n * 365 }[m[2] || 'd'];
 })();
 
-// ─── Shared filters, same definitions build-profile.js uses ───
-function gitUserName() {
-  try {
-    return execFileSync('git', ['config', '--global', 'user.name'], { encoding: 'utf8' }).trim();
-  } catch { return ''; }
-}
-const OWNERS = new Set(
-  (process.env.CARTOGRAPHER_PROFILE_AUTHORS || gitUserName())
-    .split(',').map((s) => s.trim()).filter(Boolean)
-    .concat(['Claude', 'claude'])
-);
+// ─── Shared filters ───
+// The definitions live in scripts/ownership.js. This file and build-profile.js
+// each carried a byte-identical copy, the second annotated 'same definitions
+// build-profile.js uses' — a comment standing where an import belongs.
+const OWNERS = ownerNames();
 // `project` is cwd-derived, so sessions started in $HOME or the workspace root
 // produce "projects" named after those directories. They are not repos and must
 // never reach a trust entry — "trust everything under ~" is the opposite of the
@@ -105,7 +100,7 @@ const inWindow = (e) => {
 // Backfilled git history carries other authors' commits. Unfiltered, the repo
 // list describes everyone whose repo you ever cloned — and hands the classifier
 // their orgs as trusted.
-const isOwn = (e) => e.type !== 'git_commit' || Boolean(e.session_id) || OWNERS.has(e.author || '');
+const isOwn = (e) => isOwnEvent(e, OWNERS);
 
 const changelog = readJsonl(LOGS.changelog);
 if (!changelog.length) {
