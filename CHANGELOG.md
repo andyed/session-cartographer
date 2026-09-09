@@ -134,6 +134,61 @@ transcripts, so the apparent asymmetry is retention behaviour, not indexing
 bias. An ingester for its 888 prompts would have been 96% duplication.
 
 
+### fix(recall): bound both ladders at the source, and scope them alike
+
+Two follow-ons to the windowing fix below, found by asking why the semantic
+ladder was still thin on a 24-hour query after it.
+
+**The window reached the semantic leg too late.** `windowed()` trims the pool
+Qdrant *returns*, but the query still asked for the globally-nearest
+FUSION_DEPTH points, and a 24h slice of a 109k-point collection matched **0 of
+500** before the trim ever ran. The bound is now a `timestamp` range clause in
+the query itself. Qdrant 1.12.1 compares RFC3339 payload strings
+chronologically rather than lexicographically — an offset stamp
+`2026-03-17T21:21:04-07:00` is included by `gte 2026-03-18T00:00:00Z` and
+excluded by `lt` on the same boundary, where a string compare does the
+opposite — which is load-bearing because ~2% of payloads carry non-UTC offsets.
+No payload index is required. A 4xx retries once without the range so a server
+without datetime range support degrades to the previous behaviour instead of
+losing the leg; a 5xx does not, since a retry only costs latency.
+
+**The portable keyword ladder had the original defect, unfixed.**
+`bm25-search.awk` truncates to `max_results` in its `END` block, so the CLI
+ranked globally and windowed afterwards exactly as the warm path used to. The
+filter now runs in pass 2 only: pass 1 owns `ndocs`, `avgdl` and `df`, and
+narrowing it would recompute IDF over a handful of documents and silently
+reweight every surviving score. Filtering pass 2 alone leaves in-window scores
+byte-identical to an unwindowed run.
+
+**The two ladders disagreed about what `--project` meant.** `semanticSearch`
+scoped by Qdrant `match: {value}` — exact equality — while both BM25 scorers
+use the case-insensitive substring of `projectMatcher`, and `/api/recall` does
+no registry expansion. A bare `--project psychodeli` therefore reached the
+keyword ladder as its whole family and the semantic ladder as a literal string
+matching nothing: **0 semantic rows against 9,943 indexed points**. The spec now
+resolves against the project values actually present and emits a `should` of
+exact matches, keeping substring semantics in one query. Post-filtering was
+rejected — it reintroduces the truncation starvation. Resolution costs 8–13 ms
+over 128k resident docs, under 1% of the warm request budget, so it is computed
+per call rather than cached, which would trade that for a staleness bug the
+first time a new project appears. The CLI escaped this only because the registry
+expands *registered* aliases first; unregistered prefixes (`--project psycho`)
+measured 20 keyword rows and 0 semantic.
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Feed query, 24 h | 1 row | 24 rows |
+| `commit fix`, 24 h (API, controlled) | 4 | 37 |
+| `test`, 7 d (in-window keyword rows kept) | 74 | 1,096 |
+| `--project psychodeli` (semantic rows) | 0 | 104 |
+| Semantic stage, 24 h | 180–480 ms | 80–90 ms |
+
+Keyword stage is unchanged at ~27 ms, and unscoped, unwindowed queries are
+byte-identical. Eighteen tests across four files; each fixture asserts that it
+genuinely exercises the defect — that in-window rows really do fall past rank
+500, and that every project the keyword ladder accepts is one the semantic
+filter names — so none can pass against the broken code.
+
 ### fix(recall): window before truncating, and never serve an id-less result
 
 Time windows were applied after the FUSION_DEPTH truncation. Ranking is global,
