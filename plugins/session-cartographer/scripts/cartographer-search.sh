@@ -656,6 +656,34 @@ BM25_CANDIDATE_QUERY=$(printf '%s\n' "$AWK_QUERY" \
 HAS_JQ=false
 command -v jq &>/dev/null && HAS_JQ=true
 
+# Concrete `project` values in the logs that $PROJECT selects, one per line.
+# Case-insensitive substring per alias — the same predicate bm25-search.awk
+# applies (`tolower(proj) !~ tolower(proj_filter)`), so the keyword and semantic
+# ladders scope identically instead of one seeing a family and the other seeing
+# an exact string that may match nothing.
+resolve_project_values() {
+  LC_ALL=C grep -oh '"project":"[^"]*"' \
+    "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
+    "$DEV/session-milestones.jsonl" "$DEV/tool-use-log.jsonl" 2>/dev/null \
+    | sed 's/^"project":"//; s/"$//' \
+    | LC_ALL=C sort -u \
+    | awk -v spec="$PROJECT" '
+        BEGIN { n = split(tolower(spec), alias, "|") }
+        {
+          value = tolower($0)
+          for (i = 1; i <= n; i++) {
+            if (alias[i] != "" && index(value, alias[i]) > 0) { print; next }
+          }
+        }'
+}
+
+# Epoch seconds -> RFC3339 UTC ("2026-09-08T02:01:57Z"), for Qdrant range filters.
+# BSD date (macOS) first, then GNU — same two-dialect dance as parse_time_arg.
+epoch_to_rfc3339() {
+  date -u -r "$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || \
+  date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null
+}
+
 # ─── 1. Semantic search → TSV (for fusion with keyword results) ───
 semantic_search_to_tsv() {
   $HAS_JQ || return 1
@@ -681,16 +709,53 @@ semantic_search_to_tsv() {
   # filter key at all.
   local must_conditions="[]"
   if [ -n "$PROJECT" ]; then
-    if echo "$PROJECT" | grep -q '|'; then
-      local proj_should
-      proj_should=$(echo "$PROJECT" | tr '|' '\n' | jq -R '{key: "project", match: {value: .}}' | jq -sc '{should: .}')
-      must_conditions=$(echo "$must_conditions" | jq -c --argjson g "$proj_should" '. + [$g]')
-    else
-      must_conditions=$(echo "$must_conditions" | jq -c --arg p "$PROJECT" '. + [{key: "project", match: {value: $p}}]')
+    # Qdrant's match:{value} is exact equality, but bm25-search.awk scopes by
+    # case-insensitive substring, so an unregistered family prefix reached the
+    # keyword ladder as its whole family and the semantic ladder as nothing:
+    # `--project psycho` measured 20 keyword rows and 0 semantic. A registered
+    # alias survives only because the registry expanded it to concrete names
+    # first (line ~371) — the exactness was never load-bearing, just hidden.
+    # Resolve the spec against the project values actually present so both
+    # ladders agree. ~70 ms over 116 MB of logs, and it runs inside the semantic
+    # leg, which is already the slower of the two.
+    local resolved_should
+    resolved_should=$(resolve_project_values | jq -R '{key: "project", match: {value: .}}' | jq -sc '{should: .}')
+    if [ "$(echo "$resolved_should" | jq '.should | length')" = "0" ]; then
+      # The scope selects no project in this corpus. That is an answer, not a
+      # failure — return nothing rather than an unscoped 500.
+      return 1
     fi
+    must_conditions=$(echo "$must_conditions" | jq -c --argjson g "$resolved_should" '. + [$g]')
   fi
   if [ -n "$INTENT" ]; then
     must_conditions=$(echo "$must_conditions" | jq -c --arg i "$INTENT" '. + [{key: "prompt_intent", match: {value: $i}}]')
+  fi
+
+  # Push --since/--before into Qdrant rather than letting rank_fuse trim the
+  # answer afterwards. `limit` is FUSION_DEPTH, so an unbounded query returns the
+  # 500 nearest points in the *whole* corpus and the awk temporal filter keeps
+  # whichever happen to land in the window — for a 24h slice of a 109k-point
+  # collection that measured 0 of 500, i.e. the semantic ladder contributed
+  # nothing precisely when the window was tight. Bounded, the 500 are the 500
+  # nearest within the window.
+  #
+  # Qdrant compares RFC3339 payload strings chronologically, not lexicographically
+  # (verified on 1.12.1), which matters because ~2% of this corpus carries non-UTC
+  # offsets like -07:00 where the two orders disagree. Emit UTC Z stamps; no
+  # payload index is needed. Mirrors semanticSearch() in explorer/server/search.js
+  # — keep the two in sync.
+  local range_cond="{}"
+  if [ -n "$SINCE_EPOCH" ]; then
+    range_cond=$(echo "$range_cond" | jq -c --arg t "$(epoch_to_rfc3339 "$SINCE_EPOCH")" '. + {gte: $t}')
+  fi
+  if [ -n "$BEFORE_EPOCH" ]; then
+    range_cond=$(echo "$range_cond" | jq -c --arg t "$(epoch_to_rfc3339 "$BEFORE_EPOCH")" '. + {lte: $t}')
+  fi
+  # Keep the un-ranged conditions so a server that rejects the clause can be
+  # retried without it (see the retry below).
+  local must_norange="$must_conditions"
+  if [ "$range_cond" != "{}" ]; then
+    must_conditions=$(echo "$must_conditions" | jq -c --argjson r "$range_cond" '. + [{key: "timestamp", range: $r}]')
   fi
 
   if [ "$must_conditions" = "[]" ]; then
@@ -704,7 +769,27 @@ semantic_search_to_tsv() {
   local results
   results=$(curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
     -H "Content-Type: application/json" \
-    -d "$search_body" 2>/dev/null) || return 1
+    -d "$search_body" 2>/dev/null)
+  # `curl -sf` fails the same way for "this server cannot do datetime ranges"
+  # and "Qdrant is down", so retry once without the range before giving up.
+  # Dropping the leg outright would be a regression against the pre-pushdown
+  # behaviour on older servers: rank_fuse's awk temporal filter still trims the
+  # window, so an unbounded query is degraded but not wrong. If Qdrant is
+  # genuinely unreachable the retry fails too and we return 1 as before.
+  # Mirrors the 4xx retry in explorer/server/search.js:semanticSearch().
+  if [ -z "$results" ] && [ "$range_cond" != "{}" ]; then
+    if [ "$must_norange" = "[]" ]; then
+      search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" \
+        '{vector: $v, limit: $l, with_payload: true}')
+    else
+      search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --argjson m "$must_norange" \
+        '{vector: $v, limit: $l, with_payload: true, filter: {must: $m}}')
+    fi
+    results=$(curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
+      -H "Content-Type: application/json" \
+      -d "$search_body" 2>/dev/null)
+  fi
+  [ -n "$results" ] || return 1
 
   local count
   count=$(echo "$results" | jq '.result | length' 2>/dev/null)
@@ -758,6 +843,7 @@ grep_jsonl_to_tsv() {
     awk -f "$(dirname "$0")/bm25-search.awk" \
       -v query="$AWK_QUERY" -v src="$source" -v proj_filter="$PROJECT" \
       -v max_results="$FUSION_DEPTH" -v candidate_numbered=1 \
+      -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
       "$file" - 2>/dev/null
 }
 

@@ -40,6 +40,46 @@ function extract_num(json, field,    pat, val) {
     return ""
 }
 
+# Parse an ISO 8601-ish timestamp (2026-03-29T14:30:00...) to epoch seconds.
+# Returns 0 if ts is empty, "?", or unparseable. Byte-for-byte the same
+# arithmetic as ts_to_epoch() in cartographer-search.sh:rank_fuse, so the
+# pre-truncation window here and the post-fusion window there agree on every
+# boundary. Like that one it reads the literal Y/M/D/H/M fields and ignores a
+# trailing UTC offset — keeping the two in sync matters more than the offset,
+# because a row this stage drops can never reach that one.
+function ts_to_epoch(ts,    y, mo, da, h, mi, days_from_year, mdays, days_from_month, total_days) {
+    if (ts == "" || ts == "?") return 0
+    y = substr(ts, 1, 4) + 0
+    if (y < 1970 || y > 2100) return 0
+    mo = substr(ts, 6, 2) + 0
+    da = substr(ts, 9, 2) + 0
+    h = substr(ts, 12, 2) + 0
+    mi = substr(ts, 15, 2) + 0
+    days_from_year = (y - 1970) * 365 + int((y - 1969) / 4)
+    split("0,31,59,90,120,151,181,212,243,273,304,334", mdays, ",")
+    days_from_month = mdays[mo] + 0
+    if (mo > 2 && y % 4 == 0) days_from_month++
+    total_days = days_from_year + days_from_month + da - 1
+    return total_days * 86400 + h * 3600 + mi * 60
+}
+
+# True when a record falls outside an active --since/--before window.
+# Applied in pass 2 only: pass 1 owns ndocs, avgdl and df, and narrowing those
+# to the window would recompute IDF over a handful of documents and silently
+# reweight every surviving score. Filtering pass 2 alone leaves in-window scores
+# byte-identical to an unwindowed run — the window changes which rows survive,
+# never what they score. A record with no parseable timestamp is dropped when a
+# window is active, matching rank_fuse.
+function outside_window(record,    ts, ep) {
+    if (since_epoch + 0 <= 0 && before_epoch + 0 <= 0) return 0
+    ts = extract(record, "timestamp")
+    ep = ts_to_epoch(ts)
+    if (ep <= 0) return 1
+    if (since_epoch + 0 > 0 && ep < since_epoch + 0) return 1
+    if (before_epoch + 0 > 0 && ep > before_epoch + 0) return 1
+    return 0
+}
+
 # Helper to get the searchable text body from the JSON line
 function get_search_text(line, src_type) {
     if (src_type == "transcript") {
@@ -121,6 +161,13 @@ NR == FNR {
             next
         }
     }
+
+    # Drop out-of-window rows BEFORE the END block truncates to max_results.
+    # Ranking first and windowing afterwards keeps the max_results globally best
+    # matches and then asks which happen to fall in the window — for a short
+    # window that is almost none, so the keyword ladder arrived at fusion empty
+    # while every stage reported success.
+    if (outside_window(record)) next
 
     is_transcript = (record ~ /"type"[[:space:]]*:[[:space:]]*"user"/ || record ~ /"type"[[:space:]]*:[[:space:]]*"assistant"/)
     if (src == "transcript" && !is_transcript) next

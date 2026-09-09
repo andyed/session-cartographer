@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-import { scoreBM25 } from './bm25.js';
+import { epochMsFromTimestamp, projectMatcher, scoreBM25 } from './bm25.js';
 
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
@@ -57,24 +57,106 @@ async function getEmbedding(text) {
  */
 const SEMANTIC_SCORE_THRESHOLD = 0.3;
 
-async function semanticSearch(query, { project, limit }) {
-  const vector = await getEmbedding(query);
-
-  const body = { vector, limit, with_payload: true, score_threshold: SEMANTIC_SCORE_THRESHOLD };
-  if (project) {
-    const projects = project.split('|').map((value) => value.trim()).filter(Boolean);
-    body.filter = projects.length === 1
-      ? { must: [{ key: 'project', match: { value: projects[0] } }] }
-      : { must: [{ should: projects.map((value) => ({ key: 'project', match: { value } })) }] };
-  }
-
+async function qdrantSearch(body) {
   const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Qdrant search failed: ${res.status}`);
-  const data = await res.json();
+  if (!res.ok) {
+    const error = new Error(`Qdrant search failed: ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+/**
+ * Concrete `project` values in the corpus that the requested scope selects.
+ *
+ * Qdrant's `match: { value }` is exact keyword equality, but every other stage
+ * scopes by case-insensitive substring, so a family name reached the keyword
+ * ladder as its whole family and the semantic ladder as nothing at all:
+ * `--project psycho` returned 20 keyword rows and 0 semantic ones, and
+ * `/api/recall` (which does no registry expansion) does the same for a bare
+ * `psychodeli`. Nothing errored — the ladder was simply absent.
+ *
+ * Resolving the spec against the values actually present keeps one filter in
+ * one query while preserving substring semantics exactly. Measured at 8-13 ms
+ * over 128k resident docs (203 distinct projects) — under 1% of Turbo's 1500 ms
+ * budget, so it is computed per call rather than cached, which would trade that
+ * for a staleness bug the moment a new project appears.
+ */
+export function resolveProjectValues(index, spec) {
+  const matches = projectMatcher(spec);
+  const values = new Set();
+  for (const [, doc] of index.docs) {
+    const value = doc.event.project;
+    if (value && matches(value)) values.add(value);
+  }
+  return [...values];
+}
+
+async function semanticSearch(query, { project, limit, sinceMs = null, beforeMs = null, projectValues = null }) {
+  // An empty resolution is a real answer, not a missing one: the scope selects
+  // no project in this corpus, so the semantic leg has nothing to contribute.
+  // Say so without spending an embedding call or a round trip.
+  if (project && projectValues && projectValues.length === 0) return [];
+
+  const vector = await getEmbedding(query);
+
+  const body = { vector, limit, with_payload: true, score_threshold: SEMANTIC_SCORE_THRESHOLD };
+  const must = [];
+  if (project) {
+    // Resolved concrete names when the caller supplied an index; otherwise fall
+    // back to treating the spec itself as literal names, which is what this did
+    // before and is still correct for a caller that passes exact projects.
+    const projects = projectValues
+      ?? project.split('|').map((value) => value.trim()).filter(Boolean);
+    must.push(projects.length === 1
+      ? { key: 'project', match: { value: projects[0] } }
+      : { should: projects.map((value) => ({ key: 'project', match: { value } })) });
+  }
+
+  // Push the time window into Qdrant instead of trimming its answer afterwards.
+  // `limit` is the fusion depth, so an unfiltered query returns the 500 globally
+  // nearest points across the whole corpus and the client-side window then keeps
+  // whichever of those happen to fall inside it. For a short window that is
+  // almost none — a 24h slice of a 109k-point collection matched 0 of 500 on the
+  // feed query — so the semantic ladder contributed nothing exactly when recall
+  // mattered most. With the bound in the query, the 500 are the 500 nearest
+  // *within the window*.
+  //
+  // Qdrant compares RFC3339 payload strings chronologically (verified against
+  // 1.12.1: an offset timestamp `2026-03-17T21:21:04-07:00` is correctly
+  // included by `gte: 2026-03-18T00:00:00Z` and excluded by `lt` on the same
+  // boundary, where a lexicographic compare would do the opposite). ~2% of this
+  // corpus carries non-UTC offsets, so that distinction is load-bearing — do not
+  // "simplify" this to a string compare. No payload index is required.
+  const range = {};
+  if (sinceMs !== null) range.gte = new Date(sinceMs).toISOString();
+  if (beforeMs !== null) range.lte = new Date(beforeMs).toISOString();
+  const hasRange = Object.keys(range).length > 0;
+  if (hasRange) must.push({ key: 'timestamp', range });
+
+  if (must.length > 0) body.filter = { must };
+
+  let data;
+  try {
+    data = await qdrantSearch(body);
+  } catch (error) {
+    // A 4xx means this Qdrant rejected the request itself — an older server
+    // without datetime range support, or a payload schema that forbids the
+    // clause. Retry once without the range rather than dropping the semantic
+    // leg entirely: the client-side windowed() backstop still trims the answer,
+    // which is the pre-pushdown behaviour and strictly better than no leg at
+    // all. A 5xx or a connection failure is Qdrant being unwell, so a retry
+    // would only cost latency — let those propagate.
+    if (!hasRange || !(error.status >= 400 && error.status < 500)) throw error;
+    body.filter = must.length > 1 ? { must: must.slice(0, -1) } : undefined;
+    if (!body.filter) delete body.filter;
+    data = await qdrantSearch(body);
+  }
 
   return (data.result || []).map((hit, i) => ({
     id: hit.payload?.event_id || `sem-${i}`,
@@ -156,16 +238,7 @@ export function parseTimeArg(arg) {
  * normalization. Returns null if the value cant be interpreted.
  */
 function eventEpochMs(item) {
-  const rawTs = item.timestamp;
-  if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
-    const t = new Date(rawTs).getTime();
-    return isNaN(t) ? null : t;
-  }
-  if (rawTs) {
-    const num = Number(rawTs);
-    if (!isNaN(num)) return num > 1e12 ? num : num * 1000;
-  }
-  return null;
+  return epochMsFromTimestamp(item.timestamp);
 }
 
 /**
@@ -383,7 +456,7 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   const FUSION_DEPTH = 500;
   // Always run BM25 and get full pool
   const keywordStarted = performance.now();
-  const bm25All = scoreBM25(index, query, { project });
+  const bm25All = scoreBM25(index, query, { project, sinceMs, beforeMs });
   const keywordMs = performance.now() - keywordStarted;
 
   // Try semantic search
@@ -393,7 +466,10 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   const semanticStarted = performance.now();
   if (useSemantic) {
     try {
-      semanticAll = await semanticSearch(query, { project, limit: FUSION_DEPTH });
+      semanticAll = await semanticSearch(query, {
+        project, limit: FUSION_DEPTH, sinceMs, beforeMs,
+        projectValues: project ? resolveProjectValues(index, project) : null,
+      });
     } catch (error) {
       semanticStatus = 'unavailable';
     }
@@ -415,6 +491,11 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   // Temporal filter: --since / --before equivalent. Drop items outside the window.
   // Items with no parseable timestamp are dropped when a filter is active —
   // mirrors the CLI behaviour at scripts/cartographer-search.sh:rank_fuse.
+  //
+  // The semantic leg now bounds the window inside the Qdrant query, so this is a
+  // backstop for that leg rather than its only filter — and it must stay one,
+  // because the pushdown can be absent (older server, retry path above). It is
+  // still the *only* window filter for the keyword ladders.
   if (sinceMs !== null || beforeMs !== null) {
     fusedItems = fusedItems.filter(item => {
       const ts = eventEpochMs(item);
