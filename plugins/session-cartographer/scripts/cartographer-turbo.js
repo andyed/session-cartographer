@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { RECALL_CONTRACT_VERSION } from '../explorer/server/recall-contract.js';
 import {
   effectiveTurboSettings,
   processIsAlive,
@@ -66,13 +67,31 @@ async function waitForReady(pid, timeoutMs, env = process.env) {
 // up cannot succeed, and spawning it FIRST is worse — Turbo wins the port and
 // the Explorer web UI then 404s on every data call while looking like it loaded.
 // Probe the contract before spawning anything and reuse whatever already serves it.
+//
+// A 200 is not the contract. This probe read only `res.ok`, so ANY process
+// listening on the configured port that answered 200 was accepted as a live
+// Cartographer service and reported as `reused: 'external'` — no server
+// started, and every subsequent recall aimed at a stranger. It is not
+// hypothetical: an unrelated node process held a probed port during
+// development and answered, and the result read as a successful Turbo call.
+// `validateRecallResponse` would eventually reject the query on `backend`, but
+// only after the spawn decision had already been made on a false premise, and
+// the resulting error describes a bad response rather than the wrong process.
+// Identify the service before trusting it.
 async function recallContractAlreadyServed(url) {
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 400);
     const res = await fetch(new URL('/api/recall/health', url), { signal: controller.signal });
     clearTimeout(timer);
-    return res.ok;
+    if (!res.ok) return false;
+    const body = await res.json();
+    // A Cartographer service says so, and says which contract it speaks. An
+    // incompatible version is also "not ours" for reuse purposes: reusing a
+    // service whose contract we cannot parse is the same failure with an extra
+    // step.
+    return body?.backend === 'explorer'
+      && body?.contract_version === RECALL_CONTRACT_VERSION;
   } catch {
     return false;
   }
