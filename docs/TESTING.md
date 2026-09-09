@@ -160,6 +160,12 @@ Several turbo servers run at once from different checkouts and worktrees, and
 they all look alike. A "verified" result from the wrong one is worse than no
 result — this is the single most expensive mistake available here.
 
+The reuse probe now reads the response body and requires `backend: "explorer"`
+before adopting a port, so a stranger answering 200 is no longer mistaken for the
+service. That fixes the *wrong process* case, not the *wrong checkout* case: every
+legitimate Cartographer server passes that check, so two of them serving different
+branches are still indistinguishable to the probe. Identify the checkout yourself.
+
 ```bash
 PID=$(lsof -tnP -iTCP:2526 -sTCP:LISTEN | head -1)
 lsof -a -p "$PID" -d cwd -Fn | tail -1     # which checkout is it serving?
