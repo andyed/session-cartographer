@@ -175,6 +175,37 @@ bounded and portable rather than pre-indexed.
 
 4. **Transcript content extraction truncates at 150 chars** and strips `\n`/`\t` escapes. Long messages lose context. The deep-link to the full transcript is the escape hatch.
 
+## Temporal windows
+
+`--since` / `--before` are applied **before** each ladder truncates, not to the
+fused result. Every ladder has a cut — `FUSION_DEPTH` (500) in both engines,
+`max_results` in `bm25-search.awk`'s `END` block — and ranking is global, so
+filtering after the cut keeps the best matches across all time and then asks
+which happen to fall inside the window. On a six-figure corpus a 24-hour window
+is roughly 1% of events, so that ordering empties the ladder while every stage
+reports success.
+
+Where each leg binds:
+
+| Leg | Bound at |
+|---|---|
+| JS keyword | `scoreBM25`, in the document loop, before the caller's `slice` |
+| awk keyword | `bm25-search.awk` **pass 2**, before the `END` block truncates |
+| Semantic | a `timestamp` `range` clause in the Qdrant query itself |
+
+Two constraints follow. The awk's **pass 1 is never windowed** — it owns
+`ndocs`, `avgdl` and the document frequencies, so narrowing it would recompute
+IDF over a handful of documents and reweight every surviving score; filtered in
+pass 2 alone, an in-window document scores exactly what it scores unwindowed.
+And the client-side filter over the fused pool **stays** as a backstop: the
+Qdrant pushdown can be absent (an older server without datetime range support
+falls back to an unbounded query), and a pool that arrives unbounded still has
+to be trimmed.
+
+Qdrant compares RFC3339 payload strings chronologically rather than
+lexicographically, which is what makes the ~2% of rows carrying non-UTC offsets
+compare correctly. No payload index is required for the range filter.
+
 ## Code Generation Events
 
 `log-tool-use.sh` captures Edit/Write/Bash events including file paths, git commits (with GitHub permalinks and changed files), and bash commands. Gated by `CARTOGRAPHER_LOG_TOOL_USE=true` at runtime — the hooks are always registered but the script exits early if the env var is unset.

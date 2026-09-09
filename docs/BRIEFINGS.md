@@ -18,6 +18,23 @@ Used by:
 - **`/focus <alias>`** — orient on a project family from event logs
 - **`/remember <query> --project <alias>`** — scoped history search
 
+### The registry is precision, not the mechanism
+
+Scoping does not require an alias. `--project` matches by **case-insensitive
+substring** (`projectMatcher` in `explorer/server/project-filter.js`), so
+`--project psycho` already selects every `psychodeli-*` repository, and
+`--project webgl` selects anything with `webgl` in its name. The registry earns
+its keep where a substring cannot express the set — `scrutinizer` also has to
+reach `PooledStatisticsMetamers`, `fovi` and `clicksense`, which share no common
+string — and where a loose prefix would over-select.
+
+Both ladders honour the same predicate. The semantic leg used to scope by exact
+equality against Qdrant, which meant an unregistered prefix returned keyword
+results and *zero* semantic ones; it now resolves the spec against the project
+values present in the corpus and filters on those. `/api/recall` performs no
+registry expansion at all, so an API caller passing a family name depends
+entirely on that substring behaviour.
+
 ### Current aliases
 
 | Alias | Projects |
