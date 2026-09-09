@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### feat(explorer): live working memory with session and file permalinks
+
+The memory tab adds Field, Wake, and Compare views over recorded sessions, with
+transcript-backed token usage, activity traces, recent observations, and verified
+edited files. Missing or partial usage is explicit. File review shows current
+workspace contents and the working-tree diff from HEAD.
+
+Session and file links preserve the selected view, comparison axes, review mode,
+and replay window. Older session links reopen their last recorded window. The
+UI can start or enable the managed Turbo service, and Internals remains available
+through the UI host even when headless Turbo is stopped.
+
 ## 0.7.5 — 2026-09-08
 
 ### feat(facts): a second question class on the warm corpus

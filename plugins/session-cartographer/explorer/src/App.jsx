@@ -4,6 +4,7 @@ import Search from './components/Search';
 import SearchInput from './components/SearchInput';
 import TranscriptViewer from './components/TranscriptViewer';
 import Internals from './components/Internals';
+import WorkingMemory from './components/WorkingMemory';
 import { isDemoMode, getDemoQueries } from './api';
 
 const BASE = import.meta.env.BASE_URL || '/';
@@ -18,6 +19,7 @@ function parseURL() {
   const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
   const sessionMatch = url.pathname.match(new RegExp(`^${base}/session/(.+)`));
   const isInternals = url.pathname === `${base}/internals` || url.pathname === `${base}/internals/`;
+  const isMemory = /^\/memory\/?$/.test(url.pathname.slice(base.length));
   const deepLinkTranscript = sessionMatch
     ? decodeURIComponent(sessionMatch[1])
     : urlTranscript;
@@ -25,6 +27,7 @@ function parseURL() {
   const urlProject = url.searchParams.get('project') || '';
 
   const tab = deepLinkTranscript ? 'transcript'
+    : isMemory && !isDemoMode ? 'memory'
     : isInternals ? 'internals'
     : (urlQuery || urlProject) ? 'search'
     : 'timeline';
@@ -56,7 +59,7 @@ export default function App() {
   // Browser back/forward — use state object to know which tab to restore
   useEffect(() => {
     // Replace initial entry with state
-    window.history.replaceState({ tab: initial.tab }, '');
+    window.history.replaceState({ ...window.history.state, tab: initial.tab }, '');
 
     const onPopState = (e) => {
       if (e.state?.tab) {
@@ -81,8 +84,10 @@ export default function App() {
     setTab(t);
     let nextURL = BASE;
     if (t === 'internals') nextURL = `${BASE}internals`;
+    if (t === 'memory') nextURL = `${BASE}memory`;
     if (t === 'search' && searchQuery.trim()) nextURL = `${BASE}?q=${encodeURIComponent(searchQuery.trim())}`;
     window.history.pushState({ tab: t }, '', nextURL);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: { tab: t } }));
   }, [searchQuery]);
 
   // When typing in search, auto-switch to search tab
@@ -90,7 +95,7 @@ export default function App() {
     setSearchQuery(value);
     if (value.trim() && tab !== 'search') {
       setTab('search');
-      if (tab === 'internals') {
+      if (tab === 'internals' || tab === 'memory') {
         window.history.pushState({ tab: 'search' }, '', `${BASE}?q=${encodeURIComponent(value.trim())}`);
       }
     }
@@ -148,14 +153,14 @@ export default function App() {
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
             <div className="flex gap-1">
-              {['timeline', 'search', ...(isDemoMode ? [] : ['internals'])].map(t => (
+              {[...(isDemoMode ? [] : ['memory']), 'timeline', 'search', ...(isDemoMode ? [] : ['internals'])].map(t => (
                 <button
                   key={t}
                   onClick={() => handleTabClick(t)}
-                  className={`px-3 min-h-10 text-base rounded ${
+                  className={`px-2 sm:px-3 min-h-11 text-sm sm:text-base rounded ${
                     tab === t
                       ? 'bg-gray-700 text-gray-200'
-                      : 'text-gray-500 hover:text-gray-300'
+                      : 'text-gray-300 hover:text-gray-100'
                   }`}
                 >
                   {t}
@@ -192,6 +197,11 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-hidden relative">
+        {mountedTabs.current.has('memory') && !isDemoMode && (
+          <div className={`absolute inset-0 ${tab === 'memory' ? '' : 'hidden'}`}>
+            <WorkingMemory isActive={tab === 'memory'} />
+          </div>
+        )}
         {mountedTabs.current.has('timeline') && (
           <div className={`absolute inset-0 ${tab === 'timeline' ? '' : 'hidden'}`}>
             <Timeline onOpenTranscript={openTranscript} isActive={tab === 'timeline'} />

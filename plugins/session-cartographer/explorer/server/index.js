@@ -5,17 +5,17 @@ import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
 import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js';
 import { RecallContractError } from './recall-contract.js';
 import { executeFacts } from './facts.js';
+import { createMemoryHandler } from './memory.js';
 import {
   FACTS_CONTRACT_VERSION,
   FACTS_VERBS,
   FactsContractError,
 } from './facts-contract.js';
 import { isAllowedTranscriptPath, normalizeTranscriptEntries, transcriptRoots } from './transcripts.js';
-import { getInternalsSnapshot, normalizeInternalsPurpose, normalizeInternalsWindow } from './internals.js';
+import { createInternalsHandler } from './internals-route.js';
 import { statSync } from 'fs';
 import { resolve, normalize } from 'path';
 import { homedir } from 'os';
-import { performance } from 'perf_hooks';
 
 const PORT = parseInt(process.env.CARTOGRAPHER_API_PORT || '2526', 10);
 const app = express();
@@ -60,6 +60,11 @@ process.on('SIGINT', () => {
 });
 
 // ─── Endpoints ───
+
+const handleMemory = createMemoryHandler({ getEvents: () => events });
+app.use(async (req, res, next) => {
+  if (!await handleMemory(req, res)) next();
+});
 
 app.get('/api/health', async (_req, res) => {
   const files = {};
@@ -139,38 +144,14 @@ app.post('/api/facts', (req, res) => {
   }
 });
 
-app.get('/api/internals', async (req, res) => {
-  const window = normalizeInternalsWindow(req.query.window || '30d');
-  const purpose = normalizeInternalsPurpose(req.query.purpose || 'remember');
-  if (!window) return res.status(400).json({ error: "window must be '7d', '30d', or 'all'" });
-  if (!purpose) return res.status(400).json({ error: 'purpose must contain only letters, numbers, underscores, or hyphens' });
-
-  const started = performance.now();
-  try {
-    const snapshot = await getInternalsSnapshot({
-      window,
-      purpose,
-      refresh: req.query.refresh === '1' || req.query.refresh === 'true',
-    });
-    const duration = performance.now() - started;
-    res.set('Server-Timing', `internals;dur=${duration.toFixed(1)}`);
-    res.json({
-      ...snapshot,
-      operations: {
-        ...snapshot.operations,
-        explorer: {
-          capturedEvents: events.length,
-          keywordIndexedDocs: index.docs.size,
-          semanticIndexedDocs: null,
-          semanticCoverageAvailable: false,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('[internals]', error.message);
-    res.status(500).json({ error: 'internals aggregation failed' });
-  }
-});
+app.use(createInternalsHandler({
+  getExplorerCounts: () => ({
+    capturedEvents: events.length,
+    keywordIndexedDocs: index.docs.size,
+    semanticIndexedDocs: null,
+    semanticCoverageAvailable: false,
+  }),
+}));
 
 app.get('/api/events', (req, res) => {
   const limit = Math.min(parseInt(req.query.limit || '50', 10), 500);

@@ -7,6 +7,7 @@ import { CORPUS_ROOT, readAllEvents, watchFiles } from '../explorer/server/jsonl
 import { executeRecall, recallHealth, recallIndexGeneration } from '../explorer/server/recall.js';
 import { RecallContractError } from '../explorer/server/recall-contract.js';
 import { executeFacts } from '../explorer/server/facts.js';
+import { createMemoryHandler } from '../explorer/server/memory.js';
 import {
   FACTS_CONTRACT_VERSION,
   FACTS_VERBS,
@@ -27,6 +28,7 @@ fs.mkdirSync(paths.requests, { recursive: true, mode: 0o700 });
 let events = readAllEvents();
 let index = buildIndex(events);
 let eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+const handleMemory = createMemoryHandler({ getEvents: () => events });
 // See jsonl.js: an in-place rewrite invalidates everything already indexed,
 // so appending cannot repair it. Reload.
 function reloadCorpus(source) {
@@ -128,7 +130,8 @@ let httpServer = null;
 let httpStatus = spoolOnly ? 'disabled' : 'starting';
 
 if (!spoolOnly) {
-  httpServer = http.createServer((req, res) => {
+  httpServer = http.createServer(async (req, res) => {
+    if (await handleMemory(req, res)) return;
     if (req.method === 'GET' && req.url === '/api/recall/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(recallHealth({ events, index })));

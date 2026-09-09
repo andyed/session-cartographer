@@ -124,6 +124,45 @@ resolves its installed runtime, so users do not need to locate a plugin cache.
 The underlying controller remains available to checkout developers as
 `node scripts/cartographer-turbo.js enable|status|disable`.
 
+The Explorer's **memory** tab is also a Turbo entry point. Run
+`cd explorer && npm run memory` and open `http://127.0.0.1:2527/memory`.
+The UI stays available while Turbo is off: **Start Turbo** starts the managed
+service, **Enable Turbo** also enables the shared preference, and **Refresh
+Turbo** replaces an owned older service that lacks the memory API. Opening the
+page alone never starts Turbo. Field and Wake show all recorded sessions in the
+last 24 hours, refreshing every five seconds. **Compare** plots recorded span
+or observed active periods against generated tokens, processed tokens, edits,
+files, research, commits, or total activity. Active periods join non-lifecycle
+events at most 15 minutes apart; they estimate activity, not measured effort.
+Token usage comes from local session transcripts. Missing usage occupies a
+separate lane and partial records are marked; processed tokens include cached
+input and are not a cost estimate.
+
+Select a session for aligned activity and token traces, recent observations,
+and verified edited files, then **Review** to read the current file and Git diff.
+Current changes can include other sessions. The control bridge also works with
+`npm run preview`; the static public demo has no local service controls.
+Internals reads the same local telemetry through the UI host, so it remains
+available with headless Turbo or while Turbo is stopped.
+
+Memory URLs preserve the current exploration. Session points and file entries
+are ordinary links, and **Copy link** copies the current view. Reload and
+browser Back/Forward restore the same level:
+
+| Parameter | Meaning |
+| --- | --- |
+| `view` | `field` (default), `wake`, or `compare` |
+| `x`, `y` | Comparison dimensions, for example `x=activeMs&y=output` |
+| `session` | Exact recorded session ID |
+| `file` | Encoded absolute path of a file with session edit evidence |
+| `review` | `file` or `changes`; omitted to inspect the file within its session |
+| `at`, `end` | ISO timestamps for replay cursor and 24-hour window end; omitted for Live |
+
+For example, `/memory?view=compare&x=activeMs&session=SESSION_ID` opens that
+session from Compare. Older session links reopen their last recorded 24-hour
+window after leaving the live field. File links still show the current local
+file and changes from HEAD; the link is not a historical file snapshot.
+
 The preference lives at `~/.config/session-cartographer/config.json` (override
 with `CARTOGRAPHER_CONFIG`), not in either agent's settings. Each standard query
 reuses an already-compatible Explorer API or the managed headless service.

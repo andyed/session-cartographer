@@ -90,6 +90,32 @@ This searches by event ID and shows the matching event with its transcript link.
 
 ## Stability guarantees
 
+### Working-memory links
+
+The memory view uses the recorded session ID rather than a transcript path:
+
+```
+http://127.0.0.1:2527/memory?session=SESSION_ID
+http://127.0.0.1:2527/memory?view=compare&x=activeMs&y=files&session=SESSION_ID
+```
+
+`file` is an encoded absolute workspace path with edit evidence for the selected
+session. `review=file` opens current contents; `review=changes` opens its diff
+from HEAD when available. Without `review`, the file is selected within the
+session. The entry point validates edit evidence again before reading a file.
+
+Replay links include both `at` (cursor time) and `end` (the 24-hour window end)
+as ISO timestamps. Live links omit both. The view, axes, session, file, and review
+mode survive reload and browser Back/Forward. Session and file targets are native
+links, and **Copy link** copies the current exploration.
+
+A session outside the live field reopens its last recorded 24-hour window. These
+links still require the local corpus and UI host; missing sessions or unavailable
+file evidence are reported explicitly. A file link identifies current workspace
+state, not immutable historical contents.
+
+### Transcript and event references
+
 | What | Stable? | Notes |
 |------|---------|-------|
 | `event_id` | Yes | Generated once, never changes |

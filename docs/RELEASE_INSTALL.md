@@ -56,6 +56,17 @@ npm run dev
 
 The Explorer binds to `127.0.0.1` on ports 2526 and 2527.
 
+For the live working-memory view, use `npm run memory` from the same Explorer
+directory and open `http://127.0.0.1:2527/memory`. This starts the UI host only,
+so it can coexist with Turbo on the API port. **Enable Turbo**, **Start Turbo**,
+or **Refresh Turbo** uses the shared managed controller when needed; opening the
+page alone does not start a service or change the preference.
+
+Select a session for activity and token traces, then an edited file for review.
+**Copy link** preserves the selected session, file, view, axes, and replay time.
+Older session links reopen their last recorded window. File review always shows
+the current local file and working-tree changes, not a historical file snapshot.
+
 ## Optional global Turbo Mode
 
 Turbo Mode is off by default and does not require Explorer's npm dependencies.
