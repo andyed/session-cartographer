@@ -56,7 +56,17 @@ async function viaHttp() {
       signal: controller.signal,
     });
     const body = await response.json();
-    if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+    if (!response.ok) {
+      // An HTTP status means the service answered. The file transport reaches
+      // the same process, so a retry there re-runs the same rejection and
+      // reports a composite error that reads like two unrelated failures,
+      // pointing the reader at a transport problem that does not exist.
+      // Reaching the service and being told no is an answer, not an outage.
+      const error = new Error(body.error || `HTTP ${response.status}`);
+      error.serviceAnswered = true;
+      error.status = response.status;
+      throw error;
+    }
     return body;
   } finally {
     clearTimeout(timer);
@@ -192,6 +202,17 @@ try {
   transport = 'http';
 } catch (error) {
   httpError = error;
+  // A rejection from the service is final; only an unreachable service is
+  // worth the file transport. Exit non-zero either way — cartographer-search.sh
+  // treats any non-zero exit as "fall back to the portable CLI", which is the
+  // behaviour a contract rejection still wants: the caller gets slower results
+  // rather than none. Keep the exit code at 75 so that fallback and its
+  // telemetry are unchanged; only the wasted second attempt and the composite
+  // error message go away.
+  if (error.serviceAnswered) {
+    console.error(`turbo request rejected: ${error.message}`);
+    process.exit(75);
+  }
   try {
     response = await viaSpool();
     transport = 'file';
