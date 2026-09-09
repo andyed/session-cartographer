@@ -444,3 +444,31 @@ useful even if Turbo Mode is not supported beyond the experiment.
   important failures; do not ask the agent to rate every search preemptively.
 - The right idle policy—always on, idle timeout, or manual—is intentionally
   undecided until usage gaps and memory pressure are visible in Internals.
+
+## Second question class: facts
+
+The warm service now answers a second question class alongside recall.
+`POST /api/facts` (plus `GET /api/facts/health`) returns deterministic
+aggregates over the same resident corpus — `census`, `tempo`, and `delta` — for
+callers that need to know what is *true* of the corpus rather than what is
+*relevant* to a phrase. A ranking engine asked a census question has no
+relevance gradient to work with; the measured case is FrakBot's daily pulse
+returning 1 event from a 24-hour window that deterministically contained 736.
+
+Full design, contract, and evidence: **[docs/FACTS.md](FACTS.md)**.
+
+The shared boundary:
+
+- Facts reuse Turbo's resident event array and its 881 ms load, its file-spool
+  fallback transport, and its `127.0.0.1` binding. That reuse is the whole
+  reason the endpoint is cheap.
+- Facts **write nothing**. `scripts/cartographer-search.sh` remains the single
+  writer of served and access telemetry, and the facts client appends no rows of
+  its own — a counted census is not a result served to anyone, and logging it
+  would inflate the hit-rate cohorts with rows nobody can `--touch`.
+- Facts are **not part of the recall utility canary** and contribute nothing to
+  the promotion gates or stop conditions above. Those cohorts are defined on
+  exact-attributed `remember` traffic; facts traffic is not attributed, by
+  design, and must not enter the joins that decide whether Turbo graduates.
+- Turbo's speed measurements do not transfer. Facts latency and facts utility
+  are separate claims, and only the former has been measured.
