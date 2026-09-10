@@ -79,6 +79,28 @@ export function isHighSignal(event) {
 }
 
 /**
+ * Fold a repeated event into the copy already stored. The corpus intentionally
+ * overlaps across changelog and the domain logs, so one event_id arrives from
+ * more than one source: keep whichever value is non-empty and longer, and let a
+ * domain log claim the source label away from changelog.
+ *
+ * Startup and the live watcher both need this rule. Startup applied it inline
+ * while the watcher appended blind, so any event written to two logs was pushed
+ * onto the feed twice while the process ran.
+ */
+export function mergeDuplicateEvent(existing, event, source) {
+  for (const [k, v] of Object.entries(event)) {
+    if (k === '_source') continue;
+    if (v && (!existing[k] || (typeof v === 'string' && v.length > (existing[k]?.length || 0)))) {
+      existing[k] = v;
+    }
+  }
+  // Prefer domain source label
+  if (source !== 'changelog') existing._source = source;
+  return existing;
+}
+
+/**
  * Read all events from all known log files, tagged with source.
  * Deduplicates by event_id (same event in changelog + domain log).
  */
@@ -95,16 +117,7 @@ export function readAllEvents(logFiles = LOG_FILES) {
       const id = event.event_id;
       // Deduplicate: merge fields from both sources, prefer richer values
       if (id && byEventId.has(id)) {
-        const existing = byEventId.get(id);
-        // Merge: for each field, keep whichever is non-empty and longer
-        for (const [k, v] of Object.entries(event)) {
-          if (k === '_source') continue;
-          if (v && (!existing[k] || (typeof v === 'string' && v.length > (existing[k]?.length || 0)))) {
-            existing[k] = v;
-          }
-        }
-        // Prefer domain source label
-        if (source !== 'changelog') existing._source = source;
+        mergeDuplicateEvent(byEventId.get(id), event, source);
         continue;
       }
       const stored = { ...event, _source: source };

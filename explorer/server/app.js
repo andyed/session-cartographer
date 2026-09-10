@@ -1,5 +1,5 @@
 import express from 'express';
-import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal, CORPUS_ROOT } from './jsonl.js';
+import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal, CORPUS_ROOT, mergeDuplicateEvent } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
 import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js';
@@ -18,6 +18,14 @@ import { statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 
+function indexEventsById(list) {
+  const map = new Map();
+  for (const event of list) {
+    if (event.event_id && !map.has(event.event_id)) map.set(event.event_id, event);
+  }
+  return map;
+}
+
 /** Create the Explorer API without binding a port or owning process signals.
  * Loading the corpus and starting watchers happen only when this is called.
  */
@@ -29,6 +37,10 @@ export function createExplorerApp() {
   console.log('Loading events...');
   let events = readAllEvents();
   let index = buildIndex(events);
+  // The live-append path needs the same identity check readAllEvents applies at
+  // load. Each log has its own watcher, so an event written to both changelog
+  // and a domain log is delivered once per file.
+  let byEventId = indexEventsById(events);
   console.log(`Loaded ${events.length} events, ${index.docs.size} docs in BM25 corpus (avgdl: ${index.avgdl.toFixed(1)} tokens).`);
 
   // ─── SSE clients ───
@@ -43,18 +55,35 @@ export function createExplorerApp() {
     if (closed) return;
     events = readAllEvents();
     index = buildIndex(events);
+    byEventId = indexEventsById(events);
     console.log(`Reloaded corpus after in-place rewrite of ${source}: ${events.length} events`);
   }
 
   const stopWatching = watchFiles((newEvents) => {
     if (closed) return;
+
+    // A second copy is the same event arriving from another log, not news:
+    // fold its fields in and drop it. Appending it again would leave the feed
+    // rendering one event twice and stream it twice to live clients.
+    const fresh = [];
     for (const event of newEvents) {
+      const id = event.event_id;
+      if (id && byEventId.has(id)) {
+        mergeDuplicateEvent(byEventId.get(id), event, event._source);
+        continue;
+      }
+      if (id) byEventId.set(id, event);
+      fresh.push(event);
+    }
+    if (fresh.length === 0) return;
+
+    for (const event of fresh) {
       events.unshift(event); // newest first
       addToIndex(index, event);
     }
 
     // Push high-signal events to SSE clients
-    const highSignal = newEvents.filter(isHighSignal);
+    const highSignal = fresh.filter(isHighSignal);
     for (const res of sseClients) {
       for (const event of highSignal) {
         res.write(`data: ${JSON.stringify(event)}\n\n`);
