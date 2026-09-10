@@ -24,3 +24,21 @@ test('a replay cursor pins its window and remains bounded to that window', () =>
   assert.equal(normalizeMemoryRoute({ at: at + 60000, end: at }).at, at);
   assert.equal(normalizeMemoryRoute({ end: at }).end, null, 'Live links do not retain a stale window');
 });
+
+test('a shared field camera survives the round trip and rejects impossible ones', () => {
+  const cam = { x: -120.46, y: 44.1, scale: 3.38 };
+  const href = memoryHref({ cam });
+  assert.deepEqual(parseMemoryRoute(href.slice(href.indexOf('?'))).cam, cam);
+
+  // The default camera is not worth a parameter.
+  assert.equal(memoryHref({ cam: { x: 0, y: 0, scale: 1 } }), '/memory');
+  assert.equal(normalizeMemoryRoute({}).cam, null);
+
+  // A link cannot place the field somewhere the controls could never reach,
+  // which would strand the viewer on an empty canvas with no way back.
+  for (const bad of ['0,0,99', '0,0,0.01', '9e9,0,2', 'a,b,c', '1,2', '', 'NaN,0,1']) {
+    assert.equal(normalizeMemoryRoute({ cam: bad }).cam, null, `rejects ${JSON.stringify(bad)}`);
+  }
+  assert.equal(normalizeMemoryRoute({ cam: {} }).cam, null);
+  assert.equal(normalizeMemoryRoute({ cam: { x: 1, y: 1 } }).cam, null, 'a partial camera is not a camera');
+});

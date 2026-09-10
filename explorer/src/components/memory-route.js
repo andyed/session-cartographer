@@ -2,6 +2,29 @@ const DAY = 86400000;
 const VIEWS = ['field', 'wake', 'compare'];
 const X = ['spanMs', 'activeMs'];
 const Y = ['output', 'total', 'edit', 'files', 'research', 'commit', 'events'];
+// The field's camera bounds live here so route validation and the renderer's
+// clamping cannot drift apart.
+export const CAM_MIN_SCALE = 0.4;
+export const CAM_MAX_SCALE = 8;
+const CAM_MAX_PAN = 100000;
+const round2 = n => Math.round(n * 100) / 100;
+
+/** "x,y,scale" from a URL, or {x,y,scale} from the renderer. Identity is null. */
+function camera(value) {
+  let x, y, scale;
+  if (typeof value === 'string') {
+    const parts = value.split(',');
+    if (parts.length !== 3) return null;
+    [x, y, scale] = parts.map(Number);
+  } else if (value && typeof value === 'object') {
+    ({ x, y, scale } = value);
+  } else return null;
+  if (![x, y, scale].every(n => Number.isFinite(n))) return null;
+  if (scale < CAM_MIN_SCALE || scale > CAM_MAX_SCALE) return null;
+  if (Math.abs(x) > CAM_MAX_PAN || Math.abs(y) > CAM_MAX_PAN) return null;
+  const cam = { x: round2(x), y: round2(y), scale: round2(scale) };
+  return cam.x === 0 && cam.y === 0 && cam.scale === 1 ? null : cam;
+}
 
 function time(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -21,6 +44,7 @@ export function normalizeMemoryRoute(value = {}) {
     y: Y.includes(value.y) ? value.y : 'output',
     at: at === null ? null : Math.max(end - DAY, Math.min(end, at)), end,
     session, file,
+    cam: camera(value.cam),
     review: file && ['changes', 'file'].includes(value.review) ? value.review : null,
   };
 }
@@ -35,6 +59,7 @@ export function memoryHref(value, pathname = '/memory') {
   if (route.view !== 'field') params.set('view', route.view);
   if (route.x !== 'spanMs') params.set('x', route.x);
   if (route.y !== 'output') params.set('y', route.y);
+  if (route.cam) params.set('cam', `${route.cam.x},${route.cam.y},${route.cam.scale}`);
   if (route.session) params.set('session', route.session);
   if (route.file) params.set('file', route.file);
   if (route.review) params.set('review', route.review);

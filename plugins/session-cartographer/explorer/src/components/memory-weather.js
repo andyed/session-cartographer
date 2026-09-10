@@ -1,5 +1,5 @@
 import { sessionMetricsAt, formatDuration, formatCount } from './memory-metrics';
-import { plainLinkClick } from './memory-route';
+import { plainLinkClick, normalizeMemoryRoute, CAM_MIN_SCALE, CAM_MAX_SCALE } from './memory-route';
 // Canvas field and semantic zoom. Data comes from the warm corpus; positions stay stable as it updates.
 
 export function createMemoryWeather(root, initialData, {
@@ -30,10 +30,11 @@ export function createMemoryWeather(root, initialData, {
   // Semantic zoom: positions transform, glyph and label sizes do not.
   // Magnifying the raster would only blur it; the point of zooming here is to
   // reach detail that simply is not drawn when zoomed out.
-  const MIN_SCALE = 0.4,
-    MAX_SCALE = 8,
+  const MIN_SCALE = CAM_MIN_SCALE,
+    MAX_SCALE = CAM_MAX_SCALE,
     TIER = { project: 0.85, artifact: 2.2 };
   let view = { x: 0, y: 0, scale: 1 };
+  const fieldCamera = { x: route.cam?.x ?? 0, y: route.cam?.y ?? 0, scale: route.cam?.scale ?? 1 };
   const vx = wx => wx * view.scale + view.x,
     vy = wy => wy * view.scale + view.y,
     tierOf = scale => scale < TIER.project ? 'project' : scale < TIER.artifact ? 'session' : 'artifact';
@@ -66,8 +67,9 @@ export function createMemoryWeather(root, initialData, {
       mode, stage, canvas: c, ctx: c.getContext('2d'), targetsHost,
       W: 736, H: 550, coords: new Map(),
       // Each panel keeps its own camera: zooming the field must not move the
-      // wake trace beside it.
-      view: { x: 0, y: 0, scale: 1 }
+      // wake trace beside it. The field's is the shared one, so a linked zoom
+      // applies on mount rather than only on a later navigation.
+      view: mode === 'field' ? fieldCamera : { x: 0, y: 0, scale: 1 }
     };
   }
   /** Reconcile the mounted panels to `modes`, keeping existing ones in place. */
@@ -91,15 +93,22 @@ export function createMemoryWeather(root, initialData, {
     x: route.x || 'spanMs',
     y: route.y || 'output'
   };
-  const routeKey = r => [r.view, r.x, r.y, r.at, r.end].join('|');
+  const camKey = cam => cam ? `${cam.x},${cam.y},${cam.scale}` : '';
+  const routeKey = r => [r.view, r.x, r.y, r.at, r.end, camKey(r.cam)].join('|');
+  const fieldPanel = () => panels.find(panel => panel.mode === 'field');
   let pendingRouteKey = null;
   let lastPublished = 0;
   function viewState() {
-    return { view: state.mode, x: state.x, y: state.y, at: state.live ? null : Math.round(state.time), end: state.live ? null : data.end };
+    const v = fieldPanel()?.view;
+    return {
+      view: state.mode, x: state.x, y: state.y,
+      at: state.live ? null : Math.round(state.time), end: state.live ? null : data.end,
+      cam: v ? { x: v.x, y: v.y, scale: v.scale } : null
+    };
   }
   function publish(options) {
     const next = viewState();
-    pendingRouteKey = routeKey(next);
+    pendingRouteKey = routeKey(normalizeMemoryRoute(next));
     onNavigate?.(next, options);
   }
   const hash = value => {
@@ -465,29 +474,42 @@ export function createMemoryWeather(root, initialData, {
       g.members.push(s.p);
       groups.set(s.p.group, g);
     }
+    // Marks first, then labels, so no mark is drawn over a name.
+    const marks = [];
     for (const g of groups.values()) {
       const X = vx(g.x / g.n),
         Y = vy(g.y / g.n),
+        r = 4 + Math.min(10, Math.sqrt(g.n) * 3),
         c = palette[groupIndex(g.p)].css,
         focus = g.members.some(m => m.id === selected);
+      marks.push({ g, X, Y, r, focus });
       ctx.globalAlpha = focus ? 1 : .8;
       ctx.fillStyle = c;
       ctx.strokeStyle = c;
       ctx.beginPath();
-      ctx.arc(X, Y, 4 + Math.min(10, Math.sqrt(g.n) * 3), 0, Math.PI * 2);
+      ctx.arc(X, Y, r, 0, Math.PI * 2);
       ctx.fill();
       if (focus) {
         ctx.globalAlpha = 1;
         ctx.strokeStyle = ink;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(X, Y, 4 + Math.min(10, Math.sqrt(g.n) * 3) + 6, 0, Math.PI * 2);
+        ctx.arc(X, Y, r + 6, 0, Math.PI * 2);
         ctx.stroke();
       }
-      ctx.globalAlpha = 1;
-      drawLabel(`${g.group} · ${g.n}`, X, Y - 18, used, focus);
       // Members still answer clicks, so a project reads as its sessions.
       for (const m of g.members) coords.set(m.id, [X, Y]);
+    }
+    // A handful of projects, and every one of them should be named. Nudge a
+    // colliding label around its mark instead of dropping it; force the last
+    // resort so a close pair still reads as two projects rather than one.
+    ctx.globalAlpha = 1;
+    for (const { g, X, Y, r } of marks.sort((a, b) => b.g.n - a.g.n)) {
+      const label = `${g.group} · ${g.n}`;
+      const spots = [[0, -r - 12], [0, r + 20], [-r - 34, 4], [r + 34, 4], [0, -r - 30], [0, r + 38]];
+      if (!spots.some(([ox, oy]) => drawLabel(label, X + ox, Y + oy, used, false))) {
+        drawLabel(label, X, Y - r - 12, used, true);
+      }
     }
   }
   function field(samples) {
@@ -1008,6 +1030,13 @@ export function createMemoryWeather(root, initialData, {
     panel.view.x = next.x;
     panel.view.y = next.y;
     render();
+    if (panel.mode === 'field') publishCamera();
+  }
+  // Panning emits a move per pointer event; coalesce and never stack history.
+  let cameraPublish = 0;
+  function publishCamera() {
+    clearTimeout(cameraPublish);
+    cameraPublish = setTimeout(() => publish({ replace: true }), 220);
   }
   function zoomPanelAt(panel, cx, cy, factor) {
     const v = panel.view,
@@ -1086,6 +1115,9 @@ export function createMemoryWeather(root, initialData, {
         state.y = next.y;
         state.live = next.at === null;
         state.time = next.at ?? data.end;
+        fieldCamera.x = next.cam?.x ?? 0;
+        fieldCamera.y = next.cam?.y ?? 0;
+        fieldCamera.scale = next.cam?.scale ?? 1;
       }
       render();
       if (previous && !next.session) requestAnimationFrame(() => {
