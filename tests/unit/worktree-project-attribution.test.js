@@ -26,6 +26,18 @@
  * three no-regression cases and the bare-repo trap that a naive
  * dirname(common-dir) would fall into.
  *
+ *
+ * 0.7.6 closes the other half. The hooks were fixed in 0.7; the three SKILLS that
+ * write to session-milestones.jsonl kept the old derivation, and skills are
+ * markdown — they cannot source a shell library, so they had each spelled it
+ * again. Measured 2026-09-10, four months of clean hook logs (newest
+ * worktree-named event in changelog/tool-use-log: 2026-08) against milestones
+ * still arriving wrong in September, one of which contradicted itself: project
+ * "confident-yalow-e1cdc6" beside a digest reading {psychodeli-webgl-port: 118},
+ * because the digest is built from hook events and the project field was not.
+ * scripts/cartographer-project.sh is the command-line face of the same function
+ * so the skills call the definition instead of copying it.
+ *
  * Run with: node --test tests/unit/worktree-project-attribution.test.js
  */
 import test from 'node:test';
@@ -106,4 +118,51 @@ test('no hook still derives the project with a raw basename', () => {
     });
   assert.deepEqual(offenders, [],
     `these hooks would refile worktree sessions under a throwaway name: ${offenders}`);
+});
+
+/**
+ * The CLI face of the same function. Skills shell out to this; hooks keep
+ * sourcing the function directly, because they run on every tool call and a
+ * fork per event is not free.
+ */
+const SCRIPT = path.join(ROOT, 'scripts', 'cartographer-project.sh');
+const SKILLS = path.join(ROOT, 'plugins', 'session-cartographer', 'skills');
+
+test('the CLI wrapper agrees with the function it wraps', () => {
+  const wt = path.join(tmp, 'myproject', '.claude', 'worktrees', 'brave-thompson-40e495');
+  const r = spawnSync('bash', [SCRIPT, wt], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), resolveProject(wt));
+  assert.equal(r.stdout.trim(), 'myproject');
+});
+
+test('no answer is distinguishable from an answer', () => {
+  // Copied where common.sh cannot be reached: exit non-zero and print nothing,
+  // so a caller falls back deliberately instead of recording a guess. A wrapper
+  // that re-implemented the derivation as its own fallback would be the fourth
+  // copy of it, which is the defect this file exists for.
+  const orphan = fs.mkdtempSync(path.join(tmp, 'orphan-'));
+  const copy = path.join(orphan, 'cartographer-project.sh');
+  fs.copyFileSync(SCRIPT, copy);
+  const r = spawnSync('bash', [copy, tmp], { encoding: 'utf8' });
+  assert.notEqual(r.status, 0);
+  assert.equal(r.stdout.trim(), '');
+});
+
+test('no skill records a project it derived from its own toplevel', () => {
+  // The write sites are markdown, so this is the only place the regression shows.
+  // A cwd-basename fallback is legitimate, but only AFTER the shared script has
+  // been tried — so assert on order, not on absence.
+  for (const skill of ['wrapup', 'investigate', 'trustmap']) {
+    const lines = fs.readFileSync(path.join(SKILLS, skill, 'SKILL.md'), 'utf8')
+      .split('\n').filter(l => !/^\s*#/.test(l));
+    const shared = lines.findIndex(l => l.includes('cartographer-project.sh'));
+    assert.notEqual(shared, -1,
+      `${skill} never calls cartographer-project.sh — it is deriving the project itself`);
+    const bare = lines.findIndex(l => /project/i.test(l)
+      && /--show-toplevel|GIT_REPO:-/.test(l)
+      && !l.includes('cartographer-project.sh'));
+    assert.ok(bare === -1 || bare > shared,
+      `${skill} derives the recorded project from its own toplevel before trying the shared script`);
+  }
 });

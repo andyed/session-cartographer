@@ -76,9 +76,18 @@ PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 
-# Detect project from cwd
+# Detect project from cwd. Resolve a worktree to its PARENT repo: a session run
+# in repo/.claude/worktrees/<name> whose project is the worktree basename orphans
+# every record the moment that worktree is pruned, and agent tools create and
+# discard worktrees routinely. cartographer-project.sh is the command-line face
+# of cartographer_project() in hooks/common.sh — one definition, two consumers.
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
 GIT_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
-PROJECT=$(basename "${GIT_REPO:-$(pwd)}")
+PROJECT=$(bash "$ROOT/scripts/cartographer-project.sh" 2>/dev/null) || PROJECT=""
+if [ -z "$PROJECT" ]; then
+  PROJECT=$(basename "${GIT_REPO:-$(pwd)}")
+  echo "warning: cartographer-project.sh unavailable — project \"$PROJECT\" is cwd-derived and is wrong inside a worktree" >&2
+fi
 GIT_BRANCH=$(git branch --show-current 2>/dev/null || echo "none")
 
 # Find transcript path
@@ -94,7 +103,6 @@ DEEPLINK=""
 # Attach the digest's scalars so the milestone stays checkable after the
 # transcript hits Claude Code's ~30d TTL. Falls back to null if the digest
 # could not run — never block the wrapup on it.
-ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
 DIGEST=$(node "$ROOT/scripts/session-digest.js" --json --no-git 2>/dev/null \
   | jq -c '{duration_minutes, event_count, projects, commit_types, commit_shapes, files_touched: (.files | length), recall}' 2>/dev/null)
 [ -z "$DIGEST" ] && DIGEST=null

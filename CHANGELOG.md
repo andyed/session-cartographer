@@ -2,6 +2,29 @@
 
 ## 0.7.6 — Unreleased
 
+### fix(skills): file worktree sessions under the parent repo
+
+The 0.7 hook fix covered the hooks only. `/wrapup`, `/investigate` and
+`/trustmap` each carried their own `basename $(git rev-parse --show-toplevel)`
+and kept writing phantom projects into `session-milestones.jsonl` — the log
+`/remember` most depends on. On the development corpus `changelog.jsonl` and
+`tool-use-log.jsonl` had been clean since August while milestones were still
+arriving misattributed in September, one of them carrying project
+`confident-yalow-e1cdc6` beside a digest reading `{psychodeli-webgl-port: 118}`,
+because the digest is built from hook events and the project field was not.
+
+Skills are markdown and cannot source a shell library, so
+`scripts/cartographer-project.sh` now exposes `cartographer_project()` on the
+command line: one definition, two consumers. Hooks keep sourcing the function
+directly — they run on every tool call and a fork per event is not free. The
+wrapper exits non-zero with empty stdout when `common.sh` is unreachable, so a
+caller falls back deliberately instead of recording a guess.
+
+This matters more as agent control rooms (Tessera, Kangentic) put a git worktree
+behind every task. Repair for already-written events remains
+`scripts/migrate-project-attribution.js`, and it stays time-sensitive: it
+resolves each recorded cwd through git, so a pruned worktree is unrecoverable.
+
 ### fix(explorer): keep the whole app available from either UI launch
 
 The UI host now mounts the canonical Explorer APIs for timeline, search,

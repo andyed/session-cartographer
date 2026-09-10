@@ -81,8 +81,18 @@ PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
 [ "$SESSION_ID" = "unknown" ] && echo "warning: session id unresolved — this event will not link to a transcript" >&2
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
+# Detect project from cwd. Resolve a worktree to its PARENT repo: a session run
+# in repo/.claude/worktrees/<name> whose project is the worktree basename orphans
+# every record the moment that worktree is pruned, and agent tools create and
+# discard worktrees routinely. cartographer-project.sh is the command-line face
+# of cartographer_project() in hooks/common.sh — one definition, two consumers.
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
 GIT_REPO=$(git rev-parse --show-toplevel 2>/dev/null)
-PROJECT=$(basename "${GIT_REPO:-$(pwd)}")
+PROJECT=$(bash "$ROOT/scripts/cartographer-project.sh" 2>/dev/null) || PROJECT=""
+if [ -z "$PROJECT" ]; then
+  PROJECT=$(basename "${GIT_REPO:-$(pwd)}")
+  echo "warning: cartographer-project.sh unavailable — project \"$PROJECT\" is cwd-derived and is wrong inside a worktree" >&2
+fi
 
 # Find the transcript so the record links back to this conversation.
 TRANSCRIPT=$(find ~/.claude/projects -name "${SESSION_ID}.jsonl" 2>/dev/null | head -1)

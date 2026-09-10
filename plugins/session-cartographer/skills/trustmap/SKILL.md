@@ -264,7 +264,7 @@ TRUSTMAP_EVENT=$(jq -n -c \
   --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
   --arg session "$SESSION_ID" \
   --arg provider "$PROVIDER" \
-  --arg project "$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")" \
+  --arg project "$(bash "$ROOT/scripts/cartographer-project.sh" 2>/dev/null || basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")" \
   --arg cwd "$(pwd)" \
   --arg description "TRUSTMAP_SYNTHESIS_HERE" \
   '{event_id: $eid, timestamp: $ts, milestone: "trustmap_update", event: "Trustmap",
