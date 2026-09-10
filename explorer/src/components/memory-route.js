@@ -9,6 +9,16 @@ export const CAM_MAX_SCALE = 8;
 const CAM_MAX_PAN = 100000;
 const round2 = n => Math.round(n * 100) / 100;
 
+/** Which panels the viewer has toggled on. All of them is the default, so it
+ *  costs no parameter; an empty selection is not a view and is refused. */
+function panels(value) {
+  const list = typeof value === 'string' ? value.split(',')
+    : Array.isArray(value) ? value.map(String) : null;
+  if (!list) return null;
+  const kept = VIEWS.filter(view => list.includes(view));
+  return kept.length && kept.length < VIEWS.length ? kept : null;
+}
+
 /** "x,y,scale" from a URL, or {x,y,scale} from the renderer. Identity is null. */
 function camera(value) {
   let x, y, scale;
@@ -45,6 +55,7 @@ export function normalizeMemoryRoute(value = {}) {
     at: at === null ? null : Math.max(end - DAY, Math.min(end, at)), end,
     session, file,
     cam: camera(value.cam),
+    panels: panels(value.panels),
     review: file && ['changes', 'file'].includes(value.review) ? value.review : null,
   };
 }
@@ -59,6 +70,7 @@ export function memoryHref(value, pathname = '/memory') {
   if (route.view !== 'field') params.set('view', route.view);
   if (route.x !== 'spanMs') params.set('x', route.x);
   if (route.y !== 'output') params.set('y', route.y);
+  if (route.panels) params.set('panels', route.panels.join(','));
   if (route.cam) params.set('cam', `${route.cam.x},${route.cam.y},${route.cam.scale}`);
   if (route.session) params.set('session', route.session);
   if (route.file) params.set('file', route.file);

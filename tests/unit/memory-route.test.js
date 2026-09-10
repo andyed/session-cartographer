@@ -42,3 +42,21 @@ test('a shared field camera survives the round trip and rejects impossible ones'
   assert.equal(normalizeMemoryRoute({ cam: {} }).cam, null);
   assert.equal(normalizeMemoryRoute({ cam: { x: 1, y: 1 } }).cam, null, 'a partial camera is not a camera');
 });
+
+test('a chosen set of panels travels with the link, and cannot be emptied', () => {
+  const href = memoryHref({ panels: ['field', 'compare'] });
+  assert.deepEqual(parseMemoryRoute(href.slice(href.indexOf('?'))).panels, ['field', 'compare']);
+
+  // All of them is the default and costs no parameter.
+  assert.equal(memoryHref({ panels: ['field', 'wake', 'compare'] }), '/memory');
+  assert.equal(normalizeMemoryRoute({}).panels, null);
+
+  // Order is the canonical one, not whatever the link happened to carry.
+  assert.deepEqual(normalizeMemoryRoute({ panels: ['compare', 'field'] }).panels, ['field', 'compare']);
+  assert.deepEqual(normalizeMemoryRoute({ panels: 'field,bogus' }).panels, ['field']);
+
+  // A link that selects nothing renderable falls back to every panel.
+  for (const bad of ['', 'a,b', 'null']) {
+    assert.equal(normalizeMemoryRoute({ panels: bad }).panels, null, `refuses ${JSON.stringify(bad)}`);
+  }
+});

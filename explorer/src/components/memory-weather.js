@@ -35,6 +35,9 @@ export function createMemoryWeather(root, initialData, {
     TIER = { project: 0.85, artifact: 2.2 };
   let view = { x: 0, y: 0, scale: 1 };
   const fieldCamera = { x: route.cam?.x ?? 0, y: route.cam?.y ?? 0, scale: route.cam?.scale ?? 1 };
+  // Which panels the viewer wants. Honoured when the layout has room for more
+  // than one; below that the same buttons pick the single visible mode.
+  const shown = new Set(route.panels?.length ? route.panels : MODES);
   const vx = wx => wx * view.scale + view.x,
     vy = wy => wy * view.scale + view.y,
     tierOf = scale => scale < TIER.project ? 'project' : scale < TIER.artifact ? 'session' : 'artifact';
@@ -94,7 +97,7 @@ export function createMemoryWeather(root, initialData, {
     y: route.y || 'output'
   };
   const camKey = cam => cam ? `${cam.x},${cam.y},${cam.scale}` : '';
-  const routeKey = r => [r.view, r.x, r.y, r.at, r.end, camKey(r.cam)].join('|');
+  const routeKey = r => [r.view, r.x, r.y, r.at, r.end, camKey(r.cam), (r.panels || []).join()].join('|');
   const fieldPanel = () => panels.find(panel => panel.mode === 'field');
   let pendingRouteKey = null;
   let lastPublished = 0;
@@ -103,7 +106,8 @@ export function createMemoryWeather(root, initialData, {
     return {
       view: state.mode, x: state.x, y: state.y,
       at: state.live ? null : Math.round(state.time), end: state.live ? null : data.end,
-      cam: v ? { x: v.x, y: v.y, scale: v.scale } : null
+      cam: v ? { x: v.x, y: v.y, scale: v.scale } : null,
+      panels: [...shown]
     };
   }
   function publish(options) {
@@ -198,9 +202,12 @@ export function createMemoryWeather(root, initialData, {
   let affinity = points.map(a => points.map(b => projectAffinity(a, b)));
   /** Every mode at once when there is room; otherwise the one the buttons pick. */
   const ALL_PANELS_MIN = 1180;
+  const roomForMany = () => (stages.clientWidth || root.clientWidth || 0) >= ALL_PANELS_MIN;
   function visibleModes() {
-    const width = stages.clientWidth || root.clientWidth || 0;
-    return width >= ALL_PANELS_MIN ? MODES : [state.mode];
+    if (!roomForMany()) return [state.mode];
+    const list = MODES.filter(mode => shown.has(mode));
+    // Turning the last panel off would leave nothing to look at.
+    return list.length ? list : [state.mode];
   }
   function layout() {
     const margin = 36;
@@ -389,6 +396,9 @@ export function createMemoryWeather(root, initialData, {
     return items;
   }
   const ARTIFACT_ORDER = { commit: 0, code: 1, doc: 2, file: 3, research: 4 };
+  /** drawLabel clamps into the panel, so a name whose anchor has been panned
+   *  out of view would strand itself against an edge, detached from its mark. */
+  const labelVisible = (x, y) => x > 8 && y > 8 && x < W - 8 && y < H - 4;
   function drawArtifact(kind, x, y, c) {
     ctx.beginPath();
     if (kind === 'commit') {
@@ -444,8 +454,7 @@ export function createMemoryWeather(root, initialData, {
         ctx.globalAlpha = focus ? .95 : .62;
         drawArtifact(item.kind, ax, ay, item.kind === 'commit' ? ink : c);
         const named = item.kind === 'code' || item.kind === 'doc' || item.kind === 'file';
-        const inside = ax > 30 && ay > 24 && ax < W - 30 && ay < H - 16;
-        if (named && inside && view.scale > 2.9) {
+        if (named && labelVisible(ax, ay - 9) && view.scale > 2.9) {
           ctx.globalAlpha = focus ? .95 : .6;
           drawLabel(item.label, ax, ay - 9, used, focus);
         }
@@ -505,6 +514,7 @@ export function createMemoryWeather(root, initialData, {
     // resort so a close pair still reads as two projects rather than one.
     ctx.globalAlpha = 1;
     for (const { g, X, Y, r } of marks.sort((a, b) => b.g.n - a.g.n)) {
+      if (!labelVisible(X, Y)) continue;
       const label = `${g.group} · ${g.n}`;
       const spots = [[0, -r - 12], [0, r + 20], [-r - 34, 4], [r + 34, 4], [0, -r - 30], [0, r + 38]];
       if (!spots.some(([ox, oy]) => drawLabel(label, X + ox, Y + oy, used, false))) {
@@ -590,7 +600,10 @@ export function createMemoryWeather(root, initialData, {
     let n = 0;
     for (const s of candidates) {
       if (s.p.id !== selected && (n >= (W < 450 ? 4 : 7) || s.heat < .45)) continue;
-      if (drawLabel(s.p.label, s.p.x, s.p.y - 20, used, s.p.id === selected)) n++;
+      const lx = vx(s.p.x),
+        ly = vy(s.p.y) - 20;
+      if (!labelVisible(lx, ly)) continue;
+      if (drawLabel(s.p.label, lx, ly, used, s.p.id === selected)) n++;
     }
     ctx.globalAlpha = 1;
   }
@@ -869,16 +882,22 @@ export function createMemoryWeather(root, initialData, {
       }
     }
   }
+  /** The mode the reading speaks for: the chosen one when it is visible. */
+  function readingMode() {
+    if (panels.some(panel => panel.mode === state.mode)) return state.mode;
+    return panels[0]?.mode ?? state.mode;
+  }
   function reading() {
+    const mode = readingMode();
     let text;
-    if (state.mode === 'field') {
+    if (mode === 'field') {
       const tier = tierOf(panels.find(panel => panel.mode === 'field')?.view.scale ?? 1);
       text = tier === 'project'
         ? 'Zoomed out: one mark per project, sized by sessions. Zoom in for sessions, further for their commits and touched files.'
         : tier === 'artifact'
           ? 'Zoomed in: each session shows its own artifacts \u2014 filled squares are commits, dots are code, crosses are docs, rings are research. Zoom out for sessions.'
           : 'One point per session. Color groups projects; contours and halos show recent recorded activity. Zoom in for commits and touched files; hover for measures; select to explore.';
-    }else if (state.mode === 'wake') text = 'One trace per session. Peaks show five-minute activity bursts; gaps show pauses. Select a trace to explore.';else {
+    }else if (mode === 'wake') text = 'One trace per session. Peaks show five-minute activity bursts; gaps show pauses. Select a trace to explore.';else {
       const visible = points.map(p => sessionMetricsAt(p, state.time)).filter(m => m.eventCount);
       const count = visible.filter(m => Number.isFinite(m.tokens[state.y])).length;
       text = state.y === 'output' || state.y === 'total' ? `Usage recorded for ${count} of ${visible.length} sessions. Hollow points below the axis have no token record; dashed points are partial. ` : '';
@@ -931,11 +950,12 @@ export function createMemoryWeather(root, initialData, {
     detail();
     $('.mw-clock').textContent = timeLabel(state.time);
     $('input').value = (state.time - data.start) / 60000;
-    const showingAll = panels.length > 1;
-    root.dataset.panels = showingAll ? 'all' : 'one';
-    root.querySelectorAll('[data-mode]').forEach(b => {
-      b.setAttribute('aria-pressed', String(!showingAll && state.mode === b.dataset.mode));
-      b.disabled = showingAll;
+    const many = roomForMany();
+    root.dataset.panels = panels.length > 1 ? 'all' : 'one';
+    root.querySelectorAll('.mw-modes [data-mode]').forEach(b => {
+      const on = many ? panels.some(panel => panel.mode === b.dataset.mode) : state.mode === b.dataset.mode;
+      b.setAttribute('aria-pressed', String(on));
+      b.disabled = false;
     });
   }
   function stop() {
@@ -992,8 +1012,17 @@ export function createMemoryWeather(root, initialData, {
     render();
   };
   $('input').onchange = () => publish({ replace: true });
-  root.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
-    state.mode = b.dataset.mode;
+  root.querySelectorAll('.mw-modes [data-mode]').forEach(b => b.onclick = () => {
+    const mode = b.dataset.mode;
+    if (roomForMany()) {
+      // Toggle this panel, but never empty the layout.
+      if (shown.has(mode) && shown.size > 1) shown.delete(mode);
+      else shown.add(mode);
+      if (shown.has(mode)) state.mode = mode;
+      else if (!shown.has(state.mode)) state.mode = MODES.find(m => shown.has(m)) || state.mode;
+    } else {
+      state.mode = mode;
+    }
     syncPanels(visibleModes());
     setup();
     state.preview = null;
@@ -1115,6 +1144,9 @@ export function createMemoryWeather(root, initialData, {
         state.y = next.y;
         state.live = next.at === null;
         state.time = next.at ?? data.end;
+        const wanted = next.panels?.length ? next.panels : MODES;
+        shown.clear();
+        for (const mode of wanted) shown.add(mode);
         fieldCamera.x = next.cam?.x ?? 0;
         fieldCamera.y = next.cam?.y ?? 0;
         fieldCamera.scale = next.cam?.scale ?? 1;
