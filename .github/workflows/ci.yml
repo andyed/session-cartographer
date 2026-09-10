@@ -19,6 +19,13 @@ jobs:
         with:
           node-version: 22
 
+      # watcher-duplicate-events.test.js imports explorer/server/app.js, which
+      # needs express. The job installed nothing, so that test failed on every
+      # run from the moment the API moved into app.js while passing locally for
+      # anyone with explorer/node_modules already on disk.
+      - name: Install Explorer dependencies
+        run: npm ci --prefix explorer --no-audit --no-fund
+
       - name: Run unit tests
         run: node --test tests/unit/*.test.js
 

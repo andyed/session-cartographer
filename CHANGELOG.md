@@ -2,6 +2,15 @@
 
 ## 0.7.6 — Unreleased
 
+### fix(ci): install Explorer dependencies before the unit suite
+
+The `test` job checked out and ran `node --test` with no install step of any
+kind. That was survivable until the API moved into `explorer/server/app.js`:
+`watcher-duplicate-events.test.js` imports it, `app.js` imports express, and the
+job has no `explorer/node_modules`. The suite went red on every run while
+passing for every developer, because a developer has those modules on disk
+already — the failure was invisible exactly where it was introduced.
+
 ### feat(demo): serve the working-memory field from static fixtures
 
 The memory and Internals tabs were switched off in demo mode, and the reason was
