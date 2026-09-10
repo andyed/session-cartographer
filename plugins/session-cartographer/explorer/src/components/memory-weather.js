@@ -3,7 +3,7 @@ import { plainLinkClick, normalizeMemoryRoute, CAM_MIN_SCALE, CAM_MAX_SCALE } fr
 // Canvas field and semantic zoom. Data comes from the warm corpus; positions stay stable as it updates.
 
 export function createMemoryWeather(root, initialData, {
-  onSelect, onNavigate, hrefForSession, route = {}
+  onSelect, onNavigate, hrefForSession, route = {}, axes = []
 } = {}) {
   let data = initialData;
   root.innerHTML = `
@@ -26,6 +26,20 @@ export function createMemoryWeather(root, initialData, {
 <p class="mw-note"></p>`;
   const $ = s => root.querySelector(s),
     stages = $('.mw-stages');
+  // An empty list means "no restriction" — live data can fill every axis. A
+  // populated one comes from a corpus that knows which measures it actually
+  // carries, and the ones it does not are removed rather than left to plot a
+  // flat zero line that reads as a finding.
+  if (axes.length) {
+    for (const option of [...$('[data-y]').options]) if (!axes.includes(option.value)) option.remove();
+    if (!$('[data-y]').options.length) $('.mw-compare-controls').hidden = true;
+  }
+  // The surviving options are the one authority on what the Y axis can be.
+  // render() assigns state.y straight onto the select, and assigning a value no
+  // option carries sets selectedIndex to -1 — which the compare readout then
+  // dereferences. That is reachable from a permalink alone (?y=files), so the
+  // clamp is not specific to a filtered demo.
+  const yOptions = [...$('[data-y]').options].map(option => option.value);
   const MODES = ['field', 'wake', 'compare'];
   // Semantic zoom: positions transform, glyph and label sizes do not.
   // Magnifying the raster would only blur it; the point of zooming here is to
@@ -94,7 +108,7 @@ export function createMemoryWeather(root, initialData, {
     preview: null,
     playing: false,
     x: route.x || 'spanMs',
-    y: route.y || 'output'
+    y: yOptions.includes(route.y) ? route.y : (yOptions[0] || 'output')
   };
   const camKey = cam => cam ? `${cam.x},${cam.y},${cam.scale}` : '';
   const routeKey = r => [r.view, r.x, r.y, r.at, r.end, camKey(r.cam), (r.panels || []).join()].join('|');

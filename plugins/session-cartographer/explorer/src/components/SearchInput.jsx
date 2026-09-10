@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { autocomplete, coterms, isDemoMode } from '../api';
 
-export default function SearchInput({ value, onChange }) {
+export default function SearchInput({ value, onChange, autoFocus = true }) {
   const [suggestions, setSuggestions] = useState([]);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -232,7 +232,7 @@ export default function SearchInput({ value, onChange }) {
         placeholder="Search session history..."
         className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
         style={{ fontSize: '28px' }}
-        autoFocus
+        autoFocus={autoFocus}
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"

@@ -17,6 +17,19 @@ async function apiFetch(url, options = {}) {
   return res.json();
 }
 
+// Raw-URL request used by views that talk to the API directly (working
+// memory). It exists so those views cross the SAME demo boundary as apiFetch:
+// a component calling window.fetch itself bypasses the static layer entirely
+// and 404s against the GH Pages host, which is exactly how the memory view
+// came to be excluded from the demo in the first place.
+export async function apiRequest(url, options = {}) {
+  if (isDemoMode) return (await demo()).handleFetch(url);
+  const res = await fetch(url, { ...options, cache: 'no-store' });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || `Explorer connection failed (${res.status})`);
+  return body;
+}
+
 // ─── API functions (unchanged between live and demo) ───
 
 export async function fetchEvents({ limit = 50, offset = 0, project = '' } = {}) {
@@ -55,6 +68,14 @@ export async function fetchInternals({ window = '30d', purpose = 'remember', ref
   const params = new URLSearchParams({ window, purpose });
   if (refresh) params.set('refresh', '1');
   return apiFetch(`/api/internals?${params}`, { signal });
+}
+
+// Which working-memory comparison axes the running corpus can support. Live
+// data can populate all of them; the static fixture says which ones it carries,
+// so an axis that would read flat zero is never offered as if it had data.
+export async function memoryAxes() {
+  if (!isDemoMode) return [];
+  return (await demo()).getMemoryAxes();
 }
 
 // Demo-only: get available queries for the picker UI
