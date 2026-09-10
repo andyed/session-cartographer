@@ -27,6 +27,16 @@ export function createMemoryWeather(root, initialData, {
   const $ = s => root.querySelector(s),
     stages = $('.mw-stages');
   const MODES = ['field', 'wake', 'compare'];
+  // Semantic zoom: positions transform, glyph and label sizes do not.
+  // Magnifying the raster would only blur it; the point of zooming here is to
+  // reach detail that simply is not drawn when zoomed out.
+  const MIN_SCALE = 0.4,
+    MAX_SCALE = 8,
+    TIER = { project: 0.85, artifact: 2.2 };
+  let view = { x: 0, y: 0, scale: 1 };
+  const vx = wx => wx * view.scale + view.x,
+    vy = wy => wy * view.scale + view.y,
+    tierOf = scale => scale < TIER.project ? 'project' : scale < TIER.artifact ? 'session' : 'artifact';
   // One panel per visible mode. field/wake/compare each write a point's hit
   // position, so those coordinates have to live per panel: with three panels
   // drawn at once, a single shared p.hx would keep only the last one and
@@ -38,13 +48,27 @@ export function createMemoryWeather(root, initialData, {
   function createPanel(mode) {
     const stage = document.createElement('div');
     stage.className = 'mw-stage';
-    stage.dataset.mode = mode;
+    stage.dataset.panel = mode;
     const c = document.createElement('canvas');
     c.setAttribute('role', 'img');
     const targetsHost = document.createElement('div');
     targetsHost.className = 'mw-targets';
     stage.append(c, targetsHost);
-    return { mode, stage, canvas: c, ctx: c.getContext('2d'), targetsHost, W: 736, H: 550, coords: new Map() };
+    if (mode === 'field') {
+      const nav = document.createElement('div');
+      nav.className = 'mw-nav';
+      nav.innerHTML = '<button type="button" class="mw-control" data-zoom="in" aria-label="Zoom in">+</button>'
+        + '<button type="button" class="mw-control" data-zoom="out" aria-label="Zoom out">\u2212</button>'
+        + '<button type="button" class="mw-control" data-zoom="fit" aria-label="Fit the whole field">Fit</button>';
+      stage.append(nav);
+    }
+    return {
+      mode, stage, canvas: c, ctx: c.getContext('2d'), targetsHost,
+      W: 736, H: 550, coords: new Map(),
+      // Each panel keeps its own camera: zooming the field must not move the
+      // wake trace beside it.
+      view: { x: 0, y: 0, scale: 1 }
+    };
   }
   /** Reconcile the mounted panels to `modes`, keeping existing ones in place. */
   function syncPanels(modes) {
@@ -52,6 +76,7 @@ export function createMemoryWeather(root, initialData, {
     panels.length = 0;
     for (const mode of modes) panels.push(keep.get(mode) || createPanel(mode));
     stages.replaceChildren(...panels.map(panel => panel.stage));
+    for (const panel of panels) wirePanel?.(panel);
     stages.dataset.count = String(panels.length);
     return panels;
   }
@@ -131,7 +156,8 @@ export function createMemoryWeather(root, initialData, {
     muted = color('--mw-muted');
   }
   function setup() {
-    if (!panels.length) syncPanels(visibleModes());
+    const modes = visibleModes();
+    if (panels.length !== modes.length || panels.some((panel, i) => panel.mode !== modes[i])) syncPanels(modes);
     dpr = Math.min(devicePixelRatio || 1, 2);
     let sized = false;
     for (const panel of panels) {
@@ -161,9 +187,11 @@ export function createMemoryWeather(root, initialData, {
     return union ? intersection / union : 0;
   }
   let affinity = points.map(a => points.map(b => projectAffinity(a, b)));
-  /** Which modes are mounted. One today; the responsive layout widens this. */
+  /** Every mode at once when there is room; otherwise the one the buttons pick. */
+  const ALL_PANELS_MIN = 1180;
   function visibleModes() {
-    return [state.mode];
+    const width = stages.clientWidth || root.clientWidth || 0;
+    return width >= ALL_PANELS_MIN ? MODES : [state.mode];
   }
   function layout() {
     const margin = 36;
@@ -285,8 +313,8 @@ export function createMemoryWeather(root, initialData, {
         gg = 0,
         bb = 0;
       for (const s of active) {
-        const radius = (22 + Math.sqrt(s.heat) * 5.5) * (W < 450 ? .75 : 1);
-        const d2 = (px - s.p.x) ** 2 + (py - s.p.y) ** 2;
+        const radius = (22 + Math.sqrt(s.heat) * 5.5) * (W < 450 ? .75 : 1) * view.scale;
+        const d2 = (px - vx(s.p.x)) ** 2 + (py - vy(s.p.y)) ** 2;
         const value = s.weight * Math.exp(-d2 / (2 * radius * radius));
         sum += value;
         const c = palette[groupIndex(s.p)].rgb;
@@ -334,9 +362,149 @@ export function createMemoryWeather(root, initialData, {
     used.push(box);
     return true;
   }
+  const CODE_EXT = /\.(js|jsx|ts|tsx|mjs|cjs|py|rb|go|rs|java|c|h|cpp|css|scss|html|sh|sql|swift|kt|vue|svelte)$/i;
+  const DOC_EXT = /\.(md|mdx|txt|rst|adoc|json|ya?ml|toml)$/i;
+  /** commit / code / doc / research — the artifact kinds the near tier exposes. */
+  function artifactsFor(p) {
+    const items = [];
+    for (const e of p.events) {
+      if (e[0] > state.time) continue;
+      if (e[1] === 'commit') items.push({ kind: 'commit', label: 'commit' });
+      else if (e[1] === 'research') items.push({ kind: 'research', label: 'research' });
+    }
+    for (const f of data.files?.[p.id] || []) {
+      const first = f.edits?.[0]?.t;
+      if (first && first > state.time) continue;
+      items.push({ kind: CODE_EXT.test(f.name) ? 'code' : DOC_EXT.test(f.name) ? 'doc' : 'file', label: f.name, path: f.path });
+    }
+    return items;
+  }
+  const ARTIFACT_ORDER = { commit: 0, code: 1, doc: 2, file: 3, research: 4 };
+  function drawArtifact(kind, x, y, c) {
+    ctx.beginPath();
+    if (kind === 'commit') {
+      ctx.fillStyle = c;
+      ctx.rect(x - 3, y - 3, 6, 6);
+      ctx.fill();
+    } else if (kind === 'research') {
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 1.2;
+      ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (kind === 'code') {
+      ctx.fillStyle = c;
+      ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.strokeStyle = c;
+      ctx.lineWidth = 1;
+      ctx.moveTo(x - 2.6, y);
+      ctx.lineTo(x + 2.6, y);
+      ctx.moveTo(x, y - 2.6);
+      ctx.lineTo(x, y + 2.6);
+      ctx.stroke();
+    }
+  }
+  /** Near tier: a session's own commits, touched code and touched docs. */
+  function fieldArtifacts(samples, selected, used) {
+    for (const s of samples) {
+      if (!s.count) continue;
+      const p = s.p,
+        X = vx(p.x),
+        Y = vy(p.y),
+        c = palette[groupIndex(p)].css;
+      if (X < -180 || Y < -180 || X > W + 180 || Y > H + 180) continue;
+      const items = artifactsFor(p).sort((a, b) => ARTIFACT_ORDER[a.kind] - ARTIFACT_ORDER[b.kind]);
+      const focus = selected === p.id;
+      ctx.globalAlpha = focus ? 1 : .5;
+      ctx.strokeStyle = c;
+      ctx.fillStyle = c;
+      ctx.beginPath();
+      ctx.arc(X, Y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Spacing is in screen pixels, so zooming in separates the clouds
+      // instead of magnifying one blob.
+      const step = 13,
+        perRing = 9;
+      items.forEach((item, i) => {
+        const ring = Math.floor(i / perRing) + 1,
+          angle = (i % perRing) / perRing * Math.PI * 2 + ring * .7,
+          ax = X + Math.cos(angle) * step * ring,
+          ay = Y + Math.sin(angle) * step * ring;
+        if (ax < -20 || ay < -20 || ax > W + 20 || ay > H + 20) return;
+        ctx.globalAlpha = focus ? .95 : .62;
+        drawArtifact(item.kind, ax, ay, item.kind === 'commit' ? ink : c);
+        const named = item.kind === 'code' || item.kind === 'doc' || item.kind === 'file';
+        const inside = ax > 30 && ay > 24 && ax < W - 30 && ay < H - 16;
+        if (named && inside && view.scale > 2.9) {
+          ctx.globalAlpha = focus ? .95 : .6;
+          drawLabel(item.label, ax, ay - 9, used, focus);
+        }
+      });
+      if (focus) {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(X, Y, 8, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      coords.set(p.id, [X, Y]);
+    }
+  }
+  /** Far tier: sessions collapse into the project they belong to. */
+  function fieldProjects(samples, selected, used) {
+    const groups = new Map();
+    for (const s of samples) {
+      if (!s.count) continue;
+      const g = groups.get(s.p.group) || { group: s.p.group, x: 0, y: 0, n: 0, heat: 0, p: s.p, members: [] };
+      g.x += s.p.x;
+      g.y += s.p.y;
+      g.n++;
+      g.heat += s.heat;
+      g.members.push(s.p);
+      groups.set(s.p.group, g);
+    }
+    for (const g of groups.values()) {
+      const X = vx(g.x / g.n),
+        Y = vy(g.y / g.n),
+        c = palette[groupIndex(g.p)].css,
+        focus = g.members.some(m => m.id === selected);
+      ctx.globalAlpha = focus ? 1 : .8;
+      ctx.fillStyle = c;
+      ctx.strokeStyle = c;
+      ctx.beginPath();
+      ctx.arc(X, Y, 4 + Math.min(10, Math.sqrt(g.n) * 3), 0, Math.PI * 2);
+      ctx.fill();
+      if (focus) {
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(X, Y, 4 + Math.min(10, Math.sqrt(g.n) * 3) + 6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      drawLabel(`${g.group} · ${g.n}`, X, Y - 18, used, focus);
+      // Members still answer clicks, so a project reads as its sessions.
+      for (const m of g.members) coords.set(m.id, [X, Y]);
+    }
+  }
   function field(samples) {
     density(samples);
     const selected = state.preview ?? state.selected;
+    const tier = tierOf(view.scale);
+    const used = [];
+    if (tier === 'project') {
+      fieldProjects(samples, selected, used);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    if (tier === 'artifact') {
+      fieldArtifacts(samples, selected, used);
+      ctx.globalAlpha = 1;
+      return;
+    }
     // Only a shared recorded project earns a bridge; co-presence alone does not.
     for (let i = 0; i < samples.length; i++) for (let j = i + 1; j < samples.length; j++) {
       const a = samples[i],
@@ -348,19 +516,22 @@ export function createMemoryWeather(root, initialData, {
       ctx.globalAlpha = focus ? .38 : .10;
       ctx.strokeStyle = palette[groupIndex(a.p)].css;
       ctx.lineWidth = focus ? 1.2 : .7;
-      const mx = (a.p.x + b.p.x) / 2,
-        my = (a.p.y + b.p.y) / 2;
+      const ax = vx(a.p.x), ay = vy(a.p.y), bx = vx(b.p.x), by = vy(b.p.y);
+      const mx = (ax + bx) / 2,
+        my = (ay + by) / 2;
       ctx.beginPath();
-      ctx.moveTo(a.p.x, a.p.y);
-      ctx.quadraticCurveTo(mx + (a.p.y - b.p.y) * .08, my + (b.p.x - a.p.x) * .08, b.p.x, b.p.y);
+      ctx.moveTo(ax, ay);
+      ctx.quadraticCurveTo(mx + (ay - by) * .08, my + (bx - ax) * .08, bx, by);
       ctx.stroke();
     }
     for (const s of samples) {
       const p = s.p;
       if (!s.count) continue;
-      p.hx = p.x;
-      p.hy = p.y;
-      coords.set(p.id, [p.hx, p.hy]);
+      const X = vx(p.x),
+        Y = vy(p.y);
+      p.hx = X;
+      p.hy = Y;
+      coords.set(p.id, [X, Y]);
       const c = palette[groupIndex(p)].css;
       ctx.strokeStyle = c;
       ctx.fillStyle = c;
@@ -369,19 +540,19 @@ export function createMemoryWeather(root, initialData, {
         ctx.globalAlpha = (1 - age) * .48;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 8 + Math.sqrt(age) * 23, 0, Math.PI * 2);
+        ctx.arc(X, Y, 8 + Math.sqrt(age) * 23, 0, Math.PI * 2);
         ctx.stroke();
       }
       ctx.globalAlpha = s.heat > .2 ? 1 : .28;
       const r = 2.5 + Math.min(6, Math.sqrt(s.heat) * .5);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.arc(X, Y, r, 0, Math.PI * 2);
       if (p.lifecycleOnly) ctx.stroke();else ctx.fill();
       if (p.wraps.some(w => w.t <= state.time)) {
         ctx.globalAlpha = .65;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r + 5, -Math.PI * .7, Math.PI * .7);
+        ctx.arc(X, Y, r + 5, -Math.PI * .7, Math.PI * .7);
         ctx.stroke();
       }
       if (selected === p.id) {
@@ -389,11 +560,10 @@ export function createMemoryWeather(root, initialData, {
         ctx.strokeStyle = ink;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, r + 11, 0, Math.PI * 2);
+        ctx.arc(X, Y, r + 11, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
-    const used = [];
     const candidates = [...samples].filter(s => s.count && s.p.label).sort((a, b) => (b.p.id === selected ? 1 : 0) - (a.p.id === selected ? 1 : 0) || b.heat - a.heat);
     let n = 0;
     for (const s of candidates) {
@@ -679,7 +849,14 @@ export function createMemoryWeather(root, initialData, {
   }
   function reading() {
     let text;
-    if (state.mode === 'field') text = 'One point per session. Color groups projects; contours and halos show recent recorded activity. Hover for measures; select to explore.';else if (state.mode === 'wake') text = 'One trace per session. Peaks show five-minute activity bursts; gaps show pauses. Select a trace to explore.';else {
+    if (state.mode === 'field') {
+      const tier = tierOf(panels.find(panel => panel.mode === 'field')?.view.scale ?? 1);
+      text = tier === 'project'
+        ? 'Zoomed out: one mark per project, sized by sessions. Zoom in for sessions, further for their commits and touched files.'
+        : tier === 'artifact'
+          ? 'Zoomed in: each session shows its own artifacts \u2014 filled squares are commits, dots are code, crosses are docs, rings are research. Zoom out for sessions.'
+          : 'One point per session. Color groups projects; contours and halos show recent recorded activity. Zoom in for commits and touched files; hover for measures; select to explore.';
+    }else if (state.mode === 'wake') text = 'One trace per session. Peaks show five-minute activity bursts; gaps show pauses. Select a trace to explore.';else {
       const visible = points.map(p => sessionMetricsAt(p, state.time)).filter(m => m.eventCount);
       const count = visible.filter(m => Number.isFinite(m.tokens[state.y])).length;
       text = state.y === 'output' || state.y === 'total' ? `Usage recorded for ${count} of ${visible.length} sessions. Hollow points below the axis have no token record; dashed points are partial. ` : '';
@@ -710,7 +887,7 @@ export function createMemoryWeather(root, initialData, {
     $('[data-live]').setAttribute('aria-pressed', String(state.live && state.connected));
     $('.mw-note').textContent = (data.sessions.length ? '' : 'No session activity in the last 24 hours. ') + (data.unattributed ? data.unattributed + ' events without a session. ' : '') + (!state.connected ? 'Last received · ' + timeLabel(data.end) : state.live ? 'Updates every 5 seconds' : 'Replay · ' + timeLabel(state.time));
     root.dataset.mode = state.mode;
-    $('.mw-compare-controls').hidden = state.mode !== 'compare';
+    $('.mw-compare-controls').hidden = !panels.some(panel => panel.mode === 'compare');
     $('[data-x]').value = state.x;
     $('[data-y]').value = state.y;
     for (const panel of panels) {
@@ -722,6 +899,7 @@ export function createMemoryWeather(root, initialData, {
       W = panel.W;
       H = panel.H;
       coords = panel.coords;
+      view = panel.view;
       coords.clear();
       ctx.clearRect(0, 0, W, H);
       if (panel.mode === 'field') field(samples);else if (panel.mode === 'wake') wake(samples);else compare(samples);
@@ -731,7 +909,12 @@ export function createMemoryWeather(root, initialData, {
     detail();
     $('.mw-clock').textContent = timeLabel(state.time);
     $('input').value = (state.time - data.start) / 60000;
-    root.querySelectorAll('[data-mode]').forEach(b => b.setAttribute('aria-pressed', String(state.mode === b.dataset.mode)));
+    const showingAll = panels.length > 1;
+    root.dataset.panels = showingAll ? 'all' : 'one';
+    root.querySelectorAll('[data-mode]').forEach(b => {
+      b.setAttribute('aria-pressed', String(!showingAll && state.mode === b.dataset.mode));
+      b.disabled = showingAll;
+    });
   }
   function stop() {
     state.playing = false;
@@ -818,6 +1001,75 @@ export function createMemoryWeather(root, initialData, {
     render();
     publish();
   };
+  /** Clamp, apply and redraw one panel's camera. */
+  function setView(panel, next) {
+    const scale = clamp(next.scale, MIN_SCALE, MAX_SCALE);
+    panel.view.scale = scale;
+    panel.view.x = next.x;
+    panel.view.y = next.y;
+    render();
+  }
+  function zoomPanelAt(panel, cx, cy, factor) {
+    const v = panel.view,
+      scale = clamp(v.scale * factor, MIN_SCALE, MAX_SCALE);
+    if (scale === v.scale) return;
+    // Keep the point under the cursor pinned across the scale change.
+    const wx = (cx - v.x) / v.scale,
+      wy = (cy - v.y) / v.scale;
+    setView(panel, { x: cx - wx * scale, y: cy - wy * scale, scale });
+  }
+  function wirePanel(panel) {
+    if (panel.mode !== 'field' || panel.wired) return;
+    panel.wired = true;
+    const local = e => {
+      const r = panel.canvas.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top];
+    };
+    // Scroll pans, ctrl/cmd-scroll (and trackpad pinch) zooms — the grammar
+    // the spatial wall already uses; plain-scroll-to-zoom makes a trackpad
+    // unusable.
+    panel.stage.addEventListener('wheel', e => {
+      e.preventDefault();
+      const [cx, cy] = local(e);
+      if (e.ctrlKey || e.metaKey) zoomPanelAt(panel, cx, cy, Math.exp(-e.deltaY * .01));
+      else setView(panel, { x: panel.view.x - e.deltaX, y: panel.view.y - e.deltaY, scale: panel.view.scale });
+    }, { passive: false });
+    let dragging = null;
+    panel.stage.addEventListener('pointerdown', e => {
+      if (e.target.closest('.mw-target, .mw-nav')) return;
+      dragging = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+      panel.stage.setPointerCapture(e.pointerId);
+    });
+    panel.stage.addEventListener('pointermove', e => {
+      if (!dragging || dragging.id !== e.pointerId) return;
+      const dx = e.clientX - dragging.x,
+        dy = e.clientY - dragging.y;
+      if (!dragging.moved && Math.hypot(dx, dy) < 3) return;
+      dragging.moved = true;
+      dragging.x = e.clientX;
+      dragging.y = e.clientY;
+      panel.stage.classList.add('mw-panning');
+      setView(panel, { x: panel.view.x + dx, y: panel.view.y + dy, scale: panel.view.scale });
+    });
+    const endDrag = e => {
+      if (!dragging || dragging.id !== e.pointerId) return;
+      dragging = null;
+      panel.stage.classList.remove('mw-panning');
+    };
+    panel.stage.addEventListener('pointerup', endDrag);
+    panel.stage.addEventListener('pointercancel', endDrag);
+    panel.stage.addEventListener('dblclick', e => {
+      if (e.target.closest('.mw-target, .mw-nav')) return;
+      const [cx, cy] = local(e);
+      zoomPanelAt(panel, cx, cy, 1.8);
+    });
+    panel.stage.querySelector('.mw-nav')?.addEventListener('click', e => {
+      const button = e.target.closest('[data-zoom]');
+      if (!button) return;
+      if (button.dataset.zoom === 'fit') return setView(panel, { x: 0, y: 0, scale: 1 });
+      zoomPanelAt(panel, panel.W / 2, panel.H / 2, button.dataset.zoom === 'in' ? 1.5 : 1 / 1.5);
+    });
+  }
   const resize = new ResizeObserver(setup);
   resize.observe(stages);
   setup();
