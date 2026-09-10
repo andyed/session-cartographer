@@ -19,15 +19,42 @@ export function createMemoryWeather(root, initialData, {
  <label>Across <select data-x aria-label="Horizontal dimension"><option value="spanMs">Recorded span</option><option value="activeMs">Active periods</option></select></label>
  <label>Up <select data-y aria-label="Vertical dimension"><option value="output">Generated tokens</option><option value="total">Processed tokens</option><option value="edit">Edit records</option><option value="files">Files touched</option><option value="research">Research actions</option><option value="commit">Commits</option><option value="events">All activity</option></select></label>
 </div>
-<div class="mw-stage"><canvas role="img"></canvas><div class="mw-targets"></div></div>
+<div class="mw-stages"></div>
 <div class="mw-reading" aria-live="polite"></div>
 <div class="mw-detail" aria-live="polite" hidden></div>
 <div class="mw-bottom"><button type="button" class="mw-control" data-play>Replay</button><input type="range" min="0" max="1440" value="1440" step="1" aria-label="Time across the last 24 hours"></div>
 <p class="mw-note"></p>`;
   const $ = s => root.querySelector(s),
-    stage = $('.mw-stage'),
-    canvas = $('canvas'),
-    ctx = canvas.getContext('2d');
+    stages = $('.mw-stages');
+  const MODES = ['field', 'wake', 'compare'];
+  // One panel per visible mode. field/wake/compare each write a point's hit
+  // position, so those coordinates have to live per panel: with three panels
+  // drawn at once, a single shared p.hx would keep only the last one and
+  // hit-testing would break in the other two.
+  const panels = [];
+  let canvas = null,
+    ctx = null,
+    coords = new Map();
+  function createPanel(mode) {
+    const stage = document.createElement('div');
+    stage.className = 'mw-stage';
+    stage.dataset.mode = mode;
+    const c = document.createElement('canvas');
+    c.setAttribute('role', 'img');
+    const targetsHost = document.createElement('div');
+    targetsHost.className = 'mw-targets';
+    stage.append(c, targetsHost);
+    return { mode, stage, canvas: c, ctx: c.getContext('2d'), targetsHost, W: 736, H: 550, coords: new Map() };
+  }
+  /** Reconcile the mounted panels to `modes`, keeping existing ones in place. */
+  function syncPanels(modes) {
+    const keep = new Map(panels.map(panel => [panel.mode, panel]));
+    panels.length = 0;
+    for (const mode of modes) panels.push(keep.get(mode) || createPanel(mode));
+    stages.replaceChildren(...panels.map(panel => panel.stage));
+    stages.dataset.count = String(panels.length);
+    return panels;
+  }
   const state = {
     mode: route.view || 'field',
     time: route.at ?? data.end,
@@ -104,13 +131,19 @@ export function createMemoryWeather(root, initialData, {
     muted = color('--mw-muted');
   }
   function setup() {
-    if (!stage.clientWidth || !stage.clientHeight) return;
-    W = stage.clientWidth;
-    H = stage.clientHeight;
+    if (!panels.length) syncPanels(visibleModes());
     dpr = Math.min(devicePixelRatio || 1, 2);
-    canvas.width = Math.round(W * dpr);
-    canvas.height = Math.round(H * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    let sized = false;
+    for (const panel of panels) {
+      if (!panel.stage.clientWidth || !panel.stage.clientHeight) continue;
+      panel.W = panel.stage.clientWidth;
+      panel.H = panel.stage.clientHeight;
+      panel.canvas.width = Math.round(panel.W * dpr);
+      panel.canvas.height = Math.round(panel.H * dpr);
+      panel.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      sized = true;
+    }
+    if (!sized) return;
     theme();
     layout();
     render();
@@ -128,6 +161,10 @@ export function createMemoryWeather(root, initialData, {
     return union ? intersection / union : 0;
   }
   let affinity = points.map(a => points.map(b => projectAffinity(a, b)));
+  /** Which modes are mounted. One today; the responsive layout widens this. */
+  function visibleModes() {
+    return [state.mode];
+  }
   function layout() {
     const margin = 36;
     for (const p of points) {
@@ -323,6 +360,7 @@ export function createMemoryWeather(root, initialData, {
       if (!s.count) continue;
       p.hx = p.x;
       p.hy = p.y;
+      coords.set(p.id, [p.hx, p.hy]);
       const c = palette[groupIndex(p)].css;
       ctx.strokeStyle = c;
       ctx.fillStyle = c;
@@ -435,6 +473,7 @@ export function createMemoryWeather(root, initialData, {
       const last = entries.at(-1);
       p.hx = last ? xOf(data.start + (last[0] + .5) * 300000) : cursor;
       p.hy = base;
+      coords.set(p.id, [p.hx, p.hy]);
       if (last) {
         ctx.globalAlpha = active ? 1 : .4;
         ctx.beginPath();
@@ -470,8 +509,8 @@ export function createMemoryWeather(root, initialData, {
     ctx.textAlign = 'left';
   }
   let rebuildingTargets = false;
-  function targets(samples) {
-    const host = $('.mw-targets');
+  function targets(panel, samples) {
+    const host = panel.targetsHost;
     if (host.dataset.level !== 'sessions' || host.children.length !== points.length) {
       rebuildingTargets = true;
       host.replaceChildren();
@@ -507,11 +546,14 @@ export function createMemoryWeather(root, initialData, {
     rebuildingTargets = false;
     [...host.children].forEach((b, i) => {
       const s = samples[i];
-      b.hidden = !s.count;
+      const at = panel.coords.get(s.p.id);
+      b.hidden = !s.count || !at;
       b.setAttribute('aria-label', 'Explore ' + s.p.title);
       b.href = hrefForSession?.(s.p, viewState()) || '#';
-      b.style.left = s.p.hx + 'px';
-      b.style.top = s.p.hy + 'px';
+      if (at) {
+        b.style.left = at[0] + 'px';
+        b.style.top = at[1] + 'px';
+      }
       b.setAttribute('aria-pressed', String(state.selected === s.p.id));
     });
   }
@@ -601,6 +643,7 @@ export function createMemoryWeather(root, initialData, {
         py = unknown ? H - 51 : y(value);
       s.p.hx = px;
       s.p.hy = py;
+      coords.set(s.p.id, [px, py]);
       if (unknown) missing++;
       const chosen = (state.preview ?? state.selected) === s.p.id;
       ctx.strokeStyle = palette[groupIndex(s.p)].css;
@@ -645,7 +688,9 @@ export function createMemoryWeather(root, initialData, {
       if (state.y === 'output') text += ' Generated tokens include recorded model output and reasoning.';
     }
     if ($('.mw-reading').textContent !== text) $('.mw-reading').textContent = text;
-    canvas.setAttribute('aria-label', text);
+    // Every mounted canvas carries the reading; with more than one panel the
+    // last-rebound canvas is not the only one a screen reader will reach.
+    for (const panel of panels) panel.canvas.setAttribute('aria-label', text);
   }
   function timeLabel(t) {
     return new Date(t).toLocaleString(undefined, {
@@ -658,8 +703,8 @@ export function createMemoryWeather(root, initialData, {
   function render() {
     // A permalink may mount directly into a session with the field hidden.
     // ResizeObserver initializes the canvas when the overview is first shown.
-    if (!stage.clientWidth || !stage.clientHeight || !palette.length) return;
-    ctx.clearRect(0, 0, W, H);
+    if (!panels.length || !palette.length) return;
+    if (!panels.some(panel => panel.stage.clientWidth && panel.stage.clientHeight)) return;
     const samples = sample();
     $('[data-live]').textContent = state.connected ? 'Live' : 'Disconnected';
     $('[data-live]').setAttribute('aria-pressed', String(state.live && state.connected));
@@ -668,8 +713,20 @@ export function createMemoryWeather(root, initialData, {
     $('.mw-compare-controls').hidden = state.mode !== 'compare';
     $('[data-x]').value = state.x;
     $('[data-y]').value = state.y;
-    if (state.mode === 'field') field(samples);else if (state.mode === 'wake') wake(samples);else compare(samples);
-    targets(samples);
+    for (const panel of panels) {
+      if (!panel.stage.clientWidth || !panel.stage.clientHeight) continue;
+      // Rebind the drawing context to this panel; the renderers below are
+      // written against these bindings and need no per-panel awareness.
+      canvas = panel.canvas;
+      ctx = panel.ctx;
+      W = panel.W;
+      H = panel.H;
+      coords = panel.coords;
+      coords.clear();
+      ctx.clearRect(0, 0, W, H);
+      if (panel.mode === 'field') field(samples);else if (panel.mode === 'wake') wake(samples);else compare(samples);
+      targets(panel, samples);
+    }
     reading();
     detail();
     $('.mw-clock').textContent = timeLabel(state.time);
@@ -732,18 +789,25 @@ export function createMemoryWeather(root, initialData, {
   $('input').onchange = () => publish({ replace: true });
   root.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
     state.mode = b.dataset.mode;
+    syncPanels(visibleModes());
+    setup();
     state.preview = null;
     render();
     publish();
   });
-  canvas.onpointerdown = e => {
-    if (state.mode !== 'wake') return;
-    const r = canvas.getBoundingClientRect(),
+  stages.addEventListener('pointerdown', e => {
+    const panel = panels.find(item => item.stage.contains(e.target));
+    if (!panel || panel.mode !== 'wake') return;
+    const r = panel.canvas.getBoundingClientRect(),
       x = e.clientX - r.left,
       y = e.clientY - r.top;
-    const p = [...points].sort((a, b) => Math.hypot(a.hx - x, a.hy - y) - Math.hypot(b.hx - x, b.hy - y))[0];
-    if (p) enter(p);
-  };
+    const distance = q => {
+      const at = panel.coords.get(q.id);
+      return at ? Math.hypot(at[0] - x, at[1] - y) : Infinity;
+    };
+    const p = [...points].sort((a, b) => distance(a) - distance(b))[0];
+    if (p && distance(p) < Infinity) enter(p);
+  });
   $('[data-x]').onchange = e => {
     state.x = e.target.value;
     render();
@@ -755,7 +819,7 @@ export function createMemoryWeather(root, initialData, {
     publish();
   };
   const resize = new ResizeObserver(setup);
-  resize.observe(stage);
+  resize.observe(stages);
   setup();
   return {
     applyRoute(next) {
