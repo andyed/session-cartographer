@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // build-demo-data.js — Cache real pipeline results for the GH Pages demo.
 //
-// Requires the Explorer server running on :2526.
+// Requires the Explorer server running (default :2526, or CARTOGRAPHER_API_PORT).
 // Hits the live API, sanitizes paths, writes static JSON to demo/.
 //
 // Usage:
@@ -15,7 +15,8 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const DEMO = join(ROOT, 'demo');
-const API = 'http://127.0.0.1:2526';
+const API_PORT = process.env.CARTOGRAPHER_API_PORT || '2526';
+const API = `http://127.0.0.1:${API_PORT}`;
 
 // ─── Sanitization ───
 
@@ -115,8 +116,8 @@ async function main() {
   try {
     await api('/api/projects');
   } catch {
-    console.error('Explorer server not running on :2526. Start it first:');
-    console.error('  cd explorer && npm run dev');
+    console.error(`Explorer server not running on :${API_PORT}. Start it first:`);
+    console.error(`  cd explorer && ${API_PORT === '2526' ? '' : `CARTOGRAPHER_API_PORT=${API_PORT} `}npm run dev`);
     process.exit(1);
   }
 

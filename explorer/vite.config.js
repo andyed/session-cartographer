@@ -8,6 +8,10 @@ const internalsRouteUrl = new URL('./server/internals-route.js', import.meta.url
 const { internalsUiPlugin } = await import(internalsRouteUrl);
 
 const isDemo = process.env.VITE_DEMO === 'true';
+// Keep the proxy target in step with the API server, which reads the same var
+// (server/index.js). Lets the Explorer sidestep a 2526 already held by a
+// headless Turbo server instead of exiting on EADDRINUSE.
+const apiPort = process.env.CARTOGRAPHER_API_PORT || '2526';
 
 export default defineConfig({
   plugins: [react(), ...(!isDemo ? [turboEntryPlugin(), internalsUiPlugin()] : [])],
@@ -16,14 +20,14 @@ export default defineConfig({
     host: '127.0.0.1',
     port: 2527,
     proxy: {
-      '/api': 'http://127.0.0.1:2526',
+      '/api': `http://127.0.0.1:${apiPort}`,
     },
   },
   preview: {
     host: '127.0.0.1',
     port: 2527,
     proxy: {
-      '/api': 'http://127.0.0.1:2526',
+      '/api': `http://127.0.0.1:${apiPort}`,
     },
   },
   // SPA fallback — /session/* deep links route to index.html
