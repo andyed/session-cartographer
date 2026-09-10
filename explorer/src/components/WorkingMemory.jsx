@@ -2,14 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createMemoryWeather } from './memory-weather';
 import MemorySession from './MemorySession';
 import { parseMemoryRoute, normalizeMemoryRoute, memoryHref } from './memory-route';
+import { apiRequest as request, isDemoMode, memoryAxes } from '../api';
 import '../styles/memory.css';
-
-async function request(url, options = {}) {
-  const response = await fetch(url, { ...options, cache: 'no-store' });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error || `Explorer connection failed (${response.status})`);
-  return body;
-}
 
 const actions = { enable: 'Enable Turbo', start: 'Start Turbo', refresh: 'Refresh Turbo' };
 const memoryPath = `${import.meta.env.BASE_URL || '/'}memory`;
@@ -36,6 +30,15 @@ export default function WorkingMemory({ isActive }) {
   const reviewTrigger = useRef(null);
   const launchRequest = useRef(null);
   const loadedWindow = useRef(route.end);
+  // null until known. The field is only built once, so the axis list has to be
+  // in hand before construction rather than patched in afterwards.
+  const [axes, setAxes] = useState(isDemoMode ? null : []);
+  useEffect(() => {
+    if (!isDemoMode) return;
+    let live = true;
+    memoryAxes().then(next => live && setAxes(next)).catch(() => live && setAxes([]));
+    return () => { live = false; };
+  }, []);
 
   const navigate = useCallback((patch, { replace = false } = {}) => {
     const next = normalizeMemoryRoute({ ...routeRef.current, ...patch });
@@ -163,10 +166,10 @@ export default function WorkingMemory({ isActive }) {
   }
 
   useEffect(() => {
-    if (!data || !host.current) return;
-    if (!weather.current) weather.current = createMemoryWeather(host.current, data, { onSelect: openSession, onNavigate: navigate, hrefForSession, route: routeRef.current });
+    if (!data || !host.current || axes === null) return;
+    if (!weather.current) weather.current = createMemoryWeather(host.current, data, { onSelect: openSession, onNavigate: navigate, hrefForSession, route: routeRef.current, axes });
     else weather.current.update(data, Boolean(status?.ready));
-  }, [data, openSession, navigate, hrefForSession]);
+  }, [data, axes, openSession, navigate, hrefForSession]);
 
   useEffect(() => { weather.current?.applyRoute(route); }, [route]);
 

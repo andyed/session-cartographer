@@ -7,15 +7,36 @@ script in any `package.json`. Recent `gh-pages` commits are authored by Andy
 directly (not `github-actions[bot]`) with generic messages ("Updates") — which
 is what the default `gh-pages` npm tool produces.
 
-## What's on `gh-pages` (observed 2026-04-23)
+## What's on `gh-pages` (re-observed 2026-09-10)
 
 ```
 .claude-plugin/   assets/   demo/   favicon.ico   index.html   js/   plugins/
 ```
 
-That's the landing page + demo site assets — NOT a Vite build output. The
-`explorer/` React app (source in `explorer/`, dev on ports 2526/2527) is a
-separate dev-only tool; it's not what gh-pages serves.
+**This IS the Vite build.** The earlier note here ("NOT a Vite build output")
+is wrong and cost an investigation: `index.html` on `gh-pages` is a 2.8 KB
+shell that mounts `assets/index-*.js` into `#root`, which is `explorer/` built
+with `VITE_DEMO=true` (base `/session-cartographer/`). The demo runs the real
+Explorer against static JSON — `explorer/src/demo.js` intercepts every
+`/api/*` call and answers it from `demo/` fixtures.
+
+`demo/demo/…` on the deployed tree is real, not a typo: `demo.js` fetches
+`${BASE}demo/demo/…`, and `explorer/public/demo/demo/` is the copy a browser
+actually loads. The flat `explorer/public/demo/` beside it is a stale older
+snapshot that nothing reads — do not "fix" a fixture by editing that one.
+
+## Building the demo
+
+```bash
+node scripts/build-demo-memory.mjs --write     # working-memory field fixture
+VITE_DEMO=true npm run build --prefix explorer # bundle → explorer/dist
+node tests/browser/demo-memory.cjs             # verify the built demo
+```
+
+`build-demo-data.js` regenerates the search/timeline fixtures from a running
+Explorer and scrubs real names out of them. `build-demo-memory.mjs` needs no
+server: it derives the memory field from `demo/sessions.json`, which is already
+sanitized, so the demo stays off the sanitization critical path.
 
 ## Deploy command — ⚠️ owner to confirm
 

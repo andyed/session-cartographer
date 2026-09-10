@@ -2,6 +2,43 @@
 
 ## 0.7.6 — Unreleased
 
+### feat(demo): serve the working-memory field from static fixtures
+
+The memory and Internals tabs were switched off in demo mode, and the reason was
+structural: `WorkingMemory` called `window.fetch` directly rather than going
+through `apiFetch`, so its five routes never reached `src/demo.js` and would
+have 404'd against the GH Pages host with no server there to notice. Memory now
+crosses the same boundary as every other view; Internals stays out, since it
+reports on a running service.
+
+The field is derived, not snapshotted. `projectMemory()` is a pure fold over an
+event array and `demo/sessions.json` already ships 14 sanitized sessions with
+nested events, so `scripts/build-demo-memory.mjs` flattens those, pins the
+busiest 24-hour window, and runs the real `projectMemory` + `enrichMemory` with a
+transcript reader that always declines — the same no-transcript path production
+takes. No live API is read and no new scrubbing is introduced, because there is
+no new source.
+
+The fixture publishes the comparison axes it can actually plot (`edit`, `commit`,
+`events`) and the UI removes the rest. Tokens need transcripts, files need path
+resolution, research is zero in that window; all four would have drawn a flat
+line at zero, which reads as a measurement rather than as absent data.
+Regenerating a denser corpus lights them up without a second edit.
+
+Two defects surfaced. Filtering the axis list made `render()` assign a `state.y`
+no option carried, which sets `selectedIndex` to -1 and left the compare readout
+dereferencing an empty `selectedOptions` — reachable on the live path from a
+permalink alone (`?y=files` against a corpus with no files), so the clamp now
+derives the legal set from the surviving options. And landing on `/memory`
+autofocused search, whose demo query list opened directly over the field.
+
+`explorer/public/demo/` is gitignored and nothing populated it, so a clean
+checkout built a demo with no fixtures at all and exited 0. The builder now
+mirrors the tracked `demo/` tree into it. `tests/browser/demo-memory.cjs` covers
+the static path that `memory-entry.cjs` deliberately strips: it fails on a blank
+instrument rather than only on an error, and treats any `/api/*` request that
+reaches the network as a hole in the static layer.
+
 ### fix(skills): file worktree sessions under the parent repo
 
 The 0.7 hook fix covered the hooks only. `/wrapup`, `/investigate` and

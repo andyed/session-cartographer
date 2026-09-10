@@ -68,6 +68,25 @@ and transcripts, and verifies live event delivery with Turbo both off and on.
 After building, run `node tests/browser/memory-entry.cjs --preview` to exercise
 the same routes against the built preview host.
 
+### The GH Pages demo
+
+`memory-entry.cjs` strips `VITE_DEMO` on purpose, so it says nothing about the
+static demo — and the static demo is where the memory view was broken: it
+called `/api/memory/*` and `/api/turbo/*`, routes `demo.js` had never heard of,
+which 404'd against the hosting origin with no server there to notice.
+
+```bash
+node scripts/build-demo-memory.mjs --write
+VITE_DEMO=true npm run build --prefix explorer
+node tests/browser/demo-memory.cjs
+```
+
+It fails on a blank instrument, not just on an error: the field canvas must
+have painted something other than a flat fill, the per-session hit targets must
+match the fixture's session count, the Y-axis select must offer exactly the
+axes the fixture can plot, and **any** `/api/*` request that reaches the
+network is a hole in the static layer.
+
 Both CI and release publication depend on the reusable Explorer workflow, which
 installs Chromium with its Linux system dependencies. A browser or build failure
 blocks publication. The install commands disable npm's automatic advisory call;

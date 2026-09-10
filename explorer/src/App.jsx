@@ -27,7 +27,7 @@ function parseURL() {
   const urlProject = url.searchParams.get('project') || '';
 
   const tab = deepLinkTranscript ? 'transcript'
-    : isMemory && !isDemoMode ? 'memory'
+    : isMemory ? 'memory'
     : isInternals ? 'internals'
     : (urlQuery || urlProject) ? 'search'
     : 'timeline';
@@ -148,12 +148,15 @@ export default function App() {
       <header className="flex flex-col border-b border-gray-800 flex-shrink-0">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-4 py-2">
           {/* Search input with autocomplete — flush left */}
-          <SearchInput value={searchQuery} onChange={handleSearchInput} />
+          {/* The demo opens its query list on focus, which lands right on top of
+              the memory field. Leave the caret out of the search box when the
+              field is what the viewer came for. */}
+          <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus={tab !== 'memory'} />
 
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
             <div className="flex gap-1">
-              {[...(isDemoMode ? [] : ['memory']), 'timeline', 'search', ...(isDemoMode ? [] : ['internals'])].map(t => (
+              {['memory', 'timeline', 'search', ...(isDemoMode ? [] : ['internals'])].map(t => (
                 <button
                   key={t}
                   onClick={() => handleTabClick(t)}
@@ -175,7 +178,7 @@ export default function App() {
             <span className="text-xs text-gray-600 font-mono">SC</span>
           </div>
         </div>
-        {isDemoMode && !searchQuery && tab !== 'transcript' && (
+        {isDemoMode && !searchQuery && tab !== 'transcript' && tab !== 'memory' && (
           <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
             <span className="text-[10px] text-gray-600 uppercase tracking-wider">Try:</span>
             {[
@@ -197,7 +200,7 @@ export default function App() {
       </header>
 
       <main className="flex-1 overflow-hidden relative">
-        {mountedTabs.current.has('memory') && !isDemoMode && (
+        {mountedTabs.current.has('memory') && (
           <div className={`absolute inset-0 ${tab === 'memory' ? '' : 'hidden'}`}>
             <WorkingMemory isActive={tab === 'memory'} />
           </div>
