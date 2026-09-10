@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,7 +66,13 @@ describe('demo working-memory fixture', () => {
     }
   });
 
-  test('the copy the browser loads matches the copy in the repo', () => {
+  test('the copy the browser loads matches the copy in the repo', (t) => {
+    // LIVE is a build artifact under a gitignored directory, so it is simply
+    // absent on a fresh checkout — build-demo-memory.mjs --write creates it.
+    // The drift this guards against (this tree already carries three copies of
+    // the demo corpus, two of them stale) can only exist once it has been
+    // built, so skipping there states the situation instead of failing on it.
+    if (!existsSync(LIVE)) return t.skip('not built yet — run scripts/build-demo-memory.mjs --write');
     assert.equal(readFileSync(LIVE, 'utf8'), readFileSync(SOURCE, 'utf8'));
   });
 
