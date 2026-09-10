@@ -43,6 +43,11 @@ for required in \
   "$PLUGIN/scripts/cooccurrence-graph.js" \
   "$PLUGIN/explorer/public/og-card-1200x630.png" \
   "$PLUGIN/explorer/server/index.js" \
+  "$PLUGIN/explorer/server/app.js" \
+  "$PLUGIN/explorer/server/explorer-ui.js" \
+  "$PLUGIN/src/lib/devtools-adapted/session-parser.js" \
+  "$PLUGIN/src/lib/devtools-adapted/token-attribution.js" \
+  "$PLUGIN/src/lib/devtools-adapted/compaction-detector.js" \
   "$PLUGIN/explorer/server/recall-contract.js" \
   "$PLUGIN/explorer/server/recall.js" \
   "$PLUGIN/project-registry.json"; do

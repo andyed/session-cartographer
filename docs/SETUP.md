@@ -36,8 +36,9 @@ This is the cheapest useful thing in the system and the fastest way to confirm
 your install is capturing events.
 
 ```bash
-# Start the API (:2526). The headless Turbo service mounts the same endpoint.
-cd explorer && npm install && npm run dev
+# Start the standalone API (:2526), if Turbo is not already serving that port.
+# The web UI itself starts separately with: cd explorer && npm run dev
+(cd explorer && npm install && npm run server)
 
 # Is anything there at all?
 curl -s http://127.0.0.1:2526/api/facts/health

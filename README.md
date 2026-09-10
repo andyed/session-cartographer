@@ -293,10 +293,16 @@ search scripts, and the Explorer do not reach back into a source checkout.
 
 ```bash
 cd session-cartographer/explorer && npm install && npm run dev
-# API on :2526, UI on :2527
+# Full web app on http://127.0.0.1:2527
 ```
 
 Then use `/carto` to open it in your browser.
+
+Timeline, search, sessions, and transcripts are served by the UI host and work
+with Turbo off or already running. The memory tab uses the managed Turbo backend
+on its configured port. `npm run memory` starts the same host and is convenient
+when opening `/memory`; it keeps all other tabs available. For a standalone API
+on port 2526, use `npm run server` separately when that port is free.
 
 ### Semantic search (optional)
 

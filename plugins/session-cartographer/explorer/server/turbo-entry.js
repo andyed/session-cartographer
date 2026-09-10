@@ -70,18 +70,20 @@ async function memoryHealth(url, fetchImpl) {
   }
 }
 
-function validateRequest(req, mutation) {
+// UI middleware runs before Vite's own host guard, so every local API mounted
+// there must validate its origin before serving private corpus data.
+export function validateUiRequest(req, mutation) {
   let origin;
   try {
     const url = new URL(`http://${req.headers.host}`);
     if (!LOOPBACK_HOSTS.has(url.hostname) || url.username || url.password || url.pathname !== '/') throw new Error();
     origin = url.origin;
   } catch {
-    throw failure(403, 'Turbo control is available only on the loopback UI host');
+    throw failure(403, 'Cartographer is available only on the loopback UI host');
   }
   const requestOrigin = req.headers.origin;
   if ((requestOrigin && requestOrigin !== origin) || (mutation && requestOrigin !== origin)) {
-    throw failure(403, 'Turbo control requires the same UI origin');
+    throw failure(403, 'Cartographer requires the same UI origin');
   }
   if (req.headers['sec-fetch-site'] === 'cross-site') throw failure(403, 'Cross-site Turbo requests are not allowed');
   if (mutation && (
@@ -170,7 +172,7 @@ export function createTurboEntryMiddleware({
     if (!['/api/turbo/status', '/api/turbo/start'].includes(pathname) && !MEMORY_PATHS.has(pathname)) return next();
     try {
       const mutation = pathname === '/api/turbo/start';
-      validateRequest(req, mutation);
+      validateUiRequest(req, mutation);
       if (req.method !== (mutation ? 'POST' : 'GET')) throw failure(405, 'Method not allowed');
       if (pathname === '/api/turbo/status') return reply(res, 200, await status());
       if (mutation) {

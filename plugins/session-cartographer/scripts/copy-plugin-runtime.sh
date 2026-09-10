@@ -12,7 +12,8 @@ mkdir -p \
   "$PLUGIN/scripts" \
   "$PLUGIN/explorer/public/js" \
   "$PLUGIN/explorer/server" \
-  "$PLUGIN/explorer/src"
+  "$PLUGIN/explorer/src" \
+  "$PLUGIN/src/lib/devtools-adapted"
 
 # Keep the checkout marketplace and release archive on one runtime assembly
 # path. Skills and hooks live canonically under plugins/session-cartographer;
@@ -30,3 +31,4 @@ cp "$ROOT/explorer/public/og-card-1200x630.png" "$PLUGIN/explorer/public/og-card
 cp "$ROOT/explorer/public/js/"*.js "$PLUGIN/explorer/public/js/"
 cp -R "$ROOT/explorer/server/." "$PLUGIN/explorer/server/"
 cp -R "$ROOT/explorer/src/." "$PLUGIN/explorer/src/"
+cp -R "$ROOT/src/lib/devtools-adapted/." "$PLUGIN/src/lib/devtools-adapted/"

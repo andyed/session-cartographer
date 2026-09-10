@@ -63,6 +63,11 @@ archived sessions, file review, Internals, and mobile layouts. It stops its own
 service afterward; it does not use the user's live Explorer. Screenshots are
 written to `carto-memory-browser-artifacts` under the OS temporary directory.
 
+It also navigates from memory into timeline, search, project filters, sessions,
+and transcripts, and verifies live event delivery with Turbo both off and on.
+After building, run `node tests/browser/memory-entry.cjs --preview` to exercise
+the same routes against the built preview host.
+
 Both CI and release publication depend on the reusable Explorer workflow, which
 installs Chromium with its Linux system dependencies. A browser or build failure
 blocks publication. The install commands disable npm's automatic advisory call;

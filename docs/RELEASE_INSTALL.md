@@ -54,11 +54,12 @@ npm install
 npm run dev
 ```
 
-The Explorer binds to `127.0.0.1` on ports 2526 and 2527.
+The full web app binds to `127.0.0.1:2527`. Timeline, search, sessions, and
+transcripts work without Turbo and coexist with it when it is running.
 
 For the live working-memory view, use `npm run memory` from the same Explorer
-directory and open `http://127.0.0.1:2527/memory`. This starts the UI host only,
-so it can coexist with Turbo on the API port. **Enable Turbo**, **Start Turbo**,
+directory and open `http://127.0.0.1:2527/memory`. Both launch commands serve the
+whole web app; they do not occupy Turbo's API port. **Enable Turbo**, **Start Turbo**,
 or **Refresh Turbo** uses the shared managed controller when needed; opening the
 page alone does not start a service or change the preference.
 

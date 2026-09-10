@@ -92,7 +92,7 @@ for (const required of [
 }
 NODE
 
-for directory in explorer/server explorer/src; do
+for directory in explorer/server explorer/src src/lib/devtools-adapted; do
   while IFS= read -r source; do
     relative=${source#"$ROOT/"}
     target="$PLUGIN/$relative"

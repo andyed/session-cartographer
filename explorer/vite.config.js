@@ -6,6 +6,8 @@ import { turboEntryPlugin } from './server/turbo-entry.js';
 // must retain their source paths instead of being bundled into Vite's config.
 const internalsRouteUrl = new URL('./server/internals-route.js', import.meta.url).href;
 const { internalsUiPlugin } = await import(internalsRouteUrl);
+const explorerUiUrl = new URL('./server/explorer-ui.js', import.meta.url).href;
+const { explorerUiPlugin } = await import(explorerUiUrl);
 
 const isDemo = process.env.VITE_DEMO === 'true';
 // Keep the proxy target in step with the API server, which reads the same var
@@ -14,7 +16,7 @@ const isDemo = process.env.VITE_DEMO === 'true';
 const apiPort = process.env.CARTOGRAPHER_API_PORT || '2526';
 
 export default defineConfig({
-  plugins: [react(), ...(!isDemo ? [turboEntryPlugin(), internalsUiPlugin()] : [])],
+  plugins: [react(), ...(!isDemo ? [turboEntryPlugin(), internalsUiPlugin(), explorerUiPlugin()] : [])],
   base: isDemo ? '/session-cartographer/' : '/',
   server: {
     host: '127.0.0.1',

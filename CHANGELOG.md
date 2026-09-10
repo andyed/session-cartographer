@@ -2,6 +2,15 @@
 
 ## 0.7.6 — Unreleased
 
+### fix(explorer): keep the whole app available from either UI launch
+
+The UI host now mounts the canonical Explorer APIs for timeline, search,
+sessions, transcripts, and live event streaming. Those routes work with Turbo
+off or running; they no longer proxy to headless Turbo endpoints that return
+404. Both `npm run dev` and `npm run memory` launch the complete web app without
+contending for Turbo's API port. Browser regression covers the full navigation
+flow, and release bundles include the transcript-analysis modules.
+
 ### Release preparation
 
 Git backfill now preserves full author names as single patterns, ignores empty

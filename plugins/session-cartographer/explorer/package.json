@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"node server/index.js\" \"vite --host 127.0.0.1 --port 2527\"",
+    "dev": "vite --host 127.0.0.1 --port 2527 --strictPort",
     "memory": "vite --host 127.0.0.1 --port 2527 --strictPort",
     "server": "node server/index.js",
     "build": "vite build",
