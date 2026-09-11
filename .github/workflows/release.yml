@@ -28,6 +28,11 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           node scripts/check-release-version.js "$version"
 
+      # This job has a fresh runner; reusable Explorer checks do not share
+      # node_modules. Server unit tests import the locked Explorer runtime.
+      - name: Install Explorer dependencies
+        run: npm ci --prefix explorer --no-audit --no-fund
+
       - name: Run unit tests
         run: node --test tests/unit/*.test.js
 
