@@ -1206,6 +1206,10 @@ export function createMemoryWeather(root, initialData, {
       render();
       if (previous && !next.session) requestAnimationFrame(() => {
         setup();
+        // Back may reveal the overview before this frame. Preserve a user's
+        // newer focus instead of pulling them back to the previous session.
+        const active = document.activeElement;
+        if (active && active !== document.body && active.isConnected && active.getClientRects().length) return;
         if (onRestoreFocus?.()) return;
         const index = points.findIndex(p => p.id === previous);
         if (index >= 0) $('.mw-targets').children[index]?.focus({ preventScroll: true });

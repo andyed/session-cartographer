@@ -481,8 +481,12 @@ async function port() {
     await page.keyboard.press('Enter');
     await page.getByRole('button', { name: 'Back to all sessions' }).click();
     await page.getByRole('heading', { name: 'Field', exact: true }).waitFor();
-    await page.getByRole('link', { name: 'Explore Library facets', exact: true }).focus();
+    const libraryTarget = page.getByRole('link', { name: 'Explore Library facets', exact: true });
+    await libraryTarget.focus();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(resolve)));
+    assert.equal(await libraryTarget.evaluate(element => document.activeElement === element), true, 'return focus stole the newly focused task');
     await page.keyboard.press('Enter');
+    await page.getByRole('heading', {name:'Library facets',exact:true}).waitFor();
     await page.screenshot({ path: path.join(artifacts, 'carto-memory-empty-files.png') });
     assert.equal(await page.getByRole('button', { name: 'Back to all sessions' }).count(), 1);
     assert.ok((await page.locator('.memory-session').innerText()).includes('38 observations'));
