@@ -9,6 +9,7 @@ import { join } from 'node:path';
 
 import { epochMsFromTimestamp, scoreBM25 } from './bm25.js';
 import { projectMatcher } from './project-filter.js';
+import { isResolved } from '../../scripts/sentinels.js';
 
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
@@ -385,6 +386,7 @@ export function computeFacets(items) {
   const typeMap = new Map();
   const srcMap = new Map();
   const quadMap = new Map();
+  const provMap = new Map();
   const monthMap = new Map();
   const dayMap = new Map();
   let oldest = null, newest = null;
@@ -401,6 +403,15 @@ export function computeFacets(items) {
     // Diff shape quadrant (Tier 3)
     const quad = item.diff_shape?.quadrant;
     if (quad) quadMap.set(quad, (quadMap.get(quad) || 0) + 1);
+
+    // Producing agent. Half this corpus is Codex, and both ladders already
+    // carry the field — the keyword leg straight off the event, the semantic
+    // leg out of the Qdrant payload. Route it through isResolved() so the
+    // pipeline's three spellings of absence do not become a third agent.
+    if (isResolved(item.provider)) {
+      const prov = String(item.provider).trim().toLowerCase();
+      provMap.set(prov, (provMap.get(prov) || 0) + 1);
+    }
 
     // Sources (split compound like "keyword+semantic")
     const sources = (item._sources || '').split('+');
@@ -442,6 +453,7 @@ export function computeFacets(items) {
     types: sortDesc(typeMap, 5),
     quadrants: sortDesc(quadMap, 4),
     sources: sortDesc(srcMap, 5),
+    providers: sortDesc(provMap, 4),
     time: {
       oldest: oldest ? oldest.slice(0, 10) : null,
       newest: newest ? newest.slice(0, 10) : null,

@@ -127,7 +127,7 @@ export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [zoom, setZoom] = useState(urlParams.zoom);
-  const [activeFacets, setActiveFacets] = useState({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set() });
+  const [activeFacets, setActiveFacets] = useState({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set(), providers: new Set() });
   const [hoveredSession, setHoveredSession] = useState(null);
   const scrollRef = useRef(null);
 
@@ -138,6 +138,7 @@ export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }
     if (zoom !== 'overview') params.set('zoom', zoom);
     if (activeFacets.projects.size > 0) params.set('fp', [...activeFacets.projects].join(','));
     if (activeFacets.types.size > 0) params.set('ft', [...activeFacets.types].join(','));
+    if (activeFacets.providers.size > 0) params.set('fa', [...activeFacets.providers].join(','));
     const qs = params.toString();
     if (isActive) {
       const base = import.meta.env.BASE_URL || '/';
@@ -165,7 +166,7 @@ export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }
   }, []);
 
   const clearFacets = useCallback(() => {
-    setActiveFacets({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set() });
+    setActiveFacets({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set(), providers: new Set() });
   }, []);
 
   const filteredSessions = useMemo(() => {
@@ -177,6 +178,9 @@ export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }
       sessions = sessions.filter(s => Object.keys(s.types).some(t => activeFacets.types.has(t)));
     if (activeFacets.quadrants.size > 0)
       sessions = sessions.filter(s => Object.keys(s.quadrants || {}).some(q => activeFacets.quadrants.has(q)));
+    // A mixed session matches on any agent that produced part of it.
+    if (activeFacets.providers.size > 0)
+      sessions = sessions.filter(s => (s.providers?.length ? s.providers : [s.provider]).some(p => activeFacets.providers.has(p)));
     return sessions;
   }, [data, activeFacets]);
 
@@ -188,9 +192,10 @@ export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }
 
   const facets = useMemo(() => {
     if (!data?.sessions) return null;
-    const projMap = new Map(), typeMap = new Map(), quadMap = new Map(), ctMap = new Map();
+    const projMap = new Map(), typeMap = new Map(), quadMap = new Map(), ctMap = new Map(), provMap = new Map();
     for (const s of data.sessions) {
       for (const p of s.projects) projMap.set(p, (projMap.get(p) || 0) + 1);
+      for (const p of (s.providers?.length ? s.providers : [s.provider])) if (p) provMap.set(p, (provMap.get(p) || 0) + 1);
       for (const [t, c] of Object.entries(s.types)) typeMap.set(t, (typeMap.get(t) || 0) + c);
       for (const [q, c] of Object.entries(s.quadrants || {})) quadMap.set(q, (quadMap.get(q) || 0) + c);
       for (const [ct, c] of Object.entries(s.commit_types || {})) ctMap.set(ct, (ctMap.get(ct) || 0) + c);
@@ -203,6 +208,7 @@ export default function ConcurrentTimeline({ onOpenTranscript, isActive = true }
       projects: sortDesc(projMap, 6),
       types: sortDesc(typeMap, 6),
       quadrants: sortDesc(quadMap, 4),
+      providers: sortDesc(provMap, 4),
       sources: [],
       time: null,
     };

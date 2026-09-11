@@ -4,6 +4,7 @@
  * Time range on separate line as sparkline.
  */
 import { useRef, useState, useEffect, useMemo } from 'react';
+import { agentColor } from './AgentBadge';
 
 const COLORS = [
   '#e06c75', '#c678dd', '#e5c07b', '#56b6c2', '#61afef',
@@ -306,6 +307,9 @@ export default function FacetBar({ facets, activeFacets, onToggle, onClear, resu
     addGroup(facets.types, 'types', typeColor);
     addGroup(facets.quadrants, 'quadrants', (n) => QUADRANT_COLORS[n] || '#5c6370');
     addGroup(facets.sources, 'sources', (n) => SOURCE_COLORS[n] || '#5c6370');
+    // Which agent produced it — the corpus is roughly half Codex, so this is a
+    // first-class cut, not a curiosity.
+    addGroup(facets.providers, 'providers', agentColor);
     return items;
   }, [facets]);
 

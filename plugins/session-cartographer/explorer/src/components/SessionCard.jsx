@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import EventGroup, { groupEvents } from './EventGroup';
 import SessionSparkline from './SessionSparkline';
 import ProjectBadge from './ProjectBadge';
+import AgentBadge from './AgentBadge';
 
 function formatTokens(n) {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -63,7 +64,7 @@ function ContextGauge({ summary, compactionEvents }) {
   );
 }
 
-export default function SessionCard({ session, onOpenTranscript, onProjectClick }) {
+export default function SessionCard({ session, onOpenTranscript, onProjectClick, onProviderClick }) {
   const [expanded, setExpanded] = useState(false);
   const [summary, setSummary] = useState(null);
 
@@ -124,12 +125,19 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick 
             <span className="text-gray-500 text-xs">{events.length} events • {durationMins}m</span>
             <ContextGauge summary={summary} compactionEvents={compactionEvents} />
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <AgentBadge
+              provider={session.provider}
+              onClick={onProviderClick}
+              title={session.providers?.length > 1
+                ? `Mixed session: ${session.providers.join(', ')}`
+                : undefined}
+            />
             {projects.map(p => <ProjectBadge key={p} project={p} onClick={onProjectClick} />)}
           </div>
         </div>
 
-        <div className="text-xs text-gray-600 mb-2">
+        <div className="text-xs text-gray-400 mb-2">
           {dateObj.toLocaleDateString()} • {startTime} - {endTime}
         </div>
         {previewSummary && !expanded && (

@@ -10,7 +10,7 @@ function parseFacetsFromURL() {
     const val = params.get(key);
     return val ? new Set(val.split(',').filter(Boolean)) : new Set();
   };
-  return { projects: parse('fp'), types: parse('ft'), quadrants: parse('fq'), sources: parse('fs') };
+  return { projects: parse('fp'), types: parse('ft'), quadrants: parse('fq'), sources: parse('fs'), providers: parse('fa') };
 }
 
 export default function Search({ query = '', onOpenTranscript, isActive = true }) {
@@ -47,6 +47,7 @@ export default function Search({ query = '', onOpenTranscript, isActive = true }
     if (activeFacets.projects.size > 0) params.set('fp', [...activeFacets.projects].join(','));
     if (activeFacets.types.size > 0) params.set('ft', [...activeFacets.types].join(','));
     if (activeFacets.quadrants.size > 0) params.set('fq', [...activeFacets.quadrants].join(','));
+    if (activeFacets.providers.size > 0) params.set('fa', [...activeFacets.providers].join(','));
     if (activeFacets.sources.size > 0) params.set('fs', [...activeFacets.sources].join(','));
     const qs = params.toString();
     const base = import.meta.env.BASE_URL || '/';
@@ -205,6 +206,7 @@ export default function Search({ query = '', onOpenTranscript, isActive = true }
                 <GroupedResults
                   results={displayItems}
                   onOpenTranscript={onOpenTranscript}
+                  onProviderClick={(provider) => toggleFacet('providers', provider)}
                   registerCard={registerCard}
                   activeEventId={activeIdx >= 0 ? groups[activeIdx]?.event_id : null}
                 />
@@ -226,7 +228,7 @@ export default function Search({ query = '', onOpenTranscript, isActive = true }
   );
 }
 
-function GroupedResults({ results, onOpenTranscript, registerCard, activeEventId }) {
+function GroupedResults({ results, onOpenTranscript, onProviderClick, registerCard, activeEventId }) {
   const groups = useMemo(() => {
     const out = [];
     const seen = new Map();
@@ -261,6 +263,7 @@ function GroupedResults({ results, onOpenTranscript, registerCard, activeEventId
         showScore
         showSource
         onOpenTranscript={onOpenTranscript}
+        onProviderClick={onProviderClick}
         active={isActive}
       />
       {dupes.length > 0 && (

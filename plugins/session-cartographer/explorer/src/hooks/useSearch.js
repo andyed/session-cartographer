@@ -4,7 +4,10 @@ import { searchEvents } from '../api';
 export function useSearch(initialFacets) {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [activeFacets, setActiveFacets] = useState(() => initialFacets || { projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set() });
+  // Every dimension must exist even when a caller supplies a partial set:
+  // `activeFacets.providers.size` on an absent key takes the whole view down.
+  const emptyFacets = () => ({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set(), providers: new Set() });
+  const [activeFacets, setActiveFacets] = useState(() => ({ ...emptyFacets(), ...(initialFacets || {}) }));
   const [displayLimit, setDisplayLimit] = useState(15);
   const timerRef = useRef(null);
 
@@ -58,7 +61,7 @@ export function useSearch(initialFacets) {
   }, []);
 
   const clearFacets = useCallback(() => {
-    setActiveFacets({ projects: new Set(), types: new Set(), quadrants: new Set(), sources: new Set() });
+    setActiveFacets(emptyFacets());
     setDisplayLimit(15);
   }, []);
 
@@ -76,6 +79,9 @@ export function useSearch(initialFacets) {
     if (activeFacets.quadrants.size > 0) {
       items = items.filter(e => activeFacets.quadrants.has(e.diff_shape?.quadrant || ''));
     }
+    if (activeFacets.providers.size > 0) {
+      items = items.filter(e => activeFacets.providers.has(String(e.provider || '').toLowerCase()));
+    }
     if (activeFacets.sources.size > 0) {
       items = items.filter(e => {
         const srcs = (e._sources || '').split('+');
@@ -86,7 +92,7 @@ export function useSearch(initialFacets) {
     return items;
   }, [results, activeFacets]);
 
-  const hasAnyFacet = activeFacets.projects.size > 0 || activeFacets.types.size > 0 || activeFacets.quadrants.size > 0 || activeFacets.sources.size > 0;
+  const hasAnyFacet = activeFacets.projects.size > 0 || activeFacets.types.size > 0 || activeFacets.quadrants.size > 0 || activeFacets.sources.size > 0 || activeFacets.providers.size > 0;
 
   // Recompute facet counts over filtered results when filters are active
   const liveFacets = useMemo(() => {
@@ -98,6 +104,7 @@ export function useSearch(initialFacets) {
     const typeMap = new Map();
     const quadMap = new Map();
     const srcMap = new Map();
+    const provMap = new Map();
     for (const item of filteredResults) {
       if (item.project) projMap.set(item.project, (projMap.get(item.project) || 0) + 1);
       const type = item.type || item.milestone || '';
@@ -107,6 +114,8 @@ export function useSearch(initialFacets) {
       for (const s of (item._sources || '').split('+')) {
         if (s) srcMap.set(s, (srcMap.get(s) || 0) + 1);
       }
+      const prov = String(item.provider || '').toLowerCase();
+      if (prov) provMap.set(prov, (provMap.get(prov) || 0) + 1);
     }
 
     const recount = (serverList, liveMap) =>
@@ -118,6 +127,7 @@ export function useSearch(initialFacets) {
       types: recount(serverFacets.types, typeMap),
       quadrants: recount(serverFacets.quadrants, quadMap),
       sources: recount(serverFacets.sources, srcMap),
+      providers: recount(serverFacets.providers, provMap),
     };
   }, [results, filteredResults, hasAnyFacet]);
 

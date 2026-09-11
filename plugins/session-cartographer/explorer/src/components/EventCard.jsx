@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ProjectBadge from './ProjectBadge';
+import AgentBadge from './AgentBadge';
 import SourceBadge from './SourceBadge';
 
 // 2×2 grid icon: active quadrant highlighted, others dim.
@@ -73,7 +74,7 @@ function eventCategory(event) {
   return { label: event._source || type || '?', color: '#5c6370' };
 }
 
-export default function EventCard({ event, showScore, showSource, onOpenTranscript, onProjectClick, active }) {
+export default function EventCard({ event, showScore, showSource, onOpenTranscript, onProjectClick, onProviderClick, active }) {
   const [expanded, setExpanded] = useState(false);
   const cat = eventCategory(event);
 
@@ -154,6 +155,8 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         </span>
 
         <ProjectBadge project={event.project} onClick={onProjectClick} />
+
+        <AgentBadge provider={event.provider} onClick={onProviderClick} />
 
         {/* Diff shape quadrant indicator (Tier 3) */}
         {event.diff_shape?.quadrant && <QuadrantIcon quadrant={event.diff_shape.quadrant} shape={event.diff_shape} />}

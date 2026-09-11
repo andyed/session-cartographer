@@ -12,9 +12,10 @@ import {
   FACTS_VERBS,
   FactsContractError,
 } from './facts-contract.js';
-import { isAllowedTranscriptPath, normalizeTranscriptEntries, transcriptRoots } from './transcripts.js';
+import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
+import { summarizeSessions } from './sessions.js';
 import { createInternalsHandler } from './internals-route.js';
-import { statSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 
@@ -343,92 +344,52 @@ export function createExplorerApp() {
     res.json({ projects: [...projects].sort() });
   });
 
+  // ─── Transcript roots (shared by the session fold and the viewer) ───
+  const TRANSCRIPT_ROOTS = transcriptRoots();
+  const CODEX_ARCHIVE_ROOT = TRANSCRIPT_ROOTS[2];
+
+  // Derive a transcript path that actually exists, per provider.
+  //
+  // The pre-Codex version of this guessed ~/.claude/projects/<encoded>/<sid>
+  // for every session missing a recorded path — a shape Codex can never match,
+  // and the reason a quarter of the window showed "transcript not found" for
+  // transcripts sitting on disk. List views use the bulk index (one directory
+  // walk for the whole window, ~17ms for 1.4k files here); the per-transcript
+  // ladder with its find lives in /api/transcript, where the user has asked
+  // for one specific session.
+  function deriveSessionTranscript({ session_id, provider, project, recorded_path }) {
+    if (recorded_path && existsSync(recorded_path)) return recorded_path;
+
+    const tryCodex = provider !== 'claude';
+    const tryClaude = provider !== 'codex';
+
+    if (tryCodex) {
+      const hit = codexSessionIndex().get(session_id);
+      if (hit) return hit;
+      // A stale recorded path still names its own file; the archive is flat.
+      if (recorded_path) {
+        const base = recorded_path.slice(recorded_path.lastIndexOf('/') + 1);
+        const archived = resolve(CODEX_ARCHIVE_ROOT, base);
+        if (existsSync(archived)) return archived;
+      }
+    }
+
+    if (tryClaude && session_id) {
+      const encoded = (project || '').replace(/\//g, '-') || '-';
+      const candidate = resolve(homedir(), '.claude', 'projects', encoded, `${session_id}.jsonl`);
+      try { statSync(candidate); return candidate; } catch { /* no such transcript */ }
+    }
+
+    return '';
+  }
+
   app.get('/api/sessions', (req, res) => {
     const days = Math.min(parseInt(req.query.days || '7', 10), 90);
-    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-
-    const normalizeTs = (ts) => typeof ts === 'number' ? new Date(ts).toISOString() : ts;
-
-    const bySession = new Map();
-    for (const e of events) {
-      const sid = e.session_id || e.session || e.sessionId;
-      if (!sid) continue;
-      if (!bySession.has(sid)) bySession.set(sid, []);
-      bySession.get(sid).push({ ...e, timestamp: normalizeTs(e.timestamp) });
-    }
-
-    const sessions = [];
-    for (const [sid, evts] of bySession) {
-      if (evts.length < 2) continue;
-      let start = evts[0].timestamp, end = evts[0].timestamp;
-      const projectCounts = {}, typeCounts = {}, quadrantCounts = {}, commitTypeCounts = {};
-      let transcriptPath = '';
-
-      for (const e of evts) {
-        if (e.timestamp < start) start = e.timestamp;
-        if (e.timestamp > end) end = e.timestamp;
-        const p = e.project || '';
-        if (p) projectCounts[p] = (projectCounts[p] || 0) + 1;
-        const t = e.type || '';
-        if (t) typeCounts[t] = (typeCounts[t] || 0) + 1;
-        if (e.diff_shape?.quadrant) quadrantCounts[e.diff_shape.quadrant] = (quadrantCounts[e.diff_shape.quadrant] || 0) + 1;
-        if (e.diff_shape?.commit_type) commitTypeCounts[e.diff_shape.commit_type] = (commitTypeCounts[e.diff_shape.commit_type] || 0) + 1;
-        if (!transcriptPath && e.transcript_path) transcriptPath = e.transcript_path;
-      }
-
-      // Derive transcript_path from project + sessionId when not present in events
-      if (!transcriptPath && sid) {
-        const projectDir = Object.keys(projectCounts)[0] || '';
-        const encoded = projectDir.replace(/\//g, '-') || '-';
-        const candidate = resolve(homedir(), '.claude', 'projects', encoded, `${sid}.jsonl`);
-        try { statSync(candidate); transcriptPath = candidate; } catch {}
-      }
-
-      if (end < cutoff) continue;
-      const project = Object.entries(projectCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-      const highSignal = evts.filter(isHighSignal).slice(0, 200);
-
-      sessions.push({
-        session_id: sid, start, end, event_count: evts.length, project,
-        projects: Object.keys(projectCounts), types: typeCounts, quadrants: quadrantCounts, commit_types: commitTypeCounts,
-        transcript_path: transcriptPath,
-        events: highSignal.map(e => ({
-          event_id: e.event_id, timestamp: e.timestamp, type: e.type || e._source || '',
-          project: e.project, summary: (e.summary || e.display || e.description || '').slice(0, 120),
-          ...(e.transcript_path ? { transcript_path: e.transcript_path } : {}),
-        })),
-      });
-    }
-
-    // Associate orphan commits (backfilled, no session_id) with sessions by project + time overlap
-    const orphanCommits = events.filter(e => e.type === 'git_commit' && !e.session_id && !e.session && e.diff_shape);
-    for (const commit of orphanCommits) {
-      for (const s of sessions) {
-        if (commit.timestamp >= s.start && commit.timestamp <= s.end && s.projects.includes(commit.project)) {
-          if (commit.diff_shape.quadrant) s.quadrants[commit.diff_shape.quadrant] = (s.quadrants[commit.diff_shape.quadrant] || 0) + 1;
-          if (commit.diff_shape.commit_type) s.commit_types[commit.diff_shape.commit_type] = (s.commit_types[commit.diff_shape.commit_type] || 0) + 1;
-          break; // assign to first matching session
-        }
-      }
-    }
-
-    sessions.sort((a, b) => b.start.localeCompare(a.start));
-
-    const overlaps = [];
-    for (let i = 0; i < sessions.length; i++) {
-      for (let j = i + 1; j < sessions.length; j++) {
-        const a = sessions[i], b = sessions[j];
-        if (a.start < b.end && b.start < a.end) {
-          overlaps.push({
-            sessions: [a.session_id, b.session_id],
-            start: a.start > b.start ? a.start : b.start,
-            end: a.end < b.end ? a.end : b.end,
-          });
-        }
-      }
-    }
-
-    res.json({ sessions, overlaps });
+    res.json(summarizeSessions(events, {
+      days,
+      isHighSignal,
+      deriveTranscript: deriveSessionTranscript,
+    }));
   });
 
   app.get('/api/stream', (req, res) => {
@@ -454,27 +415,48 @@ export function createExplorerApp() {
     });
   });
 
-  // ─── Transcript viewer ───
-  const TRANSCRIPT_ROOTS = transcriptRoots();
+  // Resolve a caller's `path` (or bare `session_id`) to a file that exists,
+  // then authorize it. Resolution and authorization are deliberately separate:
+  // the resolver hunts across both providers' stores, including the Codex
+  // archive, and its answer still has to fall inside TRANSCRIPT_ROOTS.
+  function locateTranscript(req) {
+    const raw = req.query.path || req.query.session_id || '';
+    if (!raw) return { error: 'path or session_id required', status: 400 };
 
-  app.get('/api/transcript', (req, res) => {
-    const rawPath = req.query.path || '';
-    if (!rawPath) return res.status(400).json({ error: 'path required' });
-
-    // Path traversal protection
-    const resolved = resolve(rawPath.replace(/^~/, homedir()));
-    if (!isAllowedTranscriptPath(resolved, TRANSCRIPT_ROOTS)) {
-      return res.status(403).json({ error: 'path outside transcript roots' });
+    const expanded = req.query.path ? resolve(String(raw).replace(/^~/, homedir())) : String(raw);
+    const found = resolveTranscriptPath(expanded);
+    if (!found) {
+      return { error: 'transcript not found in any transcript root', status: 404 };
     }
 
-    const entries = readJsonlFile(resolved);
+    const resolved = resolve(found);
+    if (!isAllowedTranscriptPath(resolved, TRANSCRIPT_ROOTS)) {
+      return { error: 'path outside transcript roots', status: 403 };
+    }
+    return { path: resolved, recorded: expanded };
+  }
+
+  app.get('/api/transcript', (req, res) => {
+    const located = locateTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error });
+
+    const entries = readJsonlFile(located.path);
     if (entries.length === 0) {
       return res.status(404).json({ error: 'transcript not found or empty' });
     }
 
     const { provider, messages } = normalizeTranscriptEntries(entries);
 
-    res.json({ path: resolved, provider, messages, total: messages.length });
+    res.json({
+      path: located.path,
+      // Say when the file was not where the caller looked: a Codex session that
+      // archived mid-window is recoverable, and the UI should not present it as
+      // the same thing as a transcript that is simply gone.
+      path_status: located.path === located.recorded ? 'recorded' : 'resolved',
+      provider,
+      messages,
+      total: messages.length,
+    });
   });
 
   // ─── Transcript analysis (devtools-enriched metadata) ───────────────────────
@@ -487,13 +469,9 @@ export function createExplorerApp() {
   // in those modules won't take down the whole API server.
 
   app.get('/api/transcript/analysis', async (req, res) => {
-    const rawPath = req.query.path || '';
-    if (!rawPath) return res.status(400).json({ error: 'path required' });
-
-    const resolved = resolve(rawPath.replace(/^~/, homedir()));
-    if (!isAllowedTranscriptPath(resolved, TRANSCRIPT_ROOTS)) {
-      return res.status(403).json({ error: 'path outside transcript roots' });
-    }
+    const located = locateTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error });
+    const resolved = located.path;
 
     try {
       const { parseJsonlFile, deduplicateByRequestId } = await import('../../src/lib/devtools-adapted/session-parser.js');

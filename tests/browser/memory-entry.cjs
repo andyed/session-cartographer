@@ -81,7 +81,18 @@ async function port() {
     session_title: 'Aurora calibration', project: explorerProject,
     timestamp: new Date(now - 300000 + i * 60000).toISOString(),
     type: ['git_commit', 'research_search', 'milestone_session_end'][i],
-    summary, transcript_path: explorerTranscript, cwd: corpus,
+    summary, transcript_path: explorerTranscript, cwd: corpus, provider: 'claude',
+  }));
+  // A second agent in the same window: the Explorer rendered a half-Codex
+  // corpus as if it were one agent, so the fixture has to contain both or the
+  // badge and the agent facet pass vacuously.
+  const codexSummary = 'Aurora calibration reviewed from Codex';
+  [0, 1].forEach(i => events.push({
+    event_id: `explorer-codex-${i}`, session_id: 'explorer-codex-session',
+    project: explorerProject, provider: 'codex',
+    timestamp: new Date(now - 460000 + i * 60000).toISOString(),
+    type: ['research_search', 'milestone_session_end'][i],
+    summary: i === 0 ? codexSummary : 'Aurora calibration Codex session preserved',
   }));
   const controlSummary = 'Aurora control belongs to another project';
   events.push({ event_id: 'explorer-control', session_id: 'explorer-control-session', project: 'explorer-control', timestamp: new Date(now - 210000).toISOString(), type: 'git_commit', summary: controlSummary });
@@ -159,7 +170,8 @@ async function port() {
         const listed = await apiJSON('/api/events?limit=500');
         assert.ok(listed.events.some(event => event.event_id === 'explorer-event-0'));
         const filtered = await apiJSON(`/api/events?project=${explorerProject}`);
-        assert.equal(filtered.events.length, 3);
+        // Three Claude events plus the two Codex ones in the same project.
+        assert.equal(filtered.events.length, 5);
         assert.ok(filtered.events.every(event => event.project === explorerProject));
         const projectList = await apiJSON('/api/projects');
         assert.ok(projectList.projects.includes(explorerProject));
@@ -169,7 +181,8 @@ async function port() {
         assert.ok(search.results.every(event => event.project === explorerProject));
         assert.ok(search.meta.keyword_count > 0);
         const browse = await apiJSON(`/api/search?project=${explorerProject}`);
-        assert.equal(browse.results.length, 3);
+        // Three Claude events plus the two Codex ones in the same project.
+        assert.equal(browse.results.length, 5);
         assert.ok(browse.results.every(event => event.project === explorerProject));
         assert.deepEqual((await apiJSON('/api/search?q=aurora&project=missing-project')).results, []);
         assert.ok((await apiJSON('/api/autocomplete?prefix=auro')).suggestions.includes('aurora'));
@@ -178,6 +191,14 @@ async function port() {
         assert.ok(session, 'Session timeline omitted the fixture session');
         assert.equal(session.event_count, 3);
         assert.equal(session.transcript_path, explorerTranscript);
+        assert.equal(session.provider, 'claude', 'Session fold dropped the producing agent');
+        const codexSession = (await apiJSON('/api/sessions?days=7')).sessions.find(item => item.session_id === 'explorer-codex-session');
+        assert.equal(codexSession.provider, 'codex');
+        // The old derivation could only ever build a ~/.claude/projects path,
+        // so a Codex row must not carry one.
+        assert.ok(!codexSession.transcript_path.includes('.claude/projects'), 'Codex session was handed a Claude transcript path');
+        const agentFacets = (await apiJSON(`/api/search?project=${explorerProject}`)).facets.providers;
+        assert.deepEqual(agentFacets.map(f => f.name).sort(), ['claude', 'codex'], 'Search facets omitted the agent dimension');
         const transcriptQuery = `?path=${encodeURIComponent(explorerTranscript)}`;
         const recorded = await apiJSON('/api/transcript' + transcriptQuery);
         assert.equal(recorded.total, 2);
@@ -202,7 +223,10 @@ async function port() {
         await legacy.getByText(streamedSummary, { exact: true }).waitFor({ state: 'hidden' });
         await legacy.getByRole('button', { name: 'Sessions', exact: true }).click();
         await legacy.getByTitle(explorerSession, { exact: true }).waitFor();
-        await legacy.getByRole('button', { name: '▼ View Session Events', exact: true }).click();
+        await legacy.getByTitle('Produced by claude', { exact: true }).first().waitFor();
+        // Two agents now produce session cards; the Claude fixture is the newer
+        // one, so it heads the list and owns the transcript this flow opens.
+        await legacy.getByRole('button', { name: '▼ View Session Events', exact: true }).first().click();
         await legacy.getByTitle('Open transcript', { exact: true }).first().click();
         await legacy.getByPlaceholder('Search in transcript...').waitFor();
         await legacy.getByText(explorerAnswer, { exact: true }).waitFor();
@@ -556,7 +580,7 @@ async function port() {
     await linked.getByText('This session has no recorded activity in the selected window.',{exact:true}).waitFor();
     await linked.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: viewport-paged work desk, responsive Overview/Charts, Field height allocation, linked keyboard/region/touch brushing, semantic zoom, persisted return point, recorded outcomes, Markdown preview/source and safe HTML, numbered diff, native Codex link, thread switching; Explorer APIs, timeline, project filters, search/autocomplete, session views, transcript/enrichment, SSE with Turbo off/on; cold deep link, managed launch, live drill-down, session/file permalinks, copy link, reload, Back/Forward, replay window/axes, archived session, missing session, Internals, mobile, no page errors.');
+    console.log('PASS: viewport-paged work desk, responsive Overview/Charts, Field height allocation, shared title/artifact search across all charts and semantic depths, stationary contextual readout, accessible copy glyph and feedback, linked keyboard/region/touch brushing, transient connected secondary brushing with primary/group preservation and two-step Escape, semantic zoom, persisted return point, recorded outcomes, Markdown preview/source and safe HTML, numbered diff, native Codex link, thread switching; Explorer APIs, timeline, project filters, search/autocomplete, session views, agent badge and agent facet across both providers, transcript/enrichment, SSE with Turbo off/on; cold deep link, managed launch, live drill-down, session/file permalinks, copy link, reload, Back/Forward, legacy pinned time/axes, expandable time window with archived retrieval, filter/search/paging/brush/depth/catch-up/sort/focus history, archived session, missing session, Internals, mobile, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

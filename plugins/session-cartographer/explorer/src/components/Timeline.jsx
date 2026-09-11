@@ -3,6 +3,7 @@ import { fetchEvents } from '../api';
 import { useEventStream } from '../hooks/useEventStream';
 import EventGroup, { groupEvents } from './EventGroup';
 import SessionCard from './SessionCard';
+import { attributeProvider } from '../lib/provider';
 import ConcurrentTimeline from './ConcurrentTimeline';
 
 function groupEventsBySession(events) {
@@ -26,6 +27,13 @@ function groupEventsBySession(events) {
     if (!sessions[sid].transcript_path && e.transcript_path) {
       sessions[sid].transcript_path = e.transcript_path;
     }
+  }
+
+  // Attribute each group to the agent that produced it — the corpus is roughly
+  // half Codex, and a session card that does not say which agent ran is the
+  // reason this view read as Claude-only for months.
+  for (const session of Object.values(sessions)) {
+    Object.assign(session, attributeProvider(session.events));
   }
 
   return Object.values(sessions).sort((a, b) => {
@@ -154,7 +162,7 @@ export default function Timeline({ onOpenTranscript, isActive = true }) {
         >
           {events.length === 0 ? (
             <div className="text-gray-500 text-center py-12">
-              No events yet. Events will appear as Claude Code hooks fire.
+              No events yet. Events will appear as Claude Code and Codex hooks fire.
             </div>
           ) : viewMode === 'sessions' ? (
             sessionGroups.map((group, i) => (
