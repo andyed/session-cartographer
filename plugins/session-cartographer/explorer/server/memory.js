@@ -122,10 +122,12 @@ export function projectMemory(events, { now = Date.now(), corpusRoot = CORPUS_RO
     if (!rawId || (typeof rawId !== 'string' && typeof rawId !== 'number')) { unattributed += 1; continue; }
     const id = String(rawId).trim();
     if (!sessions.has(id)) {
-      sessions.set(id, { id, title: '', fullTitle: '', group: '', projects: Object.create(null), events: [], wraps: [], notes: [], count: 0, lifecycleOnly: true, transcript: null, transcriptPaths: [], promptTitle: '', _editEvidence: [] });
+      sessions.set(id, { id, title: '', fullTitle: '', group: '', projects: Object.create(null), events: [], wraps: [], notes: [], outcomes: [], provider: null, cwd: null, count: 0, lifecycleOnly: true, transcript: null, transcriptPaths: [], promptTitle: '', _editEvidence: [] });
       fileMaps.set(id, new Map());
     }
     const session = sessions.get(id);
+    if (['claude', 'codex'].includes(event.provider)) session.provider ||= event.provider;
+    if (path.isAbsolute(text(event.cwd))) session.cwd ||= text(event.cwd);
     const t = eventEpochMs(event);
     const cat = category(event);
     const project = projectLabel(event);
@@ -141,7 +143,11 @@ export function projectMemory(events, { now = Date.now(), corpusRoot = CORPUS_RO
     if (text(event.transcript_path) && !session.transcriptPaths.includes(event.transcript_path)) session.transcriptPaths.push(event.transcript_path);
     session.promptTitle ||= compactTitle(firstResolved([event.prompt, event.user_prompt, /prompt|user_message/.test(eventType(event)) ? firstResolved([event.summary, event.description, event.display]) : null]));
     const note = noteText(event);
-    if (note) session.notes.push({ t, id: eventId, type: eventType(event), text: note });
+    if (note) {
+      const observation = { t, id: eventId, type: eventType(event), text: note };
+      session.notes.push(observation);
+      if (cat === 'commit' || /wrapup|session_end|sessionend|agent_stop/.test(eventType(event))) session.outcomes.push(observation);
+    }
     if (cat === 'edit') session._editEvidence.push({ ...event, t });
     if (cat !== 'edit' || !eventId) continue;
     const files = fileMaps.get(id);
@@ -186,6 +192,7 @@ export async function enrichMemory(snapshot, enricher, corpusRoot = CORPUS_ROOT)
     catch { transcript = { valid: false, reason: 'Transcript analysis is unavailable.' }; }
     if (transcript.valid) {
       session.transcript = transcript.path;
+      session.provider = transcript.provider;
       if (transcript.title) {
         session.fullTitle = transcript.title;
         session.title = compactTitle(transcript.title);

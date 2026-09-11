@@ -94,7 +94,7 @@ async function port() {
     // panel writes its own hit targets, so the expected count is per panel.
     const panels = (await page.$$('#memory-weather canvas')).length;
     assert.ok(panels >= 1, 'no field panels rendered');
-    const explorable = await page.$$eval('[aria-label^="Explore "]', els => els.length);
+    const explorable = await page.$$eval('.mw-target', els => els.length);
     assert.equal(explorable, panels * fixture.field.sessions.length,
       `${panels} panels offer ${explorable} session targets; fixture carries ${fixture.field.sessions.length} sessions`);
 
@@ -104,7 +104,8 @@ async function port() {
     // room for depends on the viewport, so pin the single compare panel by
     // permalink rather than clicking a button whose meaning changes with width.
     await page.goto(`${origin}${base}memory?view=compare&panels=compare`, { waitUntil: 'networkidle' });
-    await page.waitForSelector('.mw-compare-controls:not([hidden])', { timeout: 15000 });
+    await page.getByRole('heading', {name:'Compare',exact:true}).waitFor({timeout:15000});
+    await page.getByLabel('Vertical dimension').waitFor();
     const offered = await page.$$eval('[data-y] option', els => els.map(e => e.value));
     assert.deepEqual(offered, fixture.axes,
       `axis select offers ${JSON.stringify(offered)} but the fixture carries ${JSON.stringify(fixture.axes)}`);

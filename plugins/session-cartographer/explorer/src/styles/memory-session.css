@@ -34,7 +34,7 @@
 .memory-session .ms-coverage summary{display:list-item;min-height:44px;padding:10px 0;width:fit-content}
 .memory-session .ms-coverage>div{padding:0 0 8px 18px;max-width:850px}
 .memory-session .ms-coverage p+p{margin-top:8px}
-.memory-session .ms-evidence-columns{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:48px;align-items:start}
+.memory-session .ms-evidence-columns{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:48px;align-items:start;margin-top:28px}
 .memory-session .ms-evidence-columns.ms-no-files{grid-template-columns:minmax(0,1fr);gap:20px}
 .memory-session .ms-no-files .ms-note-thread{max-width:960px}
 .memory-session .ms-section-heading{padding-bottom:12px;border-bottom:1px solid var(--ms-line);margin-bottom:4px}

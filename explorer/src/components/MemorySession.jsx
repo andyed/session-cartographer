@@ -140,8 +140,6 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
         {fullTitle && fullTitle !== title && <details className="ms-prompt"><summary>Session prompt</summary><p>{fullTitle}</p></details>}
       </header>
 
-      <ActivityTrace metrics={metrics} tokens={metrics.tokens} tokenSeries={tokenSeries} />
-
       <div className={`ms-evidence-columns${visibleFiles.length ? '' : ' ms-no-files'}`}>
         <section className="ms-files" aria-label="Recently edited files">
           <div className="ms-section-heading"><h2>Edited files</h2><span>{visibleFiles.length ? formatCount(visibleFiles.length) : 'None resolved'}</span></div>
@@ -177,6 +175,7 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
           </> : <p className="ms-empty-notes">{metrics.eventCount ? 'These events contain no descriptive notes. Their timing and activity types are shown above.' : 'No descriptive observations before this point in the replay.'}</p>}
         </section>
       </div>
+      <ActivityTrace metrics={metrics} tokens={metrics.tokens} tokenSeries={tokenSeries} />
     </section>
   );
 }

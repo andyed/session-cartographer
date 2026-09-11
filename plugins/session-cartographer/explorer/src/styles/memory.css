@@ -71,3 +71,54 @@
 #memory-weather[data-mode=compare] .mw-stage{height:clamp(360px,calc(100dvh - 330px),660px)}
 #memory-weather .mw-note{font-size:16px}
 @media(max-width:440px){#memory-weather .mw-now{width:100%;justify-content:space-between}#memory-weather .mw-clock{font-size:16px}#memory-weather .mw-compare-controls{gap:5px}#memory-weather .mw-compare-controls label{width:100%;justify-content:space-between}#memory-weather .mw-stage{height:410px}}
+/* Simultaneous charts share headings and one fixed brush readout. */
+#memory-weather.mw-compact .mw-now{width:100%;justify-content:space-between}
+#memory-weather.mw-compact .mw-live{box-shadow:none;padding-left:0}
+#memory-weather.mw-compact .mw-live:before{content:'●';font-size:12px;margin-right:8px}
+#memory-weather.mw-compact .mw-stages{display:flex;flex-direction:column;gap:12px}
+#memory-weather.mw-compact .mw-stage{border-bottom:1px solid var(--mw-line)}
+#memory-weather.mw-compact .mw-stage[data-panel=field]{height:180px}
+#memory-weather.mw-compact .mw-stage[data-panel=wake]{height:120px;touch-action:none;cursor:crosshair}
+#memory-weather.mw-compact .mw-stage[data-panel=compare]{height:220px;touch-action:none;cursor:crosshair}
+#memory-weather .mw-panel-header{position:absolute;inset:0 0 auto;display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;z-index:2;background:var(--mw-bg);cursor:default}
+#memory-weather .mw-panel-title{margin:0;margin-right:auto;font:500 16px/1.4 ui-sans-serif,system-ui,sans-serif;color:var(--mw-ink)}
+#memory-weather .mw-panel-meta{color:var(--mw-muted);font:500 16px/1.4 ui-sans-serif,system-ui,sans-serif}
+#memory-weather .mw-panel-header .mw-nav{position:static;display:flex;gap:0}
+#memory-weather .mw-panel-header .mw-control{min-width:40px;min-height:44px;padding:4px 8px;font-size:16px}
+#memory-weather .mw-axis-settings summary{display:flex;align-items:center;min-height:44px;cursor:pointer;color:var(--mw-muted);font-size:16px}
+#memory-weather .mw-axis-settings summary:after{content:'⌄';margin-left:8px}
+#memory-weather .mw-axis-settings[open] summary:after{content:'⌃'}
+#memory-weather .mw-axis-settings .mw-compare-controls{position:absolute;top:44px;left:0;right:0;padding:12px;margin:0;background:var(--mw-bg);border:1px solid var(--mw-line);display:grid;gap:8px}
+#memory-weather .mw-compare-controls label{display:flex;justify-content:space-between;min-width:0}
+#memory-weather .mw-compare-controls select{min-width:0;max-width:75%;font-size:16px}
+#memory-weather[data-gesture=brush] .mw-stage[data-panel=field]{cursor:crosshair}
+#memory-weather .mw-about{margin-top:6px;color:var(--mw-muted)}
+#memory-weather .mw-about>summary{cursor:pointer;min-height:44px;padding:10px 0}
+#memory-weather.mw-compact .mw-reading{margin:0 0 12px}
+#memory-weather .mw-brush-hint{display:none}
+#memory-weather .mw-target[data-brushed=true]{outline:1px solid var(--mw-cyan);outline-offset:-8px}
+#memory-weather .mw-brush-label{height:132px;overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:4px;color:var(--mw-ink);font:500 16px/1.4 ui-sans-serif,system-ui,sans-serif;border-block:1px solid var(--mw-line);padding:8px 12px}
+#memory-weather .mw-brush-label strong{font-weight:500;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+#memory-weather .mw-brush-label span{color:var(--mw-muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#memory-weather .mw-brush-label .mw-brush-values{min-height:23px;font-variant-numeric:tabular-nums}
+#memory-weather summary:focus-visible{outline:2px solid var(--mw-cyan);outline-offset:-2px}
+/* The field absorbs spare height; auxiliary plots keep a useful fixed scale. */
+#memory-weather.mw-compact{height:100%;min-height:0;display:flex;flex-direction:column}
+#memory-weather.mw-compact .mw-controls{flex:0 0 44px}
+#memory-weather.mw-compact .mw-brush-label{height:80px;flex:0 0 80px;padding:4px 12px;gap:2px}
+#memory-weather.mw-compact .mw-brush-label strong{font-size:16px;line-height:20px}
+#memory-weather.mw-compact .mw-brush-label .mw-brush-values{font-size:16px;line-height:20px;min-height:20px}
+#memory-weather.mw-compact .mw-stages{min-height:0;flex:1;gap:0}
+#memory-weather.mw-compact .mw-stage[data-panel=field]{height:auto;min-height:0;flex:1 1 0}
+#memory-weather.mw-compact .mw-stage[data-panel=wake]{height:104px;flex:0 0 104px}
+#memory-weather.mw-compact .mw-stage[data-panel=compare]{height:180px;flex:0 0 180px}
+#memory-weather.mw-compact .mw-bottom{flex:0 0 44px;padding-right:90px}
+#memory-weather.mw-compact .mw-about{position:absolute;right:0;bottom:0;z-index:5;margin:0}
+#memory-weather.mw-compact .mw-about>summary{padding:10px 4px;min-height:44px}
+#memory-weather.mw-compact .mw-about[open]{width:min(420px,100%);background:var(--mw-bg);border:1px solid var(--mw-line);padding:0 12px}
+#memory-weather.mw-compact .mw-about[open] .mw-reading{max-height:45dvh;overflow:auto}
+#memory-weather.mw-compact .mw-note{font-size:16px;margin:8px 0}
+#memory-weather.mw-compact .mw-panel-header{padding-inline:8px;gap:0}
+#memory-weather.mw-compact .mw-panel-header .mw-control{min-width:40px;padding-inline:6px}
+#memory-weather.mw-compact .mw-axis-settings{max-width:70%}
+#memory-weather.mw-compact .mw-axis-settings summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

@@ -209,3 +209,16 @@ test('headless Turbo serves memory from its watched hermetic corpus', { timeout:
   for (let i = 0; i < 50; i++) { result = await fetchState(); if (result?.total === 2) break; await new Promise((resolve) => setTimeout(resolve, 100)); }
   assert.equal(result.total, 2, 'newly appended events flow through the shared warm service');
 });
+
+
+test('desk preserves earlier outcomes when recent observations roll over, and keeps provider evidence', () => {
+  const rows = [event('landed', { timestamp: now - 100000, type: 'git_commit', provider: 'codex', cwd: fixtureRoot, summary: 'Commit abcdef1: the actual outcome' })];
+  for (let i = 0; i < 75; i++) rows.push(event(`later-${i}`, { timestamp: now - 99000 + i, type: 'tool_bash', summary: `Routine observation ${i}` }));
+  const snapshot = projectMemory(rows, { now, corpusRoot: fixtureRoot });
+  const session = snapshot.sessions[0];
+  assert.equal(session.notes.length, 60);
+  assert.ok(!session.notes.some(note => note.id === 'landed'), 'fixture must push the commit out of recent notes');
+  assert.deepEqual(session.outcomes.map(note => note.id), ['landed']);
+  assert.equal(session.provider, 'codex');
+  assert.equal(session.cwd, fixtureRoot);
+});

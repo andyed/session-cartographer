@@ -1,3 +1,4 @@
+import { normalizeBrush } from './memory-brush.js';
 const DAY = 86400000;
 const VIEWS = ['field', 'wake', 'compare'];
 const X = ['spanMs', 'activeMs'];
@@ -55,6 +56,7 @@ export function normalizeMemoryRoute(value = {}) {
     at: at === null ? null : Math.max(end - DAY, Math.min(end, at)), end,
     session, file,
     cam: camera(value.cam),
+    brush: normalizeBrush(value.brush),
     panels: panels(value.panels),
     review: file && ['changes', 'file'].includes(value.review) ? value.review : null,
   };
@@ -71,6 +73,7 @@ export function memoryHref(value, pathname = '/memory') {
   if (route.x !== 'spanMs') params.set('x', route.x);
   if (route.y !== 'output') params.set('y', route.y);
   if (route.panels) params.set('panels', route.panels.join(','));
+  if (route.brush) params.set('brush', route.brush.join(','));
   if (route.cam) params.set('cam', `${route.cam.x},${route.cam.y},${route.cam.scale}`);
   if (route.session) params.set('session', route.session);
   if (route.file) params.set('file', route.file);

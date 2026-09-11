@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createMemoryWeather } from './memory-weather';
 import MemorySession from './MemorySession';
+import MemoryDesk, { SessionHandoff } from './MemoryDesk';
+import MemoryArtifact from './MemoryArtifact';
 import { parseMemoryRoute, normalizeMemoryRoute, memoryHref } from './memory-route';
 import { apiRequest as request, isDemoMode, memoryAxes } from '../api';
 import '../styles/memory.css';
@@ -9,6 +11,9 @@ const actions = { enable: 'Enable Turbo', start: 'Start Turbo', refresh: 'Refres
 const memoryPath = `${import.meta.env.BASE_URL || '/'}memory`;
 
 export default function WorkingMemory({ isActive }) {
+  const [hovered, setHovered] = useState(null);
+  const [focus, setFocus] = useState('overview');
+  const sessionTrigger = useRef(null);
   const [status, setStatus] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
@@ -126,9 +131,29 @@ export default function WorkingMemory({ isActive }) {
     return () => controller.abort();
   }, [isActive, data, route.session, route.end, fieldSession, fallbackKey]);
 
-  const openReview = useCallback((session, file) => {
+  const changeBrush = useCallback(ids => navigate({ brush: ids }, { replace: true }), [navigate]);
+  useEffect(() => {
+    if (!isActive || route.session) return;
+    const clear = event => {
+      if (event.key !== 'Escape' || (!route.brush && !hovered)) return;
+      event.preventDefault();
+      changeBrush(null);
+      setHovered(null);
+    };
+    window.addEventListener('keydown', clear);
+    return () => window.removeEventListener('keydown', clear);
+  }, [isActive, route.session, route.brush, hovered, changeBrush]);
+
+  const changeDepth = useCallback(scale => {
+    if (weather.current) weather.current.setScale(scale, routeRef.current.brush);
+    else navigate({ cam: scale === 1 ? null : { x: 0, y: 0, scale } }, { replace: true });
+  }, [navigate]);
+
+  useEffect(() => { weather.current?.setFocus(hovered, route.brush); }, [hovered, route.brush]);
+
+  const openReview = useCallback((session, file, mode = 'changes') => {
     reviewTrigger.current = document.activeElement;
-    navigate({ session: session.id, file: file.path, review: 'changes' });
+    navigate({ session: session.id, file: file.path, review: mode });
   }, [navigate]);
 
   useEffect(() => {
@@ -155,11 +180,19 @@ export default function WorkingMemory({ isActive }) {
   }, [isActive, route.session, route.file, Boolean(route.review), route.end, Boolean(status?.ready), navigate]);
 
   const openSession = useCallback((session, view) => {
+    sessionTrigger.current = document.activeElement;
     // Pin the current replay frame in the parent entry before drilling down.
     navigate({ ...view, session: null, file: null, review: null }, { replace: true });
     navigate({ ...view, session: session.id, file: null, review: null });
   }, [navigate]);
   const hrefForSession = useCallback((session, view) => memoryHref({ ...view, session: session.id }, memoryPath), []);
+
+  const restoreSessionFocus = useCallback(() => {
+    const trigger = sessionTrigger.current;
+    if (!trigger?.isConnected || !trigger.closest('.md-page')) return false;
+    trigger.focus({preventScroll:true});
+    return true;
+  }, []);
 
   function closeSession() {
     up({ session: null, file: null, review: null });
@@ -167,9 +200,9 @@ export default function WorkingMemory({ isActive }) {
 
   useEffect(() => {
     if (!data || !host.current || axes === null) return;
-    if (!weather.current) weather.current = createMemoryWeather(host.current, data, { onSelect: openSession, onNavigate: navigate, hrefForSession, route: routeRef.current, axes });
+    if (!weather.current) weather.current = createMemoryWeather(host.current, data, { onSelect: openSession, onNavigate: navigate, hrefForSession, route: routeRef.current, axes, compact: true, onHover: setHovered, onBrush: changeBrush, onRestoreFocus: restoreSessionFocus });
     else weather.current.update(data, Boolean(status?.ready));
-  }, [data, axes, openSession, navigate, hrefForSession]);
+  }, [data, axes, openSession, navigate, hrefForSession, changeBrush, restoreSessionFocus]);
 
   useEffect(() => { weather.current?.applyRoute(route); }, [route]);
 
@@ -232,8 +265,9 @@ export default function WorkingMemory({ isActive }) {
   const selectedSession = fieldSession || source?.sessions[0];
   const reviewMode = route.review === 'changes' && review?.diff ? 'changes' : 'file';
   return (
-    <section className="memory-view" aria-label="Working memory" onKeyDownCapture={e => {
-      if (e.key === 'Escape' && route.review) { e.stopPropagation(); closeReview(); }
+    <section className={`memory-view ${data && !route.session ? 'memory-overview' : 'memory-detail'}`} aria-label="Working memory" onKeyDownCapture={e => {
+      if (e.key === 'Escape' && !route.session && (route.brush || hovered)) { e.stopPropagation(); changeBrush(null); setHovered(null); }
+      else if (e.key === 'Escape' && route.review) { e.stopPropagation(); closeReview(); }
       else if (e.key === 'Escape' && route.session) { e.stopPropagation(); closeSession(); }
     }}>
       {!data && (
@@ -252,8 +286,20 @@ export default function WorkingMemory({ isActive }) {
       {data && !status?.ready && action && (
         <div className="memory-error" role="status"><span>Turbo is offline. Last received activity is still here.</span><button disabled={busy} onClick={launch}>{busy ? 'Starting…' : action}</button></div>
       )}
-      {data && <div className="memory-link-tools"><button onClick={copyLink}>{copied === window.location.href ? 'Link copied' : 'Copy link'}</button><span role="status">{copyError}</span></div>}
-      <div id="memory-weather" ref={host} hidden={!data || Boolean(route.session)} />
+      {data && <div className="memory-link-tools">{!route.session && <nav className="memory-focus" aria-label="Workspace focus">{['overview','charts'].map(id=><button key={id} aria-pressed={focus===id} onClick={()=>setFocus(id)}>{id==='overview'?'Overview':'Charts'}</button>)}</nav>}<button onClick={copyLink}>{copied === window.location.href ? 'Link copied' : 'Copy link'}</button><span role="status">{copyError}</span></div>}
+      <div className="memory-workspace" data-focus={focus} hidden={!data || Boolean(route.session)}>
+        {data && <MemoryDesk data={data} route={route} onSession={openSession} hrefForSession={hrefForSession} onReview={openReview} hovered={hovered} onHover={setHovered} onBrush={changeBrush} onDepth={changeDepth} connected={Boolean(status?.ready) && !error} />}
+        <aside className="md-instruments" aria-label="Session charts">
+          <div id="memory-weather" ref={host} />
+        </aside>
+      </div>
+      {route.session && selectedSession && <div className="memory-switch-row">
+        <label>Switch thread <select className="memory-switch" aria-label="Switch thread" value={route.session} onChange={e => navigate({ session: e.target.value, file: null, review: null })}>
+          {!fieldSession && <option value={selectedSession.id}>{selectedSession.title}</option>}
+          {(data?.sessions || []).map(session => <option key={session.id} value={session.id}>{session.title} · {session.group}</option>)}
+        </select></label>
+        <SessionHandoff key={selectedSession.id} session={selectedSession} />
+      </div>}
       {data && route.session && !selectedSession && !route.review && <div className="memory-missing-session"><button onClick={closeSession}>← All sessions</button><p role="status">{fallback?.error || 'Reading this session…'}</p></div>}
       {route.session && selectedSession && <div hidden={Boolean(route.review)}>
       {source.end < data?.start && <p className="memory-archive-note">Last recorded window · {new Date(source.end).toLocaleString()}</p>}
@@ -277,7 +323,7 @@ export default function WorkingMemory({ isActive }) {
           <p className="memory-path">{review.path}</p>
           {review.loading ? <p role="status">Reading file…</p> : review.error ? <p role="alert">{review.error}</p> : <>
             <p>Current workspace state; it may include edits from other sessions.</p>
-            <pre tabIndex={0}>{reviewMode === 'changes' ? review.diff : review.content}</pre>
+            <MemoryArtifact key={review.path} review={review} mode={reviewMode} />
             <details><summary>Session edit evidence</summary><ul>{(review.evidence || []).map(e => <li key={e.id}>{new Date(e.t).toLocaleString()} · {e.id}</li>)}</ul></details>
           </>}
         </section>

@@ -60,3 +60,13 @@ test('a chosen set of panels travels with the link, and cannot be emptied', () =
     assert.equal(normalizeMemoryRoute({ panels: bad }).panels, null, `refuses ${JSON.stringify(bad)}`);
   }
 });
+
+
+test('a brushed cohort and semantic camera share one stable permalink', () => {
+  const href = memoryHref({ brush: ['session-b', 'session-a', 'session-b'], cam: {x:-120,y:20,scale:2.6} });
+  const route = parseMemoryRoute(href.slice(href.indexOf('?')));
+  assert.deepEqual(route.brush, ['session-a', 'session-b']);
+  assert.equal(route.cam.scale, 2.6);
+  assert.equal(memoryHref(route), href);
+  assert.equal(parseMemoryRoute('?brush=../../secret').brush, null);
+});

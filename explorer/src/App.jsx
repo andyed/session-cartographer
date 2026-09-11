@@ -148,10 +148,8 @@ export default function App() {
       <header className="flex flex-col border-b border-gray-800 flex-shrink-0">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-4 py-2">
           {/* Search input with autocomplete — flush left */}
-          {/* The demo opens its query list on focus, which lands right on top of
-              the memory field. Leave the caret out of the search box when the
-              field is what the viewer came for. */}
-          <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus={tab !== 'memory'} />
+          {/* Memory owns its local find control; other routes keep global search. */}
+          {tab === 'memory' ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
 
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
