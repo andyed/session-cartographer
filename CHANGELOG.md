@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+### fix(hooks): stop dropping commits made after a `cd`, and read the sha from the repo
+
+Two defects in `hooks/log-tool-use.sh` made a real commit invisible to the
+corpus, and neither errored.
+
+`bash_is_noise()` stripped `cd X && Y` hops — the 2026-08-28 fix — but only the
+`&&` form. `COMMAND` is newline-flattened before the filter runs, so
+`cd repo\ngit commit …` arrived as `cd repo git commit …`, matched the bare
+`cd\ *` pattern, and the hook exited 0 with the commit inside it. Test runs and
+pushes written the same way went the same way. Measured: this repository's own
+`f1f7a5a` and `db9b934` were absent from `changelog.jsonl`, so
+`cartographer-standup.js --commit db9b934` could not attribute the commit that
+shipped it, and the session digest reported 16 bash calls against far more
+actually run. Hops separated by a newline or a `;` are now stripped too;
+whichever separator appears first wins, or `cd a; b && c` would strip past the
+semicolon.
+
+The hash and subject were scraped from the Bash tool's stdout. `git commit -q`
+prints nothing, so `COMMIT_MSG` came out empty and the conventional-commit
+classifier fell through to `other` — and since `TYPE="git_commit"` is gated on a
+non-empty `COMMIT_HASH`, a quiet commit with no hash anywhere in stdout produced
+no commit row at all. The hook is `PostToolUse`, so HEAD already carries the
+commit: it now reads `rev-parse HEAD` and `log -1 --format=%s` and keeps the
+scrape only as a fallback.
+
+Reading HEAD needs a guard, because `git commit` also appears in a command that
+failed, or never meant to commit. Freshness alone is not enough — a failed
+retry seconds after a real commit leaves HEAD looking equally new — so a commit
+is recorded only when HEAD is under two minutes old *and* its sha is not already
+in the log. An amend gets a different sha and is correctly recorded again.
+
+Nine tests in `tests/unit/log-tool-use-git-commit.test.js`, each reverted and
+verified to fail against the defect it covers. Pre-fix corpus history
+under-counts commits for any session that used this command style;
+`scripts/backfill-git-history.sh --project <name> --limit N` recovers them.
+
 ### feat(standup): report concurrent sessions and the files they contend for
 
 `/focus` answers what happened in a project. Nothing answered who else is in it

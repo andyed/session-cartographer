@@ -98,20 +98,45 @@ $(printf '%s' "$cmd" | grep -oE "[\"'][^\"' ]*(/[^\"' ]+|[^\"' /]+\.[A-Za-z0-9]{
     | awk '!seen[$0]++' | head -5 | paste -sd ',' -
 }
 
-# True when a command is only noise. Strips leading `cd … &&` hops first so the
+# True when a command is only noise. Strips leading `cd …` hops first so the
 # verdict is about what actually RUNS — `cd repo && ls` is noise, but
 # `cd repo && python3 …` is the session's actual work.
+#
+# Three separators, because `$COMMAND` reaches this function newline-flattened.
+# The 2026-08-28 fix handled `&&` only, so `cd repo\ngit commit …` arrived here
+# as `cd repo git commit …` with nothing left to mark the boundary, matched the
+# bare `cd\ *` pattern below, and took the commit down with it. Measured: this
+# repo's own f1f7a5a and db9b934 are absent from changelog.jsonl, and the test
+# runs and pushes written the same way went with them.
+#
+# `&&` and `;` are stripped greedily to the separator, so an unquoted path with
+# spaces still resolves; whichever appears FIRST wins, or `cd a; b && c` would
+# strip past the semicolon. With no separator at all there is nothing to be
+# greedy about, so the hop is `cd` plus one argument — an unquoted spacey path
+# then degrades to "not noise", which is the safe direction: a logged command
+# costs a row, a dropped one costs the commit.
 bash_is_noise() {
-  local probe="$1" next=""
+  local probe="$1" next="" amp="" semi=""
   while :; do
     case "$probe" in
-      cd\ *"&&"*)
-        next=$(printf '%s' "$probe" | sed 's/^cd [^&]*&&[[:space:]]*//')
-        [ "$next" = "$probe" ] && break
-        probe="$next" ;;
+      cd\ *) : ;;
       *) break ;;
     esac
+    amp=""; semi=""
+    case "$probe" in *"&&"*) amp="${probe%%&&*}" ;; esac
+    case "$probe" in *";"*) semi="${probe%%;*}" ;; esac
+    if [ -n "$amp" ] && { [ -z "$semi" ] || [ ${#amp} -lt ${#semi} ]; }; then
+      next=$(printf '%s' "$probe" | sed 's/^cd [^&]*&&[[:space:]]*//')
+    elif [ -n "$semi" ]; then
+      next=$(printf '%s' "$probe" | sed 's/^cd [^;]*;[[:space:]]*//')
+    else
+      next=$(printf '%s' "$probe" | sed -E 's/^cd +("[^"]*"|'"'"'[^'"'"']*'"'"'|[^ ]+)[[:space:]]*//')
+    fi
+    [ "$next" = "$probe" ] && break
+    probe="$next"
   done
+  # A hop that consumed the whole command was a bare `cd` — still noise.
+  [ -z "$probe" ] && return 0
   case "$probe" in
     # `ls*` used to swallow lsof/lsblk/lsattr too — anchored now.
     ls|ls\ *|cat\ *|echo\ *|pwd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) return 0 ;;
@@ -166,6 +191,41 @@ case "$TOOL_NAME" in
       RESPONSE=$(echo "$INPUT" | jq -r '(.tool_response // empty) | if type == "object" then (.stdout // "") else . end' | head -c 2000)
       COMMIT_HASH=$(echo "$RESPONSE" | grep -oE '[a-f0-9]{7,}' | head -1)
       COMMIT_MSG=$(echo "$RESPONSE" | grep -oE '\] .+' | head -1 | sed 's/^\] //')
+
+      # Ask the repo, not the output. This hook is PostToolUse, so HEAD already
+      # carries the commit, and `-q` / `--quiet` / `>/dev/null` — which suppress
+      # the `[branch abc1234] subject` line the scrape above depends on — take
+      # nothing away from git. Before this, a quiet commit lost its subject to
+      # the `other` classifier and, with no hash anywhere in stdout, produced no
+      # git_commit row at all.
+      #
+      # Freshness is the guard. `git commit` also appears in a command that
+      # FAILED (nothing staged, a rejecting hook) or never intended to commit
+      # (--dry-run), and reading HEAD blindly would file the previous commit as
+      # freshly made. A commit this hook was triggered by is seconds old; one
+      # left over from earlier is not.
+      if [ -n "$GIT_REPO" ]; then
+        REPO_HASH=$(git -C "$GIT_REPO" rev-parse --verify -q HEAD 2>/dev/null)
+        if [ -n "$REPO_HASH" ]; then
+          REPO_COMMIT_TS=$(git -C "$GIT_REPO" log -1 --format=%ct "$REPO_HASH" 2>/dev/null)
+          REPO_AGE=$(( $(date +%s) - ${REPO_COMMIT_TS:-0} ))
+          # Already recorded means this invocation did not create it — the
+          # freshness window alone cannot tell a real commit from a `git commit`
+          # that failed seconds after one, and both leave HEAD looking new.
+          # An amend gets a different sha and is correctly logged again.
+          REPO_SEEN=""
+          [ -f "$CHANGELOG" ] && REPO_SEEN=$(tail -n 2000 "$CHANGELOG" 2>/dev/null | grep -c "Commit ${REPO_HASH}" 2>/dev/null)
+          if [ -n "$REPO_COMMIT_TS" ] && [ "$REPO_AGE" -ge 0 ] && [ "$REPO_AGE" -le 120 ] \
+             && [ "${REPO_SEEN:-0}" -eq 0 ]; then
+            COMMIT_HASH="$REPO_HASH"
+            COMMIT_MSG=$(git -C "$GIT_REPO" log -1 --format=%s "$REPO_HASH" 2>/dev/null)
+          elif [ -z "$RESPONSE" ] || [ "${REPO_SEEN:-0}" -ne 0 ]; then
+            # HEAD is stale, or already logged: no commit was made here.
+            COMMIT_HASH=""
+            COMMIT_MSG=""
+          fi
+        fi
+      fi
 
       # Get changed files from the commit if we can
       CHANGED_FILES=""
