@@ -29,6 +29,7 @@ scripts/
   index-event.sh                — Real-time single-event indexing (called by hooks)
   record-wrapup.sh              — Durable wrapup write + verified index receipt
   wrapup-coverage.js            — Derived material-session coverage + pending queue
+  cartographer-standup.js       — Peer-session roster + project/file contention (/standup)
   backfill-git-history.sh       — Import git commits into event logs
   backfill-memories.sh          — Index Codex memory files
   backfill-app-sessions.js      — Import desktop-app/Cowork session metadata (titles + VM-session prompts)

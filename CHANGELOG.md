@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### feat(standup): report concurrent sessions and the files they contend for
+
+`/focus` answers what happened in a project. Nothing answered who else is in it
+right now, which is the question that costs time when three to five sessions run
+at once: a commit lands underneath you, or two sessions edit one file and
+neither knows. `scripts/cartographer-standup.js` groups the events the hooks
+already write by session instead of by project — no new capture — and reports
+each session's projects, idle time, span and commits, with subjects recovered
+from git for the ones `git commit -q` blanked. `--commit <sha>` names the
+session behind a commit, and `--project` scopes the roster and the contention
+list alike.
+
+CONTENTION is the load-bearing section and every way it fails is silent, so four
+things are asserted rather than assumed. A file's identity is its path, so
+`isNonProject()` does not filter the file list — it judges cwd-derived project
+*labels*, and applying it there hid every collision between sessions running
+from the workspace root, which is how these sessions most often overlap.
+Sentinel session ids are counted, never grouped: `"unknown"` is truthy and equal
+to itself, so a bare `if (!id)` fused every unattributed event, across
+providers, into one phantom session that appeared to collide with everybody. A
+worktree edit and a main-checkout edit of one repo file collapse to one entry,
+because agent control rooms put a worktree behind every task and path-only
+keying made the emerging default collision invisible. Unresolved edit candidates
+are reported in a `NOT COUNTED` footer rather than dropped, since a silent miss
+and a clean workspace otherwise print identically.
+
+Edit summaries are parsed by `scripts/edit-paths.js` rather than a local regex;
+switching to the shared parser doubled detected file contention on the live
+corpus, three files to six. Eleven tests, each verified to fail against the
+defect it was written for.
+
 ### feat(memory): group the artifact trail by document
 
 The Artifacts depth listed every file of every thread in thread order, so the
