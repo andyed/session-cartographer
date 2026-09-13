@@ -1,6 +1,25 @@
-import { useMemo, useState } from 'react';
-import { parseArtifactMarkdown, parseUnifiedDiff, safeArtifactLink } from './memory-artifact.js';
+import { Component, Suspense, lazy, useMemo, useState } from 'react';
+import { describeReviewRange, parseArtifactMarkdown, parseUnifiedDiff, safeArtifactLink } from './memory-artifact.js';
 import '../styles/memory-artifact.css';
+
+// The side-by-side renderer is the one dependency this view carries, and it is
+// only paid for when a reviewer asks for a split layout.
+const SplitDiff = lazy(() => import('./SplitDiff.jsx'));
+
+/** A failed split render falls back to the dependency-free unified table
+ *  instead of blanking the review. */
+class SplitFallback extends Component {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(error) { console.error('[memory split diff]', error); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <>
+      <p className="memory-artifact-empty" role="status">The side-by-side view could not render this diff; showing the unified diff instead.</p>
+      {this.props.fallback}
+    </>;
+  }
+}
 
 function inline(text, depth = 0) {
   if (depth > 8) return text;
@@ -51,30 +70,49 @@ function MarkdownBlocks({ blocks }) {
   });
 }
 
-function Diff({ diff }) {
-  const parsed = useMemo(() => parseUnifiedDiff(diff), [diff]);
+function Changes({ review, layout, onLayout }) {
+  const parsed = useMemo(() => parseUnifiedDiff(review.diff), [review.diff]);
+  const range = useMemo(() => describeReviewRange(review.range), [review.range]);
+  const unified = <UnifiedDiff rows={parsed.rows} />;
   return <div className="memory-artifact-diff">
     <div className="memory-artifact-diff-summary" aria-label="Change summary">
       <span className="memory-artifact-added">+{parsed.additions} added</span>
       <span className="memory-artifact-deleted">−{parsed.deletions} removed</span>
-      <span>Old → new line numbers</span>
+      {onLayout && <div className="memory-artifact-view-options" role="group" aria-label="Diff layout">
+        <button type="button" aria-pressed={layout === 'split'} onClick={() => onLayout('split')}>Split</button>
+        <button type="button" aria-pressed={layout === 'unified'} onClick={() => onLayout('unified')}>Unified</button>
+      </div>}
     </div>
-    <div className="memory-artifact-diff-scroll" tabIndex={0} role="region" aria-label="Unified diff">
+    {range && <div className="memory-artifact-range">
+      <p><span className="memory-artifact-range-label">From</span> {range.from}</p>
+      <p><span className="memory-artifact-range-label">To</span> {range.to}</p>
+      <p><span className="memory-artifact-range-label">Session</span> {range.window}</p>
+      {range.caveats.length > 0 && <ul className="memory-artifact-caveats">{range.caveats.map((caveat) => <li key={caveat}>{caveat}</li>)}</ul>}
+    </div>}
+    {layout === 'split'
+      ? <SplitFallback fallback={unified}><Suspense fallback={<p className="memory-artifact-empty" role="status">Loading side-by-side view…</p>}>
+          <SplitDiff name={review.name} diff={review.diff} range={review.range} layout="split" />
+        </Suspense></SplitFallback>
+      : unified}
+  </div>;
+}
+
+function UnifiedDiff({ rows }) {
+  return <div className="memory-artifact-diff-scroll" tabIndex={0} role="region" aria-label="Unified diff">
       <table className="memory-artifact-diff-table">
-        <caption className="memory-artifact-sr-only">Current workspace changes. Old and new line numbers appear before each line.</caption>
+        <caption className="memory-artifact-sr-only">Session changes. Old and new line numbers appear before each line.</caption>
         <thead className="memory-artifact-sr-only"><tr><th>Old line</th><th>New line</th><th>Change</th><th>Content</th></tr></thead>
-        <tbody>{parsed.rows.map((row, index) => <tr key={index} className={`memory-artifact-diff-${row.kind}`}>
+        <tbody>{rows.map((row, index) => <tr key={index} className={`memory-artifact-diff-${row.kind}`}>
           <td className="memory-artifact-line">{row.oldLine ?? ''}</td>
           <td className="memory-artifact-line">{row.newLine ?? ''}</td>
           <td className="memory-artifact-sign" aria-label={row.kind === 'addition' ? 'Added' : row.kind === 'deletion' ? 'Removed' : undefined}>{row.kind === 'addition' ? '+' : row.kind === 'deletion' ? '−' : ''}</td>
           <td className="memory-artifact-diff-text"><code>{row.text || ' '}</code></td>
         </tr>)}</tbody>
       </table>
-    </div>
-  </div>;
+    </div>;
 }
 
-export default function MemoryArtifact({ review, mode = 'file' }) {
+export default function MemoryArtifact({ review, mode = 'file', layout = 'split', onLayout = null }) {
   const [sourcePath, setSourcePath] = useState(null);
   const path = review?.path || review?.name || '';
   const markdown = /\.(?:md|markdown|mdown)$/i.test(path);
@@ -82,7 +120,7 @@ export default function MemoryArtifact({ review, mode = 'file' }) {
   const blocks = useMemo(() => markdown ? parseArtifactMarkdown(review?.content || '') : [], [markdown, review?.content]);
   if (!review) return null;
   if (mode === 'changes') return <section className="memory-artifact" aria-label="Artifact changes">
-    {review.diff ? <Diff diff={review.diff} /> : <p className="memory-artifact-empty">{review.diffReason || 'No current changes to display.'}</p>}
+    {review.diff ? <Changes review={review} layout={layout} onLayout={onLayout} /> : <p className="memory-artifact-empty">{review.diffReason || 'No session changes to display.'}</p>}
   </section>;
   return <section className="memory-artifact" aria-label="Artifact reader">
     <div className="memory-artifact-toolbar">

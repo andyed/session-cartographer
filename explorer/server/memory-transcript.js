@@ -1,12 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
+import { serialize } from 'node:v8';
 import { transcriptRoots, isAllowedTranscriptPath } from './transcripts.js';
 import { epochMsFromTimestamp } from './event-time.js';
 
 const FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite', 'total'];
 const MAX_PASS_BYTES = 64 * 1024 * 1024;
 const MAX_LINE_BYTES = 8 * 1024 * 1024;
+const TRANSCRIPT_CACHE_BYTES = 64 * 1024 * 1024;
 const number = (value) => Number.isFinite(value) && value >= 0 ? value : null;
 const same = (a, b) => a && b && FIELDS.every((key) => a[key] === b[key]);
 
@@ -119,7 +121,7 @@ function rememberTool(state, { name, input, callId, t, cwd }) {
     : ['Edit', 'Write', 'MultiEdit'].includes(suffix) && typeof input?.file_path === 'string' ? [input.file_path] : [];
   const workdir = input?.workdir || input?.cwd || cwd;
   if (paths.length || (suffix === 'exec_command' && typeof input?.cmd === 'string' && path.isAbsolute(workdir || ''))) {
-    state.tools.set(callId, { t, callId, cwd: workdir, paths, command: suffix === 'exec_command' ? input.cmd : null });
+    state.tools.set(callId, { t, callId, cwd: workdir, paths, command: suffix === 'exec_command' ? input.cmd.replace(/\s+/g, ' ').trim().slice(0, 180) : null });
   }
 }
 
@@ -203,10 +205,16 @@ function windowResult(state, start, end, transcriptPath) {
 }
 
 const parsed = new Map();
+let parsedBytes = 0;
+let transcriptBytesRead = 0;
+let cacheHits = 0;
+const cacheBudget = workerData?.cacheBytes ?? TRANSCRIPT_CACHE_BYTES;
 function parseFile({ filePath, expected, start, end }) {
   const stat = fs.statSync(filePath);
   const key = `${filePath}\0${expected}`;
-  let state = parsed.get(key);
+  const cached = parsed.get(key);
+  const bytesBefore = transcriptBytesRead;
+  let state = cached?.state;
   let fd;
   try {
     fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
@@ -216,6 +224,7 @@ function parseFile({ filePath, expected, start, end }) {
       fs.readSync(fd, check, 0, check.length, state.offset - check.length);
       reset = !check.equals(state.boundary);
     }
+    if (!reset && state.offset === stat.size) cacheHits++;
     if (reset) state = fresh(expected);
     const until = Math.min(stat.size, state.offset + MAX_PASS_BYTES);
     let cursor = state.offset;
@@ -225,6 +234,7 @@ function parseFile({ filePath, expected, start, end }) {
       const buffer = Buffer.alloc(Math.min(256 * 1024, until - cursor));
       const length = fs.readSync(fd, buffer, 0, buffer.length, cursor);
       if (!length) break;
+      transcriptBytesRead += length;
       cursor += length;
       const data = Buffer.concat([carry, buffer.subarray(0, length)]);
       let at = 0;
@@ -248,28 +258,46 @@ function parseFile({ filePath, expected, start, end }) {
     state.incomplete = carry.length > 0;
     state.boundary = Buffer.alloc(Math.min(64, state.offset));
     if (state.boundary.length) fs.readSync(fd, state.boundary, 0, state.boundary.length, state.offset - state.boundary.length);
+    // Keep normalized facts across wide windows, bounded by encoded bytes
+    // instead of 64 sessions. Window edges are still evaluated on every read;
+    // file stat/identity/boundary checks above remain authoritative.
+    const bytes = cached && !reset && bytesBefore === transcriptBytesRead
+      ? cached.bytes : serialize(state).byteLength;
+    if (cached) parsedBytes -= cached.bytes;
     parsed.delete(key);
-    parsed.set(key, state);
-    while (parsed.size > 64) parsed.delete(parsed.keys().next().value);
+    if (bytes <= cacheBudget) {
+      parsed.set(key, { state, bytes });
+      parsedBytes += bytes;
+    }
+    while (parsedBytes > cacheBudget && parsed.size) {
+      const oldest = parsed.keys().next().value;
+      parsedBytes -= parsed.get(oldest).bytes;
+      parsed.delete(oldest);
+    }
     return windowResult(state, start, end, filePath);
   } finally { if (fd !== undefined) fs.closeSync(fd); }
 }
 
 if (!isMainThread && workerData?.kind === 'memory-transcript') {
   parentPort.on('message', ({ id, request }) => {
-    try { parentPort.postMessage({ id, result: parseFile(request) }); }
+    try {
+      const result = parseFile(request);
+      parentPort.postMessage({ id, result, cacheStats: { entries: parsed.size, bytes: parsedBytes, budget: cacheBudget, hits: cacheHits, transcriptBytesRead } });
+    }
     catch { parentPort.postMessage({ id, result: { valid: false, reason: 'Transcript is not currently readable.' } }); }
   });
 }
 
 /** Parse incrementally off the warm service's event loop; no subprocesses. */
-export function createTranscriptEnricher({ roots = transcriptRoots() } = {}) {
+export function createTranscriptEnricher({ roots = transcriptRoots(), cacheBytes = TRANSCRIPT_CACHE_BYTES } = {}) {
+  if (!Number.isSafeInteger(cacheBytes) || cacheBytes < 0) throw new RangeError('Transcript cache bytes must be a nonnegative safe integer.');
   let worker;
   let nextId = 0;
   const pending = new Map();
   const pathCache = new Map();
   let fileIndex;
   let indexedAt = 0;
+  let cacheStats = { entries: 0, bytes: 0, budget: cacheBytes, hits: 0, transcriptBytesRead: 0 };
   async function allowed(candidate) {
     try {
       if (typeof candidate !== 'string' || !candidate.endsWith('.jsonl')) return null;
@@ -282,7 +310,7 @@ export function createTranscriptEnricher({ roots = transcriptRoots() } = {}) {
   async function indexFiles() {
     if (fileIndex && Date.now() - indexedAt < 60000) return fileIndex;
     fileIndex = (async () => {
-      const files = [];
+      const files = new Map();
       const stack = [...roots];
       let inspected = 0;
       while (stack.length && inspected < 100000) {
@@ -292,7 +320,14 @@ export function createTranscriptEnricher({ roots = transcriptRoots() } = {}) {
         for (const entry of entries) {
           inspected++;
           if (entry.isDirectory()) stack.push(path.join(dir, entry.name));
-          else if (entry.isFile() && entry.name.endsWith('.jsonl')) files.push(path.join(dir, entry.name));
+          else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+            // Session discovery previously scanned every filename once per
+            // session. Index the same filename identities once per refresh.
+            for (const [id] of entry.name.matchAll(/[\da-f]{8}-[\da-f-]{27}/ig)) {
+              if (!files.has(id)) files.set(id, []);
+              files.get(id).push(path.join(dir, entry.name));
+            }
+          }
         }
       }
       return files;
@@ -309,7 +344,7 @@ export function createTranscriptEnricher({ roots = transcriptRoots() } = {}) {
       if (valid) { pathCache.set(session.id, valid); return valid; }
     }
     if (!/^[\da-f]{8}-[\da-f-]{27}$/i.test(session.id)) return null;
-    for (const candidate of await indexFiles()) if (path.basename(candidate).includes(session.id)) {
+    for (const candidate of (await indexFiles()).get(session.id) || []) {
       const valid = await allowed(candidate);
       if (valid) { pathCache.set(session.id, valid); return valid; }
     }
@@ -319,8 +354,9 @@ export function createTranscriptEnricher({ roots = transcriptRoots() } = {}) {
     if (!worker) {
       // Node's test runner and packaged hosts add process-only exec flags that
       // Worker rejects. The parser needs no inherited CLI switches.
-      worker = new Worker(new URL(import.meta.url), { workerData: { kind: 'memory-transcript' }, execArgv: [] });
-      worker.on('message', ({ id, result }) => {
+      worker = new Worker(new URL(import.meta.url), { workerData: { kind: 'memory-transcript', cacheBytes }, execArgv: [] });
+      worker.on('message', ({ id, result, cacheStats: stats }) => {
+        if (stats) cacheStats = stats;
         pending.get(id)?.(result);
         pending.delete(id);
         if (!pending.size) worker.unref();
@@ -341,6 +377,7 @@ export function createTranscriptEnricher({ roots = transcriptRoots() } = {}) {
       if (!filePath) return { valid: false, reason: 'No matching readable transcript was found for this session.' };
       return parse({ filePath, expected: session.id, start, end });
     },
+    cacheStats() { return { ...cacheStats }; },
     close() { worker?.terminate(); worker = null; },
   };
 }

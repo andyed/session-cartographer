@@ -3,12 +3,15 @@ import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { firstResolved, isResolved } from '../../scripts/sentinels.js';
+import { editSummaryPaths } from '../../scripts/edit-paths.js';
 import { eventEpochMs } from './event-time.js';
 import { CORPUS_ROOT } from './jsonl.js';
 import { createTranscriptEnricher, missingTokens } from './memory-transcript.js';
 
 const execFileAsync = promisify(execFile);
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DEFAULT_WINDOW_HOURS = 24;
+const MAX_WINDOW_HOURS = 90 * 24;
 const FILE_LIMIT = 256 * 1024;
 export const MEMORY_CONTRACT_VERSION = 1;
 export const MEMORY_REFRESH_MS = 5000;
@@ -74,14 +77,7 @@ function editPaths(event, corpusRoot) {
   // These are the edit hook's explicit output forms. Do not infer paths from
   // arbitrary shell commands, prompts, or prose that happens to name a file.
   const summary = text(firstResolved([event.summary, event.description]));
-  const match = summary.match(/^(?:Modified|Created|Wrote):\s*(.+)$/i);
-  if (match) {
-    const value = match[1].replace(/\s+\(via bash\)\s*$/, '').trim();
-    // A real filename may contain a comma. Preserve it before interpreting the
-    // hook's comma-separated multi-file form.
-    if (resolveMemoryFile(value, event.cwd, corpusRoot)) candidates.push(value);
-    else candidates.push(...value.split(',').map((item) => item.trim()));
-  }
+  candidates.push(...editSummaryPaths(summary, (value) => resolveMemoryFile(value, event.cwd, corpusRoot)));
   return [...new Set(candidates.map((candidate) => resolveMemoryFile(candidate, event.cwd, corpusRoot)).filter(Boolean))];
 }
 
@@ -96,13 +92,19 @@ function noteText(event) {
 }
 
 /** A fold over the owning service's warm corpus, with no ranking or log reads. */
-export function projectMemory(events, { now = Date.now(), corpusRoot = CORPUS_ROOT } = {}) {
-  const start = now - DAY_MS;
+export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW_HOURS, corpusRoot = CORPUS_ROOT } = {}) {
+  if (!Number.isInteger(hours) || hours < 1 || hours > MAX_WINDOW_HOURS) throw new RangeError('Memory window hours must be an integer between 1 and 2160.');
+  const start = now - hours * HOUR_MS;
+  let availableStart = null;
+  let availableEnd = null;
   const deduped = new Map();
   const anonymous = [];
   for (const event of events) {
     const t = eventEpochMs(event);
-    if (!Number.isFinite(t) || t < start || t > now) continue;
+    if (!Number.isFinite(t)) continue;
+    availableStart = availableStart === null ? t : Math.min(availableStart, t);
+    availableEnd = availableEnd === null ? t : Math.max(availableEnd, t);
+    if (t < start || t > now) continue;
     const id = text(event.event_id);
     if (!id) { anonymous.push(event); continue; }
     if (!deduped.has(id)) deduped.set(id, { ...event });
@@ -182,11 +184,13 @@ export function projectMemory(events, { now = Date.now(), corpusRoot = CORPUS_RO
     const resolved = new Set(files[session.id].flatMap((file) => file.edits.map((edit) => edit.id)));
     session.fileEvidenceStats = { recordedEdits: counts.edit, resolvedFiles: files[session.id].length, unresolvedEdits: session._editEvidence.filter((event) => !resolved.has(event.event_id)).length };
   }
-  return { start, end: now, total: rows.length, unattributed, groups: [...new Set(result.map((session) => session.group))].sort(), sessions: result, files };
+  return { start, end: now, windowHours: hours, availableStart, availableEnd, total: rows.length, unattributed, groups: [...new Set(result.map((session) => session.group))].sort(), sessions: result, files };
 }
 
 export async function enrichMemory(snapshot, enricher, corpusRoot = CORPUS_ROOT) {
-  await Promise.all(snapshot.sessions.map(async (session) => {
+  // Wide windows can contain thousands of sessions. Keep transcript discovery
+  // and worker requests bounded while retaining every session and its evidence.
+  async function enrichSession(session) {
     let transcript;
     try { transcript = await enricher.read(session, snapshot); }
     catch { transcript = { valid: false, reason: 'Transcript analysis is unavailable.' }; }
@@ -240,6 +244,10 @@ export async function enrichMemory(snapshot, enricher, corpusRoot = CORPUS_ROOT)
     } else session.metrics.tokens = missingTokens(transcript.reason);
     delete session._editEvidence;
     delete session.transcriptPaths;
+  }
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, snapshot.sessions.length) }, async () => {
+    while (next < snapshot.sessions.length) await enrichSession(snapshot.sessions[next++]);
   }));
   return snapshot;
 }
@@ -248,7 +256,7 @@ class MemoryError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-async function reviewFile(snapshot, sessionId, filePath, corpusRoot) {
+async function reviewFile(snapshot, sessionId, filePath, corpusRoot, { bounds, now }) {
   const session = snapshot.sessions.find((item) => item.id === sessionId);
   const evidence = snapshot.files[sessionId]?.find((item) => item.path === filePath);
   if (!session || !evidence) throw new MemoryError(404, 'File is not recorded as edited by this session in the current window.');
@@ -274,21 +282,109 @@ async function reviewFile(snapshot, sessionId, filePath, corpusRoot) {
   } finally {
     if (fd !== undefined) fs.closeSync(fd);
   }
-  let diff = '';
-  let diffAvailable = false;
-  let diffReason = null;
-  try {
-    const options = { cwd: path.dirname(filePath), timeout: 2500, maxBuffer: 512 * 1024, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
-    const { stdout: root } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], options);
-    const relative = path.relative(root.trim(), filePath);
-    await execFileAsync('git', ['--literal-pathspecs', '-C', root.trim(), 'ls-files', '--error-unmatch', '--', relative], options);
-    const { stdout } = await execFileAsync('git', ['--literal-pathspecs', '-C', root.trim(), 'diff', '--no-ext-diff', '--no-textconv', '--no-color', 'HEAD', '--', relative], options);
-    diff = stdout;
-    diffAvailable = true;
-  } catch {
-    diffReason = 'A bounded diff from HEAD is unavailable for this file.';
+  const { diff, diffAvailable, diffReason, range, note } = await reviewRange(filePath, content, bounds, now);
+  const diffBase = range?.base ? range.base.short : 'none';
+  return { path: filePath, name: evidence.name, content, diff, diffAvailable, diffReason, range, evidence: evidence.edits, session: sessionId, title: session.title, state: 'current', diffBase, note };
+}
+
+const IN_FLIGHT_MS = 15 * 60 * 1000;
+// Hooks stamp a commit event after git has already written it, and git keeps
+// committer time at one-second resolution, so the session's closing commit can
+// sit a little past its last recorded event.
+const COMMIT_GRACE_MS = 2 * 60 * 1000;
+
+/** When a session began and ended, folded over every event it left in the whole
+ *  corpus rather than the selected window, so a long session's review is bounded
+ *  by the session and not by the desk's zoom level. */
+export function sessionBounds(events, sessionId) {
+  let start = null;
+  let end = null;
+  for (const event of events) {
+    if (String(firstResolved([event.session_id, event.session, event.sessionId], '')) !== sessionId) continue;
+    const t = eventEpochMs(event);
+    if (!Number.isFinite(t)) continue;
+    start = start === null ? t : Math.min(start, t);
+    end = end === null ? t : Math.max(end, t);
   }
-  return { path: filePath, name: evidence.name, content, diff, diffAvailable, diffReason, evidence: evidence.edits, session: sessionId, title: session.title, state: 'current', diffBase: 'HEAD', note: 'Current file and working-tree diff from HEAD; edits may include other sessions.' };
+  return start === null ? null : { start, end };
+}
+
+const gitSecond = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString();
+
+/**
+ * The file's change across one session, bounded by commit time on both ends.
+ *
+ * Base is the last commit at or before the session's first event. Head is the
+ * last commit within a grace period of its final event when that commit changed
+ * the file and the session has left the field; otherwise the working tree,
+ * which is the only place uncommitted work exists. Boundaries are commit
+ * times, not authorship: a session whose first act is committing a previous
+ * session's leftovers inherits them, and the note says so rather than hiding it.
+ */
+async function reviewRange(filePath, content, bounds, nowMs) {
+  const unavailable = (diffReason, range = null) => ({ diff: '', diffAvailable: false, diffReason, range, note: diffReason });
+  if (!bounds) return unavailable('This session has no dated activity to bound a diff.');
+  const options = { timeout: 2500, maxBuffer: FILE_LIMIT + 4096, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
+  let root;
+  try { root = (await execFileAsync('git', ['rev-parse', '--show-toplevel'], { ...options, cwd: path.dirname(filePath) })).stdout.trim(); }
+  catch { return unavailable('This file is not inside a Git repository, so no session diff can be bounded.'); }
+  const relative = path.relative(root, filePath);
+  // Resolve, never throw, on a non-zero exit: "no such path at that commit" and
+  // "these differ" are answers here, and only a missing git or a timeout is a failure.
+  async function git(args) {
+    try {
+      const { stdout } = await execFileAsync('git', ['--literal-pathspecs', '-C', root, ...args], options);
+      return { stdout, code: 0 };
+    } catch (error) {
+      if (typeof error.code === 'number') return { stdout: error.stdout || '', code: error.code };
+      throw error;
+    }
+  }
+  const inFlight = nowMs - bounds.end <= IN_FLIGHT_MS;
+  try {
+    const emptyTree = (await git(['hash-object', '-t', 'tree', '/dev/null'])).stdout.trim();
+    const commitAt = async (ms) => (await git(['rev-list', '-1', `--before=${gitSecond(ms)}`, 'HEAD'])).stdout.trim() || null;
+    const describe = async (sha) => {
+      if (!sha) return null;
+      const [full, seconds, subject] = (await git(['show', '-s', '--format=%H%x00%ct%x00%s', sha])).stdout.trim().split('\0');
+      return { sha: full, short: full.slice(0, 7), time: Number(seconds) * 1000, subject: (subject || '').slice(0, 120) };
+    };
+    const blobAt = async (sha) => sha ? (await git(['rev-parse', '--verify', '-q', `${sha}:${relative}`])).stdout.trim() || null : null;
+    const contentAt = async (sha) => {
+      if (!(await blobAt(sha))) return null;
+      const shown = await git(['show', `${sha}:${relative}`]);
+      if (shown.code !== 0) return null;
+      if (shown.stdout.includes('\0')) throw new MemoryError(415, 'An earlier version of this file is binary.');
+      if (Buffer.byteLength(shown.stdout) > FILE_LIMIT) throw new MemoryError(413, 'An earlier version of this file exceeds the 256 KiB review limit.');
+      return shown.stdout;
+    };
+    const baseSha = await commitAt(bounds.start);
+    const endSha = await commitAt(bounds.end + COMMIT_GRACE_MS);
+    const tracked = (await git(['ls-files', '--error-unmatch', '--', relative])).code === 0;
+    const [baseBlob, endBlob] = await Promise.all([blobAt(baseSha), blobAt(endSha)]);
+    const committedInSession = Boolean(endSha) && endSha !== baseSha && endBlob !== baseBlob;
+    const useCommit = committedInSession && !inFlight;
+    const diffArgs = ['diff', '--no-ext-diff', '--no-textconv', '--no-color'];
+    let diff;
+    if (useCommit) diff = (await git([...diffArgs, baseSha || emptyTree, endSha, '--', relative])).stdout;
+    else if (tracked) diff = (await git([...diffArgs, baseSha || emptyTree, '--', relative])).stdout;
+    else diff = (await git([...diffArgs, '--no-index', '--', '/dev/null', filePath])).stdout;
+    // Work that landed after the bounded head is real but out of scope; say so
+    // instead of folding it in, which is what the old HEAD-relative diff did.
+    const committedAfter = useCommit ? (await blobAt('HEAD')) !== endBlob : false;
+    const uncommittedAfter = useCommit ? (await git(['diff', '--quiet', 'HEAD', '--', relative])).code !== 0 : false;
+    const [base, headCommit] = await Promise.all([describe(baseSha), useCommit ? describe(endSha) : null]);
+    const oldContent = await contentAt(baseSha);
+    const newContent = useCommit ? await contentAt(endSha) : content;
+    const range = { start: bounds.start, end: bounds.end, inFlight, tracked, base, head: useCommit ? { kind: 'commit', ...headCommit } : { kind: 'working-tree' }, committedAfter, uncommittedAfter, oldContent, newContent };
+    const from = base ? `commit ${base.short}` : 'before any commit';
+    const to = useCommit ? `commit ${headCommit.short}` : 'the working tree';
+    const note = `Changes from ${from} to ${to}, bounded by this session's first and last recorded activity. Boundaries are commit times, not authorship.`;
+    return { diff, diffAvailable: true, diffReason: null, range, note };
+  } catch (error) {
+    if (error instanceof MemoryError) throw error;
+    return unavailable('A session-bounded diff is unavailable for this file.');
+  }
 }
 
 /** Shared by Express and the zero-dependency Turbo HTTP server. */
@@ -301,29 +397,52 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     if (!Number.isSafeInteger(end) || end <= 0 || end > now() + 60000) throw new MemoryError(400, 'Invalid memory window end.');
     return end;
   }
-  async function snapshot(end = null, sessionId = null) {
-    const key = `${end ?? 'live'}:${sessionId || ''}`;
+  function readHours(value) {
+    if (value === null) return DEFAULT_WINDOW_HOURS;
+    const hours = /^\d+$/.test(value) ? Number(value) : NaN;
+    if (!Number.isInteger(hours) || hours < 1 || hours > MAX_WINDOW_HOURS) throw new MemoryError(400, 'Memory window hours must be an integer between 1 and 2160.');
+    return hours;
+  }
+  async function snapshot(end = null, sessionId = null, hours = DEFAULT_WINDOW_HOURS) {
+    const key = `${end ?? 'live'}:${hours}:${sessionId || ''}`;
     const time = now();
     const existing = cache.get(key);
-    if (existing && time >= existing.at && time - existing.at < cacheMs) return existing.promise;
+    if (existing && (existing.pending || (time >= existing.at && time - existing.at < cacheMs))) return existing.promise;
     let events = getEvents();
     let windowEnd = end ?? time;
+    let corpusBounds = null;
     if (sessionId) {
       if (!/^[\w-]{1,256}$/.test(sessionId)) throw new MemoryError(400, 'Invalid session id.');
-      events = events.filter(event => String(firstResolved([event.session_id, event.session, event.sessionId], '')) === sessionId);
+      corpusBounds = { availableStart: null, availableEnd: null };
+      events = events.filter(event => {
+        const t = eventEpochMs(event);
+        if (Number.isFinite(t)) {
+          corpusBounds.availableStart = corpusBounds.availableStart === null ? t : Math.min(corpusBounds.availableStart, t);
+          corpusBounds.availableEnd = corpusBounds.availableEnd === null ? t : Math.max(corpusBounds.availableEnd, t);
+        }
+        return String(firstResolved([event.session_id, event.session, event.sessionId], '')) === sessionId;
+      });
       // A live permalink follows the session while active. Once it has left
-      // the field, reopen its last recorded 24-hour window, not an empty view.
+      // the field, reopen its last recorded window at the selected duration.
       const latest = events.reduce((last, event) => {
         const t = eventEpochMs(event);
         return Number.isFinite(t) && t <= time ? Math.max(last, t) : last;
       }, 0);
-      if (end === null && latest && latest < time - DAY_MS) windowEnd = latest;
+      if (end === null && latest && latest < time - hours * HOUR_MS) windowEnd = latest;
     }
-    const promise = enrichMemory(projectMemory(events, { now: windowEnd, corpusRoot }), transcriptEnricher, corpusRoot);
+    const projected = projectMemory(events, { now: windowEnd, hours, corpusRoot });
+    if (corpusBounds) Object.assign(projected, corpusBounds);
+    const promise = enrichMemory(projected, transcriptEnricher, corpusRoot);
     cache.delete(key);
-    cache.set(key, { at: time, promise });
+    const entry = { at: time, promise, pending: true };
+    cache.set(key, entry);
     while (cache.size > 12) cache.delete(cache.keys().next().value);
-    try { return await promise; }
+    try {
+      const result = await promise;
+      entry.pending = false;
+      entry.at = now();
+      return result;
+    }
     catch (error) { if (cache.get(key)?.promise === promise) cache.delete(key); throw error; }
   }
   return async function handleMemory(req, res) {
@@ -334,20 +453,22 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     try {
       if (req.method !== 'GET') throw new MemoryError(405, 'Memory endpoints are read-only.');
       if (url.pathname === '/api/memory/health') body = { status: 'ok', contract_version: MEMORY_CONTRACT_VERSION, corpus_root: corpusRoot, refresh_ms: MEMORY_REFRESH_MS };
-      else if (url.pathname === '/api/memory/state') body = await snapshot(readEnd(url.searchParams.get('end')));
+      else if (url.pathname === '/api/memory/state') body = await snapshot(readEnd(url.searchParams.get('end')), null, readHours(url.searchParams.get('hours')));
       else if (url.pathname === '/api/memory/session') {
         const id = url.searchParams.get('session');
         if (!id) throw new MemoryError(400, 'A session id is required.');
-        body = await snapshot(readEnd(url.searchParams.get('end')), id);
+        body = await snapshot(readEnd(url.searchParams.get('end')), id, readHours(url.searchParams.get('hours')));
         if (!body.sessions.length) throw new MemoryError(404, 'This session has no recorded activity in the selected window.');
       }
       else if (url.pathname === '/api/memory/file') {
         const id = url.searchParams.get('session');
         if (!id) throw new MemoryError(400, 'A session id is required.');
         const end = readEnd(url.searchParams.get('end'));
-        const field = await snapshot(end);
-        const source = field.sessions.some(session => session.id === id) ? field : await snapshot(end, id);
-        body = await reviewFile(source, id, url.searchParams.get('path'), corpusRoot);
+        const hours = readHours(url.searchParams.get('hours'));
+        const field = await snapshot(end, null, hours);
+        const source = field.sessions.some(session => session.id === id) ? field : await snapshot(end, id, hours);
+        // Bound the diff by the session's whole life, not the desk's window.
+        body = await reviewFile(source, id, url.searchParams.get('path'), corpusRoot, { bounds: sessionBounds(getEvents(), id), now: now() });
       }
       else throw new MemoryError(404, 'Memory endpoint not found.');
     } catch (error) {

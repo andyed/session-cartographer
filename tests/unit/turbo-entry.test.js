@@ -221,3 +221,17 @@ test('the same entry middleware is installed for development and built preview',
     assert.equal(result, undefined, 'pre-hook placement runs before Vite API proxy middleware');
   }
 });
+
+test('wide memory windows carry evidence beyond the daily transport budget without truncation', async t => {
+  const body = { sessions: [{ id: 'older-session', evidence: 'x'.repeat(9 * 1024 * 1024), lastId: 'last-record' }], windowHours: 2160 };
+  const { get } = await fixture(t, { fetchImpl: async () => new Response(JSON.stringify(body)) });
+  const wide = await get('/api/memory/state?hours=2160');
+  assert.equal(wide.status, 200);
+  const result = await wide.json();
+  assert.equal(result.sessions[0].id, 'older-session');
+  assert.equal(result.sessions[0].evidence.length, body.sessions[0].evidence.length);
+  assert.equal(result.sessions[0].lastId, 'last-record');
+  const daily = await get('/api/memory/state?hours=24');
+  assert.equal(daily.status, 503);
+  assert.match((await daily.json()).error, /too large/);
+});

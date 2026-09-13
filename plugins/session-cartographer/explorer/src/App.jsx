@@ -5,6 +5,7 @@ import SearchInput from './components/SearchInput';
 import TranscriptViewer from './components/TranscriptViewer';
 import Internals from './components/Internals';
 import WorkingMemory from './components/WorkingMemory';
+import RouteErrorBoundary from './components/RouteErrorBoundary';
 import { isDemoMode, getDemoQueries } from './api';
 
 const BASE = import.meta.env.BASE_URL || '/';
@@ -200,31 +201,41 @@ export default function App() {
       <main className="flex-1 overflow-hidden relative">
         {mountedTabs.current.has('memory') && (
           <div className={`absolute inset-0 ${tab === 'memory' ? '' : 'hidden'}`}>
-            <WorkingMemory isActive={tab === 'memory'} />
+            <RouteErrorBoundary name="Memory" resetKey={tab} onLeave={() => handleTabClick('timeline')}>
+              <WorkingMemory isActive={tab === 'memory'} />
+            </RouteErrorBoundary>
           </div>
         )}
         {mountedTabs.current.has('timeline') && (
           <div className={`absolute inset-0 ${tab === 'timeline' ? '' : 'hidden'}`}>
-            <Timeline onOpenTranscript={openTranscript} isActive={tab === 'timeline'} />
+            <RouteErrorBoundary name="Timeline" resetKey={tab}>
+              <Timeline onOpenTranscript={openTranscript} isActive={tab === 'timeline'} />
+            </RouteErrorBoundary>
           </div>
         )}
         {mountedTabs.current.has('search') && (
           <div className={`absolute inset-0 ${tab === 'search' ? '' : 'hidden'}`}>
-            <Search query={searchQuery} onOpenTranscript={openTranscript} isActive={tab === 'search'} />
+            <RouteErrorBoundary name="Search" resetKey={`${tab}:${searchQuery}`} onLeave={() => handleTabClick('timeline')}>
+              <Search query={searchQuery} onOpenTranscript={openTranscript} isActive={tab === 'search'} />
+            </RouteErrorBoundary>
           </div>
         )}
         {mountedTabs.current.has('internals') && (
           <div className={`absolute inset-0 ${tab === 'internals' ? '' : 'hidden'}`}>
-            <Internals isActive={tab === 'internals'} />
+            <RouteErrorBoundary name="Internals" resetKey={tab} onLeave={() => handleTabClick('timeline')}>
+              <Internals isActive={tab === 'internals'} />
+            </RouteErrorBoundary>
           </div>
         )}
         {tab === 'transcript' && (
-          <TranscriptViewer
-            transcriptPath={transcript.path}
-            targetUuid={transcript.uuid}
-            initialHighlight={transcript.highlight}
-            onClose={closeTranscript}
-          />
+          <RouteErrorBoundary name="Transcript" resetKey={transcript.path} onLeave={closeTranscript}>
+            <TranscriptViewer
+              transcriptPath={transcript.path}
+              targetUuid={transcript.uuid}
+              initialHighlight={transcript.highlight}
+              onClose={closeTranscript}
+            />
+          </RouteErrorBoundary>
         )}
       </main>
     </div>

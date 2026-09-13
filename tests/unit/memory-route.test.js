@@ -15,6 +15,14 @@ test('live defaults stay compact, invalid parameters cannot create a phantom dri
   assert.deepEqual(parseMemoryRoute('?view=unknown&x=bad&y=bad&session=../../secret&file=/secret&review=file&at=nonsense'), normalizeMemoryRoute());
   assert.equal(parseMemoryRoute('?session=real&file=relative.js&review=file').review, null);
   assert.equal(parseMemoryRoute('?session=real&file=%2Ftmp%2Fbad%00name').file, null);
+  assert.equal(parseMemoryRoute('?diff=sideways').diff, 'split', 'an unknown diff layout falls back to split');
+  assert.equal(parseMemoryRoute('?diff=unified').diff, 'unified');
+  assert.match(memoryHref({ session: 'real', file: '/tmp/a.md', review: 'changes', diff: 'unified' }), /diff=unified/);
+  assert.doesNotMatch(memoryHref({ diff: 'split' }), /diff=/, 'the default layout costs no parameter');
+  assert.equal(parseMemoryRoute('?kind=md').kind, 'md');
+  assert.equal(parseMemoryRoute('?kind=docs').kind, 'all', 'an unknown artifact kind falls back to every file');
+  assert.match(memoryHref({ kind: 'md' }), /kind=md/);
+  assert.doesNotMatch(memoryHref({ kind: 'all' }), /kind=/);
 });
 
 test('a replay cursor pins its window and remains bounded to that window', () => {
@@ -69,4 +77,16 @@ test('a brushed cohort and semantic camera share one stable permalink', () => {
   assert.equal(route.cam.scale, 2.6);
   assert.equal(memoryHref(route), href);
   assert.equal(parseMemoryRoute('?brush=../../secret').brush, null);
+});
+
+test('time, find, work filters and position compose into a portable desk state', () => {
+  const route = normalizeMemoryRoute({ hours: 168, q: 'route & memory', filter: 'changed', catchup: 'return', checkpoint: 1788940000000, offset: 21, sort: 1788940000001, focus: 'charts', brush: ['one'], cam: { x: 40, y: 20, scale: 2.6 } });
+  const href = memoryHref(route);
+  assert.deepEqual(parseMemoryRoute(href.slice(href.indexOf('?'))), route);
+  assert.equal(memoryHref(parseMemoryRoute('?hours=24&filter=all&offset=0&focus=overview&catchup=hour&sort=0')), '/memory');
+  for (const hours of ['wat', 0, 2161, 24.5, -1]) assert.equal(normalizeMemoryRoute({ hours }).hours, 24);
+  assert.equal(normalizeMemoryRoute({ hours: 2160 }).hours, 2160);
+  assert.equal(parseMemoryRoute('?offset=-1&sort=no&filter=bogus&focus=bad').offset, 0);
+  const end = Date.parse('2026-09-09T12:00:00Z');
+  assert.equal(normalizeMemoryRoute({ hours: 168, at: end - 2 * 86400000, end }).at, end - 2 * 86400000, 'historical cursors use the chosen window');
 });

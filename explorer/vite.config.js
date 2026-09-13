@@ -18,6 +18,11 @@ const apiPort = process.env.CARTOGRAPHER_API_PORT || '2526';
 export default defineConfig({
   plugins: [react(), ...(!isDemo ? [turboEntryPlugin(), internalsUiPlugin(), explorerUiPlugin()] : [])],
   base: isDemo ? '/session-cartographer/' : '/',
+  resolve: {
+    // The split diff view never highlights syntax; see src/lib/lowlight-stub.js
+    // for the measurement that keeps highlight.js out of the bundle.
+    alias: { lowlight: new URL('./src/lib/lowlight-stub.js', import.meta.url).pathname },
+  },
   server: {
     host: '127.0.0.1',
     port: 2527,

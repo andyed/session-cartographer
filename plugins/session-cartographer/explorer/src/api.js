@@ -1,5 +1,14 @@
 export const isDemoMode = import.meta.env.VITE_DEMO === 'true';
 
+export class ExplorerApiError extends Error {
+  constructor(message, { status = 0, code = '' } = {}) {
+    super(message);
+    this.name = 'ExplorerApiError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
 // ─── Demo data loader (lazy, single import) ───
 
 let demoMod = null;
@@ -26,8 +35,21 @@ export async function apiRequest(url, options = {}) {
   if (isDemoMode) return (await demo()).handleFetch(url);
   const res = await fetch(url, { ...options, cache: 'no-store' });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || `Explorer connection failed (${res.status})`);
+  if (!res.ok) {
+    throw new ExplorerApiError(body.error || `Explorer connection failed (${res.status})`, {
+      status: res.status,
+      code: body.code,
+    });
+  }
   return body;
+}
+
+export function fetchTranscript(path, { signal } = {}) {
+  return apiRequest(`/api/transcript?path=${encodeURIComponent(path)}`, { signal });
+}
+
+export function fetchTranscriptAnalysis(path, { signal } = {}) {
+  return apiRequest(`/api/transcript/analysis?path=${encodeURIComponent(path)}`, { signal });
 }
 
 // ─── API functions (unchanged between live and demo) ───

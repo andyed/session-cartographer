@@ -10,6 +10,7 @@
     "preview": "vite preview --host 127.0.0.1 --port 2527"
   },
   "dependencies": {
+    "@git-diff-view/react": "^0.1.7",
     "express": "^5.1.0"
   },
   "devDependencies": {

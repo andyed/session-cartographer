@@ -167,10 +167,10 @@ Open question worth settling before building: whether tracks are per-project (ch
 
 ## Explorer UI
 - [ ] Facet brushing — hover pill → non-matching results collapse to colored pixel bars
-- [ ] Contrast audit — enforce minimum gray-300 for readable text, gray-400 for info
+- [ ] Contrast audit — sweep remaining readable text to the 8:1 floor, computed not eyeballed. Shades are not the spec: on the body `#0a0a0f`, `gray-400` is 7.78:1 and `gray-600` is 2.61:1, so both fail. `gray-300` (13.40:1) and the `muted` token (`#abb1bb`, 9.16:1, added to `tailwind.config.js` and matching the existing `--internals-muted`) both pass. Largest remaining cluster is ~10 `text-gray-600` sites in `TranscriptViewer.jsx`.
 - [ ] Loading skeletons instead of text spinners
 - [ ] Infinite scroll (auto-load on scroll vs. manual "show more")
-- [ ] Error boundary — catch React crashes, show recovery UI
+- [x] ~~Error boundary~~ — shipped as route-level containment with in-place retry (see Infrastructure)
 - [ ] **Transcript match display** — transcript search results show raw JSONL (`{"parentUuid":"...","isSidechain":false,...}`) instead of the conversation text. Need to extract the human-readable content from the message payload and display it as a summary, same as event log results.
 
 ## Search
@@ -280,6 +280,8 @@ Reference: [DeepBlueDynamics/lume](https://github.com/DeepBlueDynamics/lume) —
 - Maneuver map is intrinsically thin (~29 maneuver-sessions) — maneuvers are punctual events. High-precision; grows with corpus depth, not with more modeling.
 
 ## Infrastructure
-- [ ] `npm install` pre-flight check in `/carto` skill
-- [ ] Connection status indicator for EventSource (SSE reconnect feedback)
+- [x] `npm install` pre-flight check in `/carto` skill
+- [x] Connection status indicator for EventSource (SSE reconnect feedback)
+- [x] Route-level error containment with an in-place recovery action
+- [x] Retryable transcript failures with independent analysis fallback
 - [x] ~~Briefings system~~ — replaced with project registry + /focus skill + enriched milestones

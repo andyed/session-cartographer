@@ -122,3 +122,8 @@
 #memory-weather.mw-compact .mw-panel-header .mw-control{min-width:40px;padding-inline:6px}
 #memory-weather.mw-compact .mw-axis-settings{max-width:70%}
 #memory-weather.mw-compact .mw-axis-settings summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* Brushing reveals evidence in place; it never reserves space or moves marks. */
+#memory-weather.mw-compact .mw-brush-label{position:absolute;z-index:3;left:8px;right:8px;bottom:8px;top:auto;height:auto;max-height:calc(100% - 52px);padding:8px 12px;border:0;background:var(--mw-bg);pointer-events:none;justify-content:flex-start;gap:2px}
+#memory-weather.mw-compact .mw-brush-label[data-placement=top]{top:44px;bottom:auto}
+#memory-weather.mw-compact .mw-brush-label span:empty{display:none}

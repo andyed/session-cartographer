@@ -1,0 +1,36 @@
+/* Session diff rendered by @git-diff-view/react, re-skinned to the memory desk
+   palette. Every readable pairing below is computed against the 8:1 floor:
+   text #e5e7eb on plain #0a0a0f 15.95, on added #13271d 12.70, on removed
+   #301a20 13.10, on the changed-word highlights #1f4a2c 8.18 and #5a2326 9.96;
+   line numbers #b4bbc7 on #101119 9.74, on #13271d 8.14, on #301a20 8.40;
+   hunk text #93e5ed on #12202b 11.58. */
+.memory-split-diff { overflow: auto; background: #0a0a0f; }
+.memory-split-diff .diff-tailwindcss-wrapper[data-theme="dark"] .diff-style-root {
+  --diff-border--: #343644;
+  --diff-plain-content--: #0a0a0f;
+  --diff-expand-content--: #101119;
+  --diff-empty-content--: #101119;
+  --diff-plain-lineNumber--: #101119;
+  --diff-expand-lineNumber--: #101119;
+  --diff-plain-lineNumber-color--: #b4bbc7;
+  --diff-expand-lineNumber-color--: #b4bbc7;
+  --diff-add-content--: #13271d;
+  --diff-del-content--: #301a20;
+  --diff-add-lineNumber--: #13271d;
+  --diff-del-lineNumber--: #301a20;
+  --diff-add-content-highlight--: #1f4a2c;
+  --diff-del-content-highlight--: #5a2326;
+  --diff-hunk-content--: #12202b;
+  --diff-hunk-lineNumber--: #12202b;
+  --diff-hunk-lineNumber-hover--: #1b3346;
+  --diff-hunk-content-color--: #93e5ed;
+  --diff-add-widget--: #55d9e6;
+  --diff-add-widget-color--: #0a0a0f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.memory-split-diff .diff-tailwindcss-wrapper[data-theme="dark"] [data-state="diff"],
+.memory-split-diff .diff-tailwindcss-wrapper[data-theme="dark"] [data-state="plain"],
+.memory-split-diff .diff-tailwindcss-wrapper[data-theme="dark"] [data-state="hunk"] { color: #e5e7eb; }
+.memory-split-diff .diff-tailwindcss-wrapper[data-theme="dark"] .diff-line-num { color: #b4bbc7; }
+.memory-split-diff .diff-tailwindcss-wrapper[data-theme="dark"] [data-state="hunk"] * { color: #93e5ed; }
+.memory-split-diff :focus-visible { outline: 2px solid #55d9e6; outline-offset: 3px; }

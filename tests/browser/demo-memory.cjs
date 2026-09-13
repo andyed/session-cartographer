@@ -100,6 +100,13 @@ async function port() {
 
     fs.writeFileSync(path.join(artifacts, 'demo-memory-field.png'), await page.screenshot());
 
+    // A copied live duration cannot relabel this fixed recorded fixture.
+    await page.goto(`${origin}${base}memory?hours=168`, { waitUntil: 'networkidle' });
+    const timeWindow = page.getByRole('combobox', { name: 'Time window', exact: true });
+    assert.equal(await timeWindow.inputValue(), '24');
+    assert.equal(await timeWindow.isDisabled(), true);
+    assert.equal(new URL(page.url()).searchParams.has('hours'), false);
+
     // Compare mode owns the axis select. Which panels the all-panel layout has
     // room for depends on the viewport, so pin the single compare panel by
     // permalink rather than clicking a button whose meaning changes with width.

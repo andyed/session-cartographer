@@ -134,3 +134,19 @@ export function parseArtifactMarkdown(value = '') {
   }
   return blocks;
 }
+
+/** Plain-language account of what a session diff spans, from the server's
+ *  range record. Pure so the wording can be tested without a renderer. */
+export function describeReviewRange(range, { now = Date.now(), formatTime = (ms) => new Date(ms).toLocaleString() } = {}) {
+  if (!range) return null;
+  const commit = (c) => `commit ${c.short}${c.subject ? ` “${c.subject}”` : ''} · ${formatTime(c.time)}`;
+  const from = range.base ? commit(range.base) : 'before the first commit';
+  const to = range.head?.kind === 'commit' ? commit(range.head) : range.inFlight ? 'the working tree (session in flight)' : 'the working tree';
+  const caveats = [];
+  if (range.base && range.oldContent === null) caveats.push('The file did not exist at the base commit, so everything reads as new.');
+  if (!range.tracked) caveats.push('Git does not track this file yet; the diff is the whole current file.');
+  if (range.committedAfter) caveats.push('Later commits changed this file again; they are outside this session and not shown.');
+  if (range.uncommittedAfter) caveats.push('The working tree holds uncommitted changes beyond this session’s last commit; they are not shown.');
+  if (range.head?.kind === 'working-tree' && range.base && range.oldContent !== null && !range.inFlight) caveats.push('Nothing was committed during the session, so the working tree stands in for its end and may include other sessions’ edits.');
+  return { from, to, caveats, window: `${formatTime(range.start)} → ${formatTime(range.end)}` };
+}

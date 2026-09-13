@@ -101,6 +101,67 @@ test('incremental transcript parsing reads appended usage and handles rewrites',
   assert.equal((await f.read()).tokens.output, 50);
 });
 
+test('wide transcript caches reuse more than 64 sessions while applying exact moving windows', async (t) => {
+  const dir = path.join(root, `wide-${counter++}`);
+  fs.mkdirSync(dir);
+  const enricher = createTranscriptEnricher({ roots: [dir] });
+  t.after(() => enricher.close());
+  const sessions = Array.from({ length: 100 }, (_, i) => {
+    const id = `wide-session-${i}`;
+    const transcript = path.join(dir, `${id}.jsonl`);
+    const rows = [
+      { type: 'session_meta', payload: { id } },
+      codexToken(now - 30 * 3600000, codexUsage(100, 10)),
+      codexToken(now - 1000, codexUsage(300, 30), codexUsage(200, 20)),
+    ];
+    fs.writeFileSync(transcript, rows.map(row => JSON.stringify(row)).join('\n') + '\n');
+    return { id, transcript };
+  });
+  for (const session of sessions) assert.equal((await enricher.read(session, { start: now - 48 * 3600000, end: now })).tokens.output, 30);
+  const first = enricher.cacheStats();
+  assert.equal(first.entries, 100, 'fixture exceeds the former 64-session limit');
+  assert.ok(first.bytes > 0 && first.bytes <= first.budget);
+  for (const session of sessions) assert.equal((await enricher.read(session, { start, end: now })).tokens.output, 20);
+  const second = enricher.cacheStats();
+  assert.equal(second.transcriptBytesRead, first.transcriptBytesRead, 'unchanged transcripts must not be re-parsed when the window changes');
+  assert.equal(second.hits - first.hits, 100);
+  fs.appendFileSync(sessions[0].transcript, JSON.stringify(codexToken(now, codexUsage(400, 40), codexUsage(100, 10))) + '\n');
+  assert.equal((await enricher.read(sessions[0], { start, end: now })).tokens.output, 30, 'cached sessions see newly appended evidence');
+  assert.ok(enricher.cacheStats().transcriptBytesRead > second.transcriptBytesRead);
+});
+
+test('transcript cache byte limit evicts facts without altering exact totals', async (t) => {
+  const dir = path.join(root, `limited-${counter++}`);
+  fs.mkdirSync(dir);
+  const enricher = createTranscriptEnricher({ roots: [dir], cacheBytes: 1 });
+  t.after(() => enricher.close());
+  const id = 'limited-session';
+  const transcript = path.join(dir, `${id}.jsonl`);
+  fs.writeFileSync(transcript, [{ type: 'session_meta', payload: { id } }, codexToken(now - 1000, codexUsage(100, 10))].map(row => JSON.stringify(row)).join('\n') + '\n');
+  for (let i = 0; i < 2; i++) {
+    assert.equal((await enricher.read({ id, transcript }, { start, end: now })).tokens.output, 10);
+    assert.equal(enricher.cacheStats().entries, 0);
+    assert.ok(enricher.cacheStats().bytes <= 1);
+  }
+  assert.equal(enricher.cacheStats().transcriptBytesRead, 2 * fs.statSync(transcript).size);
+});
+
+test('normalized tool command caching retains evidence while discarding unused command bodies', async (t) => {
+  const f = fixture(t);
+  const command = `printf  'example'\n${'body content '.repeat(10000)}`;
+  f.write([
+    { type: 'session_meta', payload: { id: f.id, cwd: f.dir } },
+    { type: 'response_item', timestamp: new Date(now - 2000).toISOString(), payload: { type: 'function_call', name: 'exec_command', call_id: 'large-command', arguments: JSON.stringify({ cmd: command, workdir: f.dir }) } },
+    { type: 'response_item', timestamp: new Date(now - 1000).toISOString(), payload: { type: 'function_call_output', call_id: 'large-command', output: 'success' } },
+  ]);
+  const result = await f.read();
+  assert.equal(result.tools.length, 1);
+  assert.equal(result.tools[0].callId, 'large-command');
+  assert.equal(result.tools[0].cwd, f.dir);
+  assert.equal(result.tools[0].commandPrefix, command.replace(/\s+/g, ' ').trim().slice(0, 180));
+  assert.ok(f.enricher.cacheStats().bytes < 5000, 'the retained facts must not include the120KB command body');
+});
+
 test('transcript path and identity checks reject escapes and another session', async (t) => {
   const f = fixture(t);
   f.write([{ type: 'session_meta', payload: { id: 'other-session' } }, codexToken(now - 1000, codexUsage(100, 10))]);
@@ -110,6 +171,22 @@ test('transcript path and identity checks reject escapes and another session', a
   fs.unlinkSync(f.file);
   fs.symlinkSync(outside, f.file);
   assert.equal((await f.read()).valid, false);
+});
+
+test('indexed transcript discovery resolves exact session filenames and retains metadata checks', async (t) => {
+  const dir = path.join(root, `discovery-${counter++}`);
+  fs.mkdirSync(dir);
+  const id = '12345678-1234-1234-1234-123456789abc';
+  const other = '22345678-1234-1234-1234-123456789abc';
+  const transcript = path.join(dir, `rollout-2026-09-09T12-00-00-${id}.jsonl`);
+  fs.writeFileSync(transcript, [{ type: 'session_meta', payload: { id } }, codexToken(now - 1000, codexUsage(100, 10))].map(row => JSON.stringify(row)).join('\n') + '\n');
+  fs.writeFileSync(path.join(dir, `${other}.jsonl`), JSON.stringify({ type: 'session_meta', payload: { id } }) + '\n');
+  const enricher = createTranscriptEnricher({ roots: [dir] });
+  t.after(() => enricher.close());
+  const result = await enricher.read({ id }, { start, end: now });
+  assert.equal(result.path, transcript);
+  assert.equal(result.tokens.output, 10);
+  assert.equal((await enricher.read({ id: other }, { start, end: now })).valid, false, 'a filename match cannot override mismatched session metadata');
 });
 
 test('literal wrapper extraction ignores comments, strings, variables and interpolation', () => {

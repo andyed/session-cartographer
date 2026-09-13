@@ -15,7 +15,7 @@ import {
 import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { summarizeSessions } from './sessions.js';
 import { createInternalsHandler } from './internals-route.js';
-import { existsSync, statSync } from 'fs';
+import { accessSync, constants, existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 
@@ -421,31 +421,39 @@ export function createExplorerApp() {
   // archive, and its answer still has to fall inside TRANSCRIPT_ROOTS.
   function locateTranscript(req) {
     const raw = req.query.path || req.query.session_id || '';
-    if (!raw) return { error: 'path or session_id required', status: 400 };
+    if (!raw) return { error: 'path or session_id required', code: 'TRANSCRIPT_PATH_REQUIRED', status: 400 };
 
     const expanded = req.query.path ? resolve(String(raw).replace(/^~/, homedir())) : String(raw);
     const found = resolveTranscriptPath(expanded);
     if (!found) {
-      return { error: 'transcript not found in any transcript root', status: 404 };
+      return { error: 'transcript not found in any transcript root', code: 'TRANSCRIPT_NOT_FOUND', status: 404 };
     }
 
     const resolved = resolve(found);
     if (!isAllowedTranscriptPath(resolved, TRANSCRIPT_ROOTS)) {
-      return { error: 'path outside transcript roots', status: 403 };
+      return { error: 'path outside transcript roots', code: 'TRANSCRIPT_FORBIDDEN', status: 403 };
+    }
+    try {
+      accessSync(resolved, constants.R_OK);
+    } catch {
+      return { error: 'transcript exists but is not readable', code: 'TRANSCRIPT_UNREADABLE', status: 503 };
     }
     return { path: resolved, recorded: expanded };
   }
 
   app.get('/api/transcript', (req, res) => {
     const located = locateTranscript(req);
-    if (located.error) return res.status(located.status).json({ error: located.error });
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
 
     const entries = readJsonlFile(located.path);
     if (entries.length === 0) {
-      return res.status(404).json({ error: 'transcript not found or empty' });
+      return res.status(404).json({ error: 'transcript not found or empty', code: 'TRANSCRIPT_EMPTY' });
     }
 
     const { provider, messages } = normalizeTranscriptEntries(entries);
+    if (messages.length === 0) {
+      return res.status(422).json({ error: 'transcript contains no readable conversation messages', code: 'TRANSCRIPT_NO_MESSAGES' });
+    }
 
     res.json({
       path: located.path,
@@ -470,7 +478,7 @@ export function createExplorerApp() {
 
   app.get('/api/transcript/analysis', async (req, res) => {
     const located = locateTranscript(req);
-    if (located.error) return res.status(located.status).json({ error: located.error });
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
     const resolved = located.path;
 
     try {
@@ -480,7 +488,7 @@ export function createExplorerApp() {
 
       const messages = await parseJsonlFile(resolved);
       if (messages.length === 0) {
-        return res.status(404).json({ error: 'transcript not found or empty' });
+        return res.status(404).json({ error: 'transcript not found or empty', code: 'TRANSCRIPT_EMPTY' });
       }
 
       const attribution = computeTokenAttribution(messages);
@@ -606,7 +614,13 @@ export function createExplorerApp() {
       // Parse failure or missing devtools modules — return empty enrichment so
       // the Transcript Viewer falls back to its basic (unenriched) mode.
       console.error('[transcript/analysis]', err.message);
-      res.json({ summary: null, attribution: null, compactionEvents: [], perMessageCategory: {} });
+      res.json({
+        summary: null,
+        attribution: null,
+        compactionEvents: [],
+        perMessageCategory: {},
+        unavailable: { code: 'TRANSCRIPT_ANALYSIS_UNAVAILABLE', message: 'Session analysis could not be generated.' },
+      });
     }
   });
 

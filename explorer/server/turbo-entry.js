@@ -188,10 +188,15 @@ export function createTurboEntryMiddleware({
       }
       if (req.url.length > 4096) throw failure(400, 'Memory request URL is too long');
       const { url } = effectiveTurboSettings(env);
-      const response = await fetchImpl(new URL(req.url, url), {
-        signal: AbortSignal.timeout(10000), redirect: 'error', headers: { Accept: 'application/json' },
+      const target = new URL(req.url, url);
+      const hours = Number(target.searchParams.get('hours') ?? 24);
+      const wide = Number.isInteger(hours) && hours > 24 && hours <= 2160;
+      // Wide snapshots contain the complete selected corpus, including per-task
+      // evidence. Keep bounded transport without imposing the old 24h limits.
+      const response = await fetchImpl(target, {
+        signal: AbortSignal.timeout(wide ? 60000 : 10000), redirect: 'error', headers: { Accept: 'application/json' },
       });
-      return reply(res, response.status, await readResponseJson(response));
+      return reply(res, response.status, await readResponseJson(response, wide ? 64 * 1024 * 1024 : undefined));
     } catch (error) {
       if (!res.headersSent) reply(res, error.status || 503, { error: String(error.message || 'Turbo is unavailable').slice(0, 700) });
     }

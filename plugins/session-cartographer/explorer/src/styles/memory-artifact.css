@@ -56,3 +56,8 @@
   .memory-artifact .memory-artifact-toolbar, .memory-artifact .memory-artifact-diff-summary { padding: 10px 12px; gap: 10px; }
   .memory-artifact .memory-artifact-view-options button { min-height: 44px; }
 }
+.memory-artifact .memory-artifact-range { display: grid; gap: 4px; padding: 12px 18px; border-bottom: 1px solid #343644; color: #e5e7eb; font-size: 15px; line-height: 1.5; }
+.memory-artifact .memory-artifact-range p { margin: 0; overflow-wrap: anywhere; }
+.memory-artifact .memory-artifact-range-label { display: inline-block; min-width: 4.5em; color: #b4bbc7; font-size: 13px; letter-spacing: .04em; text-transform: uppercase; }
+.memory-artifact .memory-artifact-caveats { margin: 6px 0 0; padding-left: 1.2em; color: #ffd2cf; }
+.memory-artifact .memory-artifact-caveats li { margin: 2px 0; }

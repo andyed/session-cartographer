@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+import { fetchTranscript, fetchTranscriptAnalysis } from '../api';
+import { transcriptAnalysisNotice, transcriptFailure } from './transcript-state';
 
 /**
  * Lightweight markdown renderer — no dependencies.
@@ -495,35 +497,44 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activeCategory, setActiveCategory] = useState(null);
   const [hideNoise, setHideNoise] = useState(true);
+  const [analysisNotice, setAnalysisNotice] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const containerRef = useRef(null);
 
   useEffect(() => {
-    if (!transcriptPath) return;
+    if (!transcriptPath) {
+      setLoading(false);
+      setError(transcriptFailure(new Error('No transcript path was provided.')));
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    let scrollTimer = null;
     setLoading(true);
     setError(null);
+    setMessages([]);
     setEnriched(null);
+    setAnalysisNotice(null);
     setActiveCategory(null);
 
-    // Fetch transcript and enrichment data in parallel.
-    // Enrichment failures are silent — TranscriptViewer works without it.
-    const transcriptReq = fetch(`/api/transcript?path=${encodeURIComponent(transcriptPath)}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`${r.status}`);
-        return r.json();
-      });
-
-    const analysisReq = fetch(`/api/transcript/analysis?path=${encodeURIComponent(transcriptPath)}`)
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null);
-
-    Promise.all([transcriptReq, analysisReq])
-      .then(([data, analysis]) => {
+    // Conversation text is authoritative and should not wait for optional
+    // analysis. A failed enrichment leaves a labelled basic viewer instead of
+    // holding the whole transcript behind one Promise.all.
+    fetchTranscript(transcriptPath, { signal: controller.signal })
+      .then(data => {
+        if (!active) return;
+        if (!Array.isArray(data.messages) || data.messages.length === 0) {
+          const empty = new Error('No readable conversation messages were returned.');
+          empty.status = 422;
+          empty.code = 'TRANSCRIPT_NO_MESSAGES';
+          throw empty;
+        }
         setMessages(data.messages);
-        if (analysis?.summary) setEnriched(analysis);
         setLoading(false);
 
         // Scroll to target: by UUID, or by first highlight match
-        setTimeout(() => {
+        scrollTimer = setTimeout(() => {
+          if (!active) return;
           if (targetUuid) {
             const el = document.getElementById(targetUuid);
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -539,10 +550,28 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
         }, 100);
       })
       .catch(e => {
-        setError(e.message);
+        if (!active || e?.name === 'AbortError') return;
+        setError(transcriptFailure(e));
         setLoading(false);
       });
-  }, [transcriptPath, targetUuid]);
+
+    fetchTranscriptAnalysis(transcriptPath, { signal: controller.signal })
+      .then(analysis => {
+        if (!active) return;
+        if (analysis?.summary) setEnriched(analysis);
+        else if (analysis?.unavailable) setAnalysisNotice(transcriptAnalysisNotice(analysis));
+      })
+      .catch(e => {
+        if (!active || e?.name === 'AbortError') return;
+        setAnalysisNotice(transcriptAnalysisNotice(e));
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+      if (scrollTimer) clearTimeout(scrollTimer);
+    };
+  }, [transcriptPath, targetUuid, initialHighlight, reloadKey]);
 
   // Split search into terms, filter out noise (< 3 chars)
   const searchTerms = useMemo(() =>
@@ -591,15 +620,32 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   }
 
   if (error) {
-    const friendly = error.includes('404') ? 'Transcript not found — the file may have been deleted or the path is stale.'
-      : error.includes('403') ? 'Access denied — transcript is outside the allowed directory.'
-      : `Could not load transcript (${error})`;
     return (
-      <div className="p-8">
-        <div className="text-red-400 text-sm mb-2">{friendly}</div>
-        <div className="text-xs text-gray-600 font-mono mb-3">{transcriptPath}</div>
-        <button onClick={onClose} className="text-xs text-gray-400 hover:text-gray-200 underline">back to results</button>
-      </div>
+      <section className="h-full grid place-content-center px-6" role="alert">
+        <div className="max-w-xl border border-amber-700/50 bg-amber-950/20 rounded-lg p-6">
+          <p className="text-xs font-mono uppercase tracking-wider text-amber-400 mb-2">Transcript interrupted</p>
+          <h1 className="text-lg text-gray-100 mb-2">{error.title}</h1>
+          <p className="text-sm leading-6 text-gray-300 mb-3">{error.message}</p>
+          <p className="text-xs text-muted font-mono mb-2 break-all">{transcriptPath}</p>
+          <p className="text-xs text-muted font-mono mb-5">{error.detail}</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setReloadKey(key => key + 1)}
+              className="min-h-11 px-4 rounded bg-amber-500 text-gray-950 text-sm font-medium hover:bg-amber-400"
+            >
+              Retry transcript
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-11 px-4 rounded border border-gray-700 text-gray-300 text-sm hover:border-gray-500 hover:text-white"
+            >
+              Back to results
+            </button>
+          </div>
+        </div>
+      </section>
     );
   }
 
@@ -656,14 +702,23 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
       </div>
 
       {/* Transcript path */}
-      <div className="px-4 py-1 text-xs text-gray-600 font-mono border-b border-gray-800/50 flex-shrink-0 flex items-center gap-2">
+      <div className="px-4 py-1 text-xs text-muted font-mono border-b border-gray-800/50 flex-shrink-0 flex items-center gap-2 min-w-0">
         {enriched?.isOngoing && (
           <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-400" />
           </span>
         )}
-        {transcriptPath}
+        <span className="truncate">{transcriptPath}</span>
+        {analysisNotice && (
+          <span
+            role="status"
+            title={analysisNotice.detail}
+            className="ml-auto flex-shrink-0 text-amber-400"
+          >
+            {analysisNotice.label} · analysis unavailable
+          </span>
+        )}
       </div>
 
       {/* Body: main content + optional attribution sidebar */}

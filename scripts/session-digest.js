@@ -21,6 +21,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFileSync } from 'child_process';
 import { isResolved, firstResolved } from './sentinels.js';
+import { editSummaryPaths } from './edit-paths.js';
 
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME, 'Documents/dev');
 const CHANGELOG = process.env.CARTOGRAPHER_CHANGELOG || path.join(DEV, 'changelog.jsonl');
@@ -184,13 +185,41 @@ function relativize(abs, project) {
   return abs.startsWith(`${DEV}/`) ? abs.slice(DEV.length + 1) : abs;
 }
 
+// The hook's bash-path detector reads shell source text, so it emits JS
+// property access (`errors.push`, `console.log`) alongside real files —
+// 58% of its candidates, corpus-wide. Existence on disk is the filter, and it
+// is the same question the panel's "touched" already implies. Unlike the
+// Explorer's resolver this does not confine itself to the indexed corpus: the
+// digest only names a file rather than serving it, and edits to ~/.claude
+// memory files are real session work.
+const resolvedEdits = new Map();
+function resolveEditedFile(candidate, cwd) {
+  if (typeof candidate !== 'string') return null;
+  let value = candidate.trim();
+  if (/^(["'`]).*\1$/.test(value)) value = value.slice(1, -1);
+  if (!value || value.includes('\0')) return null;
+  if (!path.isAbsolute(value) && !(typeof cwd === 'string' && path.isAbsolute(cwd))) return null;
+  const absolute = path.isAbsolute(value) ? value : path.resolve(cwd, value);
+  if (!resolvedEdits.has(absolute)) {
+    let hit = null;
+    try { hit = fs.statSync(absolute).isFile() ? absolute : null; } catch { hit = null; }
+    resolvedEdits.set(absolute, hit);
+  }
+  return resolvedEdits.get(absolute);
+}
+
 const fileHits = {};
+// Reported, never silently dropped: a candidate can miss because it was never a
+// path, but also because a real file was deleted or renamed after the session.
+let unresolvedEdits = 0;
 for (const e of events) {
   if (e.type !== 'tool_file_edit') continue;
-  const m = String(e.summary || '').match(/^Modified:\s*(.+)$/);
-  if (!m) continue;
-  const rel = relativize(m[1].trim(), e.project);
-  fileHits[rel] = (fileHits[rel] || 0) + 1;
+  for (const candidate of editSummaryPaths(e.summary, (value) => resolveEditedFile(value, e.cwd))) {
+    const absolute = resolveEditedFile(candidate, e.cwd);
+    if (!absolute) { unresolvedEdits++; continue; }
+    const rel = relativize(absolute, e.project);
+    fileHits[rel] = (fileHits[rel] || 0) + 1;
+  }
 }
 const fileRank = Object.entries(fileHits).sort((a, b) => b[1] - a[1]);
 
@@ -338,9 +367,11 @@ if (commits.length) {
   if (commits.length > MAX_COMMITS) cont(`… ${commits.length - MAX_COMMITS} more`);
 }
 
-if (fileRank.length) {
+// The panel still renders when nothing resolved: a session whose every edit
+// candidate missed is a fact about the extractor, not an absence of edits.
+if (fileRank.length || unresolvedEdits) {
   blank();
-  row('files', `${fileRank.length} touched`);
+  row('files', `${fileRank.length} touched${unresolvedEdits ? ` · ${unresolvedEdits} unresolved` : ''}`);
   for (const [file, n] of fileRank.slice(0, MAX_FILES)) {
     const room = WIDTH - LABEL - 2 - 6;
     cont(`${truncate(file, room).padEnd(room)}  ×${n}`);
@@ -391,6 +422,7 @@ if (AS_JSON) {
     commit_types: commitTypes,
     commit_shapes: commitShapes,
     files: Object.fromEntries(fileRank),
+    files_unresolved: unresolvedEdits,
     research_hosts: Object.fromEntries(hostRank),
     searches,
     compactions,

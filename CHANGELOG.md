@@ -1,6 +1,90 @@
 # Changelog
 
-## 0.7.6 — Unreleased
+## Unreleased
+
+### feat(memory): group the artifact trail by document
+
+The Artifacts depth listed every file of every thread in thread order, so the
+same TODO.md appeared once per session (13 times in a live 7-day window holding
+670 files, 149 of them Markdown across 46 threads). `groupArtifacts()` folds the
+desk's scoped threads into one row per path, documents ahead of code and newest
+edit first, each carrying the threads that touched it. A row opens the newest
+thread's session-bounded review; a multi-thread row's count zooms to those
+threads as the selected cohort, the same move the project summary already makes.
+`kind=md` is a permalinked Documents toggle. At this depth the find box narrows
+files as well as threads, so `.md` no longer lists every file of every thread
+that happens to own a document.
+
+### feat(memory): bound file review diffs by the session and add a split view
+
+The file review's diff was HEAD against the working tree, which answered "what
+is uncommitted right now" while the panel asked "what did this session change".
+Every review now carries a range: base is the last commit at or before the
+session's first recorded event, head is the last commit within two minutes of
+its final event when that commit changed the file and the session has left the
+field, otherwise the working tree. The range is folded over the session's whole
+life in the warm corpus, not the desk's window. Both ends are named with commit,
+subject and time, and the review lists the ways the range can mislead (file
+absent at base, untracked, later commits, uncommitted work past the bounded
+head, a working tree standing in for a session that committed nothing).
+`sessionBounds()` is exported; the fixture proves a commit after the session
+does not leak into its diff.
+
+Split is the default layout, rendered by `@git-diff-view/react` from the
+server's git hunks plus both full texts, loaded as its own chunk so the entry
+bundle does not carry highlight.js. Syntax colouring stays off; every readable
+pairing in the re-skin is computed at or above 8:1 and recorded in
+`split-diff.css`. `diff=unified` in the permalink selects the existing
+dependency-free table, which is also the fallback if the split chunk fails.
+
+### feat(explorer): surface and contain recoverable failures
+
+The timeline now distinguishes a live EventSource connection from its initial
+connection, automatic retry, and closed states. Each heavyweight route has its
+own recovery boundary, so a render failure cannot blank the Explorer shell.
+Transcript text loads independently from optional analysis, with typed missing,
+blocked, empty, and unreadable states plus in-place retry. The `/carto` launch
+path now verifies readable entry files, installed packages, and the Vite binary
+before starting a background server. Because tabs stay mounted behind a
+`hidden` class, each boundary is keyed to the active tab, so returning to a
+crashed view gives it a fresh attempt instead of the stale error screen. Readable
+text in these new surfaces sits at or above 8:1 against its own background, via a
+`muted` theme token carrying the existing `--internals-muted` value.
+
+### feat(explorer): attribute every view to its producing agent
+
+Timeline, search, session, transcript, and working-memory views now share one
+provider normalization path. Claude and Codex sessions retain their identities
+through transcript enrichment, carry consistent badges, and can be filtered by
+agent without turning unresolved provider sentinels into a third agent.
+
+### feat(memory): make the work desk navigable across time and views
+
+Memory now projects explicit windows from 1 hour through 90 days, keeps the
+selected duration consistent across state, session, and file endpoints, and
+preserves the whole-corpus bounds separately from the selected interval. Wider
+windows use bounded transcript enrichment, byte-budgeted caches, and bounded
+Field layout/connection work rather than truncating sessions to the daily
+transport budget.
+
+Search, work filters, catch-up state, paging, sort order, responsive focus,
+primary brushing, camera position, and comparison axes are canonical browser
+history. Back, Forward, reload, and Copy link restore the same desk. A transient
+secondary brush exposes a selected thread's connected neighbour across Field,
+Wake, and Compare without changing the primary selection or permalink. Chart
+readouts now overlay the drawing instead of moving marks, and the compact desk
+keeps its task-first layout on phone, laptop, and desktop.
+
+### fix(digest): resolve edited files from one parser
+
+Memory and `session-digest.js` now share `scripts/edit-paths.js` for the hook's
+single-file and comma-separated `(via bash)` summary forms. Each consumer keeps
+its own security boundary: Memory serves only real files inside the corpus,
+while the digest may name real files elsewhere. Loose shell-detector candidates
+such as `errors.push` are excluded and counted as unresolved instead of becoming
+fabricated hottest-file entries.
+
+## 0.7.6 — 2026-09-11
 
 ### fix(ci): install Explorer dependencies before the unit suite
 

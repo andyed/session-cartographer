@@ -8,6 +8,50 @@ export function normalizeBrush(value) {
   return selected.length ? selected : null;
 }
 
+/** The Field's existing shared-activity evidence: overlap of project mixes. */
+export function projectAffinity(a, b) {
+  let intersection = 0, union = 0;
+  for (const project of new Set([...Object.keys(a.projects || {}), ...Object.keys(b.projects || {})])) {
+    if (project === 'dev') continue;
+    const av = (a.projects[project] || 0) / (a.count || 1);
+    const bv = (b.projects[project] || 0) / (b.count || 1);
+    intersection += Math.min(av, bv);
+    union += Math.max(av, bv);
+  }
+  return union ? intersection / union : 0;
+}
+
+/** A secondary brush is subordinate to the existing primary IDs, never a filter. */
+export function resolveBrushFocus(sessions, primaryIds, previewId, at = Infinity) {
+  const visible = sessions.filter(s => s.events.some(event => event[0] <= at));
+  const byId = new Map(visible.map(s => [s.id, s]));
+  const primary = [...new Set(primaryIds || [])].filter(id => byId.has(id));
+  const candidate = byId.get(previewId);
+  const anchors = candidate ? primary.filter(id => id !== candidate.id && projectAffinity(byId.get(id), candidate) >= .12) : [];
+  const preview = candidate && (!primary.length || primary.includes(candidate.id) || anchors.length) ? candidate.id : null;
+  const secondary = anchors.length ? preview : null;
+  const projects = secondary ? [...new Set(anchors.flatMap(id => Object.keys(byId.get(id).projects)
+    .filter(project => project !== 'dev' && byId.get(id).projects[project] > 0 && candidate.projects[project] > 0)))].sort() : [];
+  return { primary, preview, secondary, anchors, projects };
+}
+
+/** Hit the same quadratic curve the Field draws, with a forgiving pointer radius. */
+export function connectionDistance(point, edge) {
+  const { x, y } = point;
+  const { ax, ay, cx, cy, bx, by } = edge;
+  if (![x, y, ax, ay, cx, cy, bx, by].every(Number.isFinite)) return Infinity;
+  let distance = Infinity, px = ax, py = ay;
+  for (let step = 1; step <= 24; step++) {
+    const t = step / 24, u = 1 - t;
+    const qx = u*u*ax + 2*u*t*cx + t*t*bx, qy = u*u*ay + 2*u*t*cy + t*t*by;
+    const dx = qx - px, dy = qy - py;
+    const along = Math.max(0, Math.min(1, ((x-px)*dx + (y-py)*dy) / (dx*dx + dy*dy || 1)));
+    distance = Math.min(distance, Math.hypot(x-px-along*dx, y-py-along*dy));
+    px = qx; py = qy;
+  }
+  return distance;
+}
+
 /** Inclusive screen-space selection works in every drag direction. */
 export function brushHits(points, rect) {
   if (!rect || ![rect.x0, rect.y0, rect.x1, rect.y1].every(Number.isFinite)) return [];

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseArtifactMarkdown, parseUnifiedDiff, safeArtifactLink, splitTableRow } from '../../explorer/src/components/memory-artifact.js';
+import * as memoryArtifact from '../../explorer/src/components/memory-artifact.js';
+const { parseArtifactMarkdown, parseUnifiedDiff, safeArtifactLink, splitTableRow } = memoryArtifact;
 
 test('diff preserves file/hunk provenance and advances old/new lines independently', () => {
   const diff = [
@@ -68,4 +69,28 @@ test('unclosed fences retain remaining content and table code pipes do not becom
   assert.deepEqual(parseArtifactMarkdown('~~~text\n## title\n<div>literal</div>'), [{ type: 'code', language: 'text', text: '## title\n<div>literal</div>' }]);
   assert.deepEqual(splitTableRow('| ``a`|b`` | escaped \\| pipe |'), ['``a`|b``', 'escaped | pipe']);
   assert.deepEqual(parseArtifactMarkdown(''), []);
+});
+
+test('a session range is described by its commits and every way it can mislead', () => {
+  const { describeReviewRange } = memoryArtifact;
+  const formatTime = (ms) => `t${ms}`;
+  const base = { sha: 'a'.repeat(40), short: 'aaaaaaa', time: 1, subject: 'Before' };
+  const head = { kind: 'commit', sha: 'b'.repeat(40), short: 'bbbbbbb', time: 2, subject: 'During' };
+  const clean = describeReviewRange({ start: 10, end: 20, inFlight: false, tracked: true, base, head, committedAfter: false, uncommittedAfter: false, oldContent: 'x', newContent: 'y' }, { formatTime });
+  assert.equal(clean.from, 'commit aaaaaaa “Before” · t1');
+  assert.equal(clean.to, 'commit bbbbbbb “During” · t2');
+  assert.deepEqual(clean.caveats, []);
+  assert.equal(clean.window, 't10 → t20');
+  const noisy = describeReviewRange({ start: 10, end: 20, inFlight: false, tracked: true, base, head, committedAfter: true, uncommittedAfter: true, oldContent: null, newContent: 'y' }, { formatTime });
+  assert.equal(noisy.caveats.length, 3);
+  assert.match(noisy.caveats[0], /did not exist at the base/);
+  assert.match(noisy.caveats[1], /Later commits/);
+  assert.match(noisy.caveats[2], /uncommitted changes beyond/);
+  const live = describeReviewRange({ start: 10, end: 20, inFlight: true, tracked: false, base: null, head: { kind: 'working-tree' }, committedAfter: false, uncommittedAfter: false, oldContent: null, newContent: 'y' }, { formatTime });
+  assert.equal(live.from, 'before the first commit');
+  assert.equal(live.to, 'the working tree (session in flight)');
+  assert.deepEqual(live.caveats, ['Git does not track this file yet; the diff is the whole current file.']);
+  const stale = describeReviewRange({ start: 10, end: 20, inFlight: false, tracked: true, base, head: { kind: 'working-tree' }, committedAfter: false, uncommittedAfter: false, oldContent: 'x', newContent: 'y' }, { formatTime });
+  assert.match(stale.caveats[0], /Nothing was committed during the session/);
+  assert.equal(describeReviewRange(null), null);
 });

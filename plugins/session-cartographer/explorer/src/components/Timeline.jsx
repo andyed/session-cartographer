@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { fetchEvents } from '../api';
 import { useEventStream } from '../hooks/useEventStream';
+import { eventStreamPresentation } from '../hooks/event-stream-state';
 import EventGroup, { groupEvents } from './EventGroup';
 import SessionCard from './SessionCard';
 import { attributeProvider } from '../lib/provider';
@@ -68,12 +69,13 @@ export default function Timeline({ onOpenTranscript, isActive = true }) {
       });
   }, [projectFilter]);
 
-  useEventStream((event) => {
+  const streamStatus = useEventStream((event) => {
     setEvents(prev => [event, ...prev]);
     if (!isAtTop.current) {
       setNewCount(prev => prev + 1);
     }
   });
+  const streamPresentation = eventStreamPresentation(streamStatus);
 
   const handleScroll = () => {
     if (scrollRef.current) {
@@ -115,13 +117,36 @@ export default function Timeline({ onOpenTranscript, isActive = true }) {
     <div className="relative h-full flex flex-col">
       {/* View Toggle Bar */}
       <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex justify-between items-center">
-        <div className="flex-1">
+        <div className="flex-1 flex items-center gap-3 min-w-0">
           {projectFilter && (
             <span className="inline-flex items-center gap-2 bg-blue-900/30 border border-blue-500/50 text-blue-200 text-xs px-2 py-0.5 rounded-full">
               Project: <span className="font-mono font-medium">{projectFilter}</span>
               <button onClick={() => setProjectFilter('')} className="hover:text-white font-bold text-blue-400 ml-1 rounded-full p-0.5 leading-none px-1.5 focus:outline-none focus:ring-1">
                 ✕
               </button>
+            </span>
+          )}
+          {streamPresentation && (
+            <span
+              role="status"
+              aria-live="polite"
+              title={streamPresentation.detail}
+              aria-label={`Event stream ${streamPresentation.label}. ${streamPresentation.detail}`}
+              className={`inline-flex items-center gap-1.5 text-[11px] font-mono whitespace-nowrap ${
+                streamPresentation.tone === 'live' ? 'text-emerald-400'
+                  : streamPresentation.tone === 'offline' ? 'text-amber-400'
+                    : 'text-muted'
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`h-1.5 w-1.5 rounded-full ${
+                  streamPresentation.tone === 'live' ? 'bg-emerald-400'
+                    : streamPresentation.tone === 'offline' ? 'bg-amber-400'
+                      : 'bg-gray-500 animate-pulse'
+                }`}
+              />
+              {streamPresentation.label}
             </span>
           )}
         </div>

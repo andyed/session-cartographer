@@ -70,3 +70,48 @@ test('camera zoom rejects invalid controls and recovers invalid camera values wi
   assert.equal(zoomCameraAt(identity, { x: 0, y: 0 }, 100, 0.5, 3).scale, 3);
   assert.equal(zoomCameraAt(identity, { x: 0, y: 0 }, 0.01, 0.5, 3).scale, 0.5);
 });
+
+// Shared activity and secondary selection use the same relationship evidence
+// as the rendered connections; a neighbour must not silently replace a cohort.
+test('secondary brush retains the exact primary cohort and only inspects shared activity', async () => {
+  const {resolveBrushFocus, projectAffinity} = await import('../../explorer/src/components/memory-brush.js');
+  const make = (id, projects, t=10) => Object.freeze({id, projects, count:Object.values(projects).reduce((a,b)=>a+b,0), events:[[t,'activity']]});
+  const sessions = [make('a',{player:80,dev:20}),make('b',{player:5}),make('c',{canvas:10}),make('d',{player:10}),make('future',{player:10},100)];
+  const primary = Object.freeze(['a','c']);
+  const focus = resolveBrushFocus(sessions,primary,'b',50);
+  assert.deepEqual(focus,{primary:['a','c'],preview:'b',secondary:'b',anchors:['a'],projects:['player']});
+  assert.deepEqual(primary,['a','c']);
+  assert.deepEqual(resolveBrushFocus(sessions,['a'],'c',50),{primary:['a'],preview:null,secondary:null,anchors:[],projects:[]});
+  assert.equal(resolveBrushFocus(sessions,['a'],'future',50).secondary,null,'future activity cannot supply a visible neighbour');
+  assert.equal(resolveBrushFocus(sessions,['a'],'missing',50).preview,null);
+  assert.equal(resolveBrushFocus(sessions,['a'],null,50).secondary,null);
+  assert.deepEqual(resolveBrushFocus(sessions,['a','d'],'b',50).anchors,['a','d']);
+  assert.equal(resolveBrushFocus(sessions,['a'],'a',50).secondary,null,'focusing the primary alone is not a secondary brush');
+  assert.equal(resolveBrushFocus(sessions,[],'c',50).preview,'c','unselected exploration remains available');
+  assert.equal(projectAffinity(make('generic',{dev:10}),make('also-generic',{dev:5})),0);
+  assert.equal(projectAffinity(make('many',{player:100}),make('few',{player:5})),1,'project proportions, not equal event volume');
+});
+
+test('secondary brush cannot promote a neighbour through another neighbour or a weak shared project', async () => {
+  const {resolveBrushFocus} = await import('../../explorer/src/components/memory-brush.js');
+  const sessions = [
+    {id:'a',projects:{player:100},count:100,events:[[1]]},
+    {id:'bridge',projects:{player:50,canvas:50},count:100,events:[[1]]},
+    {id:'indirect',projects:{canvas:100},count:100,events:[[1]]},
+    {id:'weak',projects:{player:1,canvas:99},count:100,events:[[1]]},
+  ];
+  assert.equal(resolveBrushFocus(sessions,['a'],'bridge').secondary,'bridge');
+  assert.equal(resolveBrushFocus(sessions,['a'],'indirect').preview,null);
+  assert.equal(resolveBrushFocus(sessions,['a'],'weak').preview,null);
+});
+
+test('connection brushing follows the drawn curve rather than its bounding box', async () => {
+  const {connectionDistance} = await import('../../explorer/src/components/memory-brush.js');
+  const edge = {ax:0,ay:0,cx:50,cy:40,bx:100,by:0};
+  assert.equal(connectionDistance({x:50,y:20},edge),0);
+  assert.ok(connectionDistance({x:50,y:0},edge)>15,'inside the bounding box but outside the actual curve');
+  assert.equal(connectionDistance({x:0,y:0},edge),0);
+  assert.equal(connectionDistance({x:100,y:0},edge),0);
+  assert.ok(Math.abs(connectionDistance({x:50,y:25},edge)-5)<.01);
+  assert.equal(connectionDistance({x:NaN,y:20},edge),Infinity);
+});

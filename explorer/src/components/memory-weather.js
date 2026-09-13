@@ -1,6 +1,6 @@
-import { brushHits, semanticLevel, zoomCameraAt } from './memory-brush';
+import { brushHits, semanticLevel, zoomCameraAt, projectAffinity, resolveBrushFocus, connectionDistance } from './memory-brush';
 import { sessionMetricsAt, formatDuration, formatCount } from './memory-metrics';
-import { plainLinkClick, normalizeMemoryRoute, CAM_MIN_SCALE, CAM_MAX_SCALE } from './memory-route';
+import { plainLinkClick, normalizeMemoryRoute, formatMemoryWindow, CAM_MIN_SCALE, CAM_MAX_SCALE } from './memory-route';
 // Canvas field and semantic zoom. Data comes from the warm corpus; positions stay stable as it updates.
 
 export function createMemoryWeather(root, initialData, {
@@ -16,15 +16,12 @@ export function createMemoryWeather(root, initialData, {
  <label>Across <select data-x aria-label="Horizontal dimension"><option value="spanMs">Recorded span</option><option value="activeMs">Active periods</option></select></label>
  <label>Up <select data-y aria-label="Vertical dimension"><option value="output">Generated tokens</option><option value="total">Processed tokens</option><option value="edit">Edit records</option><option value="files">Files touched</option><option value="research">Research actions</option><option value="commit">Commits</option><option value="events">All activity</option></select></label>
 </div>
-<div class="mw-brush-label" aria-live="polite"><strong>Brush a thread to identify it</strong><span>Hover or focus a mark</span><span class="mw-brush-values"></span></div><div class="mw-gesture"><button type="button" class="mw-control" data-gesture="brush" aria-pressed="false" title="Drag to select instead of pan">Brush</button></div><div class="mw-stages"></div>
-<details class="mw-about"><summary>Chart key</summary><div class="mw-reading"></div><p class="mw-note"></p></details>
-<p class="mw-brush-hint">Hover to identify · drag to select · Space to pin · Esc to clear</p>
-<div class="mw-bottom"><button type="button" class="mw-control" data-play>Replay</button><input type="range" min="0" max="1440" value="1440" step="1" aria-label="Time across the last 24 hours"></div>
+<div class="mw-brush-label" aria-live="polite" hidden><strong></strong><span></span><span class="mw-brush-values"></span></div><div class="mw-gesture"><button type="button" class="mw-control" data-gesture="brush" aria-pressed="false" title="Brush selection">Brush</button></div><div class="mw-stages"></div>
 `;
   const controls = new Map();
   const $ = s => root.querySelector(s) || controls.get(s),
     stages = $('.mw-stages');
-  for (const selector of ['.mw-compare-controls','[data-x]','[data-y]','.mw-gesture']) controls.set(selector,$(selector));
+  for (const selector of ['.mw-compare-controls','[data-x]','[data-y]','.mw-gesture','.mw-brush-label']) controls.set(selector,$(selector));
   // An empty list means "no restriction" — live data can fill every axis. A
   // populated one comes from a corpus that knows which measures it actually
   // carries, and the ones it does not are removed rather than left to plot a
@@ -78,7 +75,7 @@ export function createMemoryWeather(root, initialData, {
     if (mode === 'wake') {
       const period = document.createElement('span');
       period.className = 'mw-panel-meta';
-      period.textContent = '24h';
+      period.textContent = windowLabel();
       header.append(period);
     }
     if (mode === 'compare') {
@@ -113,6 +110,7 @@ export function createMemoryWeather(root, initialData, {
     panels.length = 0;
     for (const mode of modes) panels.push(keep.get(mode) || createPanel(mode));
     stages.replaceChildren(...panels.map(panel => panel.stage));
+    (panels.find(panel => panel.mode === 'field') || panels[0])?.stage.append($('.mw-brush-label'));
     for (const panel of panels) wirePanel?.(panel);
     stages.dataset.count = String(panels.length);
     return panels;
@@ -125,7 +123,7 @@ export function createMemoryWeather(root, initialData, {
     selected: route.session || null,
     brush: route.brush || [],
     preview: null,
-    playing: false,
+    hours: route.hours ?? (data.end - data.start) / 3600000,
     x: route.x || 'spanMs',
     y: yOptions.includes(route.y) ? route.y : (yOptions[0] || 'output')
   };
@@ -134,21 +132,22 @@ export function createMemoryWeather(root, initialData, {
   $('[data-x]').value = state.x;
   $('[data-y]').value = state.y;
   const camKey = cam => cam ? `${cam.x},${cam.y},${cam.scale}` : '';
-  const routeKey = r => [r.view, r.x, r.y, r.at, r.end, camKey(r.cam), (r.panels || []).join(), (r.brush || []).join()].join('|');
+  const routeKey = r => [r.hours, r.view, r.x, r.y, r.at, r.end, camKey(r.cam), (r.panels || []).join(), (r.brush || []).join()].join('|');
   const fieldPanel = () => panels.find(panel => panel.mode === 'field');
   let pendingRouteKey = null;
-  let lastPublished = 0;
+  const windowHours = () => (data.end - data.start) / 3600000;
+  function windowLabel() { return formatMemoryWindow(windowHours()); }
   function viewState() {
     const v = fieldPanel()?.view;
     return {
-      view: state.mode, x: state.x, y: state.y,
+      hours: state.hours, view: state.mode, x: state.x, y: state.y,
       at: state.live ? null : Math.round(state.time), end: state.live ? null : data.end,
       cam: v ? { x: v.x, y: v.y, scale: v.scale } : null,
       panels: [...shown], brush: state.brush
     };
   }
-  function publish(options) {
-    const next = viewState();
+  function publish(options, patch = {}) {
+    const next = {...viewState(), ...patch};
     pendingRouteKey = routeKey(normalizeMemoryRoute(next));
     onNavigate?.(next, options);
   }
@@ -167,6 +166,15 @@ export function createMemoryWeather(root, initialData, {
     hx: 0,
     hy: 0
   }));
+  let dataRevision = 0, targetRevision = 0, targetRouteRevision = 0;
+  const metricCache = new WeakMap();
+  function metrics(p) {
+    const cached = metricCache.get(p);
+    if(cached?.revision===dataRevision && cached.at===state.time) return cached.value;
+    const value=sessionMetricsAt(p,state.time,data.files[p.id]||[]);
+    metricCache.set(p,{revision:dataRevision,at:state.time,value});
+    return value;
+  }
   function shortLabel(title) {
     return title.length > 34 ? title.slice(0, 31) + '…' : title;
   }
@@ -180,10 +188,7 @@ export function createMemoryWeather(root, initialData, {
     palette = [],
     ink = '',
     bg = '',
-    muted = '',
-    raf = 0,
-    lastFrame = 0,
-    lastPaint = 0;
+    muted = '';
   const gridCanvas = document.createElement('canvas'),
     gctx = gridCanvas.getContext('2d');
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -224,19 +229,7 @@ export function createMemoryWeather(root, initialData, {
     layout();
     render();
   }
-  function projectAffinity(a, b) {
-    let intersection = 0,
-      union = 0;
-    for (const k of new Set([...Object.keys(a.projects), ...Object.keys(b.projects)])) {
-      if (k === 'dev') continue;
-      const av = (a.projects[k] || 0) / a.count,
-        bv = (b.projects[k] || 0) / b.count;
-      intersection += Math.min(av, bv);
-      union += Math.max(av, bv);
-    }
-    return union ? intersection / union : 0;
-  }
-  let affinity = points.map(a => points.map(b => projectAffinity(a, b)));
+
   /** Every mode at once when there is room; otherwise the one the buttons pick. */
   const ALL_PANELS_MIN = 1180;
   const roomForMany = () => (stages.clientWidth || root.clientWidth || 0) >= ALL_PANELS_MIN;
@@ -247,40 +240,65 @@ export function createMemoryWeather(root, initialData, {
     return list.length ? list : [state.mode];
   }
   function layout() {
-    const {W,H} = panels.find(panel=>panel.mode==='field') || panels[0] || {W:736,H:550};
+    const {W,H} = fieldPanel() || panels[0] || {W:736,H:550};
     const margin = 36;
     for (const p of points) {
-      const seed = hash(p.group),
-        angle = hash(p.id) * 2.3999632297;
-      const a = [.22 + seed % 57 / 100, .22 + (seed >>> 8) % 53 / 100];
-      p.ax = a[0] * W;
-      p.ay = a[1] * H;
+      const seed = hash(p.group), angle = hash(p.id) * 2.3999632297;
+      p.ax = (.22 + seed % 57 / 100) * W;
+      p.ay = (.22 + (seed >>> 8) % 53 / 100) * H;
       p.x = p.ax + Math.cos(angle) * 55;
       p.y = p.ay + Math.sin(angle) * 55;
     }
-    for (let step = 0; step < 300; step++) {
-      for (const p of points) {
-        p.x += (p.ax - p.x) * .013;
-        p.y += (p.ay - p.y) * .013;
+    // Preserve the familiar small-window layout. Its bounded pair list stores
+    // only force parameters; history-sized corpora never allocate an N² matrix.
+    if (points.length <= 120) {
+      const pairs = [];
+      for (let i=0;i<points.length;i++) for (let j=i+1;j<points.length;j++) {
+        const affinity = projectAffinity(points[i],points[j]);
+        pairs.push([points[i],points[j],53+(affinity>.1?5:25),affinity>.35]);
       }
-      for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
-        const a = points[i],
-          b = points[j];
-        let dx = b.x - a.x,
-          dy = b.y - a.y,
-          dist = Math.hypot(dx, dy) || .1;
-        const desired = 53 + (affinity[i][j] > .1 ? 5 : 25);
-        const push = dist < desired ? (desired - dist) * .20 : affinity[i][j] > .35 ? (desired - dist) * .0012 : 0;
-        const nx = dx / dist,
-          ny = dy / dist;
-        a.x -= nx * push;
-        a.y -= ny * push;
-        b.x += nx * push;
-        b.y += ny * push;
+      for (let step=0;step<300;step++) {
+        for (const p of points) { p.x+=(p.ax-p.x)*.013; p.y+=(p.ay-p.y)*.013; }
+        for (const [a,b,desired,related] of pairs) {
+          const dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy)||.1;
+          const push=dist<desired?(desired-dist)*.20:related?(desired-dist)*.0012:0;
+          a.x-=dx/dist*push; a.y-=dy/dist*push; b.x+=dx/dist*push; b.y+=dy/dist*push;
+        }
+        for (const p of points) { p.x=clamp(p.x,margin,W-margin); p.y=clamp(p.y,56,Math.max(56,H-margin)); }
+      }
+      return;
+    }
+    // Deterministic project clouds retain every session. Local collision work
+    // has a fixed budget per point, so a 90-day corpus remains interactive.
+    const counts = new Map();
+    for (const p of points) counts.set(p.group,(counts.get(p.group)||0)+1);
+    const radius = Math.max(4,Math.min(W,H)*.25);
+    for (const p of points) {
+      const seed=hash(p.id),angle=seed*2.3999632297;
+      const spread=Math.min(radius,18+Math.sqrt(counts.get(p.group))*6)*Math.sqrt((hash(p.id+'radius')+.5)/4294967296);
+      p.x=clamp(p.ax+Math.cos(angle)*spread,margin,W-margin);
+      p.y=clamp(p.ay+Math.sin(angle)*spread,56,Math.max(56,H-margin));
+    }
+    const spacing=Math.max(2,Math.min(48,Math.sqrt(Math.max(1,(W-72)*(H-92))/points.length)*.85));
+    for (let step=0;step<12;step++) {
+      const cells=new Map();
+      for (const p of points) {
+        const key=`${Math.floor(p.x/spacing)},${Math.floor(p.y/spacing)}`;
+        const cell=cells.get(key)||[]; cell.push(p); cells.set(key,cell);
       }
       for (const p of points) {
-        p.x = clamp(p.x, margin, W - margin);
-        p.y = clamp(p.y, 56, Math.max(56,H - margin));
+        const gx=Math.floor(p.x/spacing),gy=Math.floor(p.y/spacing);
+        let checked=0;
+        for(let ox=-1;ox<=1;ox++) for(let oy=-1;oy<=1;oy++) {
+          const cell=cells.get(`${gx+ox},${gy+oy}`)||[];
+          const stride=Math.max(1,Math.ceil(cell.length/4));
+          for(let i=(hash(p.id)+step)%stride;i<cell.length && checked<24;i+=stride) {
+            const q=cell[i]; if(q===p) continue; checked++;
+            const dx=p.x-q.x,dy=p.y-q.y,d=Math.hypot(dx,dy);
+            if(d>0 && d<spacing) { const push=(spacing-d)*.15/d; p.x+=dx*push; p.y+=dy*push; }
+          }
+        }
+        p.x=clamp(p.x,margin,W-margin); p.y=clamp(p.y,56,Math.max(56,H-margin));
       }
     }
   }
@@ -560,8 +578,24 @@ export function createMemoryWeather(root, initialData, {
       }
     }
   }
+  const brushFocus = () => resolveBrushFocus(points, state.brush, state.preview, state.time);
+  function preview(id) {
+    const next = resolveBrushFocus(points, state.brush, id, state.time).preview;
+    if (state.preview === next) return;
+    state.preview = next;
+    onHover?.(next);
+    render();
+  }
+  function inspect(id) {
+    if (state.brush.length) preview(state.brush.includes(id) ? null : id);
+    else { state.brush = [id]; state.preview = null; onHover?.(null); onBrush?.([id]); render(); }
+  }
   function field(samples) {
     if (!compact) density(samples);
+    const focusState = brushFocus();
+    const primary = new Set(focusState.primary);
+    const field = fieldPanel();
+    if (field) field.edges = [];
     const selected = state.preview ?? (state.brush.length === 1 ? state.brush[0] : state.selected);
     const tier = tierOf(view.scale);
     const used = [];
@@ -575,25 +609,71 @@ export function createMemoryWeather(root, initialData, {
       ctx.globalAlpha = 1;
       return;
     }
-    // Only a shared recorded project earns a bridge; co-presence alone does not.
-    for (let i = 0; i < samples.length; i++) for (let j = i + 1; j < samples.length; j++) {
-      const a = samples[i],
-        b = samples[j];
-      if (!a.count || !b.count || affinity[i][j] < .12) continue;
-      const focus = selected === a.p.id || selected === b.p.id,
-        hot = a.heat > .5 && b.heat > .5;
-      if (!focus && !hot) continue;
-      ctx.globalAlpha = focus ? .38 : .10;
-      ctx.strokeStyle = palette[groupIndex(a.p)].css;
-      ctx.lineWidth = focus ? 1.2 : .7;
-      const ax = vx(a.p.x), ay = vy(a.p.y), bx = vx(b.p.x), by = vy(b.p.y);
-      const mx = (ax + bx) / 2,
-        my = (ay + by) / 2;
-      ctx.beginPath();
-      ctx.moveTo(ax, ay);
-      ctx.quadraticCurveTo(mx + (ay - by) * .08, my + (bx - ax) * .08, bx, by);
-      ctx.stroke();
+    // Keep the primary neighbourhood stable while a secondary brush singles
+    // out its connection. Never expand to the neighbour's other relationships.
+    const edges = [], seen = new Set();
+    const addEdge = (a,b) => {
+      if(!a || !b || a===b || !a.count || !b.count) return;
+      const key=a.p.i<b.p.i?`${a.p.i}:${b.p.i}`:`${b.p.i}:${a.p.i}`;
+      if(seen.has(key)) return; seen.add(key);
+      const anchored=primary.has(a.p.id)||primary.has(b.p.id);
+      const focus=primary.size?anchored:selected===a.p.id||selected===b.p.id;
+      if(primary.size?!anchored:!focus&&!(a.heat>.5&&b.heat>.5)) return;
+      // Candidate selection changes drawing density, never relationship truth.
+      if(projectAffinity(a.p,b.p)<.12) return;
+      const secondary=Boolean(focusState.secondary &&
+        ((a.p.id===focusState.secondary&&primary.has(b.p.id))||
+         (b.p.id===focusState.secondary&&primary.has(a.p.id))));
+      const ax=vx(a.p.x),ay=vy(a.p.y),bx=vx(b.p.x),by=vy(b.p.y);
+      if(Math.max(ax,bx)<0||Math.min(ax,bx)>W||Math.max(ay,by)<0||Math.min(ay,by)>H) return;
+      edges.push({from:a.p.id,to:b.p.id,ax,ay,bx,by,
+        cx:(ax+bx)/2+(ay-by)*.08,cy:(ay+by)/2+(bx-ax)*.08,
+        secondary,focus,color:palette[groupIndex(primary.has(b.p.id)?b.p:a.p)].css});
+    };
+    if(samples.length<=120) {
+      for(let i=0;i<samples.length;i++) for(let j=i+1;j<samples.length;j++) addEdge(samples[i],samples[j]);
+    } else {
+      const byId=new Map(samples.map(s=>[s.p.id,s]));
+      // An explicit secondary inspection always gets its true primary links,
+      // even when it is outside the local candidate neighbourhood.
+      if(focusState.secondary) for(const id of primary) addEdge(byId.get(id),byId.get(focusState.secondary));
+      const cellSize=80,cells=new Map(),visible=[];
+      for(const s of samples) {
+        const x=vx(s.p.x),y=vy(s.p.y);
+        if(!s.count||x<0||y<0||x>W||y>H) continue;
+        visible.push(s);
+        const key=`${Math.floor(x/cellSize)},${Math.floor(y/cellSize)}`;
+        const cell=cells.get(key)||[];cell.push(s);cells.set(key,cell);
+      }
+      const anchors=primary.size?samples.filter(s=>primary.has(s.p.id)):selected?[byId.get(selected)].filter(Boolean):visible.filter(s=>s.heat>.5);
+      const limit=Math.max(40,Math.min(500,Math.floor(W*H/1200)));
+      let examined=0;
+      for(const a of anchors) {
+        if(edges.length>=limit||examined>=limit*12) break;
+        const gx=Math.floor(vx(a.p.x)/cellSize),gy=Math.floor(vy(a.p.y)/cellSize),near=[];
+        for(let ox=-1;ox<=1;ox++) for(let oy=-1;oy<=1;oy++) {
+          const cell=cells.get(`${gx+ox},${gy+oy}`)||[];
+          // Even a single dense cell has bounded work, sampled deterministically
+          // across its membership rather than biased to the newest sessions.
+          const stride=Math.max(1,Math.ceil(cell.length/12));
+          for(let i=hash(a.p.id)%stride;i<cell.length;i+=stride) near.push(cell[i]);
+        }
+        near.sort((b,c)=>Math.hypot(b.p.x-a.p.x,b.p.y-a.p.y)-Math.hypot(c.p.x-a.p.x,c.p.y-a.p.y));
+        for(const b of near) {
+          if(edges.length>=limit||examined++>=limit*12) break;
+          addEdge(a,b);
+        }
+      }
     }
+    // Paint the inspected relationship last, above the quiet primary context.
+    for (const edge of edges.sort((a,b) => Number(a.secondary)-Number(b.secondary))) {
+      ctx.globalAlpha = edge.secondary ? 1 : focusState.secondary ? .18 : edge.focus ? .45 : .10;
+      ctx.strokeStyle = edge.secondary ? color('--mw-cyan') : edge.color;
+      ctx.lineWidth = edge.secondary ? 2.2 : edge.focus ? 1.2 : .7;
+      ctx.beginPath(); ctx.moveTo(edge.ax, edge.ay);
+      ctx.quadraticCurveTo(edge.cx, edge.cy, edge.bx, edge.by); ctx.stroke();
+    }
+    if (field) field.edges = edges;
     for (const s of samples) {
       const p = s.p;
       if (!s.count) continue;
@@ -634,7 +714,7 @@ export function createMemoryWeather(root, initialData, {
         ctx.stroke();
       }
     }
-    const candidates = [...samples].filter(s => s.count && s.p.label).sort((a, b) => (b.p.id === selected ? 1 : 0) - (a.p.id === selected ? 1 : 0) || b.heat - a.heat);
+    const candidates = compact ? [] : [...samples].filter(s => s.count && s.p.label).sort((a, b) => (b.p.id === selected ? 1 : 0) - (a.p.id === selected ? 1 : 0) || b.heat - a.heat);
     let n = 0;
     for (const s of candidates) {
       if (compact) continue;
@@ -687,16 +767,17 @@ export function createMemoryWeather(root, initialData, {
     ctx.globalAlpha = 1;
     ctx.fillStyle = muted; ctx.font = '500 16px ui-sans-serif,system-ui,sans-serif';
     const clock = t => new Date(t).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-    ctx.textAlign = 'left'; ctx.fillText('−24h', left, H - 3);
+    ctx.textAlign = 'left'; ctx.fillText('−'+windowLabel(), left, H - 3);
     ctx.textAlign = 'right'; ctx.fillText(clock(data.end), right, H - 3); ctx.textAlign = 'left';
   }
   let rebuildingTargets = false;
   function targets(panel, samples) {
     const host = panel.targetsHost;
-    if (host.dataset.level !== 'sessions' || host.children.length !== points.length) {
+    if (host.dataset.level !== 'sessions' || host.memoryRevision !== targetRevision || host.children.length !== points.length) {
       rebuildingTargets = true;
       host.replaceChildren();
       host.dataset.level = 'sessions';
+      host.memoryRevision = targetRevision;
       for (const p of points) {
         const b = document.createElement('a');
         b.className = 'mw-target';
@@ -704,32 +785,24 @@ export function createMemoryWeather(root, initialData, {
         b.onclick = event => {
           if (!plainLinkClick(event)) return;
           event.preventDefault();
-          if (compact && event.detail > 0) { state.brush = [p.id]; onBrush?.([p.id]); render(); }
+          if (compact && event.detail > 0) inspect(p.id);
           else enter(p);
         };
-        b.onpointerenter = () => {
-          if (rebuildingTargets) return;
-          state.preview = p.id;
-          onHover?.(p.id);
-          render();
+        b.onpointerenter = event => {
+          if (rebuildingTargets || event.pointerType === 'touch') return;
+          preview(p.id);
         };
-        b.onpointerleave = () => {
-          if (rebuildingTargets) return;
-          state.preview = null;
-          onHover?.(null);
-          render();
+        b.onpointerleave = event => {
+          if (rebuildingTargets || event.pointerType === 'touch') return;
+          preview(null);
         };
         b.onfocus = () => {
           if (rebuildingTargets) return;
-          state.preview = p.id;
-          onHover?.(p.id);
-          render();
+          preview(p.id);
         };
         b.onblur = () => {
           if (rebuildingTargets) return;
-          state.preview = null;
-          onHover?.(null);
-          render();
+          preview(null);
         };
         b.onkeydown = event => {
           if (event.code !== 'Space') return;
@@ -743,34 +816,45 @@ export function createMemoryWeather(root, initialData, {
       }
     }
     rebuildingTargets = false;
-    [...host.children].forEach((b, i) => {
-      const s = samples[i];
-      const at = panel.coords.get(s.p.id);
-      b.hidden = !s.count || !at;
-      b.dataset.session = s.p.id;
-      b.setAttribute('aria-label', panel.mode === (panels.some(p => p.mode === 'field') ? 'field' : state.mode) ? 'Explore ' + s.p.title : `Brush ${s.p.title} in ${panel.mode}`);
-      b.href = hrefForSession?.(s.p, viewState()) || '#';
-      if (at) {
-        b.style.left = at[0] + 'px';
-        b.style.top = at[1] + 'px';
+    const secondary = brushFocus().secondary;
+    const currentView=viewState(),hrefKey=targetRouteRevision+JSON.stringify(currentView),primary=new Set(state.brush);
+    const navigationPanel=panels.some(p=>p.mode==='field')?'field':state.mode;
+    const attribute=(element,name,value)=>{if(element.getAttribute(name)!==value) element.setAttribute(name,value);};
+    [...host.children].forEach((b,i)=>{
+      const s=samples[i],at=panel.coords.get(s.p.id),hidden=!s.count||!at;
+      if(b.hidden!==hidden) b.hidden=hidden;
+      attribute(b,'data-session',s.p.id);
+      attribute(b,'aria-label',panel.mode===navigationPanel?'Explore '+s.p.title:`Brush ${s.p.title} in ${panel.mode}`);
+      if(b.memoryHrefKey!==hrefKey) { b.href=hrefForSession?.(s.p,currentView)||'#'; b.memoryHrefKey=hrefKey; }
+      if(at) {
+        const left=at[0]+'px',top=at[1]+'px';
+        if(b.style.left!==left) b.style.left=left;
+        if(b.style.top!==top) b.style.top=top;
       }
-      b.setAttribute('aria-current', String(state.brush.includes(s.p.id)));
-      b.dataset.brushed = String(state.preview === s.p.id || state.brush.includes(s.p.id));
+      attribute(b,'aria-current',String(primary.has(s.p.id)));
+      attribute(b,'data-brushed',String(state.preview===s.p.id||primary.has(s.p.id)));
+      attribute(b,'data-secondary',String(secondary===s.p.id));
     });
   }
+
   function detail() {
-    const p = points.find(p => p.id === (state.preview ?? (state.brush.length === 1 ? state.brush[0] : state.selected)));
+    const focus = brushFocus();
+    const p = points.find(p => p.id === (state.preview ?? (focus.primary.length === 1 ? focus.primary[0] : state.selected)));
     const label = $('.mw-brush-label');
-    label.querySelector('strong').textContent = p ? p.title : state.brush.length ? `${state.brush.length} threads selected` : 'Hover or brush to identify';
-    label.querySelector('span').textContent = p ? p.group : state.brush.length ? 'Esc to clear selection' : 'Drag to select · Space to pin · Esc to clear';
+    const anchor = focus.primary.length === 1 ? points.find(p => p.id === focus.primary[0])?.title : `${focus.primary.length} threads`;
+    label.querySelector('strong').textContent = focus.secondary ? `${anchor} ↔ ${p.title}` : p ? p.title : focus.primary.length ? `${focus.primary.length} threads selected` : '';
+    label.querySelector('span').textContent = focus.secondary ? focus.projects.join(' · ') : p ? p.group : '';
+    label.hidden = !p && !focus.primary.length;
+    const panel = panels.find(panel => panel.stage === label.parentElement);
+    const position = p && panel?.coords.get(p.id);
+    label.dataset.placement = position && position[1] > panel.H / 2 ? 'top' : 'bottom';
     const values = label.querySelector('.mw-brush-values');
     if (!p) { values.textContent = ''; return; }
-    const m = sessionMetricsAt(p, state.time, data.files[p.id] || []);
+    const m = metrics(p);
     const tokenValue = m.tokens.output === null ? 'Usage unrecorded' : `${m.tokens.status === 'partial' ? '≥' : ''}${formatCount(m.tokens.output)} generated tokens`;
     values.textContent = `${formatDuration(m.spanMs)} span · ${tokenValue} · ${m.fileCount} files`;
   }
   function enter(p) {
-    stop();
     state.selected = p.id;
     state.preview = null;
     render();
@@ -790,7 +874,7 @@ export function createMemoryWeather(root, initialData, {
     const tokenAxis = ['output', 'total'].includes(state.y);
     const rows = samples.filter(s => s.count).map(s => ({
       ...s,
-      m: sessionMetricsAt(s.p, state.time, data.files[s.p.id] || [])
+      m: metrics(s.p)
     }));
     const maxX = Math.max(60000, ...rows.map(s => s.m[state.x]));
     const maxY = Math.max(1, ...rows.map(s => dimensionValue(s.m) || 0));
@@ -869,33 +953,16 @@ export function createMemoryWeather(root, initialData, {
       }
     }
   }
-  /** The mode the reading speaks for: the chosen one when it is visible. */
-  function readingMode() {
-    if (panels.some(panel => panel.mode === state.mode)) return state.mode;
-    return panels[0]?.mode ?? state.mode;
-  }
   function reading() {
-    const mode = readingMode();
-    let text;
-    if (mode === 'field') {
-      const tier = tierOf(panels.find(panel => panel.mode === 'field')?.view.scale ?? 1);
-      text = tier === 'project'
-        ? 'Zoomed out: one mark per project, sized by sessions. Zoom in for sessions, further for their commits and touched files.'
-        : tier === 'artifact'
-          ? 'Zoomed in: each session shows its own artifacts \u2014 filled squares are commits, dots are code, crosses are docs, rings are research. Zoom out for sessions.'
-          : 'One point per session. Color groups projects; halos show recent recorded activity. Zoom in for commits and touched files; hover for measures; select to explore.';
-    }else if (mode === 'wake') text = 'One row per session. Ticks are recorded events; squares include commits. Drag over rows to select their activity interval.';else {
-      const visible = points.map(p => sessionMetricsAt(p, state.time)).filter(m => m.eventCount);
-      const count = visible.filter(m => Number.isFinite(m.tokens[state.y])).length;
-      text = state.y === 'output' || state.y === 'total' ? `Usage recorded for ${count} of ${visible.length} sessions. Hollow points below the axis have no token record; dashed points are partial. ` : '';
-      text += state.x === 'spanMs' ? 'Span measures first to last recorded event in this window.' : 'Active periods join recorded events at most 15 minutes apart; this is an activity estimate.';
-      if (state.y === 'total') text += ' Processed tokens include cached input; they are not a cost estimate.';
-      if (state.y === 'output') text += ' Generated tokens include recorded model output and reasoning.';
+    const descriptions = {
+      field: `Projects share colors; rings show recent recorded activity. Connections show shared project activity.${points.length > 120 ? ' Dense windows show nearby connections.' : ''}`,
+      wake: `Recorded events across ${windowLabel()}; one row per thread.`,
+      compare: `${$('[data-x]').selectedOptions[0]?.textContent} × ${$('[data-y]').selectedOptions[0]?.textContent}. Hollow points: unrecorded usage. Dashed points: partial usage.`,
+    };
+    for (const panel of panels) {
+      panel.canvas.setAttribute('aria-label', descriptions[panel.mode]);
+      panel.stage.querySelector('.mw-panel-title').title = descriptions[panel.mode];
     }
-    if ($('.mw-reading').textContent !== text) $('.mw-reading').textContent = text;
-    // Every mounted canvas carries the reading; with more than one panel the
-    // last-rebound canvas is not the only one a screen reader will reach.
-    for (const panel of panels) panel.canvas.setAttribute('aria-label', panel.mode === 'field' ? 'Sessions grouped by project affinity. Hover or focus to identify; zoom for artifacts.' : panel.mode === 'wake' ? 'One row per session, showing recorded events in the last 24 hours. Drag to select.' : `Compare ${$('[data-x]').selectedOptions[0]?.textContent} horizontally and ${$('[data-y]').selectedOptions[0]?.textContent} vertically. Hollow points have unrecorded usage.`);
   }
   function timeLabel(t) {
     return new Date(t).toLocaleString(undefined, {
@@ -913,11 +980,14 @@ export function createMemoryWeather(root, initialData, {
     $('[data-y]').value = state.y;
     if (!panels.length || !palette.length) return;
     if (!panels.some(panel => panel.stage.clientWidth && panel.stage.clientHeight)) return;
+    const focus = brushFocus();
+    state.preview = focus.preview;
+    root.dataset.secondary = focus.secondary || '';
+    root.dataset.primary = state.brush.join(',');
     const samples = sample();
     $('[data-live]').textContent = state.connected ? 'Live' : 'Disconnected';
     $('[data-live]').setAttribute('aria-label',state.connected ? 'Live' : 'Disconnected');
     $('[data-live]').setAttribute('aria-pressed', String(state.live && state.connected));
-    $('.mw-note').textContent = (data.sessions.length ? '' : 'No session activity in the last 24 hours. ') + (data.unattributed ? data.unattributed + ' events without a session. ' : '') + (!state.connected ? 'Last received · ' + timeLabel(data.end) : state.live ? 'Updates every 5 seconds' : 'Replay · ' + timeLabel(state.time));
     root.dataset.mode = state.mode;
     $('.mw-compare-controls').hidden = false;
     const axisSummary = $('.mw-axis-settings summary');
@@ -943,6 +1013,13 @@ export function createMemoryWeather(root, initialData, {
         const at = coords.get(id);
         if (at) { ctx.beginPath(); ctx.arc(at[0], at[1], 9, 0, Math.PI * 2); ctx.stroke(); }
       }
+      if (focus.secondary) {
+        const at = coords.get(focus.secondary);
+        if (at) {
+          ctx.globalAlpha = 1; ctx.strokeStyle = color('--mw-cyan'); ctx.lineWidth = 2;
+          ctx.setLineDash([3,3]); ctx.beginPath(); ctx.arc(at[0],at[1],12,0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+        }
+      }
       if (panel.brushRect) {
         const r = panel.brushRect;
         ctx.fillStyle = '#55d9e619'; ctx.strokeStyle = '#55d9e6'; ctx.lineWidth = 1;
@@ -954,7 +1031,8 @@ export function createMemoryWeather(root, initialData, {
     reading();
     detail();
     $('.mw-clock').textContent = timeLabel(state.time);
-    $('input').value = (state.time - data.start) / 60000;
+    const period = root.querySelector('.mw-stage[data-panel="wake"] .mw-panel-meta');
+    if (period) period.textContent = windowLabel();
     const many = !compact && roomForMany();
     root.dataset.panels = panels.length > 1 ? 'all' : 'one';
     root.querySelectorAll('[data-mode]').forEach(b => {
@@ -963,60 +1041,12 @@ export function createMemoryWeather(root, initialData, {
       b.disabled = false;
     });
   }
-  function stop() {
-    state.playing = false;
-    $('[data-play]').textContent = 'Replay';
-    cancelAnimationFrame(raf);
-    lastFrame = 0;
-  }
-  function animate(now) {
-    if (!state.playing) return;
-    if (!lastFrame) lastFrame = now;
-    state.time = Math.min(data.end, state.time + (now - lastFrame) * 1440);
-    lastFrame = now;
-    if (now - lastPaint > 65) {
-      render();
-      lastPaint = now;
-    }
-    if (state.time >= data.end) {
-      render();
-      stop();
-      publish({ replace: true });
-    } else {
-      if (now - lastPublished >= 1000) { lastPublished = now; publish({ replace: true }); }
-      raf = requestAnimationFrame(animate);
-    }
-  }
   $('[data-live]').onclick = () => {
-    stop();
     state.live = true;
     state.time = data.end;
     render();
     publish();
   };
-  $('[data-play]').onclick = () => {
-    state.live = false;
-    if (state.playing) {
-      stop();
-      render();
-      publish({ replace: true });
-      return;
-    }
-    if (state.time >= data.end) state.time = data.start;
-    state.playing = true;
-    $('[data-play]').textContent = 'Pause';
-    lastFrame = 0;
-    render();
-    publish();
-    raf = requestAnimationFrame(animate);
-  };
-  $('input').oninput = e => {
-    stop();
-    state.live = false;
-    state.time = data.start + Number(e.target.value) * 60000;
-    render();
-  };
-  $('input').onchange = () => publish({ replace: true });
   root.querySelectorAll('[data-mode]').forEach(b => b.onclick = () => {
     const mode = b.dataset.mode;
     if (!compact && roomForMany()) {
@@ -1046,19 +1076,19 @@ export function createMemoryWeather(root, initialData, {
     publish();
   };
   /** Clamp, apply and redraw one panel's camera. */
-  function setView(panel, next) {
+  function setView(panel, next, commit = true) {
     const scale = clamp(next.scale, MIN_SCALE, MAX_SCALE);
     panel.view.scale = scale;
     panel.view.x = next.x;
     panel.view.y = next.y;
     render();
-    if (panel.mode === 'field') publishCamera();
+    if (panel.mode === 'field' && commit) publishCamera();
   }
-  // Panning emits a move per pointer event; coalesce and never stack history.
-  let cameraPublish = 0;
+  // One history entry per settled camera gesture, not per pointer movement.
+  let cameraPublish = 0, routeEpoch = 0;
   function publishCamera() {
     clearTimeout(cameraPublish);
-    cameraPublish = setTimeout(() => publish({ replace: true }), 220);
+    cameraPublish = setTimeout(() => { cameraPublish=0; publish(); }, 220);
   }
   function zoomPanelAt(panel, cx, cy, factor) {
     const next = zoomCameraAt(panel.view, { x: cx, y: cy }, factor, MIN_SCALE, MAX_SCALE);
@@ -1085,8 +1115,12 @@ export function createMemoryWeather(root, initialData, {
         if (e.target.closest('.mw-panel-header')) return;
         const [x, y] = local(e);
         const near = [...panel.coords].map(([id, at]) => ({ id, distance: panel.mode === 'wake' ? Math.abs(at[1]-y) : Math.hypot(at[0]-x,at[1]-y) })).sort((a,b)=>a.distance-b.distance)[0];
-        const id = near && near.distance <= (panel.mode === 'wake' ? 8 : 24) ? near.id : null;
-        if (state.preview !== id) { state.preview = id; onHover?.(id); render(); }
+        let id = near && near.distance <= (panel.mode === 'wake' ? 8 : 24) ? near.id : null;
+        if (!id && panel.mode === 'field' && state.brush.length) {
+          const edge = (panel.edges || []).map(edge => ({edge, distance:connectionDistance({x,y},edge)})).sort((a,b)=>a.distance-b.distance)[0];
+          if (edge?.distance <= 8) id = state.brush.includes(edge.edge.from) ? edge.edge.to : edge.edge.from;
+        }
+        preview(id);
         return;
       }
       if (brush?.id !== e.pointerId) return;
@@ -1115,16 +1149,17 @@ export function createMemoryWeather(root, initialData, {
         const nearest = [...panel.coords].map(([id, at]) => ({ id, distance: panel.mode === 'wake' ? Math.abs(at[1]-brush.y) : Math.hypot(at[0]-brush.x,at[1]-brush.y) })).sort((a,b)=>a.distance-b.distance)[0];
         const id = nearest?.id;
         if (id) {
-          state.brush = [id]; onBrush?.([id]);
+          inspect(id);
           panel.suppressClick = true;
           setTimeout(() => { panel.suppressClick = false; }, 400);
         }
       }
+      if (!cancelled && !brush.moved && !brush.target) preview(null);
       brush = null; panel.brushRect = null; render();
     };
     panel.stage.addEventListener('pointerup', endBrush);
     panel.stage.addEventListener('pointercancel', endBrush);
-    panel.stage.addEventListener('pointerleave', () => { if (!brush) { state.preview = null; onHover?.(null); render(); } });
+    panel.stage.addEventListener('pointerleave', e => { if (!brush && e.pointerType !== 'touch') preview(null); });
     panel.stage.addEventListener('click', e => {
       if (panel.suppressClick) { e.preventDefault(); e.stopImmediatePropagation(); }
     }, true);
@@ -1141,7 +1176,9 @@ export function createMemoryWeather(root, initialData, {
     let dragging = null;
     panel.stage.addEventListener('pointerdown', e => {
       if (e.shiftKey || root.dataset.gesture === 'brush' || e.target.closest('.mw-target, .mw-panel-header')) return;
-      dragging = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
+      if (e.pointerType === 'touch') preview(null);
+      if (cameraPublish) { clearTimeout(cameraPublish); cameraPublish=0; publish(); }
+      dragging = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, epoch: routeEpoch, original: {...panel.view} };
       panel.stage.setPointerCapture(e.pointerId);
     });
     panel.stage.addEventListener('pointermove', e => {
@@ -1153,12 +1190,16 @@ export function createMemoryWeather(root, initialData, {
       dragging.x = e.clientX;
       dragging.y = e.clientY;
       panel.stage.classList.add('mw-panning');
-      setView(panel, { x: panel.view.x + dx, y: panel.view.y + dy, scale: panel.view.scale });
+      setView(panel, { x: panel.view.x + dx, y: panel.view.y + dy, scale: panel.view.scale }, false);
     });
     const endDrag = e => {
       if (!dragging || dragging.id !== e.pointerId) return;
+      const completed = dragging;
       dragging = null;
       panel.stage.classList.remove('mw-panning');
+      if (completed.epoch !== routeEpoch || !completed.moved) return;
+      if (e.type === 'pointercancel') setView(panel, completed.original, false);
+      else publish();
     };
     panel.stage.addEventListener('pointerup', endDrag);
     panel.stage.addEventListener('pointercancel', endDrag);
@@ -1184,13 +1225,17 @@ export function createMemoryWeather(root, initialData, {
   setup();
   return {
     applyRoute(next) {
+      targetRouteRevision++;
+      clearTimeout(cameraPublish);
+      cameraPublish = 0;
       const acknowledged = pendingRouteKey === routeKey(next);
       pendingRouteKey = null;
       const previous = state.selected;
       state.selected = next.session;
       state.brush = next.brush || [];
       if (!acknowledged) {
-        stop();
+        routeEpoch++;
+        state.hours = next.hours;
         state.mode = next.view;
         state.x = next.x;
         state.y = next.y;
@@ -1215,28 +1260,36 @@ export function createMemoryWeather(root, initialData, {
         if (index >= 0) $('.mw-targets').children[index]?.focus({ preventScroll: true });
       });
     },
-    setScale(scale, ids) {
-      state.brush = ids || [];
+    setScale(scale, ids, contextIds) {
+      if (ids !== undefined) state.brush = ids || [];
       const panel = fieldPanel();
-      const members = points.filter(p => state.brush.includes(p.id));
+      const selected = points.filter(p => state.brush.includes(p.id));
+      const context = new Set(contextIds || []);
+      const members = selected.length ? selected : points.filter(p => context.has(p.id));
       if (panel && members.length) {
         const center = members.reduce((v, p) => ({x:v.x+p.x/members.length,y:v.y+p.y/members.length}), {x:0,y:0});
         setView(panel, {x:panel.W/2-center.x*scale,y:panel.H/2-center.y*scale,scale});
       } else if (panel) zoomPanelAt(panel, panel.W / 2, panel.H / 2, scale / panel.view.scale);
       else fieldCamera.scale = scale;
       clearTimeout(cameraPublish);
-      publish({ replace: true });
+      publish(undefined, {offset: 0});
+    },
+    preview,
+    clearSecondary() {
+      if (!brushFocus().secondary) return false;
+      preview(null);
+      return true;
     },
     setFocus(id, ids) {
-      state.preview = id;
       state.brush = ids || [];
+      state.preview = resolveBrushFocus(points, state.brush, id, state.time).preview;
       render();
     },
     viewState,
     update(next, connected = true) {
       const topology = points.map(p => p.id + '|' + p.group).join();
       data = next;
-      affinity = data.sessions.map(a => data.sessions.map(b => projectAffinity(a, b)));
+      dataRevision++;
       state.connected = connected;
       const existing = new Map(points.map(p => [p.id, p]));
       points.splice(0, points.length, ...data.sessions.map((s, i) => Object.assign(existing.get(s.id) || {
@@ -1250,9 +1303,8 @@ export function createMemoryWeather(root, initialData, {
       })));
       if (state.live) state.time = data.end;else state.time = clamp(state.time, data.start, data.end);
       if (topology !== points.map(p => p.id + '|' + p.group).join()) {
-        affinity = points.map(a => points.map(b => projectAffinity(a, b)));
         layout();
-        $('.mw-targets').dataset.level = '';
+        targetRevision++;
       }
       render();
     },
@@ -1270,11 +1322,9 @@ export function createMemoryWeather(root, initialData, {
       state.connected = connected;
       render();
     },
-    pause() {
-      stop();
-    },
+    pause() { clearTimeout(cameraPublish); cameraPublish = 0; },
     destroy() {
-      stop();
+      clearTimeout(cameraPublish);
       resize.disconnect();
       root.replaceChildren();
     }

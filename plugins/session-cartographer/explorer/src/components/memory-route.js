@@ -1,5 +1,7 @@
 import { normalizeBrush } from './memory-brush.js';
-const DAY = 86400000;
+export const MEMORY_WINDOWS = [1, 6, 24, 72, 168, 720, 2160];
+export const formatMemoryWindow = hours => hours < 24 || hours % 24 ? `${hours}h` : hours === 24 ? '24h' : `${hours / 24}d`;
+const integer = (value, fallback, min, max) => value !== '' && value !== null && value !== undefined && Number.isInteger(Number(value)) && Number(value) >= min && Number(value) <= max ? Number(value) : fallback;
 const VIEWS = ['field', 'wake', 'compare'];
 const X = ['spanMs', 'activeMs'];
 const Y = ['output', 'total', 'edit', 'files', 'research', 'commit', 'events'];
@@ -45,20 +47,34 @@ function time(value) {
 }
 
 export function normalizeMemoryRoute(value = {}) {
+  const hours = integer(value.hours, 24, 1, 2160);
   const at = time(value.at);
   const end = at === null ? null : time(value.end) ?? at;
   const session = typeof value.session === 'string' && /^[\w-]{1,256}$/.test(value.session) ? value.session : null;
   const file = session && typeof value.file === 'string' && value.file.startsWith('/') && value.file.length <= 4096 && !/[\x00-\x1f]/.test(value.file) ? value.file : null;
   return {
+    hours,
+    q: typeof value.q === 'string' ? value.q.replace(/[\x00-\x1f]/g, '').slice(0, 500) : '',
+    filter: ['all', 'flight', 'changed', 'landed'].includes(value.filter) ? value.filter : 'all',
+    catchup: ['hour', 'day', 'return'].includes(value.catchup) ? value.catchup : 'hour',
+    checkpoint: time(value.checkpoint),
+    offset: integer(value.offset, 0, 0, 100000),
+    sort: integer(value.sort, 0, 0, Number.MAX_SAFE_INTEGER),
+    focus: value.focus === 'charts' ? 'charts' : 'overview',
     view: VIEWS.includes(value.view) ? value.view : 'field',
     x: X.includes(value.x) ? value.x : 'spanMs',
     y: Y.includes(value.y) ? value.y : 'output',
-    at: at === null ? null : Math.max(end - DAY, Math.min(end, at)), end,
+    at: at === null ? null : Math.max(end - hours * 3600000, Math.min(end, at)), end,
     session, file,
     cam: camera(value.cam),
     brush: normalizeBrush(value.brush),
     panels: panels(value.panels),
     review: file && ['changes', 'file'].includes(value.review) ? value.review : null,
+    // Diff layout is a viewer preference that still belongs in the permalink,
+    // so a shared review opens the way its sender saw it. Split is the default.
+    diff: value.diff === 'unified' ? 'unified' : 'split',
+    // Artifact kind at the desk's Artifacts depth: every file, or documents only.
+    kind: value.kind === 'md' ? 'md' : 'all',
   };
 }
 
@@ -69,6 +85,14 @@ export function parseMemoryRoute(search) {
 export function memoryHref(value, pathname = '/memory') {
   const route = normalizeMemoryRoute(value);
   const params = new URLSearchParams();
+  if (route.hours !== 24) params.set('hours', route.hours);
+  if (route.q) params.set('q', route.q);
+  if (route.filter !== 'all') params.set('filter', route.filter);
+  if (route.catchup !== 'hour') params.set('catchup', route.catchup);
+  if (route.checkpoint !== null) params.set('checkpoint', route.checkpoint);
+  if (route.offset) params.set('offset', route.offset);
+  if (route.sort) params.set('sort', route.sort);
+  if (route.focus !== 'overview') params.set('focus', route.focus);
   if (route.view !== 'field') params.set('view', route.view);
   if (route.x !== 'spanMs') params.set('x', route.x);
   if (route.y !== 'output') params.set('y', route.y);
@@ -78,6 +102,8 @@ export function memoryHref(value, pathname = '/memory') {
   if (route.session) params.set('session', route.session);
   if (route.file) params.set('file', route.file);
   if (route.review) params.set('review', route.review);
+  if (route.diff !== 'split') params.set('diff', route.diff);
+  if (route.kind !== 'all') params.set('kind', route.kind);
   if (route.at !== null) {
     params.set('at', new Date(route.at).toISOString());
     params.set('end', new Date(route.end).toISOString());
