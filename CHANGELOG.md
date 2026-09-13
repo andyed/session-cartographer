@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### fix(backfill): recognise commits the hook already logged
+
+`backfill-git-history.sh` deduped on its own `git-<short_hash>` event ids, but
+`hooks/log-tool-use.sh` mints `evt-<random>`, so the check never matched a
+hook-written commit and the documented recovery run duplicated every commit
+already in the log. Measured on 2026-09-13: of the five commits a `--limit 5`
+run over this repository would have imported, three were already present under
+`evt-` ids. It now also keys on the commit hash carried in the summary, which is
+writer-independent. Used immediately afterwards to recover `f1f7a5a` and
+`db9b934`, the two commits the `cd` defect above had swallowed.
+
+`cartographer-standup.js --commit` renders a backfilled row honestly: git
+history carries no session, so it says so rather than printing `undefined`, and
+it no longer counts sibling commits by matching one absent session id against
+another — which would have gathered every unattributed commit into one phantom.
+
 ### fix(hooks): stop dropping commits made after a `cd`, and read the sha from the repo
 
 Two defects in `hooks/log-tool-use.sh` made a real commit invisible to the

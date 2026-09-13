@@ -85,10 +85,19 @@ if [ "$ALL_AUTHORS" = "false" ]; then
   fi
 fi
 
-# Collect existing commit event IDs to avoid duplicates
+# Collect what is already recorded, so a re-run adds only what is missing.
+#
+# Two keys, because two writers use different id schemes. This script mints
+# `git-<short_hash>`; the tool-use hook mints `evt-<random>`, so an event_id
+# check alone never matches a hook-written commit and every re-run duplicated
+# every commit the hook had already logged. The commit hash in the summary is
+# the writer-independent identity — `[fix] Commit 68cf1db: …` — so key on that
+# as well.
 EXISTING_IDS=""
+EXISTING_COMMITS=""
 if [ -f "$CHANGELOG" ]; then
   EXISTING_IDS=$(grep '"git_commit"' "$CHANGELOG" 2>/dev/null | grep -oE '"event_id":"[^"]*"' | sort -u)
+  EXISTING_COMMITS=$(grep '"git_commit"' "$CHANGELOG" 2>/dev/null | grep -oE 'Commit [0-9a-f]{7,40}' | awk '{print substr($2,1,7)}' | sort -u)
 fi
 
 total=0
@@ -134,8 +143,9 @@ process_repo() {
     local short_hash="${hash:0:7}"
     local event_id="git-${short_hash}"
 
-    # Skip if already in changelog
-    if echo "$EXISTING_IDS" | grep -q "$event_id"; then
+    # Skip if already in changelog, under either writer's id scheme.
+    if echo "$EXISTING_IDS" | grep -q "$event_id" \
+       || printf '%s\n' "$EXISTING_COMMITS" | grep -qx "$short_hash"; then
       skipped=$((skipped + 1))
       continue
     fi

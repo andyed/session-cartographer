@@ -203,13 +203,23 @@ if (commitQuery) {
     const c = parseCommit(e) || {};
     const subj = c.subject || gitSubject(c.sha, e.cwd);
     console.log(`${c.sha || '?'}  ${subj || e.summary}`);
-    console.log(`  session  ${e.session_id} (${e.provider})`);
+    // A row recovered by backfill-git-history.sh has no session — git history
+    // does not carry one. Say that rather than printing `undefined`, which
+    // reads as a lookup failure instead of an honest absence.
+    const attributed = isResolved(e.session_id);
+    console.log(attributed
+      ? `  session  ${e.session_id} (${e.provider})`
+      : '  session  not recorded — backfilled from git history, not observed live');
     console.log(`  project  ${e.project}   ${e.timestamp}  (${fmtAge(now - Date.parse(e.timestamp))} ago)`);
     if (c.files?.length) console.log(`  files    ${c.files.join(', ')}`);
     // Neighbouring work from the same session frames the commit: a lone commit
     // and one inside a 40-commit sweep call for different reactions from you.
-    const sib = all.filter((x) => x.session_id === e.session_id && x.type === 'git_commit');
-    if (sib.length > 1) console.log(`  context  ${sib.length} commits from this session in window`);
+    // Only meaningful when the session is real — matching undefined against
+    // undefined would gather every unattributed commit into one phantom.
+    if (attributed) {
+      const sib = all.filter((x) => x.session_id === e.session_id && x.type === 'git_commit');
+      if (sib.length > 1) console.log(`  context  ${sib.length} commits from this session in window`);
+    }
     console.log();
   }
   process.exit(0);

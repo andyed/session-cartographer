@@ -106,3 +106,42 @@ test('--all-authors deliberately admits every contributor despite configured or 
 test('Git global identity still supplies the owner when the configured override is absent', () => {
   assertAuthors(run([], { CARTOGRAPHER_PROFILE_AUTHORS: '' }), ['Ada Lovelace', 'Claude']);
 });
+
+/**
+ * Re-running the backfill must add only what is missing.
+ *
+ * Two writers, two id schemes: this script mints `git-<short_hash>`, while
+ * hooks/log-tool-use.sh mints `evt-<random>`. The dedupe checked event_id
+ * alone, so it never recognised a hook-written commit and a recovery run
+ * duplicated every commit the hook had already logged — on 2026-09-13, three
+ * of the five commits a `--limit 5` run would have re-imported were already
+ * present under `evt-` ids. The commit hash carried in the summary is the
+ * writer-independent identity.
+ */
+test('a commit already logged by the hook is not re-imported under a second id', () => {
+  const repo = path.join(fixture, 'project');
+  const changelog = path.join(fixture, 'changelog.jsonl');
+  const shas = spawnSync('git', ['-C', repo, 'log', '-3', '--format=%h'], { env, encoding: 'utf8' })
+    .stdout.trim().split('\n');
+  assert.equal(shas.length, 3, 'fixture must supply three commits to pre-seed');
+
+  // Exactly the shape the tool-use hook writes: an evt- id, the sha in the summary.
+  fs.writeFileSync(changelog, shas.map((sha, i) => JSON.stringify({
+    event_id: `evt-hookwritten${i}`, timestamp: new Date().toISOString(), type: 'git_commit',
+    provider: 'claude', session_id: 'testsess', project: 'project', cwd: repo,
+    summary: `[feature] Commit ${sha}: author-${i}`, salience: 0.7,
+  })).join('\n') + '\n');
+
+  try {
+    const result = spawnSync('bash', [SCRIPT, '--project', 'project', '--dry-run', '--no-files', '--all-authors'],
+      { cwd: fixture, env, encoding: 'utf8', timeout: 15_000 });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Done\. 2 commits backfilled, 3 already existed\./);
+    for (const sha of shas) {
+      assert.doesNotMatch(result.stdout, new RegExp(`Commit ${sha}:`),
+        `${sha} is already in the log under an evt- id and must not be re-imported`);
+    }
+  } finally {
+    fs.rmSync(changelog, { force: true });
+  }
+});

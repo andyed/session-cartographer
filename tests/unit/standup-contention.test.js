@@ -231,3 +231,18 @@ test('--project scopes contention, not only the roster', () => {
     assert.ok(!f.path.includes('widgetworks'), `widgetworks file leaked into a lonely-scoped run: ${f.path}`);
   }
 });
+
+test('a commit with no session says so instead of printing undefined', () => {
+  const { dir, repo } = build();
+  // What backfill-git-history.sh writes: git history carries no session id.
+  fs.appendFileSync(path.join(dir, 'changelog.jsonl'), JSON.stringify({
+    event_id: 'git-abc1234', timestamp: iso(30), type: 'git_commit', project: 'widgetworks',
+    cwd: repo, summary: '[feature] Commit abc1234: feat: recovered from git | files: src/shared.js',
+  }) + '\n');
+  const out = run(dir, ['--commit', 'abc1234', '--since', '6h']);
+  assert.doesNotMatch(out, /undefined/, 'an absent session must not render as undefined');
+  assert.match(out, /backfilled from git history/);
+  // Matching undefined against undefined would gather every unattributed
+  // commit into one phantom "session" and count them as siblings.
+  assert.doesNotMatch(out, /commits from this session/);
+});
