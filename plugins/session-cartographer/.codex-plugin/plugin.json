@@ -1,6 +1,6 @@
 {
   "name": "session-cartographer",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "description": "Search and explore Claude Code and Codex session history, with guided semantic-search setup and optional shared fast recall",
   "author": {
     "name": "Andy Edmonds"

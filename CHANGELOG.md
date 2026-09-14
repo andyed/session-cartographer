@@ -1,6 +1,61 @@
 # Changelog
 
-## 0.7.6 — Unreleased
+## 0.7.7 — Unreleased
+
+A check-in release: the architecture diagram is regenerated from the code it
+describes, recall performance is measured end to end with a repeatable script,
+and the two things that measurement found are fixed. The Explorer's memory work
+desk shipped in 0.7.6 and stays **very alpha**; nothing in it changes here.
+
+### perf: a repeatable recall check-in, and what it found
+
+`scripts/perf-checkin.js` measures the three paths a user pays for against one
+corpus — the in-process folds and scorers that Turbo and the Explorer call, the
+portable bash + awk CLI, and the managed Turbo service through its real
+controller — and then exercises Turbo's failure modes rather than assuming them:
+a burst of twenty concurrent recalls, a contract rejection, malformed JSON, a
+live append reaching the warm index without a restart, and a clean stop. Every
+check is a composition assertion (the census count equals an independent scan
+of the rows written; the delta cursor reports exactly the fifty rows appended),
+because a fast wrong answer is the failure mode this codebase actually has.
+Telemetry goes to disposable files so a benchmark never pollutes the utility
+cohorts. Numbers and interpretation: `docs/perf-checkin-2026-09-14.md`.
+
+Two findings, both fixed:
+
+- **`tempo` spent 62 ms of a 170 ms fold formatting day strings.** `utcDay`
+  called `new Date(ms).toISOString()` once per event; a corpus has a few
+  thousand distinct days. It now formats once per day index and returns
+  byte-identical strings (pinned by a test against the old expression). Tempo
+  over 127k synthetic events: 168 ms → 87 ms on the same machine.
+- **`cartographer-turbo.js enable` could return before the port was open.** The
+  server publishes `ready.json` twice — once when the corpus is loaded with
+  `http: "starting"`, once when `listen()` settles — and the controller accepted
+  the first. A recall fired straight after `enable` raced the listener and only
+  succeeded because the client fell back to the file spool. The controller now
+  waits for a terminal HTTP state (listening, blocked, port in use, failed, or
+  disabled) and returns the last record it saw if the deadline passes first.
+
+What the check-in did not find: no failure in twenty concurrent recalls (p95
+under the 1500 ms budget), a contract rejection answered in under 2 ms with the
+client exiting non-zero in ~100 ms and no spool fallback, a live append visible
+to recall within ~150 ms, and `disable` leaving no process or state file behind.
+
+`tests/unit/facts-performance-guardrails.test.js` closes the gap FACTS.md listed
+as "not yet a regression test": census, tempo, and a delta resume over a 40k
+fixture are bounded (loosely, so a busy runner does not fail them) and their
+counts must reconcile to the fixture.
+
+### docs(diagram): regenerate the architecture diagram from a spec
+
+The README diagram had drifted five releases: three logs where five are
+searched, four lenses where eight ship, no Codex anywhere.
+`diagrams/build-architecture.mjs` now draws the PNG, an SVG, and the editable
+`.excalidraw` from one layout spec, so the picture is a function of the hooks,
+logs, and lenses that exist. The memory desk is labelled very alpha on it, and
+Turbo opt-in and experimental, because that is what they are.
+
+## 0.7.6 — 2026-09-11
 
 ### fix(ci): install Explorer dependencies before the unit suite
 
