@@ -42,6 +42,7 @@ scripts/
   backfill-prompt-intents.js    — Tag already-indexed turns with prompt_intent (payload-only, no re-embed)
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
+  perf-checkin.js               — Recall performance check-in: in-process folds/scorers, portable CLI, and the managed Turbo service with robustness probes; synthetic corpus when no logs exist
   session-digest.js             — Compact per-session panel (tempo, commits, files, recall, dirty repos); used by /wrapup
   trust-digest.js               — Derives infrastructure actually touched (orgs, LAN hosts, buckets, CLIs) for auto mode's autoMode.environment; used by /trustmap
   build-profile.js              — Derives .carto/profile.md: standing summary of projects, preferences, decisions, work shape, cadence
@@ -53,6 +54,7 @@ scripts/
   repair-transcript-paths.js    — Rewrites Codex transcript_paths stale from archiving (dry-run default, --write)
   resolve-transcript.sh         — Single resolver: recorded path → archive basename → session-id hunt
 project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
+diagrams/build-architecture.mjs   — One layout spec → architecture.{png,svg,excalidraw}; the README diagram is generated, not hand-drawn
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
   skills/focus/SKILL.md         — /focus skill (project orientation from event logs)

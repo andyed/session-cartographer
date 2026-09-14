@@ -113,6 +113,10 @@ experiment: the utility canary in
 backend before any graduation decision, and the portable control cohort is far
 short of that. Speed is measured; *better recall* is not yet demonstrated.
 Exact ranking parity with the portable CLI is an explicit non-goal.
+`node scripts/perf-checkin.js` reproduces the latency table and the robustness
+probes (concurrent burst, contract rejection, live append, clean stop) on your
+own corpus; the most recent run is in
+[docs/perf-checkin-2026-09-14.md](docs/perf-checkin-2026-09-14.md).
 
 Enabling it writes one provider-neutral user setting, starts a zero-dependency
 headless recall service, and applies to future Claude Code and Codex sessions
@@ -124,7 +128,10 @@ resolves its installed runtime, so users do not need to locate a plugin cache.
 The underlying controller remains available to checkout developers as
 `node scripts/cartographer-turbo.js enable|status|disable`.
 
-The Explorer's **memory** tab is also a Turbo entry point. Run
+The Explorer's **memory** tab — the work desk, Field, Wake, and Compare views
+described below — is **very alpha**: the layout, axes, and URLs are still
+moving between releases, and the browser regression is the only guard on them.
+It is also a Turbo entry point. Run
 `cd explorer && npm run memory` and open `http://127.0.0.1:2527/memory`.
 The UI stays available while Turbo is off: **Start Turbo** starts the managed
 service, **Enable Turbo** also enables the shared preference, and **Refresh
@@ -462,6 +469,10 @@ Hybrid (BM25 + semantic) outperforms keyword-only at every k. grep has no rankin
 Hooks are the foundation. Everything else is a lens.
 
 ![Architecture diagram](diagrams/architecture.png)
+
+The diagram is generated: `node diagrams/build-architecture.mjs` redraws the
+PNG, an SVG, and the editable `.excalidraw` from one layout spec, so the picture
+stays a function of the hooks, logs, and lenses that actually ship.
 
 Each layer is independent. You can use `/remember` without the Explorer, `/focus` without `/remember`, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
 

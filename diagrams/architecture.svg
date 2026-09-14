@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="790" viewBox="0 0 1400 790">
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#1e1e1e"/></marker><marker id="arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#666666"/></marker></defs>
+<rect width="1400" height="790" fill="#ffffff"/>
+<text x="700" y="52" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="40" font-weight="600" fill="#1e1e1e">Session Cartographer</text>
+<text x="700" y="86" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" fill="#666666">Hooks are the foundation. Everything else is a lens.</text>
+<text x="16" y="151" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#5b3ff0">Agents</text>
+<text x="16" y="260" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#5b3ff0">Hooks</text>
+<text x="16" y="442" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#5b3ff0">Data</text>
+<text x="16" y="640" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="22" fill="#5b3ff0">Lenses</text>
+<line x1="212.0" y1="177" x2="300.0" y2="214" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="456.0" y1="177" x2="544.0" y2="214" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="700.0" y1="177" x2="700.0" y2="214" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="944.0" y1="177" x2="856.0" y2="214" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1188.0" y1="177" x2="1100.0" y2="214" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="300.0" y1="305" x2="212.0" y2="392" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="480.0" y1="305" x2="456.0" y2="392" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="612.0" y1="305" x2="700.0" y2="392" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1100.0" y1="305" x2="836.0" y2="392" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="1032.0" y1="305" x2="1124.0" y2="392" stroke="#666666" stroke-width="1.5" stroke-dasharray="7 5" marker-end="url(#arrow-muted)"/>
+<line x1="192.5" y1="491" x2="261.0" y2="590" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="395.5" y1="491" x2="464.0" y2="590" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="598.5" y1="491" x2="530.0" y2="590" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="801.5" y1="491" x2="733.0" y2="590" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="836.0" y1="491" x2="936.0" y2="590" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<line x1="836.0" y1="491" x2="1139.0" y2="590" stroke="#1e1e1e" stroke-width="2" marker-end="url(#arrow)"/>
+<rect x="100" y="128" width="1200" height="46" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="700" y="151.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#1e1e1e">Claude Code  ·  Codex  ·  Cowork / desktop app  —  one provider-neutral history, either agent recalls the other's sessions</text>
+<rect x="100" y="218" width="224" height="84" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="212" y="241.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" font-weight="600">log-research.sh</text>
+<text x="212" y="260.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">WebFetch · WebSearch</text>
+<text x="212" y="278.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">MCP fetch / search tools</text>
+<rect x="344" y="218" width="224" height="84" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="456" y="241.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" font-weight="600">log-tool-use.sh</text>
+<text x="456" y="260.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">Edit · Write · apply_patch · Bash</text>
+<text x="456" y="278.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">git commits with diff shape</text>
+<rect x="588" y="218" width="224" height="84" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="700" y="241.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" font-weight="600">log-session-milestones.sh</text>
+<text x="700" y="260.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">PreCompact · PostCompact</text>
+<text x="700" y="278.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">Stop · SessionEnd · SubagentStop</text>
+<rect x="832" y="218" width="224" height="84" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="944" y="241.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" font-weight="600">start-transcript-catch-up.sh</text>
+<text x="944" y="260.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">SessionStart, in the background</text>
+<text x="944" y="278.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">reads transcripts → turns → index</text>
+<rect x="1076" y="218" width="224" height="84" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="1188" y="241.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#1e1e1e" font-weight="600">/wrapup · /investigate</text>
+<text x="1188" y="260.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">skill-written milestones</text>
+<text x="1188" y="278.5" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14" fill="#333333">decisions · hypotheses · receipts</text>
+<rect x="100" y="396" width="760" height="92" fill="#fff3b0" stroke="#1e1e1e" stroke-width="2" rx="3"/>
+<text x="480" y="422.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#1e1e1e" font-weight="600">Five JSONL event logs — the shared data layer</text>
+<text x="480" y="442.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#333333">changelog · research-log · session-milestones · tool-use-log · prompt-history</text>
+<text x="480" y="461.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#333333">event_id + timestamp + single-line summary · append-only · gitignored</text>
+<rect x="880" y="396" width="200" height="92" fill="#ececec" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="980" y="422.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#1e1e1e" font-weight="600">Transcripts</text>
+<text x="980" y="442.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#333333">Claude · Codex sessions</text>
+<text x="980" y="461.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#333333">read on demand by lenses</text>
+<rect x="1100" y="396" width="200" height="92" fill="#e4f0ff" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="1200" y="422.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#1e1e1e" font-weight="600">Qdrant · optional</text>
+<text x="1200" y="442.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#333333">semantic leg of every search</text>
+<text x="1200" y="461.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15" fill="#333333">turn-grouped, :6333 + :8890</text>
+<rect x="100" y="594" width="185" height="92" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="192.5" y="622.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#1e1e1e" font-weight="600">/remember</text>
+<text x="192.5" y="640.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">bash + awk BM25 + RRF</text>
+<text x="192.5" y="657.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">zero dependencies</text>
+<rect x="303" y="594" width="185" height="92" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="395.5" y="622.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#1e1e1e" font-weight="600">/focus</text>
+<text x="395.5" y="640.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">project orientation</text>
+<text x="395.5" y="657.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">milestones · commits · threads</text>
+<rect x="506" y="594" width="185" height="92" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="598.5" y="622.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#1e1e1e" font-weight="600">/carto Explorer</text>
+<text x="598.5" y="640.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">timeline · search · transcripts</text>
+<text x="598.5" y="657.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">memory desk (very alpha)</text>
+<rect x="709" y="594" width="185" height="92" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="801.5" y="622.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#1e1e1e" font-weight="600">/turbo · opt-in, experimental</text>
+<text x="801.5" y="640.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">warm /api/recall + /api/facts</text>
+<text x="801.5" y="657.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">ranking beside counting</text>
+<rect x="912" y="594" width="185" height="92" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="1004.5" y="622.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#1e1e1e" font-weight="600">/trustmap · profile</text>
+<text x="1004.5" y="640.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">autoMode.environment</text>
+<text x="1004.5" y="657.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">.carto/profile.md, derived</text>
+<rect x="1115" y="594" width="185" height="92" fill="#f5f5f5" stroke="#1e1e1e" stroke-width="1.5" rx="3"/>
+<text x="1207.5" y="622.8" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#1e1e1e" font-weight="600">cartographer-feed.sh</text>
+<text x="1207.5" y="640.0" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">bounded machine pulse</text>
+<text x="1207.5" y="657.2" text-anchor="middle" dominant-baseline="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="13" fill="#333333">for other local agents</text>
+<text x="700" y="756" text-anchor="middle" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" fill="#666666">Each lens is independent. Claude Code and Codex write and read the same history. Ranking answers what is relevant; facts answer what is true.</text>
+</svg>
