@@ -685,7 +685,7 @@ Root `scripts/` and `explorer/` files remain canonical; anything copied under
 | Append positions | First call does not replay history; round-robin across two logs so neither starves; immediate re-read returns nothing; trailing line with no newline not consumed until the newline arrives; malformed line consumed rather than wedging the cursor; in-place rewrite reports `stale: rewritten`; truncation reports `stale: truncated`; a missing log is position zero and not stale | covered by `tests/unit/facts-positions.test.js` |
 | Transport | HTTP path; spool path with `kind: "facts"`; spool envelope with no `kind` still routes to recall; oversized body; unknown route → 404; parity between the two mount points | **not yet automated** |
 | Boundaries | No write to `served-log.jsonl` or `access-ledger.jsonl` on any verb or any failure path; no sixth log created | **not yet automated** |
-| Performance | Warm census inside the 1500 ms Turbo budget on the live corpus | measured at 44 ms; not yet a regression test |
+| Performance | Warm census inside the 1500 ms Turbo budget on the live corpus | measured at 44 ms; `tests/unit/facts-performance-guardrails.test.js` bounds census, tempo, and a delta resume over a 40k fixture and asserts the counts against an independent scan; `scripts/perf-checkin.js` reproduces the full table |
 
 Test harnesses must unset `CARTOGRAPHER_SESSION_ID`, `CLAUDE_SESSION_ID`,
 `CLAUDE_CODE_SESSION_ID`, and `CODEX_SESSION_ID`, and point

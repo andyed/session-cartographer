@@ -54,5 +54,22 @@ export function eventEpochMs(item) {
 
 /** UTC calendar day (`YYYY-MM-DD`) for an epoch-ms value. */
 export function utcDay(epochMs) {
-  return new Date(epochMs).toISOString().slice(0, 10);
+  // Formatted once per calendar day, not once per event. `tempo` calls this
+  // for every resident event, and `new Date(ms).toISOString()` cost 62 ms of a
+  // 170 ms fold over 127k events (perf check-in, 2026-09-14); keyed on the day
+  // index it costs 2 ms and returns byte-identical strings. A corpus has a few
+  // thousand distinct days at most, so the cache is small; it is still bounded
+  // in case a caller hands it garbage timestamps spread across millennia.
+  const dayIndex = Math.floor(epochMs / DAY_MS);
+  let day = DAY_STRINGS.get(dayIndex);
+  if (day === undefined) {
+    if (DAY_STRINGS.size >= DAY_CACHE_LIMIT) DAY_STRINGS.clear();
+    day = new Date(dayIndex * DAY_MS).toISOString().slice(0, 10);
+    DAY_STRINGS.set(dayIndex, day);
+  }
+  return day;
 }
+
+const DAY_MS = 86_400_000;
+const DAY_CACHE_LIMIT = 100_000;
+const DAY_STRINGS = new Map();

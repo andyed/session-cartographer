@@ -49,15 +49,28 @@ function managedServerRecord(env = process.env) {
 async function waitForReady(pid, timeoutMs, env = process.env) {
   const paths = turboPaths(env);
   const deadline = Date.now() + timeoutMs;
+  let lastReady = null;
   while (Date.now() < deadline) {
     const ready = readJson(paths.ready, null);
     if (ready
         && Number(ready.pid) === pid
         && ready.contract_version === 1
-        && ready.runtime_version === runtimeVersion) return ready;
+        && ready.runtime_version === runtimeVersion) {
+      // The server publishes ready.json as soon as the corpus is loaded, with
+      // `http: "starting"`, and again once listen() settles. Returning on the
+      // first publication reported a service whose port was not yet open: a
+      // recall fired straight after `enable` raced the listener and only
+      // succeeded because the client fell back to the file spool (perf
+      // check-in, 2026-09-14). Wait for a terminal state — listening, blocked,
+      // port_in_use, failed, or disabled — and hand back the last record seen
+      // if the deadline passes first, since the spool is still a real path.
+      if (ready.http !== 'starting') return ready;
+      lastReady = ready;
+    }
     if (!processIsAlive(pid)) break;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
+  if (lastReady) return lastReady;
   return null;
 }
 
