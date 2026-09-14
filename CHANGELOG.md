@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.7 — 2026-09-13
 
 ### fix(hooks): catch variable-bound python writes when the command carries an incidental `>`
 
