@@ -219,10 +219,20 @@ To test your own build without disturbing anyone, bind a port you have confirmed
 is free — a busy port silently leaves the *other* server answering your probes:
 
 ```bash
-CARTOGRAPHER_TURBO_URL=http://127.0.0.1:2611 node scripts/turbo-server.js &
+CARTOGRAPHER_TURBO_STATE_DIR=$(mktemp -d) CARTOGRAPHER_TURBO_URL=http://127.0.0.1:2611 node scripts/turbo-server.js &
 sleep 9
 lsof -tnP -iTCP:2611 -sTCP:LISTEN     # confirm the owner is your PID
+# … probe it …
+kill %1                               # or: rm -rf the state dir; the server exits on its own
 ```
+
+Give a scratch server its own state dir, and end it. Six of these were found on
+2026-09-13 still running from scratch dirs of sessions that had ended days
+earlier, each holding a port. The server now treats its ready file as a lease:
+if the state dir is removed, or `ready.json` is deleted or names another pid,
+it exits within a couple of seconds instead of running unrecorded. Deleting
+`ready.json` under the managed service (`~/Documents/dev/.carto/turbo`) stops
+that service too; the next `/remember` respawns it.
 
 The warm service holds its index resident, so **a code change needs a restart**
 before any probe means anything.

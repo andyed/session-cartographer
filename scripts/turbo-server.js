@@ -210,7 +210,37 @@ if (!spoolOnly) {
   });
 }
 
+// The ready file is a lease, not a notice. A server that finds its state dir
+// gone, or its ready file missing or naming another pid, has lost its record:
+// the controller cannot see it in `status` and cannot stop it through the
+// handshake, so the only correct move is to leave. Without this, a server whose
+// state dir was removed mid-load recreated the dir on publish and ran for days
+// (2026-09-08, three of them). The check is cheap and runs on a coarse timer;
+// a replacement server writing its own pid is seen the same way as a deletion.
+const LEASE_INTERVAL_MS = 2000;
+let leaseLost = false;
+
+function loseLease(reason) {
+  if (leaseLost) return;
+  leaseLost = true;
+  console.error(`[turbo] ${reason}; this server has no record and is exiting`);
+  shutdown();
+}
+
+function checkLease() {
+  if (leaseLost) return;
+  if (!fs.existsSync(paths.state)) return loseLease('state dir is gone');
+  let holder = null;
+  try { holder = JSON.parse(fs.readFileSync(paths.ready, 'utf8')); } catch {}
+  if (!holder) return loseLease('ready file is gone');
+  if (Number(holder.pid) !== process.pid) return loseLease(`ready file names pid ${holder.pid}`);
+}
+
 function publishReady() {
+  if (leaseLost) return;
+  // Never resurrect a state dir that was removed under us — that is exactly the
+  // orphan shape. `writeJsonAtomic` would mkdir it back.
+  if (!fs.existsSync(paths.state)) return loseLease('state dir is gone');
   writeJsonAtomic(paths.ready, {
     pid: process.pid,
     contract_version: 1,
@@ -226,9 +256,12 @@ function publishReady() {
 
 publishReady();
 console.log(`[turbo] loaded ${events.length} events / ${index.docs.size} docs; file transport ready at ${paths.requests}`);
+const leaseInterval = setInterval(checkLease, LEASE_INTERVAL_MS);
+leaseInterval.unref();
 
 function shutdown() {
   clearInterval(requestInterval);
+  clearInterval(leaseInterval);
   stopWatching();
   try {
     const ready = JSON.parse(fs.readFileSync(paths.ready, 'utf8'));

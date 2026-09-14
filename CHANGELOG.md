@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### fix(turbo): a server cannot outlive its record
+
+Six `turbo-server.js` processes were found on 2026-09-13 reparented to launchd,
+each holding a port, up to nine days old, none of them the managed service.
+Three came from runs of `turbo-external-reuse.test.js` on 2026-09-08 in the
+minute before that test was changed to use an empty corpus, at the moment
+loading the live corpus took longer than the controller's 5 s readiness
+budget. The chain: `start` spawned the server detached, wrote the pid record,
+timed out and threw without signalling the child; the test's cleanup ran
+`stop`, which refused because the ownership handshake needs the ready file the
+child had not written yet; the test removed the state dir; the child finished
+loading, recreated the dir on publish, bound the now-free port, and ran with no
+record anywhere. The other three were hand-started scratch servers from the
+TESTING.md recipe that nobody killed.
+
+Two layers. The controller now reaps the child it spawned when readiness times
+out — SIGTERM, then SIGKILL after two seconds, because a stopped or blocked
+child has SIGTERM queued behind it — and removes the pid record before
+reporting the failure. The server treats its ready file as a lease: every two
+seconds, and on every publish, it checks that its state dir exists and that
+`ready.json` is present and names its own pid, and exits otherwise; it no
+longer recreates a state dir removed under it. A replacement server writing
+its own pid reads the same way as a deletion, which also closes the window
+where an old server outlives `stop`'s three-second wait. The TESTING.md scratch
+recipe gains its own state dir and a `kill`. The regression test replays the
+chain by freezing a freshly spawned child past the budget.
+
 ## 0.7.7 — 2026-09-13
 
 ### fix(hooks): catch variable-bound python writes when the command carries an incidental `>`

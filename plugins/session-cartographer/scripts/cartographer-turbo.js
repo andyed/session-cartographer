@@ -145,9 +145,32 @@ async function ensureRunning(env = process.env) {
 
   const ready = await waitForReady(child.pid, Math.max(5000, settings.timeoutMs), env);
   if (!ready) {
+    // Reap before reporting. This is the one moment ownership is certain — the
+    // child object is ours — and the one moment `stop` cannot help: its
+    // handshake needs the ready file the child has not written yet. Walking
+    // away here is how three servers ran unrecorded for five days (2026-09-08):
+    // the caller's cleanup ran `stop` (refused), removed the state dir, and the
+    // child finished loading, recreated the dir, and bound the port. SIGKILL
+    // after a grace period, because a child that is blocked or stopped has
+    // SIGTERM queued behind it and would otherwise survive again.
+    await reapSpawn(child, current.paths);
     throw new Error(`Turbo service did not become ready; see ${current.paths.log}`);
   }
   return { started: true, pid: child.pid, ready };
+}
+
+async function reapSpawn(child, paths) {
+  try { child.kill('SIGTERM'); } catch {}
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline && processIsAlive(child.pid)) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  if (processIsAlive(child.pid)) {
+    try { child.kill('SIGKILL'); } catch {}
+  }
+  for (const stale of [paths.pid, paths.ready]) {
+    try { fs.unlinkSync(stale); } catch {}
+  }
 }
 
 function processLooksManaged(record, env = process.env) {
