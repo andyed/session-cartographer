@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### fix(hooks): catch variable-bound python writes when the command carries an incidental `>`
+
+`bash_written_paths()` harvests write targets from redirects, `sed -i`, `tee`,
+and python `open(…, 'w')`, and falls back to the variable-bound shape
+(`p='f.md'` … `open(p,'w')`) only when the explicit harvest found nothing. That
+gate read the RAW harvest, before filtering. Two incidental things fill the raw
+list with junk the filter then discards: a `<project>` placeholder inside the
+quoted content, which the redirect harvester reads as `>` plus a bare backtick,
+and a `2>/dev/null` anywhere in the compound command, which harvests
+`/dev/null`. Either skipped the fallback, the filter emptied the list, and a
+real edit logged as `Ran:`. Measured on session 24b90edb, 2026-09-13: two
+`p='/Users/andyed/CLAUDE.md' … open(p,'w')` heredocs logged as `Ran:` while a
+third of the same shape, with no stray `>`, logged as `Modified:`, so the Memory
+Desk file review reported the first two edits as never recorded. The gate now
+reads the filtered set, the filter is factored into `bash_filter_paths()`, and a
+quoted `scheme://` URL in the content is no longer reported as a path. The
+unit test replays both shapes and checks that a genuine `cat > t.test.js`
+target still suppresses the content harvest.
+
 ### docs(standup): list the peer view everywhere the other skills are listed
 
 `/standup` shipped with a README entry and a paste-in CLAUDE.md snippet, but

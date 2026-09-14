@@ -107,6 +107,61 @@ test('python heredocs are detected whether the path is a literal or a variable',
     } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
 });
 
+test('a variable-bound write is still found when the content carries a fake `>` or a `2>/dev/null`', () => {
+    const ws = makeWorkspace();
+    try {
+        // Session 24b90edb, 2026-09-13: `p='/Users/andyed/CLAUDE.md' … open(p,'w')`
+        // logged as `Ran:` twice while the same shape logged as `Modified:` once.
+        // The variable-bound fallback was gated on the RAW harvest being empty,
+        // and two incidental things made it non-empty before the filter ran:
+        //
+        //   1. a `<project>` placeholder inside the quoted content — the redirect
+        //      harvester reads `>` + the following backtick as a write target;
+        //   2. a `2>/dev/null` elsewhere in the compound command, which
+        //      harvests `/dev/null`.
+        //
+        // Both were then correctly filtered out, leaving nothing, so a real edit
+        // logged as a plain command.
+        let recs = fire(ws, [
+            `cd ${ws.repo} && grep -n 'marker' CLAUDE.md && python3 - <<'EOF'`,
+            `import re,io`,
+            `p='/Users/andyed/CLAUDE.md'`,
+            `s=open(p).read()`,
+            'old="- `/focus <project>` to orient. `/remember <query>` to recover history.\\n"',
+            'new=old+"""- **Memory web UI:** http://127.0.0.1:2527/memory — open it with `open "http://127.0.0.1:2527/memory"`.',
+            '"""',
+            `assert old in s`,
+            `open(p,'w').write(s.replace(old,new,1))`,
+            `EOF`,
+            `sed -n '/Notes/,/FrakBot/p' CLAUDE.md`
+        ].join('\n'));
+        assert.equal(last(recs).type, 'tool_file_edit', 'a `<placeholder>` in the content hid the write');
+        assert.match(last(recs).summary, /\/Users\/andyed\/CLAUDE\.md/);
+        // The URL in the content is quoted and slashed, but it is not a file.
+        assert.doesNotMatch(last(recs).summary, /http:/);
+
+        recs = fire(ws, [
+            `cd ${ws.repo} && python3 - <<'PYEOF'`,
+            `p='CHANGELOG.md'`,
+            `s=open(p).read()`,
+            `open(p,'w').write(s.replace('a','b',1))`,
+            `PYEOF`,
+            `grep -c "marker" some/dir/hook.sh 2>/dev/null | head -3`
+        ].join('\n'));
+        assert.equal(last(recs).type, 'tool_file_edit', 'a `2>/dev/null` after the heredoc hid the write');
+        assert.match(last(recs).summary, /CHANGELOG\.md/);
+        assert.doesNotMatch(last(recs).summary, /dev\/null/);
+
+        // A real explicit target still suppresses the content harvest: the test
+        // file being written names src/app.js inside a python string, and only
+        // the redirect target must be reported.
+        recs = fire(ws, `cat > tests/t.test.js <<'EOF'\nconst cmd = "p='src/app.js'\\nopen(p,'w')";\nEOF`);
+        assert.equal(last(recs).type, 'tool_file_edit');
+        assert.match(last(recs).summary, /tests\/t\.test\.js/);
+        assert.doesNotMatch(last(recs).summary, /src\/app\.js/);
+    } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
 test('a read-only heredoc is not called a write, and regexes are not harvested as paths', () => {
     const ws = makeWorkspace();
     try {

@@ -49,6 +49,26 @@ SALIENCE="0.5"  # default; per-branch overrides below
 # file edits, all of them Write-tool calls. session-digest's `files` panel was
 # reporting a fraction of the work and reading as if that were the whole session.
 
+# Keep only the harvested strings that can be real write targets. Reads stdin,
+# one candidate per line; emits the survivors, deduped, at most five, one per
+# line. Factored out of bash_written_paths() so the variable-bound fallback
+# below can be gated on what SURVIVES filtering rather than on the raw harvest.
+bash_filter_paths() {
+  awk 'NF' | while read -r p; do
+    case "$p" in
+      /dev/*|/tmp/*|/private/tmp/*|\&*|-*) continue ;;                 # devices, scratch, fd dups, flags
+      */node_modules/*|*/.git/*|*.lock|*lock.json) continue ;;
+      *://*) continue ;;                                                # a URL in the content is never a target
+      # Shell/JSON metacharacters mean this came out of quoted SOURCE TEXT, not a
+      # real target. Writing this detector logged `Modified: {",{,src/app.js`
+      # because the harvester read the test file it was creating.
+      *[\{\}\"\(\)\$\*\;]*|\'*) continue ;;
+      *) printf '%s\n' "$p" ;;
+    esac
+  done | grep -E '(/|\.[A-Za-z0-9]{1,6}$)' \
+    | awk '!seen[$0]++' | head -5
+}
+
 # Paths a command WRITES to; empty when it only reads. Order matters at the call
 # site: a write must outrank the noise filter, because `cat > src/f.js <<EOF` is
 # both a real edit and a `cat `.
@@ -74,28 +94,26 @@ $(printf '%s' "$cmd" | grep -oE 'tee[[:space:]]+(-a[[:space:]]+)?[^ &|;]+' | awk
 $(printf '%s' "$cmd" | grep -oE "open\([\"'][^\"']+[\"'][[:space:]]*,[[:space:]]*[\"'][wa]" \
       | sed -E "s/^open\([\"']//; s/[\"'].*$//")"
     # Shape B (variable-bound path) is a LAST RESORT: harvest quoted path-like
-    # strings only when nothing explicit was found. Otherwise a heredoc that
-    # writes a file whose CONTENT mentions other paths reports them all —
+    # strings only when nothing explicit SURVIVES FILTERING. Otherwise a heredoc
+    # that writes a file whose CONTENT mentions other paths reports them all —
     # `cat > t.test.js <<EOF … open('src/app.js','w') … EOF` named both.
-    if [ -z "$(printf '%s\n' "$raw" | awk 'NF' | head -1)" ]; then
+    #
+    # Gated on the filtered set, not the raw harvest. The raw check was empty in
+    # the tests but not in practice: a `<project>` placeholder inside the quoted
+    # content harvests as a `>` redirect to a bare backtick, and a `2>/dev/null`
+    # anywhere in the compound command harvests `/dev/null`. Either made the raw
+    # list non-empty, the fallback was skipped, the filter then discarded the
+    # junk, and a real `p='/Users/andyed/CLAUDE.md' … open(p,'w')` logged as
+    # `Ran:` (session 24b90edb, 2026-09-13, twice) while the same shape without
+    # the incidental `>` was caught.
+    if [ -z "$(printf '%s\n' "$raw" | bash_filter_paths | head -1)" ]; then
       raw="$raw
 $(printf '%s' "$cmd" | grep -oE "[\"'][^\"' ]*(/[^\"' ]+|[^\"' /]+\.[A-Za-z0-9]{1,6})[\"']" \
         | tr -d "\"'")"
     fi
   fi
 
-  printf '%s\n' "$raw" | awk 'NF' | while read -r p; do
-    case "$p" in
-      /dev/*|/tmp/*|/private/tmp/*|\&*|-*) continue ;;                 # devices, scratch, fd dups, flags
-      */node_modules/*|*/.git/*|*.lock|*lock.json) continue ;;
-      # Shell/JSON metacharacters mean this came out of quoted SOURCE TEXT, not a
-      # real target. Writing this detector logged `Modified: {",{,src/app.js`
-      # because the harvester read the test file it was creating.
-      *[\{\}\"\(\)\$\*\;]*|\'*) continue ;;
-      *) printf '%s\n' "$p" ;;
-    esac
-  done | grep -E '(/|\.[A-Za-z0-9]{1,6}$)' \
-    | awk '!seen[$0]++' | head -5 | paste -sd ',' -
+  printf '%s\n' "$raw" | bash_filter_paths | paste -sd ',' -
 }
 
 # True when a command is only noise. Strips leading `cd …` hops first so the
