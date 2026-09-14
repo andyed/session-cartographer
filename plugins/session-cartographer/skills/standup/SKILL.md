@@ -112,6 +112,14 @@ design; a list of them is not news. Useful:
 
 Not useful: "there are 9 active sessions."
 
+When a peer session is worth the operator's attention, hand over its Memory
+Desk link rather than its id: `http://127.0.0.1:2527/memory?session=<id>`
+opens that thread (span, edited files, observations, resume command), and
+`&file=<url-encoded abs path>&review=changes` opens the contested file on that
+session's bounded diff. The full permalink grammar is in the `/carto` skill
+under "Deep links into Memory". Check the host answers 200 first; a link to a
+stopped Explorer is worse than an id.
+
 Never claim a session is *currently* running. The log shows last activity, not
 liveness — `●` means it was active recently, which is a different claim. Say
 "active 6m ago," not "is running."

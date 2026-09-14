@@ -6,6 +6,7 @@ Hooks are the foundation — they produce JSONL event logs. Everything else is a
 Hooks (produce JSONL)
   ├── /remember (CLI search, bash + awk)
   ├── /focus (project orientation from event logs)
+  ├── /standup (peer view: concurrent sessions and file contention)
   ├── /carto (web UI, Node + React)
   ├── /wrapup (strategic session-end preservation)
   ├── /trustmap (auto mode environment config)
@@ -14,6 +15,7 @@ Hooks (produce JSONL)
 
 - **`/remember`** — Claude uses this to recover context from past sessions. Agent's primary history tool.
 - **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
+- **`/standup`** — The peer view. `/focus` answers what happened in a project; this answers who else is in it right now: sessions active in the window, their projects and commits, and the files two sessions are both editing. `--commit <sha>` names the session behind a commit that landed underneath you. Groups the events the hooks already write by session; captures nothing new, writes nothing.
 - **`/carto`** — Opens the Explorer web app for the human. Not an agent tool.
 - **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a milestone event. Agent-initiated.
 - **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus. The same question Claude Code's setup wizard answers by rescanning the machine, answered instead from events already extracted — usage-weighted, cross-provider, and re-runnable so an update proposes only the delta.
@@ -43,6 +45,8 @@ scripts/
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
   session-digest.js             — Compact per-session panel (tempo, commits, files, recall, dirty repos); used by /wrapup
+  cartographer-standup.js       — Concurrent-session roster + CONTENTION (files two sessions both edit) + --commit attribution; used by /standup
+  non-projects.js               — isNonProject(): workspace-root and worktree directory names that are not projects (filters project labels, never file paths)
   trust-digest.js               — Derives infrastructure actually touched (orgs, LAN hosts, buckets, CLIs) for auto mode's autoMode.environment; used by /trustmap
   build-profile.js              — Derives .carto/profile.md: standing summary of projects, preferences, decisions, work shape, cadence
   sentinels.js                  — isResolved()/firstResolved(): the one definition of "field carries no real value"
@@ -56,6 +60,7 @@ project-registry.json             — Project aliases for multi-repo families (u
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
   skills/focus/SKILL.md         — /focus skill (project orientation from event logs)
+  skills/standup/SKILL.md       — /standup skill (peer view: who else is working, file contention, commit attribution)
   skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
   skills/wrapup/SKILL.md        — /wrapup skill (strategic session-end preservation)
   skills/trustmap/SKILL.md      — /trustmap skill (derive/update auto mode's autoMode.environment from the corpus)

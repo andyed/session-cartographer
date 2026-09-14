@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### docs(standup): list the peer view everywhere the other skills are listed
+
+`/standup` shipped with a README entry and a paste-in CLAUDE.md snippet, but
+the repository's own CLAUDE.md — the architecture tree, the skill bullets, the
+scripts inventory, and the plugin skills list — still described a six-skill
+plugin, and the manifest description named three skills. A reader orienting on
+the repo through its CLAUDE.md, which is what `/focus` and every new session
+do, would not learn the peer view exists. All four places now carry it, along
+with `cartographer-standup.js` and `non-projects.js`. The skill's reporting
+guidance also says to hand the operator a Memory Desk permalink for a peer
+session instead of a bare session id, cross-referencing the grammar now in the
+`/carto` skill.
+
 ### docs(carto): document the Memory Desk permalink grammar for agents
 
 The desk has been permalink-first since 0.7.x, but the only description of the
