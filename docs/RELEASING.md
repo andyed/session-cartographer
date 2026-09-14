@@ -20,7 +20,7 @@ install it. Publication requires an explicit release request.
    separately. A skipped or blocked check is unresolved, not passing.
 5. Review and commit the candidate. Record its full commit SHA and version.
 
-Version 0.7.6 is the current candidate. The historical local `v0.7.5` tag points
+Version 0.7.7 is the current candidate. The historical local `v0.7.5` tag points
 to `7091b18` and is not this candidate; preserve it rather than retargeting it.
 Confirm the intended new tag is unused locally and remotely before publishing.
 
