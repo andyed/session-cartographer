@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### docs(carto): document the Memory Desk permalink grammar for agents
+
+The desk has been permalink-first since 0.7.x, but the only description of the
+URL grammar was a prose paragraph and a six-row table in the README, and the
+`/carto` skill — the one place an agent reads before opening the Explorer for a
+human — said nothing about links at all. So agents described sessions instead of
+handing over a URL. The skill now carries the full parameter table transcribed
+from `normalizeMemoryRoute()` (values, defaults, what each requires) plus
+shell recipes for the four links an agent actually needs: its own thread, a
+bounded file review, a compare view, and a replayed window. Two constraints are
+spelled out because both fail silently: `file` resolves only inside the corpus
+root, and only for edits the hook logged as `Modified:` — a heredoc write logged
+as `Ran:` produces "not recorded as edited", not a diff.
+
 ### fix(backfill): recognise commits the hook already logged
 
 `backfill-git-history.sh` deduped on its own `git-<short_hash>` event ids, but
