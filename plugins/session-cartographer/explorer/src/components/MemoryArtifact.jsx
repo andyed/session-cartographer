@@ -112,11 +112,11 @@ function UnifiedDiff({ rows }) {
     </div>;
 }
 
-export default function MemoryArtifact({ review, mode = 'file', layout = 'split', onLayout = null }) {
+export default function MemoryArtifact({ review, mode = 'file', layout = 'split', onLayout = null, documentMode, onDocumentMode }) {
   const [sourcePath, setSourcePath] = useState(null);
   const path = review?.path || review?.name || '';
   const markdown = /\.(?:md|markdown|mdown)$/i.test(path);
-  const showSource = sourcePath === path;
+  const showSource = documentMode ? documentMode === 'source' : sourcePath === path;
   const blocks = useMemo(() => markdown ? parseArtifactMarkdown(review?.content || '') : [], [markdown, review?.content]);
   if (!review) return null;
   if (mode === 'changes') return <section className="memory-artifact" aria-label="Artifact changes">
@@ -126,8 +126,8 @@ export default function MemoryArtifact({ review, mode = 'file', layout = 'split'
     <div className="memory-artifact-toolbar">
       <span>{markdown ? 'Markdown document' : 'Source file'}</span>
       {markdown && <div className="memory-artifact-view-options" role="group" aria-label="Document view">
-        <button type="button" aria-pressed={!showSource} onClick={() => setSourcePath(null)}>Preview</button>
-        <button type="button" aria-pressed={showSource} onClick={() => setSourcePath(path)}>Source</button>
+        <button type="button" aria-pressed={!showSource} onClick={() => onDocumentMode ? onDocumentMode('preview') : setSourcePath(null)}>Preview</button>
+        <button type="button" aria-pressed={showSource} onClick={() => onDocumentMode ? onDocumentMode('source') : setSourcePath(path)}>Source</button>
       </div>}
     </div>
     {review.content === '' ? <p className="memory-artifact-empty">This file is empty.</p> : markdown && !showSource

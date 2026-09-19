@@ -1,6 +1,8 @@
 // demo.js — Static data layer for GH Pages demo.
 // Loaded lazily only when VITE_DEMO=true.
 
+import { activityFromMemory, projectMemoryScope } from '../shared/activity-scope.js';
+
 const BASE = import.meta.env.BASE_URL || '/';
 
 let cache = null;
@@ -25,8 +27,8 @@ async function load() {
   return cache;
 }
 
-// The working-memory field is loaded separately: it is 48 KB and only the
-// memory tab needs it, so the timeline and search views must not pay for it.
+// The complete bounded evidence fixture is loaded separately and only the
+// memory/activity views pay for it.
 let memoryCache = null;
 async function loadMemory() {
   if (!memoryCache) memoryCache = fetch(`${BASE}demo/demo/memory/state.json`).then(r => r.json());
@@ -35,6 +37,68 @@ async function loadMemory() {
 
 class DemoError extends Error {
   constructor(message, status) { super(message); this.status = status; }
+}
+
+function demoTime(value, fallback, label) {
+  if (!value) return fallback;
+  const parsed = /^\d{13}$/.test(value) ? Number(value) : Date.parse(value);
+  if (!Number.isFinite(parsed)) throw new DemoError(`Invalid demo ${label}.`, 400);
+  return parsed;
+}
+
+function demoList(params, name) {
+  return params.getAll(name).flatMap(value => value.split(',')).map(value => value.trim()).filter(Boolean);
+}
+
+function demoScope(params, field, from = null, through = null) {
+  const legacyEnd = demoTime(params.get('end'), field.end, 'window end');
+  const legacyHours = Number(params.get('hours') || field.windowHours || 24);
+  if (!Number.isFinite(legacyHours) || legacyHours <= 0) throw new DemoError('Invalid demo window hours.', 400);
+  const scope = {
+    from: from ?? demoTime(params.get('from'), legacyEnd - legacyHours * 60 * 60 * 1000, 'scope start'),
+    through: through ?? demoTime(params.get('through'), legacyEnd, 'scope end'),
+    lower: params.get('lower') === 'open' ? 'open' : 'closed',
+    project: params.get('project') || '',
+    providers: demoList(params, 'provider'),
+    evidence: demoList(params, 'evidence'),
+    brush: demoList(params, 'brush'),
+    q: params.get('q') || '',
+    result: params.get('result') || 'tasks',
+    kind: params.get('kind') || 'all',
+  };
+  if (scope.from > scope.through) throw new DemoError('Demo scope start must not be later than its end.', 400);
+  return scope;
+}
+
+function demoActivity(field, params) {
+  const focus = demoScope(params, field);
+  const contextFrom = demoTime(params.get('contextFrom'), focus.from, 'context start');
+  const contextThrough = demoTime(params.get('contextThrough'), focus.through, 'context end');
+  if (contextFrom > focus.from || contextThrough < focus.through) throw new DemoError('Demo context must contain the focus interval.', 400);
+  const context = projectMemoryScope(field, { ...focus, from: contextFrom, through: contextThrough });
+  if (params.get('shape') === 'context') return {
+    source: context.source,
+    coverage: context.coverage,
+    context,
+  };
+  const focused = projectMemoryScope(field, focus);
+  const complete = activityFromMemory(focused);
+  const limit = Number(params.get('limit') || 200);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new DemoError('Demo activity limit must be between 1 and 500.', 400);
+  const rawCursor = params.get('cursor') || '';
+  const cursorPrefix = `demo:${focused.sourceRevision}:${encodeURIComponent(JSON.stringify(focused.scope))}:`;
+  const offsetText = rawCursor.startsWith(cursorPrefix) ? rawCursor.slice(cursorPrefix.length) : '';
+  if (rawCursor && !/^\d+$/.test(offsetText)) throw new DemoError('Demo activity cursor belongs to a different fixture revision or scope.', 409);
+  const offset = offsetText ? Number(offsetText) : 0;
+  const events = complete.events.slice(offset, offset + limit);
+  const nextOffset = offset + events.length;
+  return {
+    scope: focused.scope, source: focused.source, coverage: focused.coverage, context, focused,
+    activity: {
+      ...complete, events, cursor: rawCursor || null,
+      nextCursor: nextOffset < complete.events.length ? `${cursorPrefix}${nextOffset}` : null,
+    },
+  };
 }
 
 function closestQuery(query, queries) {
@@ -111,10 +175,9 @@ export async function handleFetch(url) {
   }
 
   // ─── Working memory ───
-  // The field is a fixture derived from demo/sessions.json by
-  // scripts/build-demo-memory.mjs, pinned to one 24-hour window. The `end`
-  // parameter is therefore ignored rather than honoured: a demo that let the
-  // viewer scrub to an empty window would look broken, not empty.
+  // The field is a frozen fixture derived from demo/sessions.json. Exact
+  // ranges project that fixture locally; an empty interval remains visibly
+  // outside/partial coverage rather than snapping back to the busy day.
 
   if (u.pathname === '/api/turbo/status') {
     // Turbo is the live warm-corpus service. The static demo has no service to
@@ -133,7 +196,13 @@ export async function handleFetch(url) {
   }
 
   if (u.pathname === '/api/memory/state') {
-    return (await loadMemory()).field;
+    const { field } = await loadMemory();
+    return projectMemoryScope(field, demoScope(u.searchParams, field));
+  }
+
+  if (u.pathname === '/api/memory/activity' || u.pathname === '/api/activity-scope') {
+    const { field } = await loadMemory();
+    return demoActivity(field, u.searchParams);
   }
 
   if (u.pathname === '/api/memory/session') {

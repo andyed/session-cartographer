@@ -6,7 +6,7 @@ import { effectiveTurboSettings } from '../../scripts/turbo-common.js';
 const exec = promisify(execFile);
 const controllerPath = fileURLToPath(new URL('../../scripts/cartographer-turbo.js', import.meta.url));
 const ACTIONS = new Set(['enable', 'start', 'refresh']);
-const MEMORY_PATHS = new Set(['/api/memory/health', '/api/memory/state', '/api/memory/session', '/api/memory/file']);
+const MEMORY_PATHS = new Set(['/api/memory/health', '/api/memory/activity', '/api/memory/state', '/api/memory/session', '/api/memory/file']);
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 function reply(res, status, body) {
@@ -190,7 +190,8 @@ export function createTurboEntryMiddleware({
       const { url } = effectiveTurboSettings(env);
       const target = new URL(req.url, url);
       const hours = Number(target.searchParams.get('hours') ?? 24);
-      const wide = Number.isInteger(hours) && hours > 24 && hours <= 2160;
+      const span = Date.parse(target.searchParams.get('through')) - Date.parse(target.searchParams.get('from'));
+      const wide = (Number.isInteger(hours) && hours > 24 && hours <= 2160) || (span > 86400000 && span <= 90 * 86400000);
       // Wide snapshots contain the complete selected corpus, including per-task
       // evidence. Keep bounded transport without imposing the old 24h limits.
       const response = await fetchImpl(target, {

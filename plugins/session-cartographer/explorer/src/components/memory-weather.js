@@ -905,7 +905,7 @@ export function createMemoryWeather(root, initialData, {
     ctx.textAlign = 'left';
     ctx.fillStyle = ink;
     ctx.font = '500 16px ui-sans-serif,system-ui,sans-serif';
-    const ylabel = $('[data-y]').selectedOptions[0].textContent;
+    const ylabel = $('[data-y]').selectedOptions[0]?.textContent || 'Recorded activity';
     if (!compact) ctx.fillText(ylabel, left, 23);
     ctx.textAlign = 'right';
     if (!compact) ctx.fillText(state.x === 'spanMs' ? 'Recorded span' : 'Active periods', right, H - 15);
@@ -1238,7 +1238,7 @@ export function createMemoryWeather(root, initialData, {
         state.hours = next.hours;
         state.mode = next.view;
         state.x = next.x;
-        state.y = next.y;
+        state.y = yOptions.includes(next.y) ? next.y : yOptions[0] || 'events';
         state.live = next.at === null;
         state.time = next.at ?? data.end;
         const wanted = next.panels?.length ? next.panels : MODES;

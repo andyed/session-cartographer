@@ -13,6 +13,7 @@ const SOURCE = join(ROOT, 'demo', 'memory', 'state.json');
 // become the fourth.
 const LIVE = join(ROOT, 'explorer', 'public', 'demo', 'demo', 'memory', 'state.json');
 const read = (path) => JSON.parse(readFileSync(path, 'utf8'));
+const { activityFromMemory, projectMemoryScope } = await import('../../explorer/shared/activity-scope.js');
 
 describe('demo working-memory fixture', () => {
   test('carries a populated field, not an empty one that renders as broken', () => {
@@ -56,6 +57,39 @@ describe('demo working-memory fixture', () => {
     }
   });
 
+  test('ships complete bounded evidence with truthful frozen-source metadata', () => {
+    const { field, window_end: windowEnd } = read(SOURCE);
+    assert.equal(field.evidenceComplete, true);
+    assert.equal(field.indexedRecordCount, field.total);
+    assert.equal(field.evidenceIndex.length, field.total);
+    assert.equal(field.coverage.evidenceComplete, true);
+    assert.equal(field.coverage.indexedRecords, field.total);
+    assert.equal(field.coverage.status, 'fixture-bounded-unknown-history');
+    assert.equal(field.source.mode, 'demo');
+    assert.equal(field.source.corpusId, 'demo-memory-v1');
+    assert.equal(field.source.snapshotAt, Date.parse(windowEnd));
+    assert.equal(field.snapshotAt, Date.parse(windowEnd));
+  });
+
+  test('the shared exact projection drives demo focus and activity composition', () => {
+    const { field } = read(SOURCE);
+    const records = field.evidenceIndex;
+    const from = records[20].t;
+    const through = records[80].t;
+    const closed = projectMemoryScope(field, { from, through, lower: 'closed' });
+    const open = projectMemoryScope(field, { from, through, lower: 'open' });
+    const expectedClosed = records.filter(record => record.t >= from && record.t <= through);
+    assert.equal(closed.total, expectedClosed.length);
+    assert.equal(open.total, expectedClosed.filter(record => record.t > from).length);
+    assert.deepEqual(closed.evidenceIndex.map(record => record.key), expectedClosed.map(record => record.key));
+    const activity = activityFromMemory(closed);
+    assert.equal(activity.totalEvents, closed.total);
+    assert.equal(activity.totalSessions, closed.sessions.length);
+    for (const session of activity.sessions) {
+      assert.equal(session.event_count, expectedClosed.filter(record => record.sessionId === session.session_id).length);
+    }
+  });
+
   test('names no real project, person, or home directory', () => {
     // The fixture is derived from already-sanitized demo data, so this is a
     // regression guard on that property rather than a scrub of its own: if a
@@ -87,19 +121,23 @@ describe('demo working-memory fixture', () => {
 });
 
 describe('demo route coverage', () => {
-  test('every API path the memory view requests is handled by the static layer', () => {
-    const view = readFileSync(join(ROOT, 'explorer', 'src', 'components', 'WorkingMemory.jsx'), 'utf8');
+  test('legacy explorer and exact-memory paths stay owned by the static layer', () => {
     const layer = readFileSync(join(ROOT, 'explorer', 'src', 'demo.js'), 'utf8');
-    // Quote AND backtick: the two routes that take query parameters are built
-    // as template literals, and a quote-only scan silently skips exactly the
-    // calls most likely to be missing from the static layer.
-    const requested = [...new Set([...view.matchAll(/['"`](\/api\/[a-z/]+)/g)].map(match => match[1]))];
-    // This is the defect that kept the memory view out of the demo: the view
-    // called routes the static layer had never heard of, so on GH Pages every
-    // one of them fell through to the host and 404'd.
-    assert.ok(requested.length >= 4, `expected the memory view to call several routes, saw ${requested.length}`);
+    const requested = [
+      '/api/events', '/api/search', '/api/autocomplete', '/api/projects', '/api/sessions',
+      '/api/memory/state', '/api/memory/session', '/api/memory/file', '/api/memory/activity', '/api/activity-scope',
+    ];
     for (const path of requested) {
       assert.ok(layer.includes(`'${path}'`), `demo.js does not handle ${path}`);
     }
+  });
+
+  test('static memory owns both exact activity paths and never invents file review', () => {
+    const layer = readFileSync(join(ROOT, 'explorer', 'src', 'demo.js'), 'utf8');
+    assert.ok(layer.includes("'/api/memory/activity'"));
+    assert.ok(layer.includes("'/api/activity-scope'"));
+    assert.ok(layer.includes('projectMemoryScope(field'));
+    assert.ok(layer.includes('activityFromMemory(focused)'));
+    assert.match(layer, /File review is not included in the static demo/);
   });
 });

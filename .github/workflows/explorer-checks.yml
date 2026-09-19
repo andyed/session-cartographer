@@ -28,10 +28,16 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         run: node tests/browser/memory-entry.cjs
+      - name: Verify exact focus windows in the built Explorer
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: node tests/browser/focus-workspace.cjs --preview
       - name: Preserve browser screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: memory-browser-failure
-          path: ${{ runner.temp }}/carto-memory-browser-artifacts
+          path: |
+            ${{ runner.temp }}/carto-memory-browser-artifacts
+            ${{ runner.temp }}/carto-focus-workspace-artifacts
           if-no-files-found: ignore

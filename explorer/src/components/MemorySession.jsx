@@ -94,7 +94,7 @@ function ActivityTrace({ metrics, tokens, tokenSeries }) {
   );
 }
 
-export default function MemorySession({ session, files = [], at, onBack, onReview, selectedPath, onSelectFile, hrefForFile }) {
+export default function MemorySession({ session, files = [], at, onBack, onReview, selectedPath, onSelectFile, hrefForFile, compact = false }) {
   const heading = useRef(null);
   const [fileLimit, setFileLimit] = useState(8);
   const [noteLimit, setNoteLimit] = useState(8);
@@ -123,8 +123,8 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
   useEffect(() => {
     setFileLimit(8);
     setNoteLimit(8);
-    heading.current?.focus({ preventScroll: true });
-  }, [session.id]);
+    if (!compact) heading.current?.focus({ preventScroll: true });
+  }, [session.id, compact]);
 
   useEffect(() => {
     const index = visibleFiles.findIndex(file => file.path === selectedPath);
@@ -132,21 +132,22 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
   }, [selectedPath, visibleFiles]);
 
   return (
-    <section className="memory-session" aria-label="Session detail">
-      <header className="ms-heading">
+    <section className={`memory-session${compact ? ' ms-compact' : ''}`} aria-label="Session detail">
+      <header className="ms-heading" hidden={compact}>
         <div className="ms-topline"><button type="button" className="ms-back" aria-label="Back to all sessions" onClick={onBack}>← <span>All sessions</span></button><span className="ms-project">{projects.join(' · ') || session.group || 'Unattributed project'}</span></div>
         <h1 ref={heading} tabIndex={-1}>{title}</h1>
         <div className="ms-duration"><span title="First to last event in the selected 24-hour window"><strong>{formatDuration(metrics.spanMs)}</strong> session span</span><span>{formatDuration(metrics.activeMs)} observed active <abbr title="Sum of gaps of 15 minutes or less between non-lifecycle events; this is observed activity, not measured effort.">ⓘ</abbr></span></div>
         {fullTitle && fullTitle !== title && <details className="ms-prompt"><summary>Session prompt</summary><p>{fullTitle}</p></details>}
       </header>
 
+      {(session.outcomes || []).some(note => /commit|wrapup/.test(note.type || '')) && <section className="fw-outcomes" aria-label="Recorded outcomes"><h2>Recorded outcomes</h2>{(session.outcomes || []).filter(note => /commit|wrapup/.test(note.type || '')).slice(-3).reverse().map((note, i) => <p key={note.id || i}><span>{stamp(note.t)}</span>{note.text}</p>)}</section>}
       <div className={`ms-evidence-columns${visibleFiles.length ? '' : ' ms-no-files'}`}>
         <section className="ms-files" aria-label="Recently edited files">
           <div className="ms-section-heading"><h2>Edited files</h2><span>{visibleFiles.length ? formatCount(visibleFiles.length) : 'None resolved'}</span></div>
           {visibleFiles.length > 0 ? <>
             <div className="ms-file-branches">
               {visibleFiles.slice(0, fileLimit).map((file) => (
-                <a key={file.path} className="ms-file" href={hrefForFile(file)} aria-label={`Inspect ${file.path}`} aria-current={selectedPath === file.path ? 'true' : undefined} onClick={event => { if (plainLinkClick(event)) { event.preventDefault(); onSelectFile(file); } }}>
+                <a key={file.path} className="ms-file" data-file-path={file.path} href={hrefForFile(file)} aria-label={`Inspect ${file.path}`} aria-current={selectedPath === file.path ? 'true' : undefined} onClick={event => { if (plainLinkClick(event)) { event.preventDefault(); onSelectFile(file); } }}>
                   <span className="ms-branch" aria-hidden="true"><i /></span>
                   <span className="ms-file-label"><strong>{file.name || file.path.split('/').at(-1)}</strong><span>{directory(file)}</span></span>
                   <span className="ms-file-edits">{file.edits.length} {file.edits.length === 1 ? 'record' : 'records'}</span>
@@ -162,6 +163,7 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
 
         <section className="ms-notes" aria-label="Recent session observations">
           <div className="ms-section-heading"><h2>Recent observations</h2><span>{formatCount(notes.length)}</span></div>
+          {session.notePreview?.truncated && <p className="ms-file-coverage">Showing the latest {session.notePreview.shown} of {session.notePreview.total} recorded notes. Open Task records in this window for the complete loaded interval.</p>}
           {notes.length ? <>
             <div className="ms-note-thread">{notes.slice(0, noteLimit).map((note, i) => {
               const clean = note.text.replace(/\s+/g, ' ').trim();
@@ -175,7 +177,7 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
           </> : <p className="ms-empty-notes">{metrics.eventCount ? 'These events contain no descriptive notes. Their timing and activity types are shown above.' : 'No descriptive observations before this point in the replay.'}</p>}
         </section>
       </div>
-      <ActivityTrace metrics={metrics} tokens={metrics.tokens} tokenSeries={tokenSeries} />
+      <details className="fw-activity-evidence"><summary>Activity evidence</summary><ActivityTrace metrics={metrics} tokens={metrics.tokens} tokenSeries={tokenSeries} /></details>
     </section>
   );
 }

@@ -69,11 +69,32 @@ async function port() {
     page.on('request', r => { if (new URL(r.url()).pathname.includes('/api/')) missed.push(r.url()); });
 
     await page.goto(`${origin}${base}memory`, { waitUntil: 'networkidle' });
-    await page.waitForSelector('#memory-weather canvas', { timeout: 15000 });
+    await page.getByRole('heading', { name: 'Memory', exact: true }).waitFor({ timeout: 15000 });
+    await page.getByRole('list', { name: 'Task results' }).waitFor();
 
     const tabs = await page.$$eval('nav button, header button', els => els.map(e => e.textContent.trim().toLowerCase()));
     assert.ok(tabs.includes('memory'), `memory tab missing from ${JSON.stringify(tabs)}`);
     assert.ok(!tabs.includes('internals'), 'internals must stay out of the demo');
+
+    // Memory now opens on work results. The default task projection must be
+    // the same fixture that the activity canvases describe, not a second demo
+    // path with a looser or silently substituted interval.
+    const taskRows = await page.getByRole('list', { name: 'Task results' }).getByRole('listitem').count();
+    assert.equal(taskRows, fixture.field.sessions.length,
+      `Tasks shows ${taskRows} rows; fixture carries ${fixture.field.sessions.length} sessions`);
+    const defaultUrl = new URL(page.url());
+    assert.equal(defaultUrl.searchParams.get('from'), new Date(fixture.field.start).toISOString());
+    assert.equal(defaultUrl.searchParams.get('through'), new Date(fixture.field.end).toISOString());
+
+    await page.getByRole('button', { name: 'Explore activity', exact: true }).click();
+    await Promise.race([
+      page.waitForSelector('#memory-weather canvas', { timeout: 15000 }),
+      page.getByRole('heading', { name: 'Memory needs a reset', exact: true }).waitFor({ timeout: 15000 }),
+    ]);
+    if (!await page.$('#memory-weather canvas')) {
+      fs.writeFileSync(path.join(artifacts, 'demo-memory-activity-missing.png'), await page.screenshot());
+      throw new Error(`Explore activity did not render a canvas at ${page.url()}\n${(await page.textContent('body')).slice(0, 2000)}\nconsole: ${errors.join(' | ')}`);
+    }
 
     // The field drew something, and it drew the fixture — not a default empty
     // state that happens to paint a background.
@@ -100,17 +121,11 @@ async function port() {
 
     fs.writeFileSync(path.join(artifacts, 'demo-memory-field.png'), await page.screenshot());
 
-    // A copied live duration cannot relabel this fixed recorded fixture.
-    await page.goto(`${origin}${base}memory?hours=168`, { waitUntil: 'networkidle' });
-    const timeWindow = page.getByRole('combobox', { name: 'Time window', exact: true });
-    assert.equal(await timeWindow.inputValue(), '24');
-    assert.equal(await timeWindow.isDisabled(), true);
-    assert.equal(new URL(page.url()).searchParams.has('hours'), false);
-
     // Compare mode owns the axis select. Which panels the all-panel layout has
     // room for depends on the viewport, so pin the single compare panel by
     // permalink rather than clicking a button whose meaning changes with width.
-    await page.goto(`${origin}${base}memory?view=compare&panels=compare`, { waitUntil: 'networkidle' });
+    const exact = `from=${encodeURIComponent(new Date(fixture.field.start).toISOString())}&through=${encodeURIComponent(new Date(fixture.field.end).toISOString())}`;
+    await page.goto(`${origin}${base}memory?surface=activity&view=compare&panels=compare&${exact}`, { waitUntil: 'networkidle' });
     await page.getByRole('heading', {name:'Compare',exact:true}).waitFor({timeout:15000});
     await page.getByLabel('Vertical dimension').waitFor();
     const offered = await page.$$eval('[data-y] option', els => els.map(e => e.value));
@@ -123,13 +138,51 @@ async function port() {
 
     fs.writeFileSync(path.join(artifacts, 'demo-memory-compare.png'), await page.screenshot());
 
+    // The exact fixture focus is portable state: saving it survives reload,
+    // and crossing to Timeline and back retains both endpoints precisely.
+    await page.goto(`${origin}${base}memory?${exact}`, { waitUntil: 'networkidle' });
+    await page.getByRole('list', { name: 'Task results' }).waitFor();
+    await page.getByRole('button', { name: 'Edit time range', exact: true }).click();
+    const rangeEditor = page.getByRole('region', { name: 'Edit time range', exact: true });
+    await rangeEditor.getByRole('button', { name: 'Use this window as return point', exact: true }).click();
+    await page.getByText('Return point set.', { exact: true }).waitFor();
+    await page.reload({ waitUntil: 'networkidle' });
+    assert.equal(await page.getByRole('button', { name: 'Go to return point', exact: true }).isEnabled(), true);
+    for (const key of ['from', 'through']) assert.equal(new URL(page.url()).searchParams.get(key), new URLSearchParams(exact).get(key));
+    fs.writeFileSync(path.join(artifacts, 'demo-memory-return-point.png'), await page.screenshot());
+
+    await page.getByRole('button', { name: 'Timeline ↗', exact: true }).click();
+    await page.waitForURL(url => url.pathname === `${base}timeline`);
+    await page.getByRole('navigation', { name: 'Timeline view' }).waitFor();
+    for (const key of ['from', 'through']) assert.equal(new URL(page.url()).searchParams.get(key), new URLSearchParams(exact).get(key));
+    const timelineText = await page.textContent('body');
+    assert.ok(/Concurrent|Sessions|Event Feed/.test(timelineText), 'the adjacent Timeline rendered no view controls');
+
+    await page.getByRole('button', { name: 'memory', exact: true }).click();
+    await page.waitForURL(url => url.pathname === `${base}memory`);
+    await page.getByRole('list', { name: 'Task results' }).waitFor();
+    for (const key of ['from', 'through']) assert.equal(new URL(page.url()).searchParams.get(key), new URLSearchParams(exact).get(key));
+
+    // An interval wholly beyond the fixture must remain the requested interval
+    // and render an honest empty focus. It must never snap back to the busy
+    // sample day merely because that day has data.
+    const outsideFrom = fixture.field.availableEnd + 24 * 60 * 60 * 1000;
+    const outsideThrough = outsideFrom + 60 * 60 * 1000;
+    await page.goto(`${origin}${base}memory?from=${encodeURIComponent(new Date(outsideFrom).toISOString())}&through=${encodeURIComponent(new Date(outsideThrough).toISOString())}`, { waitUntil: 'networkidle' });
+    await page.getByRole('heading', { name: 'No tasks match in the loaded records', exact: true }).waitFor();
+    await page.locator('.focus-workspace details.fw-coverage > summary').click();
+    await page.locator('.focus-workspace details.fw-coverage').getByText('The focus is outside the dates with observed records.', { exact: true }).waitFor();
+    assert.equal(await page.getByRole('list', { name: 'Task results' }).getByRole('listitem').count(), 0);
+    assert.equal(new URL(page.url()).searchParams.get('from'), new Date(outsideFrom).toISOString());
+    assert.equal(new URL(page.url()).searchParams.get('through'), new Date(outsideThrough).toISOString());
+
     // The memory fixture is written by the same step that mirrors demo/ into
     // explorer/public/, so a regression there takes the whole demo down, not
     // just this view. Prove the pre-existing tabs still have their data.
     await page.goto(`${origin}${base}`, { waitUntil: 'networkidle' });
     await page.waitForSelector('main, [class*="timeline"]', { timeout: 10000 });
-    const timelineText = await page.textContent('body');
-    assert.ok(/20\d\d|Mar |session/i.test(timelineText), 'the demo timeline rendered no recognisable content');
+    const adjacentTimelineText = await page.textContent('body');
+    assert.ok(/20\d\d|Mar |session|Concurrent/i.test(adjacentTimelineText), 'the demo timeline rendered no recognisable content');
 
     assert.deepEqual(missed, [], `these API calls escaped the static layer: ${missed.join(', ')}`);
     assert.deepEqual(errors, [], `console errors: ${errors.join(' | ')}`);

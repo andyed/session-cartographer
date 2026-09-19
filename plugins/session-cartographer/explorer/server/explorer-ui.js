@@ -5,7 +5,7 @@ import { validateUiRequest } from './turbo-entry.js';
 // canonical Explorer application on the UI host instead of starting a second
 // server on Turbo's port or copying its route implementations.
 const EXPLORER_PATHS = new Set([
-  '/api/health', '/api/events', '/api/autocomplete', '/api/coterms',
+  '/api/health', '/api/activity-scope', '/api/events', '/api/autocomplete', '/api/coterms',
   '/api/search', '/api/projects', '/api/sessions', '/api/stream',
   '/api/transcript', '/api/transcript/analysis',
 ]);

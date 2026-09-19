@@ -1,215 +1,115 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { fetchEvents } from '../api';
-import { useEventStream } from '../hooks/useEventStream';
-import { eventStreamPresentation } from '../hooks/event-stream-state';
-import EventGroup, { groupEvents } from './EventGroup';
-import SessionCard from './SessionCard';
-import { attributeProvider } from '../lib/provider';
-import ConcurrentTimeline from './ConcurrentTimeline';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEventStream } from '../hooks/useEventStream.js';
+import { eventStreamPresentation } from '../hooks/event-stream-state.js';
+import useFocusWorkspace from '../hooks/useFocusWorkspace.js';
+import useSavedFocus from '../hooks/useSavedFocus.js';
+import { activityFromMemory } from '../../shared/activity-scope.js';
+import EventGroup, { groupEvents } from './EventGroup.jsx';
+import SessionCard from './SessionCard.jsx';
+import ConcurrentTimeline from './ConcurrentTimeline.jsx';
+import FocusToolbar from './FocusToolbar.jsx';
+import MemoryInspector from './MemoryInspector.jsx';
+import '../styles/focus-workspace.css';
+import '../styles/concurrent-focus.css';
 
-function groupEventsBySession(events) {
-  const sessions = {};
-  for (const e of events) {
-    let sid = e.session_id;
-    if (!sid || sid === 'unknown') {
-      const dateStr = new Date(e.timestamp || 0).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      const proj = e.project || 'Orphaned';
-      sid = `Legacy: ${proj} (${dateStr})`;
+const EVENT_PAGE = 100, SESSION_PAGE = 30;
+const asEvent = record => ({ ...record, event_id: record.event_id || record.id,
+  session_id: record.session_id || record.sessionId, timestamp: record.timestamp || (Number.isFinite(record.t) ? new Date(record.t).toISOString() : undefined), summary: record.summary || record.text,
+  _source: record.source, diff_shape: record.quadrant ? { quadrant: record.quadrant, commit_type: record.commit_type } : undefined });
+
+function sessionCards(snapshot) {
+  if (!snapshot) return [];
+  const events = new Map(), anonymous = new Map();
+  for (const record of snapshot.evidenceIndex || []) {
+    if (!record.sessionId) {
+      const key = `Unattributed records · ${record.project || 'Unknown project'} · ${new Date(record.t).toISOString().slice(0, 10)}`;
+      if (!anonymous.has(key)) anonymous.set(key, []);
+      anonymous.get(key).push(asEvent(record)); continue;
     }
-    if (!sessions[sid]) {
-      sessions[sid] = {
-        session_id: sid,
-        events: [],
-        transcript_path: '',
-        timestamp: e.timestamp // Most recent timestamp
-      };
-    }
-    sessions[sid].events.push(e);
-    if (!sessions[sid].transcript_path && e.transcript_path) {
-      sessions[sid].transcript_path = e.transcript_path;
-    }
+    if (!events.has(record.sessionId)) events.set(record.sessionId, []);
+    events.get(record.sessionId).push(asEvent(record));
   }
-
-  // Attribute each group to the agent that produced it — the corpus is roughly
-  // half Codex, and a session card that does not say which agent ran is the
-  // reason this view read as Claude-only for months.
-  for (const session of Object.values(sessions)) {
-    Object.assign(session, attributeProvider(session.events));
-  }
-
-  return Object.values(sessions).sort((a, b) => {
-    return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
-  });
+  return [...activityFromMemory(snapshot).sessions.map(session => ({ ...session, events: events.get(session.session_id) || [] })),
+    ...[...anonymous].map(([key, records]) => ({ session_id: `Legacy ${key}`, anonymous: true, events: records, lastObserved: Math.max(...records.map(record => record.t)), providers: [...new Set(records.map(record => record.provider).filter(Boolean))] }))]
+    .sort((a, b) => (b.lastObserved || 0) - (a.lastObserved || 0));
 }
 
 export default function Timeline({ onOpenTranscript, isActive = true }) {
-  const [events, setEvents] = useState([]);
+  const workspace = useFocusWorkspace({ isActive, tab: 'timeline' });
+  const focus = useSavedFocus(workspace);
+  const { route, scoped, interval, data, error, refreshing } = workspace;
+  const scrollRef = useRef(null), origin = useRef(null), heading = useRef(null), priorSelection = useRef(null);
+  const order = useRef({ key: null, events: [], sessions: [] });
   const [newCount, setNewCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [viewMode, setViewMode] = useState(() => {
-    const view = new URLSearchParams(window.location.search).get('view');
-    return ['concurrent', 'sessions', 'chronological'].includes(view) ? view : 'chronological';
-  });
-  const [projectFilter, setProjectFilter] = useState('');
-  const scrollRef = useRef(null);
-  const isAtTop = useRef(true);
-
-  useEffect(() => {
-    setLoading(true);
-    setError(null);
-    fetchEvents({ limit: 400, project: projectFilter })
-      .then(data => {
-        setEvents(data.events);
-        setLoading(false);
-      })
-      .catch(e => {
-        setError(e.message);
-        setLoading(false);
-      });
-  }, [projectFilter]);
-
-  const streamStatus = useEventStream((event) => {
-    setEvents(prev => [event, ...prev]);
-    if (!isAtTop.current) {
-      setNewCount(prev => prev + 1);
-    }
+  const streamStatus = useEventStream(() => {
+    if (!isActive) return;
+    if ((scrollRef.current?.scrollTop || 0) > 50) setNewCount(value => value + 1);
   });
   const streamPresentation = eventStreamPresentation(streamStatus);
-
-  const handleScroll = () => {
-    if (scrollRef.current) {
-      isAtTop.current = scrollRef.current.scrollTop < 50;
-      if (isAtTop.current && newCount > 0) {
-        setNewCount(0);
-      }
-    }
+  const sortedEvents = useMemo(() => [...(scoped?.evidenceIndex || [])].map(asEvent).sort((a, b) => b.t - a.t), [scoped]);
+  const sortedSessions = useMemo(() => sessionCards(scoped), [scoped]);
+  const orderKey = JSON.stringify([route.q, route.project, route.providers, route.evidence, route.brush, route.kind, route.sort, route.mode === 'fixed' ? [route.from, route.through, route.lower] : route.mode]);
+  if (order.current.key !== orderKey) order.current = { key: orderKey, events: [], sessions: [] };
+  const stabilize = (items, kind, getId) => {
+    const byId = new Map(items.map(item => [getId(item), item]));
+    const known = new Set(order.current[kind]);
+    order.current[kind] = [...order.current[kind].filter(id => byId.has(id)), ...items.map(getId).filter(id => !known.has(id))];
+    return order.current[kind].map(id => byId.get(id));
   };
-
-  const scrollToTop = () => {
-    scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-    setNewCount(0);
+  const events = stabilize(sortedEvents, 'events', item => item.event_id || item.key || `${item.t}:${item.session_id}:${item.type}`);
+  const sessions = stabilize(sortedSessions, 'sessions', item => item.session_id);
+  const total = route.timelineView === 'sessions' ? sessions.length : events.length;
+  const pageSize = route.timelineView === 'sessions' ? SESSION_PAGE : EVENT_PAGE;
+  const offset = Math.min(route.offset || 0, Math.max(0, total - 1));
+  const visibleEvents = events.slice(offset, offset + pageSize), visibleSessions = sessions.slice(offset, offset + pageSize);
+  const groups = useMemo(() => groupEvents(visibleEvents), [visibleEvents]);
+  const openSession = (session, element) => {
+    origin.current = { element, scrollTop: scrollRef.current?.scrollTop || 0 };
+    workspace.navigate({ session: session.session_id || session.id, file: null, contributor: null, review: null });
   };
+  const restoreOrigin = () => requestAnimationFrame(() => {
+    if (scrollRef.current && origin.current) scrollRef.current.scrollTop = origin.current.scrollTop;
+    if (origin.current?.element?.isConnected) origin.current.element.focus({ preventScroll: true });
+    else heading.current?.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    if (priorSelection.current && !route.session) restoreOrigin();
+    priorSelection.current = route.session;
+  }, [route.session]);
+  const closeInspector = () => { workspace.up({ session: null, file: null, contributor: null, review: null }); restoreOrigin(); };
 
-  const timeGroups = useMemo(() => groupEvents(events), [events]);
-  const sessionGroups = useMemo(() => groupEventsBySession(events), [events]);
-
-  if (loading) {
-    return <div className="p-8 text-gray-500">Loading timeline...</div>;
-  }
-
-  if (error) {
-    return (
-      <div className="p-8">
-        <div className="text-red-400 text-sm mb-2">Failed to load timeline — is the server running?</div>
-        <div className="text-xs text-gray-500 font-mono mb-3">{error}</div>
-        <button
-          onClick={() => { setError(null); setLoading(true); fetchEvents({ limit: 400, project: projectFilter }).then(data => { setEvents(data.events); setLoading(false); }).catch(e => { setError(e.message); setLoading(false); }); }}
-          className="text-xs text-gray-400 hover:text-gray-200 underline"
-        >
-          retry
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="relative h-full flex flex-col">
-      {/* View Toggle Bar */}
-      <div className="px-4 py-2 border-b border-gray-800 bg-gray-900/50 flex justify-between items-center">
-        <div className="flex-1 flex items-center gap-3 min-w-0">
-          {projectFilter && (
-            <span className="inline-flex items-center gap-2 bg-blue-900/30 border border-blue-500/50 text-blue-200 text-xs px-2 py-0.5 rounded-full">
-              Project: <span className="font-mono font-medium">{projectFilter}</span>
-              <button onClick={() => setProjectFilter('')} className="hover:text-white font-bold text-blue-400 ml-1 rounded-full p-0.5 leading-none px-1.5 focus:outline-none focus:ring-1">
-                ✕
-              </button>
-            </span>
-          )}
-          {streamPresentation && (
-            <span
-              role="status"
-              aria-live="polite"
-              title={streamPresentation.detail}
-              aria-label={`Event stream ${streamPresentation.label}. ${streamPresentation.detail}`}
-              className={`inline-flex items-center gap-1.5 text-[11px] font-mono whitespace-nowrap ${
-                streamPresentation.tone === 'live' ? 'text-emerald-400'
-                  : streamPresentation.tone === 'offline' ? 'text-amber-400'
-                    : 'text-muted'
-              }`}
-            >
-              <span
-                aria-hidden="true"
-                className={`h-1.5 w-1.5 rounded-full ${
-                  streamPresentation.tone === 'live' ? 'bg-emerald-400'
-                    : streamPresentation.tone === 'offline' ? 'bg-amber-400'
-                      : 'bg-gray-500 animate-pulse'
-                }`}
-              />
-              {streamPresentation.label}
-            </span>
-          )}
+  return <div className="focus-timeline-workspace timeline-focus-shell" data-inspecting={Boolean(route.session)}>
+    <section className="fw-main timeline-focus-main" aria-label="Activity timeline">
+      <header className="timeline-focus-header">
+        <div className="timeline-focus-status" role="status" aria-live="polite">
+          <span ref={heading} tabIndex={-1}>Recorded activity</span>
+          {streamPresentation && <span title={streamPresentation.detail} data-tone={streamPresentation.tone}>{streamPresentation.label}</span>}
+          {refreshing && data && <span>Refreshing…</span>}
         </div>
-
-        <div className="bg-gray-800 p-1 rounded-md inline-flex text-xs shrink-0">
-          {[
-            ['concurrent', 'Concurrent'],
-            ['sessions', 'Sessions'],
-            ['chronological', 'Event Feed'],
-          ].map(([mode, label]) => (
-            <button
-              key={mode}
-              onClick={() => setViewMode(mode)}
-              className={`px-3 py-1 rounded transition-colors ${viewMode === mode ? 'bg-gray-700 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {newCount > 0 && (
-        <button
-          onClick={scrollToTop}
-          className="absolute top-12 left-1/2 -translate-x-1/2 z-10 bg-blue-600 text-white text-xs px-3 py-1 rounded-full shadow-lg hover:bg-blue-500"
-        >
-          {newCount} new event{newCount > 1 ? 's' : ''}
-        </button>
-      )}
-
-      {viewMode === 'concurrent' ? (
-        <ConcurrentTimeline onOpenTranscript={onOpenTranscript} isActive={isActive} />
-      ) : (
-        <div
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className="overflow-y-auto flex-1 p-4"
-        >
-          {events.length === 0 ? (
-            <div className="text-gray-500 text-center py-12">
-              No events yet. Events will appear as Claude Code and Codex hooks fire.
-            </div>
-          ) : viewMode === 'sessions' ? (
-            sessionGroups.map((group, i) => (
-              <SessionCard
-                key={group.session_id || i}
-                session={group}
-                onOpenTranscript={onOpenTranscript}
-                onProjectClick={setProjectFilter}
-              />
-            ))
-          ) : (
-            timeGroups.map((group, i) => (
-              <EventGroup
-                key={group.events[0]?.event_id || group.events[0]?.timestamp || i}
-                group={group}
-                onOpenTranscript={onOpenTranscript}
-                onProjectClick={setProjectFilter}
-              />
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  );
+        <nav className="timeline-focus-views" aria-label="Timeline view">
+          {[['concurrent','Concurrent'],['sessions','Sessions'],['chronological','Event Feed']].map(([id,label]) => <button key={id} aria-pressed={route.timelineView === id}
+            onClick={() => workspace.navigate({ timelineView: id, offset: 0 })}>{label}</button>)}
+        </nav>
+      </header>
+      <FocusToolbar workspace={workspace} focus={focus} showInterval />
+      {error && <div className="timeline-focus-error" role="alert"><span>{error}</span><button onClick={workspace.retry}>Retry</button></div>}
+      {route.routeError && data && <div className="timeline-focus-error" role="alert"><span><strong>Cannot open this interval.</strong> {route.routeError.message}</span><button onClick={() => workspace.activate({ from: data.end - 86400000, through: data.end, lower: 'closed' })}>Choose last 24 hours</button></div>}
+      {!data && !error && <p className="timeline-focus-loading" role="status">Loading recorded activity…</p>}
+      {newCount > 0 && <button className="timeline-focus-new" onClick={() => { setNewCount(0); workspace.navigate({ sort: Date.now() }, { replace: true }); workspace.retry(); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }}>{newCount} new record{newCount === 1 ? '' : 's'} · refresh order</button>}
+      {data && interval && route.timelineView === 'concurrent' && <ConcurrentTimeline workspace={workspace} focus={focus} onSession={openSession} scrollRef={scrollRef} />}
+      {data && interval && route.timelineView !== 'concurrent' && <div ref={scrollRef} className="timeline-focus-list" onScroll={() => { if ((scrollRef.current?.scrollTop || 0) < 50) setNewCount(0); }}>
+        {!total ? <p className="timeline-focus-empty">No recorded {route.timelineView === 'sessions' ? 'tasks' : 'events'} match this focus.</p>
+          : route.timelineView === 'sessions' ? visibleSessions.map(session => <article className="timeline-session-result" key={session.session_id}>
+            {!session.anonymous && <button className="timeline-inspect" onClick={event => openSession(session, event.currentTarget)}>Inspect evidence</button>}
+            <SessionCard session={session} onOpenTranscript={onOpenTranscript}
+              onProjectClick={project => workspace.navigate({ project, offset: 0 })}
+              onProviderClick={provider => workspace.navigate({ providers: provider ? [provider] : [], offset: 0 })} />
+          </article>)
+          : groups.map((group, index) => <EventGroup key={group.events[0]?.event_id || index} group={group} onOpenTranscript={onOpenTranscript}
+            onProjectClick={project => workspace.navigate({ project, offset: 0 })} />)}
+        {total > pageSize && <nav className="timeline-focus-pages" aria-label="Timeline pages"><button disabled={!offset} onClick={() => workspace.navigate({ offset: Math.max(0, offset - pageSize) })}>← Previous</button><span>{offset + 1}–{Math.min(total, offset + pageSize)} of {total}</span><button disabled={offset + pageSize >= total} onClick={() => workspace.navigate({ offset: offset + pageSize })}>Next →</button></nav>}
+      </div>}
+    </section>
+    {route.session && <MemoryInspector workspace={workspace} tab="timeline" onClose={closeInspector} onCloseFile={() => workspace.up({ review: null })} />}
+  </div>;
 }

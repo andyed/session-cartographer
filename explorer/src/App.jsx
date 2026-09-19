@@ -7,6 +7,7 @@ import Internals from './components/Internals';
 import WorkingMemory from './components/WorkingMemory';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import { isDemoMode, getDemoQueries } from './api';
+import { workspaceHref, readWorkspaceRoute } from './hooks/useFocusWorkspace.js';
 
 const BASE = import.meta.env.BASE_URL || '/';
 
@@ -21,6 +22,9 @@ function parseURL() {
   const sessionMatch = url.pathname.match(new RegExp(`^${base}/session/(.+)`));
   const isInternals = url.pathname === `${base}/internals` || url.pathname === `${base}/internals/`;
   const isMemory = /^\/memory\/?$/.test(url.pathname.slice(base.length));
+  const isTimeline = /^\/timeline\/?$/.test(url.pathname.slice(base.length));
+  const isLegacyTimeline = /^\/?$/.test(url.pathname.slice(base.length))
+    && ['concurrent', 'sessions', 'chronological'].includes(url.searchParams.get('view'));
   const deepLinkTranscript = sessionMatch
     ? decodeURIComponent(sessionMatch[1])
     : urlTranscript;
@@ -30,6 +34,7 @@ function parseURL() {
   const tab = deepLinkTranscript ? 'transcript'
     : isMemory ? 'memory'
     : isInternals ? 'internals'
+    : isTimeline || isLegacyTimeline ? 'timeline'
     : (urlQuery || urlProject) ? 'search'
     : 'timeline';
 
@@ -85,18 +90,18 @@ export default function App() {
     setTab(t);
     let nextURL = BASE;
     if (t === 'internals') nextURL = `${BASE}internals`;
-    if (t === 'memory') nextURL = `${BASE}memory`;
+    if (t === 'memory' || t === 'timeline') nextURL = ['memory', 'timeline'].includes(tab) ? workspaceHref(readWorkspaceRoute(), t) : `${BASE}${t}`;
     if (t === 'search' && searchQuery.trim()) nextURL = `${BASE}?q=${encodeURIComponent(searchQuery.trim())}`;
     window.history.pushState({ tab: t }, '', nextURL);
     window.dispatchEvent(new PopStateEvent('popstate', { state: { tab: t } }));
-  }, [searchQuery]);
+  }, [searchQuery, tab]);
 
   // When typing in search, auto-switch to search tab
   const handleSearchInput = useCallback((value) => {
     setSearchQuery(value);
     if (value.trim() && tab !== 'search') {
       setTab('search');
-      if (tab === 'internals' || tab === 'memory') {
+      if (tab !== 'search') {
         window.history.pushState({ tab: 'search' }, '', `${BASE}?q=${encodeURIComponent(value.trim())}`);
       }
     }
@@ -104,7 +109,7 @@ export default function App() {
 
   const openTranscript = useCallback((path, uuid, highlight = '') => {
     // Push current tab state first so back returns here
-    window.history.pushState({ tab }, '', window.location.href);
+    window.history.replaceState({ ...window.history.state, tab }, '', window.location.href);
     // Then push transcript
     const transcriptState = { path, uuid, highlight };
     setTranscript(transcriptState);
@@ -150,7 +155,7 @@ export default function App() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-4 py-2">
           {/* Search input with autocomplete — flush left */}
           {/* Memory owns its local find control; other routes keep global search. */}
-          {tab === 'memory' ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
+          {['memory', 'timeline'].includes(tab) ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
 
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">

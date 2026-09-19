@@ -44,6 +44,8 @@ for required in \
   "$PLUGIN/explorer/public/og-card-1200x630.png" \
   "$PLUGIN/explorer/server/index.js" \
   "$PLUGIN/explorer/server/app.js" \
+  "$PLUGIN/explorer/shared/focus.js" \
+  "$PLUGIN/explorer/shared/activity-scope.js" \
   "$PLUGIN/explorer/server/explorer-ui.js" \
   "$PLUGIN/src/lib/devtools-adapted/session-parser.js" \
   "$PLUGIN/src/lib/devtools-adapted/token-attribution.js" \

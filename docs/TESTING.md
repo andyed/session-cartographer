@@ -68,6 +68,13 @@ and transcripts, and verifies live event delivery with Turbo both off and on.
 After building, run `node tests/browser/memory-entry.cjs --preview` to exercise
 the same routes against the built preview host.
 
+`node tests/browser/focus-workspace.cjs` verifies exact interval boundaries,
+saved return points, range-editor dismissal and draft preservation, filtering,
+file provenance, keyboard gestures, inspector return, and shared timeline scope.
+Use `--preview` for the built Explorer or `--viewport-proof` for the focused
+seven-day selection / one-day viewport regression. Screenshots are written to
+`carto-focus-workspace-artifacts`. CI runs the complete built-preview journey.
+
 ### The GH Pages demo
 
 `memory-entry.cjs` strips `VITE_DEMO` on purpose, so it says nothing about the

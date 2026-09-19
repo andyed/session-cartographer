@@ -145,7 +145,10 @@ test('handler caches only briefly and sees warm array mutations and replacement'
   let reads = 0;
   const handler = createMemoryHandler({ getEvents: () => { reads += 1; return rows; }, corpusRoot: fixtureRoot, now: () => time });
   const health = await invoke(handler, '/api/memory/health');
-  assert.deepEqual(health.body, { status: 'ok', contract_version: 1, corpus_root: fixtureRoot, refresh_ms: 5000 });
+  const { source, ...legacyHealth } = health.body;
+  assert.deepEqual(legacyHealth, { status: 'ok', contract_version: 1, corpus_root: fixtureRoot, refresh_ms: 5000 });
+  assert.deepEqual(source, { mode: 'warm-corpus', corpusId: source.corpusId });
+  assert.match(source.corpusId, /^corpus-[0-9a-f]{8}$/);
   assert.equal(reads, 0);
   assert.equal((await invoke(handler, '/api/memory/state')).body.total, 1);
   rows.push(event('two'));

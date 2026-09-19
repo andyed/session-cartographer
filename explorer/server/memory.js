@@ -7,6 +7,7 @@ import { editSummaryPaths } from '../../scripts/edit-paths.js';
 import { eventEpochMs } from './event-time.js';
 import { CORPUS_ROOT } from './jsonl.js';
 import { createTranscriptEnricher, missingTokens } from './memory-transcript.js';
+import { activityFromMemory, normalizeActivityScope, projectMemoryScope } from '../shared/activity-scope.js';
 
 const execFileAsync = promisify(execFile);
 const HOUR_MS = 60 * 60 * 1000;
@@ -88,7 +89,26 @@ function compactTitle(value) {
 }
 
 function noteText(event) {
-  return text(firstResolved([event.summary, event.description, event.prompt, event.url, event.query, event.event_id, event.milestone])).replace(/\s+/g, ' ').slice(0, 500);
+  return text(firstResolved([event.summary, event.display, event.description, event.prompt, event.url, event.query, event.event_id, event.milestone])).replace(/\s+/g, ' ').slice(0, 500);
+}
+
+function stableHash(values) {
+  let hash = 0x811c9dc5;
+  for (const value of values) for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(8, '0');
+}
+
+function sessionId(event) {
+  const value = firstResolved([event.session_id, event.session, event.sessionId]);
+  return typeof value === 'string' || typeof value === 'number' ? String(value).trim() || null : null;
+}
+
+function providerLabel(event) {
+  const value = text(event.provider).toLowerCase();
+  return value || null;
 }
 
 /** A fold over the owning service's warm corpus, with no ranking or log reads. */
@@ -99,9 +119,19 @@ export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW
   let availableEnd = null;
   const deduped = new Map();
   const anonymous = [];
+  const fullRanges = new Map();
+  const revisionParts = [];
   for (const event of events) {
     const t = eventEpochMs(event);
     if (!Number.isFinite(t)) continue;
+    const sid = sessionId(event);
+    if (sid) {
+      const range = fullRanges.get(sid) || { from: t, through: t };
+      range.from = Math.min(range.from, t);
+      range.through = Math.max(range.through, t);
+      fullRanges.set(sid, range);
+    }
+    revisionParts.push(`${t}:${text(event.event_id)}:${projectLabel(event)}:${providerLabel(event) || ''}:${eventType(event)}`);
     availableStart = availableStart === null ? t : Math.min(availableStart, t);
     availableEnd = availableEnd === null ? t : Math.max(availableEnd, t);
     if (t < start || t > now) continue;
@@ -118,22 +148,49 @@ export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW
   const rows = [...deduped.values(), ...anonymous].sort((a, b) => eventEpochMs(a) - eventEpochMs(b) || text(a.event_id).localeCompare(text(b.event_id)));
   const sessions = new Map();
   const fileMaps = new Map();
+  const evidenceIndex = [];
   let unattributed = 0;
-  for (const event of rows) {
-    const rawId = firstResolved([event.session_id, event.session, event.sessionId]);
-    if (!rawId || (typeof rawId !== 'string' && typeof rawId !== 'number')) { unattributed += 1; continue; }
-    const id = String(rawId).trim();
-    if (!sessions.has(id)) {
-      sessions.set(id, { id, title: '', fullTitle: '', group: '', projects: Object.create(null), events: [], wraps: [], notes: [], outcomes: [], provider: null, cwd: null, count: 0, lifecycleOnly: true, transcript: null, transcriptPaths: [], promptTitle: '', _editEvidence: [] });
-      fileMaps.set(id, new Map());
-    }
-    const session = sessions.get(id);
-    if (['claude', 'codex'].includes(event.provider)) session.provider ||= event.provider;
-    if (path.isAbsolute(text(event.cwd))) session.cwd ||= text(event.cwd);
+  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+    const event = rows[rowIndex];
+    const id = sessionId(event);
     const t = eventEpochMs(event);
     const cat = category(event);
     const project = projectLabel(event);
     const eventId = text(event.event_id) || null;
+    const provider = providerLabel(event);
+    const resolvedPaths = cat === 'edit' ? editPaths(event, corpusRoot) : [];
+    evidenceIndex.push({
+      key: eventId || `anonymous:${t}:${rowIndex}`,
+      id: eventId,
+      event_id: eventId,
+      t,
+      timestamp: new Date(t).toISOString(),
+      sessionId: id,
+      session_id: id,
+      project,
+      provider,
+      type: eventType(event),
+      category: cat,
+      text: noteText(event),
+      summary: noteText(event),
+      transcript_path: text(event.transcript_path) || null,
+      files: resolvedPaths,
+      source: text(event._source) || null,
+      quadrant: text(event.diff_shape?.quadrant) || null,
+      commit_type: text(event.diff_shape?.commit_type) || null,
+      evidence: [cat, ...(cat === 'commit' || /wrapup/.test(eventType(event)) ? ['outcome'] : [])],
+    });
+    if (!id) { unattributed += 1; continue; }
+    if (!sessions.has(id)) {
+      sessions.set(id, { id, title: '', fullTitle: '', group: '', projects: Object.create(null), events: [], wraps: [], notes: [], outcomes: [], provider: null, providers: [], cwd: null, count: 0, lifecycleOnly: true, transcript: null, transcriptPaths: [], promptTitle: '', _editEvidence: [], fullRange: fullRanges.get(id) || null });
+      fileMaps.set(id, new Map());
+    }
+    const session = sessions.get(id);
+    if (provider) {
+      session.provider ||= provider;
+      if (!session.providers.includes(provider)) session.providers.push(provider);
+    }
+    if (path.isAbsolute(text(event.cwd))) session.cwd ||= text(event.cwd);
     session.events.push([t, cat, eventId, project]);
     session.projects[project] = (session.projects[project] || 0) + 1;
     session.count += 1;
@@ -148,12 +205,12 @@ export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW
     if (note) {
       const observation = { t, id: eventId, type: eventType(event), text: note };
       session.notes.push(observation);
-      if (cat === 'commit' || /wrapup|session_end|sessionend|agent_stop/.test(eventType(event))) session.outcomes.push(observation);
+      if (cat === 'commit' || /wrapup/.test(eventType(event))) session.outcomes.push(observation);
     }
     if (cat === 'edit') session._editEvidence.push({ ...event, t });
     if (cat !== 'edit' || !eventId) continue;
     const files = fileMaps.get(id);
-    for (const filePath of editPaths(event, corpusRoot)) {
+    for (const filePath of resolvedPaths) {
       if (!files.has(filePath)) files.set(filePath, { path: filePath, name: path.basename(filePath), project, edits: [] });
       files.get(filePath).edits.push({ t, id: eventId });
     }
@@ -180,11 +237,34 @@ export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW
     }
     session.metrics = { spanMs: session.events.at(-1)[0] - session.events[0][0], activeMs, counts, tokens: missingTokens() };
     session.tokenSeries = [];
+    session.noteCount = session.notes.length;
     session.notes = session.notes.slice(-60);
+    session.notePreview = { total: session.noteCount, shown: session.notes.length, truncated: session.noteCount > session.notes.length };
     const resolved = new Set(files[session.id].flatMap((file) => file.edits.map((edit) => edit.id)));
     session.fileEvidenceStats = { recordedEdits: counts.edit, resolvedFiles: files[session.id].length, unresolvedEdits: session._editEvidence.filter((event) => !resolved.has(event.event_id)).length };
   }
-  return { start, end: now, windowHours: hours, availableStart, availableEnd, total: rows.length, unattributed, groups: [...new Set(result.map((session) => session.group))].sort(), sessions: result, files };
+  const requestedRange = { from: start, through: now, lower: 'closed' };
+  const observedExtent = { from: availableStart, through: availableEnd };
+  const sourceRevision = `memory-${stableHash(revisionParts.sort())}`;
+  const corpusId = `corpus-${stableHash([path.resolve(corpusRoot)])}`;
+  const truncatedSessions = result.filter((session) => session.notePreview.truncated).length;
+  const coverage = {
+    status: 'unknown-history',
+    requestedRange,
+    loadedRange: { from: start, through: now },
+    observedExtent,
+    evidenceComplete: true,
+    indexedRecords: evidenceIndex.length,
+    notePreview: { limitPerSession: 60, truncatedSessions, omitted: result.reduce((sum, session) => sum + session.noteCount - session.notes.length, 0) },
+  };
+  const source = { mode: 'warm-corpus', corpusId, revision: sourceRevision, snapshotAt: now };
+  return {
+    start, end: now, windowHours: hours, availableStart, availableEnd,
+    total: rows.length, unattributed, groups: [...new Set(result.map((session) => session.group))].sort(), sessions: result, files,
+    evidenceIndex, evidenceComplete: true, indexedRecordCount: evidenceIndex.length,
+    requestedRange, loadedRange: coverage.loadedRange, observedExtent, snapshotAt: now, sourceRevision, coverageStatus: coverage.status,
+    source, coverage,
+  };
 }
 
 export async function enrichMemory(snapshot, enricher, corpusRoot = CORPUS_ROOT) {
@@ -197,6 +277,7 @@ export async function enrichMemory(snapshot, enricher, corpusRoot = CORPUS_ROOT)
     if (transcript.valid) {
       session.transcript = transcript.path;
       session.provider = transcript.provider;
+      if (transcript.provider && !session.providers.includes(transcript.provider)) session.providers.push(transcript.provider);
       if (transcript.title) {
         session.fullTitle = transcript.title;
         session.title = compactTitle(transcript.title);
@@ -242,6 +323,10 @@ export async function enrichMemory(snapshot, enricher, corpusRoot = CORPUS_ROOT)
       const resolved = new Set([...files.values()].flatMap((file) => file.edits.filter((edit) => edit.source !== 'transcript').map((edit) => edit.id)));
       session.fileEvidenceStats = { recordedEdits: session.metrics.counts.edit, resolvedFiles: files.size, unresolvedEdits: session._editEvidence.filter((event) => !resolved.has(event.event_id)).length };
     } else session.metrics.tokens = missingTokens(transcript.reason);
+    for (const record of snapshot.evidenceIndex || []) if (record.sessionId === session.id && !record.provider && session.provider) {
+      record.provider = session.provider;
+      record.providerSource = 'session-transcript';
+    }
     delete session._editEvidence;
     delete session.transcriptPaths;
   }
@@ -431,6 +516,8 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
       if (end === null && latest && latest < time - hours * HOUR_MS) windowEnd = latest;
     }
     const projected = projectMemory(events, { now: windowEnd, hours, corpusRoot });
+    projected.snapshotAt = time;
+    projected.source.snapshotAt = time;
     if (corpusBounds) Object.assign(projected, corpusBounds);
     const promise = enrichMemory(projected, transcriptEnricher, corpusRoot);
     cache.delete(key);
@@ -445,28 +532,126 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     }
     catch (error) { if (cache.get(key)?.promise === promise) cache.delete(key); throw error; }
   }
+  function readActivityTime(value, label, fallback) {
+    if (value === null) return fallback;
+    const parsed = /^\d{13}$/.test(value) ? Number(value) : /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?Z$/.test(value) ? Date.parse(value) : NaN;
+    if (!Number.isSafeInteger(parsed) || parsed <= 0 || parsed > now() + 60000) throw new MemoryError(400, `Invalid activity ${label}.`);
+    return parsed;
+  }
+  function readList(params, name) {
+    return params.getAll(name).flatMap((value) => value.split(',')).map((value) => value.trim()).filter(Boolean);
+  }
+  function readLimit(value) {
+    if (value === null) return 200;
+    const limit = /^\d+$/.test(value) ? Number(value) : NaN;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 500) throw new MemoryError(400, 'Activity limit must be an integer between 1 and 500.');
+    return limit;
+  }
+  function cursorOffset(value, revision, scopeKey) {
+    if (!value) return 0;
+    try {
+      const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
+      if (parsed.revision !== revision || parsed.scope !== scopeKey || !Number.isInteger(parsed.offset) || parsed.offset < 0) throw new Error('stale');
+      return parsed.offset;
+    } catch { throw new MemoryError(409, 'Activity cursor does not belong to this source revision.'); }
+  }
+  const activityScope = (params, from, through) => normalizeActivityScope({
+    from, through, lower: params.get('lower'), project: params.get('project') || '',
+    providers: readList(params, 'provider'), evidence: readList(params, 'evidence'), brush: readList(params, 'brush'), q: params.get('q') || '',
+    result: params.get('result') || 'tasks', kind: params.get('kind') || 'all',
+  }, { start: from, end: through });
+
+  function hasExactScope(params) {
+    return ['from', 'through', 'project', 'provider', 'evidence', 'brush', 'q', 'result', 'kind', 'lower'].some((name) => params.has(name));
+  }
+
+  async function scopedSnapshot(params, sessionId = null) {
+    const legacyEnd = readEnd(params.get('end'));
+    const through = readActivityTime(params.get('through'), 'through timestamp', legacyEnd ?? now());
+    const legacyHours = readHours(params.get('hours'));
+    const from = readActivityTime(params.get('from'), 'from timestamp', through - legacyHours * HOUR_MS);
+    if (from > through) throw new MemoryError(400, 'Activity from must not be later than through.');
+    const hours = Math.max(1, Math.ceil((through - from) / HOUR_MS));
+    if (hours > MAX_WINDOW_HOURS) throw new MemoryError(422, 'Activity ranges wider than 90 days are not supported.');
+    return projectMemoryScope(await snapshot(through, sessionId, hours), activityScope(params, from, through));
+  }
+
+  async function activity(params) {
+    const requestNow = now();
+    const legacyEnd = readEnd(params.get('end'));
+    const through = readActivityTime(params.get('through'), 'through timestamp', legacyEnd ?? requestNow);
+    const legacyHours = readHours(params.get('hours'));
+    const from = readActivityTime(params.get('from'), 'from timestamp', through - legacyHours * HOUR_MS);
+    const contextFrom = readActivityTime(params.get('contextFrom'), 'context start timestamp', from);
+    const contextThrough = readActivityTime(params.get('contextThrough'), 'context end timestamp', through);
+    if (from > through || contextFrom > from || contextThrough < through || contextFrom > contextThrough) throw new MemoryError(400, 'Activity ranges must be ordered, and context must contain the focus interval.');
+    const contextHours = Math.max(1, Math.ceil((contextThrough - contextFrom) / HOUR_MS));
+    if (contextHours > MAX_WINDOW_HOURS) throw new MemoryError(422, 'Activity ranges wider than 90 days are not supported.');
+    const base = await snapshot(contextThrough, null, contextHours);
+    const context = projectMemoryScope(base, activityScope(params, contextFrom, contextThrough));
+    if (params.get('shape') === 'context') return {
+      source: context.source,
+      coverage: context.coverage,
+      context,
+    };
+    const focused = projectMemoryScope(base, activityScope(params, from, through));
+    const aggregates = activityFromMemory(focused);
+    const limit = readLimit(params.get('limit'));
+    const scopeKey = JSON.stringify(focused.scope);
+    const offset = cursorOffset(params.get('cursor'), focused.sourceRevision, scopeKey);
+    const page = focused.evidenceIndex.slice(offset, offset + limit);
+    const nextOffset = offset + page.length;
+    const nextCursor = nextOffset < focused.evidenceIndex.length
+      ? Buffer.from(JSON.stringify({ revision: focused.sourceRevision, scope: scopeKey, offset: nextOffset })).toString('base64url')
+      : null;
+    return {
+      scope: focused.scope,
+      source: focused.source,
+      coverage: focused.coverage,
+      context,
+      focused,
+      activity: {
+        ...aggregates,
+        events: page,
+        totalEvents: focused.counts.events,
+        totalSessions: focused.counts.sessions,
+        totalFiles: focused.counts.files,
+        cursor: params.get('cursor') || null,
+        nextCursor,
+      },
+    };
+  }
   return async function handleMemory(req, res) {
     const url = new URL(req.url, 'http://127.0.0.1');
-    if (!url.pathname.startsWith('/api/memory/')) return false;
+    if (!url.pathname.startsWith('/api/memory/') && url.pathname !== '/api/activity-scope') return false;
     let status = 200;
     let body;
     try {
       if (req.method !== 'GET') throw new MemoryError(405, 'Memory endpoints are read-only.');
-      if (url.pathname === '/api/memory/health') body = { status: 'ok', contract_version: MEMORY_CONTRACT_VERSION, corpus_root: corpusRoot, refresh_ms: MEMORY_REFRESH_MS };
-      else if (url.pathname === '/api/memory/state') body = await snapshot(readEnd(url.searchParams.get('end')), null, readHours(url.searchParams.get('hours')));
+      if (url.pathname === '/api/memory/health') {
+        const corpusId = `corpus-${stableHash([path.resolve(corpusRoot)])}`;
+        body = { status: 'ok', contract_version: MEMORY_CONTRACT_VERSION, corpus_root: corpusRoot, refresh_ms: MEMORY_REFRESH_MS, source: { mode: 'warm-corpus', corpusId } };
+      }
+      else if (url.pathname === '/api/memory/state') body = hasExactScope(url.searchParams)
+        ? await scopedSnapshot(url.searchParams)
+        : await snapshot(readEnd(url.searchParams.get('end')), null, readHours(url.searchParams.get('hours')));
+      else if (url.pathname === '/api/memory/activity' || url.pathname === '/api/activity-scope') body = await activity(url.searchParams);
       else if (url.pathname === '/api/memory/session') {
         const id = url.searchParams.get('session');
         if (!id) throw new MemoryError(400, 'A session id is required.');
-        body = await snapshot(readEnd(url.searchParams.get('end')), id, readHours(url.searchParams.get('hours')));
+        body = hasExactScope(url.searchParams)
+          ? await scopedSnapshot(url.searchParams, id)
+          : await snapshot(readEnd(url.searchParams.get('end')), id, readHours(url.searchParams.get('hours')));
         if (!body.sessions.length) throw new MemoryError(404, 'This session has no recorded activity in the selected window.');
       }
       else if (url.pathname === '/api/memory/file') {
         const id = url.searchParams.get('session');
         if (!id) throw new MemoryError(400, 'A session id is required.');
+        const exact = hasExactScope(url.searchParams);
         const end = readEnd(url.searchParams.get('end'));
         const hours = readHours(url.searchParams.get('hours'));
-        const field = await snapshot(end, null, hours);
-        const source = field.sessions.some(session => session.id === id) ? field : await snapshot(end, id, hours);
+        const field = exact ? await scopedSnapshot(url.searchParams) : await snapshot(end, null, hours);
+        const source = field.sessions.some(session => session.id === id) ? field : exact ? field : await snapshot(end, id, hours);
         // Bound the diff by the session's whole life, not the desk's window.
         body = await reviewFile(source, id, url.searchParams.get('path'), corpusRoot, { bounds: sessionBounds(getEvents(), id), now: now() });
       }

@@ -13,6 +13,7 @@ mkdir -p \
   "$PLUGIN/explorer/public/js" \
   "$PLUGIN/explorer/server" \
   "$PLUGIN/explorer/src" \
+  "$PLUGIN/explorer/shared" \
   "$PLUGIN/src/lib/devtools-adapted"
 
 # Keep the checkout marketplace and release archive on one runtime assembly
@@ -31,4 +32,5 @@ cp "$ROOT/explorer/public/og-card-1200x630.png" "$PLUGIN/explorer/public/og-card
 cp "$ROOT/explorer/public/js/"*.js "$PLUGIN/explorer/public/js/"
 cp -R "$ROOT/explorer/server/." "$PLUGIN/explorer/server/"
 cp -R "$ROOT/explorer/src/." "$PLUGIN/explorer/src/"
+cp -R "$ROOT/explorer/shared/." "$PLUGIN/explorer/shared/"
 cp -R "$ROOT/src/lib/devtools-adapted/." "$PLUGIN/src/lib/devtools-adapted/"

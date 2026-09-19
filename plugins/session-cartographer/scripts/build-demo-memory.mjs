@@ -66,6 +66,17 @@ const sessions = JSON.parse(readFileSync(SOURCE, 'utf8')).sessions;
 const events = flatten(sessions);
 const { end, count } = busiestWindowEnd(events);
 const field = await enrichMemory(projectMemory(events, { now: end }), absentTranscripts);
+// This is complete searchable metadata for the frozen 24-hour fixture, not a
+// claim that the fixture represents all historical activity.
+field.source = { ...field.source, mode: 'demo', corpusId: 'demo-memory-v1', snapshotAt: end };
+field.snapshotAt = end;
+field.coverageStatus = 'fixture-bounded-unknown-history';
+field.coverage = {
+  ...field.coverage,
+  status: field.coverageStatus,
+  evidenceComplete: true,
+  indexedRecords: field.evidenceIndex.length,
+};
 
 // Which comparison axes this fixture can actually support. Derived, not
 // listed: a hardcoded set drifts the moment the fixture is regenerated, and
