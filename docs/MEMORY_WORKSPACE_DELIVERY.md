@@ -84,3 +84,22 @@ The user rejected the permanent Save / Return / Undo row, repeated date labels, 
 The return point remains an explicit browser-local bookmark. Automatically remembering the last window is still an open product decision. Integration into the canonical checkout is complete; updating the installed plugin remains pending. The current preview remains available for evaluation. Warm local performance measurements do not establish cold-start behavior or larger-corpus performance beyond the current 90-day limit.
 
 The preview process metadata and logs live in `/private/tmp/carto-focus-window-runtime`. Keep the worktree and that runtime directory while the preview is in use; they are temporary filesystem paths, while the commits remain in the repository's Git history. If a restart becomes necessary, inspect `preview.json` and listener ownership first; `restart.py` manages only this isolated 2536/2537 preview. It is not the installed service controller.
+
+## Large-file review v1
+
+The former 256 KiB rejection is now a preview budget: current text is read and displayed up to 256 KiB or 2,000 lines. A partial preview reports the shown size and total file size. UTF-8 characters cut at the byte boundary are withheld intact. Truncated Markdown uses source view so an incomplete document is not presented as a complete rendered page.
+
+Download full file streams the current workspace file as an attachment through the same session/evidence, workspace-path, and UI-origin checks. It reuses the validated file descriptor, sends no-store/nosniff headers, and does not buffer the complete file into a JSON response. The download is current workspace content, not the historical version selected by Changes. As before, binary or invalid UTF-8 prefixes are unavailable in text review; downloads are opaque attachments rather than executable browser documents. The UI proxy permits a download to run for up to 60 seconds.
+
+Diff output has a separate 256 KiB / 4,000-line ceiling and the existing per-Git-command timeout. Small changes in large files remain available as unified hunks with nearby context. Full old/new text is omitted when it exceeds the preview budget; split/context-expansion controls are hidden in that case. An oversized or unavailable diff preserves the current-file preview and download action. Complete diffs are never silently truncated.
+
+Historical file existence is explicit metadata, separate from omitted full text. A missing large-text payload must not claim that the file did not exist at the base commit.
+
+Validation: 40 focused Node 22 tests passed across file review, the UI proxy, and artifact provenance; the production build passed. The complete production-preview browser journey verified bounded output, recovery from an oversized diff, exact downloaded bytes and 390-pixel layout. Live checks on a recorded 598,164-byte source file confirmed small session changes remain visible as unified hunks, a bounded source preview replaces the size error, and the historical-file label is accurate. Source-marketplace smoke passed; the final source/plugin mirror was checked for parity. Captures are `large-review-{changes,file}-1440.png` and `large-review-file-390.png` in the preview runtime directory.
+
+V1 follow-ups:
+
+- Add page/line navigation and in-file search beyond the first preview segment.
+- Add a native editor handoff; the full-file action currently downloads a copy.
+- Support larger diffs with virtualization and on-demand context instead of increasing the render budget.
+- Add resumable downloads and a stable snapshot option for files being actively rewritten. A download currently reads the opened descriptor up to its initial size; it is not an immutable snapshot of a concurrently edited file.

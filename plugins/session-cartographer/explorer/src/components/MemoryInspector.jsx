@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../api.js';
 import { containsTimestamp } from '../../shared/focus.js';
 import MemorySession from './MemorySession.jsx';
-import MemoryArtifact from './MemoryArtifact.jsx';
+import MemoryArtifact, { formatFileBytes } from './MemoryArtifact.jsx';
 import { SessionHandoff } from './MemoryDesk.jsx';
 import { workspaceHref } from '../hooks/useFocusWorkspace.js';
 
@@ -91,6 +91,7 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
       </nav>
       <p className="fw-muted">{route.review === 'changes' ? 'Session changes use the actual commit range; they are not a reconstruction of the focus interval.' : 'Current workspace state may include edits from other tasks.'}</p>
       {review?.key !== requestKey || review?.loading ? <p role="status">Reading file evidence…</p> : review.error ? <p role="alert">{review.error}</p> : <>
+        {review.downloadUrl && <div className="fw-file-access"><a href={review.downloadUrl} download={fileName}>Download full file</a>{review.preview && <span>{formatFileBytes(review.preview.totalBytes)} · current workspace file</span>}</div>}
         <MemoryArtifact key={route.file} review={review} mode={route.review} layout={route.diff} onLayout={diff => navigate({ diff })} documentMode={route.doc} onDocumentMode={doc => navigate({ doc })} />
         {route.review === 'changes' && !review.diff && <button className="fw-link" onClick={() => navigate({ review: 'file' })}>Open current file</button>}
         <details><summary>Recorded edit evidence</summary><ul>{(review.evidence || []).map((edit, i) => <li key={edit.id || i}>{new Date(edit.t).toLocaleString()} · {edit.id || 'Unidentified record'}</li>)}</ul></details>

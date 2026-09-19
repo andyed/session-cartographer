@@ -6,6 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
+import { PassThrough } from 'node:stream';
 
 const fixtureRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'carto-memory-')));
 process.env.CARTOGRAPHER_DEV_DIR = fixtureRoot;
@@ -29,6 +30,26 @@ function invoke(handler, pathname, method = 'GET') {
       writeHead(code) { status = code; },
       end(raw) { resolve({ status, body: JSON.parse(raw) }); },
     }).then((handled) => { if (!handled) resolve({ handled: false }); }, reject);
+  });
+}
+function invokeRaw(handler, pathname, method = 'GET') {
+  return new Promise((resolve, reject) => {
+    let status;
+    const headers = {};
+    const chunks = [];
+    const response = new PassThrough();
+    response.setHeader = (name, value) => { headers[String(name).toLowerCase()] = String(value); };
+    response.writeHead = (code, values = {}) => {
+      status = code;
+      for (const [name, value] of Object.entries(values)) response.setHeader(name, value);
+      return response;
+    };
+    response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+    response.on('error', reject);
+    response.on('finish', () => resolve({ status, headers, body: Buffer.concat(chunks) }));
+    Promise.resolve(handler({ url: pathname, method }, response)).then(handled => {
+      if (!handled) resolve({ handled: false, headers, body: Buffer.concat(chunks) });
+    }, reject);
   });
 }
 
@@ -363,7 +384,7 @@ test('pinned windows survive later activity without poisoning live snapshots', a
   assert.equal((await invoke(handler, `/api/memory/session?session=session-a&end=${now - 5000}`)).body.total, 1);
 });
 
-test('file review rejects symlink swaps, oversize, binary and invalid UTF-8', async () => {
+test('file review rejects symlink swaps, binary and invalid UTF-8 without weakening recorded-file guards', async () => {
   const dir = workspace();
   const other = workspace();
   const file = path.join(dir, 'app.js');
@@ -376,12 +397,100 @@ test('file review rejects symlink swaps, oversize, binary and invalid UTF-8', as
   fs.symlinkSync(path.join(other, 'secret.txt'), file);
   assert.equal((await invoke(handler, request)).status, 403);
   fs.unlinkSync(file);
-  fs.writeFileSync(file, Buffer.alloc(256 * 1024 + 1, 65));
-  assert.equal((await invoke(handler, request)).status, 413);
+  fs.writeFileSync(file, 'restored');
+  assert.equal((await invoke(handler, `/api/memory/file?session=another&path=${encodeURIComponent(file)}`)).status, 404);
   fs.writeFileSync(file, Buffer.from([1, 0, 2]));
   assert.equal((await invoke(handler, request)).status, 415);
   fs.writeFileSync(file, Buffer.from([0xc3, 0x28]));
   assert.equal((await invoke(handler, request)).status, 415);
+});
+
+test('large UTF-8 files return bounded previews without splitting code points and download exact bytes', async () => {
+  const dir = workspace();
+  const file = path.join(dir, 'large.txt');
+  const bytes = Buffer.concat([Buffer.alloc(256 * 1024 - 1, 65), Buffer.from('é'), Buffer.from('\ntail\n')]);
+  fs.writeFileSync(file, bytes);
+  const handler = createMemoryHandler({ getEvents: () => [event('edit', { file_path: file })], corpusRoot: dir, now: () => now });
+  const request = `/api/memory/file?session=session-a&path=${encodeURIComponent(file)}&from=${now - 5000}&through=${now}`;
+  const result = await invoke(handler, request);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.preview.truncated, true);
+  assert.equal(result.body.preview.totalBytes, bytes.length);
+  assert.equal(result.body.preview.bytes, Buffer.byteLength(result.body.content));
+  assert.equal(result.body.preview.limitBytes, 256 * 1024);
+  assert.equal(result.body.preview.limitLines, 2000);
+  assert.ok(result.body.preview.bytes <= result.body.preview.limitBytes);
+  assert.doesNotMatch(result.body.content, /�/);
+  assert.equal(result.body.downloadUrl, `${request}&download=1`);
+
+  const download = await invokeRaw(handler, result.body.downloadUrl);
+  assert.equal(download.status, 200);
+  assert.deepEqual(download.body, bytes);
+  assert.equal(download.headers['content-type'], 'application/octet-stream');
+  assert.match(download.headers['content-disposition'], /^attachment;/);
+  assert.match(download.headers['content-disposition'], /large\.txt/);
+  assert.equal(download.headers['x-content-type-options'], 'nosniff');
+});
+
+test('text preview enforces the 2000-line limit independently of its byte limit', async () => {
+  const dir = workspace();
+  const file = path.join(dir, 'many-lines.txt');
+  const content = Array.from({ length: 2501 }, (_, index) => `line ${index}`).join('\n');
+  fs.writeFileSync(file, content);
+  const handler = createMemoryHandler({ getEvents: () => [event('edit', { file_path: file })], corpusRoot: dir, now: () => now });
+  const result = await invoke(handler, `/api/memory/file?session=session-a&path=${encodeURIComponent(file)}`);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.preview.truncated, true);
+  assert.equal(result.body.preview.lineCount, 2000);
+  assert.equal(result.body.content.endsWith('\n'), true);
+  assert.equal(result.body.content.split('\n').slice(0, -1).length, 2000,
+    'the trailing newline is not an additional shown line');
+  assert.equal(result.body.preview.bytes, Buffer.byteLength(result.body.content));
+  assert.ok(result.body.preview.totalBytes < result.body.preview.limitBytes);
+});
+
+test('large-file review keeps a small bounded diff while omitting oversized historical full text', async () => {
+  const dir = workspace();
+  const commitDate = new Date(now - 3600000).toISOString();
+  const git = args => execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: commitDate, GIT_COMMITTER_DATE: commitDate } });
+  git(['init', '-q']);
+  const file = path.join(dir, 'large-source.txt');
+  const lines = Array.from({ length: 7000 }, (_, index) => `stable ${String(index).padStart(5, '0')} ${'x'.repeat(32)}`);
+  fs.writeFileSync(file, `${lines.join('\n')}\n`);
+  git(['add', '--', path.basename(file)]);
+  git(['commit', '-qm', 'large base']);
+  lines[3500] = 'small bounded change';
+  fs.writeFileSync(file, `${lines.join('\n')}\n`);
+  const handler = createMemoryHandler({ getEvents: () => [event('edit', { file_path: file })], corpusRoot: dir, now: () => now });
+  const result = await invoke(handler, `/api/memory/file?session=session-a&path=${encodeURIComponent(file)}`);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.preview.truncated, true);
+  assert.equal(result.body.diffAvailable, true);
+  assert.match(result.body.diff, /small bounded change/);
+  assert.equal(result.body.range.contentsOmitted, true);
+  assert.equal(result.body.range.oldContent, null);
+  assert.equal(result.body.range.newContent, null);
+});
+
+test('an oversized diff degrades independently while the current-file preview remains available', async () => {
+  const dir = workspace();
+  const commitDate = new Date(now - 3600000).toISOString();
+  const git = args => execFileSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.test', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_DATE: commitDate, GIT_COMMITTER_DATE: commitDate } });
+  git(['init', '-q']);
+  const file = path.join(dir, 'large-rewrite.txt');
+  fs.writeFileSync(file, `${'before line\n'.repeat(24000)}`);
+  git(['add', '--', path.basename(file)]);
+  git(['commit', '-qm', 'large original']);
+  fs.writeFileSync(file, `${'after line\n'.repeat(24000)}`);
+  const handler = createMemoryHandler({ getEvents: () => [event('edit', { file_path: file })], corpusRoot: dir, now: () => now });
+  const result = await invoke(handler, `/api/memory/file?session=session-a&path=${encodeURIComponent(file)}`);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.preview.truncated, true);
+  assert.ok(result.body.content.length > 0);
+  assert.equal(result.body.diffAvailable, false);
+  assert.equal(result.body.diff, '');
+  assert.match(result.body.diffReason, /too large/i);
+  assert.equal(result.body.range, null, 'an unavailable oversized diff has no fabricated range context');
 });
 
 test('headless Turbo serves memory from its watched hermetic corpus', { timeout: 15000 }, async (t) => {

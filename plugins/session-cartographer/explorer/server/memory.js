@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { pipeline } from 'node:stream/promises';
 import { firstResolved, isResolved } from '../../scripts/sentinels.js';
 import { editSummaryPaths } from '../../scripts/edit-paths.js';
 import { eventEpochMs } from './event-time.js';
@@ -13,7 +14,10 @@ const execFileAsync = promisify(execFile);
 const HOUR_MS = 60 * 60 * 1000;
 const DEFAULT_WINDOW_HOURS = 24;
 const MAX_WINDOW_HOURS = 90 * 24;
-const FILE_LIMIT = 256 * 1024;
+const PREVIEW_LIMIT = 256 * 1024;
+const PREVIEW_LINES = 2000;
+const DIFF_LIMIT = 256 * 1024;
+const DIFF_LINES = 4000;
 export const MEMORY_CONTRACT_VERSION = 1;
 export const MEMORY_REFRESH_MS = 5000;
 
@@ -341,7 +345,9 @@ class MemoryError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-async function reviewFile(snapshot, sessionId, filePath, corpusRoot, { bounds, now }) {
+const lineCount = content => content ? content.split('\n').length - (content.endsWith('\n') ? 1 : 0) : 0;
+
+function openReviewFile(snapshot, sessionId, filePath, corpusRoot) {
   const session = snapshot.sessions.find((item) => item.id === sessionId);
   const evidence = snapshot.files[sessionId]?.find((item) => item.path === filePath);
   if (!session || !evidence) throw new MemoryError(404, 'File is not recorded as edited by this session in the current window.');
@@ -349,27 +355,66 @@ async function reviewFile(snapshot, sessionId, filePath, corpusRoot, { bounds, n
   // two-second projection cache was populated.
   if (resolveMemoryFile(filePath, null, corpusRoot) !== filePath) throw new MemoryError(403, 'File is no longer available inside this workspace.');
   let fd;
-  let content;
   try {
     fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
     const stat = fs.fstatSync(fd);
     if (!stat.isFile()) throw new MemoryError(403, 'Only regular files can be reviewed.');
-    if (stat.size > FILE_LIMIT) throw new MemoryError(413, 'File exceeds the 256 KiB review limit.');
-    // Read at most the limit plus one even if a writer grows the file after
-    // fstat, so concurrent work cannot turn this endpoint into an unbounded read.
-    const buffer = Buffer.alloc(FILE_LIMIT + 1);
-    const bytes = fs.readSync(fd, buffer, 0, buffer.length, 0);
-    if (bytes > FILE_LIMIT) throw new MemoryError(413, 'File exceeds the 256 KiB review limit.');
-    const data = buffer.subarray(0, bytes);
+    // Bound allocation and rendering independently of the full file size.
+    const buffer = Buffer.alloc(PREVIEW_LIMIT + 1);
+    let bytes = 0;
+    while (bytes < buffer.length) {
+      const read = fs.readSync(fd, buffer, bytes, buffer.length - bytes, bytes);
+      if (!read) break;
+      bytes += read;
+    }
+    let end = Math.min(bytes, PREVIEW_LIMIT), lines = 0;
+    for (let i = 0; i < end; i++) {
+      if (buffer[i] === 10 && ++lines === PREVIEW_LINES) { end = i + 1; break; }
+    }
+    const data = buffer.subarray(0, end);
     if (data.includes(0)) throw new MemoryError(415, 'Binary files are not available in text review.');
-    try { content = new TextDecoder('utf-8', { fatal: true }).decode(data); }
+    const truncated = end < bytes || end < stat.size;
+    let content;
+    // A cut through a UTF-8 character is withheld, not replaced or rejected.
+    try { content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(data, { stream: truncated }); }
     catch { throw new MemoryError(415, 'File is not UTF-8 text.'); }
-  } finally {
+    return { fd, stat, session, evidence, content, preview: {
+      truncated, bytes: Buffer.byteLength(content), totalBytes: Math.max(stat.size, bytes),
+      lineCount: lineCount(content), limitBytes: PREVIEW_LIMIT, limitLines: PREVIEW_LINES,
+    } };
+  } catch (error) {
     if (fd !== undefined) fs.closeSync(fd);
+    throw error;
   }
-  const { diff, diffAvailable, diffReason, range, note } = await reviewRange(filePath, content, bounds, now);
+}
+
+async function downloadFile(snapshot, sessionId, filePath, corpusRoot, res) {
+  const { fd, stat } = openReviewFile(snapshot, sessionId, filePath, corpusRoot);
+  let stream;
+  try {
+    // A download is an attachment, never executable HTML or an unbounded JSON
+    // string. The descriptor is the same one validated with O_NOFOLLOW above.
+    const name = encodeURIComponent(path.basename(filePath)).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream', 'Content-Length': stat.size,
+      'Content-Disposition': `attachment; filename*=UTF-8''${name}`,
+      'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+      'Content-Security-Policy': "sandbox; default-src 'none'",
+    });
+    if (!stat.size) { res.end(); return; }
+    stream = fs.createReadStream(filePath, { fd, autoClose: true, start: 0, end: stat.size - 1 });
+    await pipeline(stream, res);
+  } finally {
+    if (!stream) fs.closeSync(fd);
+  }
+}
+
+async function reviewFile(snapshot, sessionId, filePath, corpusRoot, { bounds, now }) {
+  const { fd, content, preview, evidence, session } = openReviewFile(snapshot, sessionId, filePath, corpusRoot);
+  fs.closeSync(fd);
+  const { diff, diffAvailable, diffReason, range, note } = await reviewRange(filePath, content, bounds, now, preview.truncated);
   const diffBase = range?.base ? range.base.short : 'none';
-  return { path: filePath, name: evidence.name, content, diff, diffAvailable, diffReason, range, evidence: evidence.edits, session: sessionId, title: session.title, state: 'current', diffBase, note };
+  return { path: filePath, name: evidence.name, content, preview, diff, diffAvailable, diffReason, range, evidence: evidence.edits, session: sessionId, title: session.title, state: 'current', diffBase, note };
 }
 
 const IN_FLIGHT_MS = 15 * 60 * 1000;
@@ -406,10 +451,11 @@ const gitSecond = (ms) => new Date(Math.floor(ms / 1000) * 1000).toISOString();
  * times, not authorship: a session whose first act is committing a previous
  * session's leftovers inherits them, and the note says so rather than hiding it.
  */
-async function reviewRange(filePath, content, bounds, nowMs) {
+async function reviewRange(filePath, content, bounds, nowMs, contentTruncated = false) {
   const unavailable = (diffReason, range = null) => ({ diff: '', diffAvailable: false, diffReason, range, note: diffReason });
+  const tooLarge = () => unavailable('These changes are too large for inline review. The current file preview and full-file download are still available.');
   if (!bounds) return unavailable('This session has no dated activity to bound a diff.');
-  const options = { timeout: 2500, maxBuffer: FILE_LIMIT + 4096, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
+  const options = { timeout: 2500, maxBuffer: DIFF_LIMIT + 4096, encoding: 'utf8', env: { ...process.env, GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } };
   let root;
   try { root = (await execFileAsync('git', ['rev-parse', '--show-toplevel'], { ...options, cwd: path.dirname(filePath) })).stdout.trim(); }
   catch { return unavailable('This file is not inside a Git repository, so no session diff can be bounded.'); }
@@ -436,12 +482,15 @@ async function reviewRange(filePath, content, bounds, nowMs) {
     };
     const blobAt = async (sha) => sha ? (await git(['rev-parse', '--verify', '-q', `${sha}:${relative}`])).stdout.trim() || null : null;
     const contentAt = async (sha) => {
-      if (!(await blobAt(sha))) return null;
+      const blob = await blobAt(sha);
+      if (!blob) return { content: null, omitted: false };
+      const size = Number((await git(['cat-file', '-s', blob])).stdout.trim());
+      if (!Number.isFinite(size) || size > PREVIEW_LIMIT) return { content: null, omitted: true };
       const shown = await git(['show', `${sha}:${relative}`]);
-      if (shown.code !== 0) return null;
+      if (shown.code !== 0) return { content: null, omitted: true };
       if (shown.stdout.includes('\0')) throw new MemoryError(415, 'An earlier version of this file is binary.');
-      if (Buffer.byteLength(shown.stdout) > FILE_LIMIT) throw new MemoryError(413, 'An earlier version of this file exceeds the 256 KiB review limit.');
-      return shown.stdout;
+      if (Buffer.byteLength(shown.stdout) > PREVIEW_LIMIT || lineCount(shown.stdout) > PREVIEW_LINES) return { content: null, omitted: true };
+      return { content: shown.stdout, omitted: false };
     };
     const baseSha = await commitAt(bounds.start);
     const endSha = await commitAt(bounds.end + COMMIT_GRACE_MS);
@@ -454,20 +503,22 @@ async function reviewRange(filePath, content, bounds, nowMs) {
     if (useCommit) diff = (await git([...diffArgs, baseSha || emptyTree, endSha, '--', relative])).stdout;
     else if (tracked) diff = (await git([...diffArgs, baseSha || emptyTree, '--', relative])).stdout;
     else diff = (await git([...diffArgs, '--no-index', '--', '/dev/null', filePath])).stdout;
+    if (Buffer.byteLength(diff) > DIFF_LIMIT || lineCount(diff) > DIFF_LINES) return tooLarge();
     // Work that landed after the bounded head is real but out of scope; say so
     // instead of folding it in, which is what the old HEAD-relative diff did.
     const committedAfter = useCommit ? (await blobAt('HEAD')) !== endBlob : false;
     const uncommittedAfter = useCommit ? (await git(['diff', '--quiet', 'HEAD', '--', relative])).code !== 0 : false;
     const [base, headCommit] = await Promise.all([describe(baseSha), useCommit ? describe(endSha) : null]);
-    const oldContent = await contentAt(baseSha);
-    const newContent = useCommit ? await contentAt(endSha) : content;
-    const range = { start: bounds.start, end: bounds.end, inFlight, tracked, base, head: useCommit ? { kind: 'commit', ...headCommit } : { kind: 'working-tree' }, committedAfter, uncommittedAfter, oldContent, newContent };
+    const old = await contentAt(baseSha);
+    const next = useCommit ? await contentAt(endSha) : { content: contentTruncated ? null : content, omitted: contentTruncated };
+    const range = { start: bounds.start, end: bounds.end, inFlight, tracked, base, baseFileExists: Boolean(baseBlob), head: useCommit ? { kind: 'commit', ...headCommit } : { kind: 'working-tree' }, committedAfter, uncommittedAfter, oldContent: old.content, newContent: next.content, contentsOmitted: old.omitted || next.omitted };
     const from = base ? `commit ${base.short}` : 'before any commit';
     const to = useCommit ? `commit ${headCommit.short}` : 'the working tree';
     const note = `Changes from ${from} to ${to}, bounded by this session's first and last recorded activity. Boundaries are commit times, not authorship.`;
     return { diff, diffAvailable: true, diffReason: null, range, note };
   } catch (error) {
-    if (error instanceof MemoryError) throw error;
+    if (error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return tooLarge();
+    if (error instanceof MemoryError) return unavailable(error.message);
     return unavailable('A session-bounded diff is unavailable for this file.');
   }
 }
@@ -652,11 +703,18 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
         const hours = readHours(url.searchParams.get('hours'));
         const field = exact ? await scopedSnapshot(url.searchParams) : await snapshot(end, null, hours);
         const source = field.sessions.some(session => session.id === id) ? field : exact ? field : await snapshot(end, id, hours);
+        if (url.searchParams.get('download') === '1') {
+          await downloadFile(source, id, url.searchParams.get('path'), corpusRoot, res);
+          return true;
+        }
         // Bound the diff by the session's whole life, not the desk's window.
         body = await reviewFile(source, id, url.searchParams.get('path'), corpusRoot, { bounds: sessionBounds(getEvents(), id), now: now() });
+        url.searchParams.set('download', '1');
+        body.downloadUrl = url.pathname + url.search;
       }
       else throw new MemoryError(404, 'Memory endpoint not found.');
     } catch (error) {
+      if (res.headersSent) { res.destroy(); return true; }
       status = error.status || (error.code === 'ENOENT' ? 404 : 500);
       body = { error: error.status ? error.message : 'Unable to read current memory state.' };
     }

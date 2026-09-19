@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { effectiveTurboSettings } from '../../scripts/turbo-common.js';
 
@@ -192,14 +194,34 @@ export function createTurboEntryMiddleware({
       const hours = Number(target.searchParams.get('hours') ?? 24);
       const span = Date.parse(target.searchParams.get('through')) - Date.parse(target.searchParams.get('from'));
       const wide = (Number.isInteger(hours) && hours > 24 && hours <= 2160) || (span > 86400000 && span <= 90 * 86400000);
+      const download = pathname === '/api/memory/file' && target.searchParams.get('download') === '1';
       // Wide snapshots contain the complete selected corpus, including per-task
       // evidence. Keep bounded transport without imposing the old 24h limits.
-      const response = await fetchImpl(target, {
-        signal: AbortSignal.timeout(wide ? 60000 : 10000), redirect: 'error', headers: { Accept: 'application/json' },
-      });
-      return reply(res, response.status, await readResponseJson(response, wide ? 64 * 1024 * 1024 : undefined));
+      const controller = new AbortController();
+      const abort = () => controller.abort();
+      res.once?.('close', abort);
+      try {
+        const response = await fetchImpl(target, {
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(wide || download ? 60000 : 10000)]),
+          redirect: 'error', headers: { Accept: download ? 'application/octet-stream' : 'application/json' },
+        });
+        if (download && response.ok && response.headers.get('content-type') === 'application/octet-stream') {
+          const headers = { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'" };
+          for (const name of ['content-length', 'content-disposition']) {
+            const value = response.headers.get(name);
+            if (value) headers[name] = value;
+          }
+          res.writeHead(response.status, headers);
+          await pipeline(Readable.fromWeb(response.body), res);
+          return;
+        }
+        return reply(res, response.status, await readResponseJson(response, wide ? 64 * 1024 * 1024 : undefined));
+      } finally {
+        res.removeListener?.('close', abort);
+      }
     } catch (error) {
       if (!res.headersSent) reply(res, error.status || 503, { error: String(error.message || 'Turbo is unavailable').slice(0, 700) });
+      else res.destroy();
     }
   };
 }

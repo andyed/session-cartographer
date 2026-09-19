@@ -94,3 +94,15 @@ test('a session range is described by its commits and every way it can mislead',
   assert.match(stale.caveats[0], /Nothing was committed during the session/);
   assert.equal(describeReviewRange(null), null);
 });
+
+test('omitted large-file context does not imply the file was absent at the base', () => {
+  const range = { start: 10, end: 20, tracked: true, inFlight: false,
+    base: { short: 'aaaaaaa', time: 1, subject: 'Before' },
+    head: { kind: 'commit', short: 'bbbbbbb', time: 2, subject: 'During' },
+    baseFileExists: true, oldContent: null, newContent: null, contentsOmitted: true };
+  assert.deepEqual(memoryArtifact.describeReviewRange(range).caveats, []);
+  const absent = memoryArtifact.describeReviewRange({ ...range, baseFileExists: false });
+  assert.match(absent.caveats[0], /did not exist at the base/);
+  const working = memoryArtifact.describeReviewRange({ ...range, head: { kind: 'working-tree' } });
+  assert.match(working.caveats[0], /working tree stands in/);
+});

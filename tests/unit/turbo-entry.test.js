@@ -182,6 +182,38 @@ test('only fixed memory read routes proxy to the configured Turbo origin', async
   assert.deepEqual(state.calls, []);
 });
 
+test('file downloads stream exact bytes and headers through the guarded UI proxy', async (t) => {
+  const bytes = Buffer.concat([Buffer.from([0, 255, 1, 254]), Buffer.alloc(300 * 1024, 97)]);
+  const targets = [];
+  const { get, url } = await fixture(t, {
+    fetchImpl: async target => {
+      targets.push(target.toString());
+      return new Response(bytes, { status: 200, headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': String(bytes.length),
+        'Content-Disposition': 'attachment; filename="large.bin"',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+      } });
+    },
+  });
+  const pathname = '/api/memory/file?session=one&path=%2Ftmp%2Flarge.bin&from=1788940000000&through=1788943600000&download=1';
+  const response = await get(pathname);
+  assert.equal(response.status, 200);
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
+  assert.equal(response.headers.get('content-type'), 'application/octet-stream');
+  assert.equal(response.headers.get('content-length'), String(bytes.length));
+  assert.equal(response.headers.get('content-disposition'), 'attachment; filename="large.bin"');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(targets.at(-1), `http://127.0.0.1:45977${pathname}`);
+
+  const before = targets.length;
+  assert.equal((await get(pathname, { Origin: 'https://attacker.example' })).status, 403);
+  assert.equal((await get(pathname, { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
+  assert.equal((await rawRequest(`${url}${pathname}`, { Host: 'attacker.example' })).status, 403);
+  assert.equal(targets.length, before, 'rejected download requests must not reach the Turbo origin');
+});
+
 test('an HTTP 200 with the wrong memory contract does not claim readiness', async (t) => {
   const { get } = await fixture(t, {
     probeMemory: undefined,

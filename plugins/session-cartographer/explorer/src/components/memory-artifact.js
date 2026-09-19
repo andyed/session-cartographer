@@ -143,10 +143,11 @@ export function describeReviewRange(range, { now = Date.now(), formatTime = (ms)
   const from = range.base ? commit(range.base) : 'before the first commit';
   const to = range.head?.kind === 'commit' ? commit(range.head) : range.inFlight ? 'the working tree (session in flight)' : 'the working tree';
   const caveats = [];
-  if (range.base && range.oldContent === null) caveats.push('The file did not exist at the base commit, so everything reads as new.');
+  const baseFileExists = range.baseFileExists ?? (range.oldContent !== null);
+  if (range.base && !baseFileExists) caveats.push('The file did not exist at the base commit, so everything reads as new.');
   if (!range.tracked) caveats.push('Git does not track this file yet; the diff is the whole current file.');
   if (range.committedAfter) caveats.push('Later commits changed this file again; they are outside this session and not shown.');
   if (range.uncommittedAfter) caveats.push('The working tree holds uncommitted changes beyond this session’s last commit; they are not shown.');
-  if (range.head?.kind === 'working-tree' && range.base && range.oldContent !== null && !range.inFlight) caveats.push('Nothing was committed during the session, so the working tree stands in for its end and may include other sessions’ edits.');
+  if (range.head?.kind === 'working-tree' && range.base && baseFileExists && !range.inFlight) caveats.push('Nothing was committed during the session, so the working tree stands in for its end and may include other sessions’ edits.');
   return { from, to, caveats, window: `${formatTime(range.start)} → ${formatTime(range.end)}` };
 }

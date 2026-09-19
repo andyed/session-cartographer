@@ -74,11 +74,12 @@ function Changes({ review, layout, onLayout }) {
   const parsed = useMemo(() => parseUnifiedDiff(review.diff), [review.diff]);
   const range = useMemo(() => describeReviewRange(review.range), [review.range]);
   const unified = <UnifiedDiff rows={parsed.rows} />;
+  const hunksOnly = review.range?.contentsOmitted;
   return <div className="memory-artifact-diff">
     <div className="memory-artifact-diff-summary" aria-label="Change summary">
       <span className="memory-artifact-added">+{parsed.additions} added</span>
       <span className="memory-artifact-deleted">−{parsed.deletions} removed</span>
-      {onLayout && <div className="memory-artifact-view-options" role="group" aria-label="Diff layout">
+      {onLayout && !hunksOnly && <div className="memory-artifact-view-options" role="group" aria-label="Diff layout">
         <button type="button" aria-pressed={layout === 'split'} onClick={() => onLayout('split')}>Split</button>
         <button type="button" aria-pressed={layout === 'unified'} onClick={() => onLayout('unified')}>Unified</button>
       </div>}
@@ -89,7 +90,8 @@ function Changes({ review, layout, onLayout }) {
       <p><span className="memory-artifact-range-label">Session</span> {range.window}</p>
       {range.caveats.length > 0 && <ul className="memory-artifact-caveats">{range.caveats.map((caveat) => <li key={caveat}>{caveat}</li>)}</ul>}
     </div>}
-    {layout === 'split'
+    {hunksOnly && <p className="memory-artifact-notice">Showing changed lines with nearby context. Full-file context is too large to expand here.</p>}
+    {layout === 'split' && !hunksOnly
       ? <SplitFallback fallback={unified}><Suspense fallback={<p className="memory-artifact-empty" role="status">Loading side-by-side view…</p>}>
           <SplitDiff name={review.name} diff={review.diff} range={review.range} layout="split" />
         </Suspense></SplitFallback>
@@ -116,16 +118,18 @@ export default function MemoryArtifact({ review, mode = 'file', layout = 'split'
   const [sourcePath, setSourcePath] = useState(null);
   const path = review?.path || review?.name || '';
   const markdown = /\.(?:md|markdown|mdown)$/i.test(path);
-  const showSource = documentMode ? documentMode === 'source' : sourcePath === path;
-  const blocks = useMemo(() => markdown ? parseArtifactMarkdown(review?.content || '') : [], [markdown, review?.content]);
+  const truncated = review?.preview?.truncated;
+  const showSource = truncated || (documentMode ? documentMode === 'source' : sourcePath === path);
+  const blocks = useMemo(() => markdown && !showSource ? parseArtifactMarkdown(review?.content || '') : [], [markdown, showSource, review?.content]);
   if (!review) return null;
   if (mode === 'changes') return <section className="memory-artifact" aria-label="Artifact changes">
     {review.diff ? <Changes review={review} layout={layout} onLayout={onLayout} /> : <p className="memory-artifact-empty">{review.diffReason || 'No session changes to display.'}</p>}
   </section>;
   return <section className="memory-artifact" aria-label="Artifact reader">
+    {truncated && <p className="memory-artifact-notice" role="status">Showing the first {review.preview.lineCount.toLocaleString()} lines ({formatFileBytes(review.preview.bytes)}) of a {formatFileBytes(review.preview.totalBytes)} file. Download the full file to read the rest.</p>}
     <div className="memory-artifact-toolbar">
-      <span>{markdown ? 'Markdown document' : 'Source file'}</span>
-      {markdown && <div className="memory-artifact-view-options" role="group" aria-label="Document view">
+      <span>{truncated ? 'Partial source preview' : markdown ? 'Markdown document' : 'Source file'}</span>
+      {markdown && !truncated && <div className="memory-artifact-view-options" role="group" aria-label="Document view">
         <button type="button" aria-pressed={!showSource} onClick={() => onDocumentMode ? onDocumentMode('preview') : setSourcePath(null)}>Preview</button>
         <button type="button" aria-pressed={showSource} onClick={() => onDocumentMode ? onDocumentMode('source') : setSourcePath(path)}>Source</button>
       </div>}
@@ -134,4 +138,11 @@ export default function MemoryArtifact({ review, mode = 'file', layout = 'split'
       ? <article className="memory-artifact-prose"><MarkdownBlocks blocks={blocks} /></article>
       : <pre className="memory-artifact-source" tabIndex={0} aria-label="File source"><code>{review.content}</code></pre>}
   </section>;
+}
+
+export function formatFileBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  const unit = bytes >= 1024 * 1024 ? 'MiB' : 'KiB';
+  const value = bytes / (unit === 'MiB' ? 1024 * 1024 : 1024);
+  return `${Number(value.toFixed(1)).toLocaleString()} ${unit}`;
 }

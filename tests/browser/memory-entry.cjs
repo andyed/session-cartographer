@@ -97,14 +97,21 @@ async function port() {
   const controlSummary = 'Aurora control belongs to another project';
   events.push({ event_id: 'explorer-control', session_id: 'explorer-control-session', project: 'explorer-control', timestamp: new Date(now - 210000).toISOString(), type: 'git_commit', summary: controlSummary });
   const document = path.join(corpus, 'handoff.md');
+  const largeFile = path.join(corpus, 'large-review.txt');
+  const largeBaseline = Array.from({ length: 9000 }, (_, index) => `baseline ${String(index).padStart(5, '0')} ${'a'.repeat(32)}\n`).join('');
+  const largeCurrent = Array.from({ length: 9000 }, (_, index) => `current ${String(index).padStart(5, '0')} ${'z'.repeat(34)}\n`).join('');
+  assert.ok(Buffer.byteLength(largeCurrent) > 256 * 1024, 'large-file fixture must exceed the bounded preview limit');
   const docSession = '12345678-1234-1234-1234-123456789abc';
   fs.writeFileSync(document, '# Return briefing\n\nThe original plan.\n');
+  fs.writeFileSync(largeFile, largeBaseline);
   const git = args => execFileSync('git', ['-C', corpus, ...args], { stdio: 'ignore' });
   git(['init']);
-  git(['add', 'handoff.md']);
+  git(['add', 'handoff.md', 'large-review.txt']);
   git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'commit.gpgsign=false', 'commit', '-m', 'Initial briefing']);
   fs.writeFileSync(document, '# Return briefing\n\nThe revised **plan**.\n\n| Work | State |\n| --- | --- |\n| Reader | Ready |\n\n<script>window.artifactExecuted = true</script>\n');
+  fs.writeFileSync(largeFile, largeCurrent);
   events.push({ event_id: 'document-edit', session_id: docSession, session_title: 'Review the handoff', project: 'writing', provider: 'codex', timestamp: now + 1500, type: 'tool_file_edit', file_path: document, summary: `Modified: ${document}`, cwd: corpus });
+  events.push({ event_id: 'large-document-edit', session_id: docSession, session_title: 'Review the handoff', project: 'writing', provider: 'codex', timestamp: now + 1400, type: 'tool_file_edit', file_path: largeFile, summary: `Modified: ${largeFile}`, cwd: corpus });
   fs.writeFileSync(log, events.map(e => JSON.stringify(e)).join('\n')+'\n');
   fs.appendFileSync(log, JSON.stringify({ event_id: 'archived-edit', session_id: 'archived-session', session_title: 'Earlier session', timestamp: now - 3 * 86400000, project: projects[0], type: 'tool_file_edit', file_path: target })+'\n');
   fs.writeFileSync(path.join(corpus, 'served-log.jsonl'), JSON.stringify({ event_id: 'fixture-result', call_id: 'fixture-call', timestamp: now, purpose: 'remember', rank: 1, project: 'fixture', source: 'changelog' })+'\n');
@@ -456,6 +463,59 @@ async function port() {
     await deskPage.getByRole('button', { name: 'Current file', exact: true }).click();
     await deskPage.getByText('export const live = true;', { exact: false }).waitFor();
     await deskPage.screenshot({ path: path.join(artifacts, 'carto-memory-review.png') });
+    await deskPage.keyboard.press('Escape');
+    await deskPage.keyboard.press('Escape');
+
+    // Large text remains reviewable without pushing an unbounded payload into
+    // the document. Changes report the real diff cap, Current file opens a
+    // bounded source preview, and the UI download proxy preserves every byte.
+    await deskPage.getByRole('button', { name: 'Files', exact: true }).click();
+    await deskPage.getByText('large-review.txt', { exact: true }).click();
+    await deskPage.getByRole('region', { name: 'Artifact changes' }).waitFor();
+    assert.match(await deskPage.getByRole('region', { name: 'Artifact changes' }).innerText(), /limit|large|size/i);
+    assert.equal(await deskPage.getByRole('button', { name: 'Current file', exact: true }).getAttribute('aria-pressed'), 'false');
+    await deskPage.getByRole('button', { name: 'Open current file', exact: true }).click();
+    assert.equal(await deskPage.getByRole('button', { name: 'Current file', exact: true }).getAttribute('aria-pressed'), 'true');
+    const boundedSource = deskPage.getByLabel('File source');
+    await boundedSource.waitFor();
+    const boundedText = await boundedSource.innerText();
+    assert.match(boundedText, /^current 00000 z+/);
+    assert.ok(Buffer.byteLength(boundedText) <= 256 * 1024, `bounded preview exceeded 256 KiB: ${Buffer.byteLength(boundedText)} bytes`);
+    const boundedLines = boundedText === '' ? 0 : boundedText.split('\n').length - (boundedText.endsWith('\n') ? 1 : 0);
+    assert.ok(boundedLines <= 2000, `bounded preview exceeded 2,000 lines: ${boundedLines}`);
+    const previewNotice = deskPage.getByText(/Showing the first/i);
+    await previewNotice.waitFor();
+    const noticeText = await previewNotice.innerText();
+    assert.match(noticeText, /\d+(?:\.\d+)?\s*(?:bytes|KiB|KB|MiB|MB)/i, `large-file notice omitted total size: ${noticeText}`);
+    const downloadLink = deskPage.getByRole('link', { name: 'Download full file', exact: true });
+    const downloadHref = new URL(await downloadLink.getAttribute('href'), origin);
+    assert.equal(downloadHref.pathname, '/api/memory/file');
+    assert.equal(downloadHref.searchParams.get('session'), docSession);
+    assert.equal(downloadHref.searchParams.get('path'), largeFile);
+    assert.equal(downloadHref.searchParams.get('download'), '1');
+    assert.ok(downloadHref.searchParams.has('from') && downloadHref.searchParams.has('through'), 'download lost the scoped review interval');
+    const downloadReady = deskPage.waitForEvent('download');
+    await downloadLink.click();
+    const downloaded = await downloadReady;
+    assert.equal(downloaded.suggestedFilename(), 'large-review.txt');
+    assert.deepEqual(fs.readFileSync(await downloaded.path()), Buffer.from(largeCurrent), 'download proxy changed large-file bytes');
+    await deskPage.screenshot({ path: path.join(artifacts, 'carto-memory-large-file.png'), fullPage: true });
+    await deskPage.setViewportSize({ width: 390, height: 844 });
+    const narrowReview = await deskPage.evaluate(() => {
+      const visible = element => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden';
+      return {
+        width: innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        controls: [...document.querySelectorAll('button, a, input, select, summary')].filter(visible).map(element => {
+          const box = element.getBoundingClientRect();
+          return { label: element.getAttribute('aria-label') || element.textContent.trim().slice(0, 40), left: box.left, right: box.right };
+        }),
+      };
+    });
+    assert.ok(narrowReview.scrollWidth <= narrowReview.width + 1, `large-file review overflows at 390 px: ${narrowReview.scrollWidth}px`);
+    for (const control of narrowReview.controls) assert.ok(control.left >= -1 && control.right <= narrowReview.width + 1, `large-file control leaves 390 px viewport: ${JSON.stringify(control)}`);
+    await deskPage.screenshot({ path: path.join(artifacts, 'carto-memory-large-file-390.png'), fullPage: true });
+    await deskPage.setViewportSize({ width: 1280, height: 920 });
     await deskPage.keyboard.press('Escape');
     await deskPage.keyboard.press('Escape');
 

@@ -63,6 +63,13 @@ archived sessions, file review, Internals, and mobile layouts. It stops its own
 service afterward; it does not use the user's live Explorer. Screenshots are
 written to `carto-memory-browser-artifacts` under the OS temporary directory.
 
+The file-review journey includes a real tracked file larger than 256 KiB:
+an oversized diff keeps the current-file recovery path, the source preview is
+bounded, and a download through the UI proxy must match every original byte.
+`memory.test.js` separately covers UTF-8 and line boundaries, small diffs in
+large files, and retained access checks; `turbo-entry.test.js` covers streamed
+downloads and UI-origin rejection.
+
 It also navigates from memory into timeline, search, project filters, sessions,
 and transcripts, and verifies live event delivery with Turbo both off and on.
 After building, run `node tests/browser/memory-entry.cjs --preview` to exercise
