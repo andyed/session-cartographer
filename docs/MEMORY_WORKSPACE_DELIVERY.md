@@ -6,7 +6,7 @@ The Memory work desk and the existing Concurrent, Sessions, and Event Feed views
 
 - `2bd468b` implements the shared workspace; `0c7b6aa` repairs pointer gestures and moves Memory view navigation beside its content.
 - Implementation and runtime mirror are committed. The preview is running at [Memory](http://127.0.0.1:2537/memory) and [Concurrent](http://127.0.0.1:2537/?view=concurrent), from `/private/tmp/carto-focus-window` with its isolated API on port 2536.
-- The canonical checkout remains on `feat/carto-codex-port`, with its existing untracked `docs/MEMORY_WORKSPACE_IMPLEMENTATION_PLAN.md` preserved. This branch has not been merged or pushed, and the installed plugin has not been refreshed. Version remains 0.7.7.
+- The canonical checkout on `feat/carto-codex-port` now contains the implementation via a fast-forward merge. Its original `docs/MEMORY_WORKSPACE_IMPLEMENTATION_PLAN.md` was preserved byte-for-byte at the same path; it remains a local difference because the incoming tracked copy added a delivery-note link. An exact backup is in the preview runtime directory. No push or installed-plugin refresh was performed. Version remains 0.7.7.
 - The normal production build is restored after demo verification. Automated and rendered checks establish the tested mechanics; they do not establish human usability acceptance.
 
 ## Interaction
@@ -77,10 +77,10 @@ The repaired static demo build and browser journey also passed under Node 22 (7 
 
 ## Resume and open decisions
 
-Start from this branch and worktree, not the task's original Histospire directory. The session digest attributes the task to that starting directory and leaves file paths unresolved; Git and the preview listener identify the actual Cartographer implementation. Correcting hook/digest project attribution is separate follow-up work.
+Development can resume from the canonical Cartographer checkout on `feat/carto-codex-port`; the isolated worktree still hosts the preview. The task's original Histospire directory is unrelated to the implementation. The session digest attributes the task to that starting directory and leaves file paths unresolved; Git and the preview listener identify the actual Cartographer implementation. Correcting hook/digest project attribution is separate follow-up work.
 
 The user rejected the permanent Save / Return / Undo row, repeated date labels, dead-looking controls, and navigation detached from its view. Preserve the compact range editor, single date label, direct range manipulation, and local Tasks / Files / Activity navigation when continuing.
 
-The return point remains an explicit browser-local bookmark. Automatically remembering the last window is still an open product decision. Integration into the canonical checkout and installed plugin is also pending; the current preview remains available for evaluation. Warm local performance measurements do not establish cold-start behavior or larger-corpus performance beyond the current 90-day limit.
+The return point remains an explicit browser-local bookmark. Automatically remembering the last window is still an open product decision. Integration into the canonical checkout is complete; updating the installed plugin remains pending. The current preview remains available for evaluation. Warm local performance measurements do not establish cold-start behavior or larger-corpus performance beyond the current 90-day limit.
 
 The preview process metadata and logs live in `/private/tmp/carto-focus-window-runtime`. Keep the worktree and that runtime directory while the preview is in use; they are temporary filesystem paths, while the commits remain in the repository's Git history. If a restart becomes necessary, inspect `preview.json` and listener ownership first; `restart.py` manages only this isolated 2536/2537 preview. It is not the installed service controller.
