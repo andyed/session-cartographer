@@ -340,8 +340,14 @@ async function port() {
     // chart membership, clearing it restores membership without resetting the
     // chart permalink, keyboard activation opens that exact task, and a
     // transient neighbour never replaces the primary brushed cohort.
-    await deskPage.getByRole('button', { name: 'Explore activity', exact: true }).click();
+    const memoryViewNav = deskPage.getByRole('navigation', { name: 'Memory view' });
+    const resultsNavBox = await memoryViewNav.boundingBox();
+    assert.equal(await deskPage.locator('.fw-page-heading').getByRole('button', { name: 'Explore activity', exact: true }).count(), 0);
+    await memoryViewNav.getByRole('button', { name: 'Activity', exact: true }).click();
     await deskPage.getByRole('region', { name: 'Explore activity' }).waitFor();
+    const activityNavBox = await memoryViewNav.boundingBox();
+    assert.ok(Math.abs(resultsNavBox.y - activityNavBox.y) < 2, 'Activity navigation moved away from the content it switches');
+    assert.equal(await memoryViewNav.getByRole('button', { name: 'Activity', exact: true }).getAttribute('aria-pressed'), 'true');
     const chartIds = panel => deskPage.locator(`.mw-stage[data-panel=${panel}] .mw-target:not([hidden])`).evaluateAll(elements => elements.map(element => element.dataset.session).sort());
     await deskPage.waitForFunction(minimum => document.querySelectorAll('.mw-stage[data-panel=field] .mw-target:not([hidden])').length >= minimum, labels.length);
     const allChartIds = await chartIds('field');
@@ -378,7 +384,7 @@ async function port() {
     await deskPage.waitForFunction(() => !document.querySelector('#memory-weather')?.dataset.secondary);
     assert.equal(new URL(deskPage.url()).searchParams.get('brush'), 'session-0');
     await deskPage.getByRole('button', { name: '1 selected tasks ×', exact: true }).click();
-    await deskPage.getByRole('button', { name: 'Back to results', exact: true }).click();
+    await deskPage.getByRole('button', { name: 'Tasks', exact: true }).click();
 
     fs.appendFileSync(log, JSON.stringify({ event_id: 'after-return', session_id: docSession, session_title: 'Review the handoff', provider: 'codex', project: 'writing', timestamp: now + 1000, type: 'git_commit', summary: 'Commit abcdef1: clarify the return briefing', cwd: corpus }) + '\n');
     await refreshRecords(deskPage);

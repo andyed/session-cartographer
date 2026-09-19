@@ -1,18 +1,20 @@
 .focus-timeline{--focus-bg:#0a0a0f;--focus-ink:#e5e7eb;--focus-muted:#b4bbc7;--focus-line:#515a69;--focus-cyan:#55d9e6;color:var(--focus-ink);font:500 16px/1.4 ui-sans-serif,system-ui,sans-serif}
 .focus-timeline *,.focus-range-overlay *{box-sizing:border-box}
-.focus-timeline-track{position:relative;height:112px;margin:4px 22px 10px;touch-action:pan-y;user-select:none}
-.focus-density{position:absolute;inset:16px 0;display:block;border-block:1px solid var(--focus-line);overflow:hidden;pointer-events:none}
+.focus-timeline-track{position:relative;height:80px;margin:4px 22px 0;touch-action:pan-y;user-select:none;cursor:crosshair}
+.focus-density{position:absolute;inset:0;display:block;border-block:1px solid var(--focus-line);overflow:hidden;pointer-events:none}
 .focus-density i{position:absolute;bottom:0;min-width:1px;background:#81aaff;border-right:1px solid var(--focus-bg)}
-.focus-active-range,.focus-saved-range{position:absolute;top:8px;bottom:8px;pointer-events:none}
+.focus-active-range,.focus-saved-range{position:absolute;inset-block:0;pointer-events:none}
 .focus-active-range{background:#55d9e620;border:2px solid var(--focus-cyan)}
 .focus-saved-range{border:2px dashed #e5c07b}
-.focus-handle,.focus-pan{position:absolute;z-index:2;min-width:44px;min-height:44px;border:1px solid var(--focus-line);border-radius:4px;background:#151922;color:var(--focus-ink);font:inherit;touch-action:none}
-.focus-handle{top:0;width:44px;height:44px;transform:translateX(-50%);font-size:0}
-.focus-handle span{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
-.focus-handle::after{content:'';display:block;width:3px;height:22px;margin:auto;background:var(--focus-cyan);box-shadow:6px 0 var(--focus-cyan),-6px 0 var(--focus-cyan)}
-.focus-handle-through{top:68px}
-.focus-pan{top:34px;min-width:88px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:8px 12px}
-.focus-pan span{font-size:16px}
+.focus-handle,.focus-pan{position:absolute;touch-action:none;outline-offset:2px}
+.focus-handle{z-index:2;top:-2px;width:44px;height:44px;transform:translateX(-50%);cursor:ew-resize}
+.focus-handle::after{content:'';display:block;position:absolute;left:18px;top:6px;width:8px;height:32px;border:2px solid var(--focus-cyan);border-radius:3px;background:var(--focus-bg)}
+.focus-handle-through{top:38px}
+.focus-handle:hover::after,.focus-handle:focus-visible::after{background:var(--focus-cyan)}
+.focus-pan{z-index:1;inset-block:0;min-width:44px;cursor:grab}
+.focus-pan:hover,.focus-pan:focus-visible{background:#55d9e617}
+.focus-pan:active{cursor:grabbing}
+.focus-timeline-help{margin:8px 22px 0;color:var(--focus-muted);font-size:16px}
 .focus-handle:focus-visible,.focus-pan:focus-visible,.focus-range-overlay button:focus-visible{outline:2px solid var(--focus-ink);outline-offset:3px}
 .focus-range-overlay{position:absolute;inset:0;z-index:2;pointer-events:none;font:500 16px/1.4 ui-sans-serif,system-ui,sans-serif;color:#e5e7eb}
 .focus-range-band,.focus-range-saved{position:absolute;left:0;right:0;pointer-events:none}
@@ -21,9 +23,7 @@
 .focus-range-handle,.focus-range-grip{position:absolute;z-index:3;pointer-events:auto;transform:translateY(-50%);min-width:44px;min-height:44px;padding:8px 3px;border:1px solid #515a69;border-radius:4px;background:#151922;color:#e5e7eb;font:inherit;touch-action:none}
 .focus-range-grip{color:#55d9e6}
 .focus-range-handle span,.focus-range-grip span{font-size:16px}
-@media(max-width:520px){.focus-timeline-track{margin-inline:22px}.focus-handle-from{top:0}.focus-handle-through{top:68px}.focus-pan span{position:absolute;clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}}
 @media(prefers-reduced-motion:reduce){.focus-timeline *,.focus-range-overlay *{scroll-behavior:auto!important;transition:none!important}}
 
-.focus-workspace .focus-pan,.focus-workspace .focus-handle,.focus-timeline-workspace .focus-range-handle,.focus-timeline-workspace .focus-range-grip { border:1px solid #515a69; background:#151922; color:#e5e7eb; }
-.focus-workspace .focus-pan,.focus-timeline-workspace .focus-range-grip { cursor:grab; }
-@media(max-width:520px) { .focus-pan::after { content:'Move'; font-size:16px; } }
+.focus-timeline-workspace .focus-range-handle,.focus-timeline-workspace .focus-range-grip { border:1px solid #515a69; background:#151922; color:#e5e7eb; }
+.focus-timeline-workspace .focus-range-grip { cursor:grab; }

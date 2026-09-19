@@ -45,7 +45,7 @@ export function normalizeDensityBins(bins = [], bounds) {
 export function horizontalTime(clientX, rect, bounds) {
   if (!rect || !(rect.width > 0) || !bounds || !(bounds.through > bounds.from)) return bounds?.from ?? 0;
   const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-  return bounds.from + ratio * (bounds.through - bounds.from);
+  return Math.round(bounds.from + ratio * (bounds.through - bounds.from));
 }
 
 export function verticalTime(clientY, rect, bounds, timeToY) {
@@ -54,7 +54,7 @@ export function verticalTime(clientY, rect, bounds, timeToY) {
   const fromY = timeToY(bounds.from), throughY = timeToY(bounds.through);
   if (![y, fromY, throughY].every(Number.isFinite) || fromY === throughY) return bounds.from;
   const ratio = Math.max(0, Math.min(1, (y - fromY) / (throughY - fromY)));
-  return bounds.from + ratio * (bounds.through - bounds.from);
+  return Math.round(bounds.from + ratio * (bounds.through - bounds.from));
 }
 
 export function keyDelta(event, orientation = 'horizontal') {

@@ -86,7 +86,7 @@ async function port() {
     assert.equal(defaultUrl.searchParams.get('from'), new Date(fixture.field.start).toISOString());
     assert.equal(defaultUrl.searchParams.get('through'), new Date(fixture.field.end).toISOString());
 
-    await page.getByRole('button', { name: 'Explore activity', exact: true }).click();
+    await page.getByRole('button', { name: 'Activity', exact: true }).click();
     await Promise.race([
       page.waitForSelector('#memory-weather canvas', { timeout: 15000 }),
       page.getByRole('heading', { name: 'Memory needs a reset', exact: true }).waitFor({ timeout: 15000 }),

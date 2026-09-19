@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { densityBins, densityStep, eventTimestamp, fromLocalDateTime, horizontalTime, keyDelta, normalizeDensityBins, toLocalDateTime, verticalTime } from '../../explorer/src/components/focus-gesture.js';
+import { resizeFocusRange } from '../../explorer/shared/focus.js';
 
 test('density is UTC-aligned, starts at 30 minutes, coarsens for long contexts, and includes both exact endpoints', () => {
   const halfHour = 30 * 60000;
@@ -24,6 +25,19 @@ test('horizontal and inverted vertical geometry clamp to frozen bounds', () => {
   const timeToY = time => 500 - (time - 100) / 2;
   assert.equal(verticalTime(260, rect, bounds, timeToY), 600);
   assert.equal(verticalTime(-100, rect, bounds, timeToY), 1100);
+});
+
+test('fractional pointer geometry produces integer timestamps accepted by range math', () => {
+  const bounds = { from: 1_700_000_000_123, through: 1_700_086_401_357 };
+  const rect = { left: 13.25, top: 7.75, width: 317.5 };
+  const horizontal = horizontalTime(193.3, rect, bounds);
+  const vertical = verticalTime(149.6, rect, bounds,
+    time => 407.25 - (time - bounds.from) / (bounds.through - bounds.from) * 381.5);
+  assert.equal(Number.isSafeInteger(horizontal), true);
+  assert.equal(Number.isSafeInteger(vertical), true);
+  const range = { from: bounds.from + 1000, through: bounds.through - 1000, lower: 'closed' };
+  assert.ok(resizeFocusRange(range, 'from', horizontal, bounds));
+  assert.ok(resizeFocusRange(range, 'through', vertical, bounds));
 });
 
 test('keyboard steps are five minutes, shift is one hour, and vertical arrows follow the inverted axis', () => {

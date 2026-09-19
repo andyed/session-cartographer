@@ -14,6 +14,11 @@ export default function WorkingMemory({ isActive }) {
   const focus = useSavedFocus(workspace);
   const { route, data, scoped, context, interval, bounds, navigate, up } = workspace;
   const origin = useRef(null), container = useRef(null), previousSelection = useRef(null);
+  const previousSurface = useRef(route.surface);
+  useEffect(() => {
+    if (previousSurface.current !== route.surface) container.current?.querySelector('.fw-view-nav button[aria-pressed=true]')?.focus({ preventScroll: true });
+    previousSurface.current = route.surface;
+  }, [route.surface]);
   const openSession = session => {
     origin.current = { element: document.activeElement, scrollTop: container.current?.scrollTop || 0 };
     navigate({ session: session.id, contributor: null, file: null, review: null });
@@ -35,8 +40,11 @@ export default function WorkingMemory({ isActive }) {
   const closeFile = () => up({ review: null });
   const hrefForSession = session => workspaceHref({ ...route, session: session.id, file: null, review: null }, 'memory');
   const action = { enable: 'Enable Turbo', start: 'Start Turbo', refresh: 'Refresh Turbo' }[workspace.status?.action];
+  const viewNavigation = <nav className="fw-tabs fw-view-nav" aria-label="Memory view">
+    {['tasks', 'files', 'activity'].map(view => <button key={view} aria-pressed={view === 'activity' ? route.surface === 'activity' : route.surface !== 'activity' && route.result === view} onClick={() => navigate({ surface: view === 'activity' ? 'activity' : 'results', ...(view !== 'activity' ? { result: view } : {}), offset: 0 })}>{view === 'tasks' ? 'Tasks' : view === 'files' ? 'Files' : 'Activity'}</button>)}
+  </nav>;
   return <section ref={container} className="focus-workspace" aria-label="Working memory" data-inspecting={Boolean(route.session)}>
-    <div className="fw-page-heading"><div><h1>Memory</h1><p>Find the work. Read the evidence. Pick up where you left off.</p></div><div className="fw-view-actions"><button aria-pressed={route.surface === 'activity'} onClick={() => navigate({ surface: route.surface === 'activity' ? 'results' : 'activity' })}>{route.surface === 'activity' ? 'Back to results' : 'Explore activity'}</button><button onClick={() => workspace.handoff('timeline', { timelineView: 'concurrent' })}>Timeline ↗</button></div></div>
+    <div className="fw-page-heading"><div><h1>Memory</h1></div><div className="fw-view-actions"><button onClick={() => workspace.handoff('timeline', { timelineView: 'concurrent' })}>Timeline ↗</button></div></div>
     {!data && <div className="fw-entry"><h2>{workspace.status?.ready ? 'Reading recorded activity…' : 'Your work, in context'}</h2><p>{workspace.status ? 'Memory uses the shared Cartographer source.' : 'Connecting to Cartographer…'}</p>{action && <button disabled={workspace.busy} onClick={workspace.launch}>{workspace.busy ? 'Starting…' : action}</button>}</div>}
     {workspace.error && <div className="fw-error" role="alert"><span>{workspace.error}</span><button onClick={workspace.retry}>Retry</button></div>}
     {data && workspace.status && !workspace.status.ready && <div className="fw-error" role="status"><span>Offline · last successful snapshot remains visible.</span>{action && <button onClick={workspace.launch}>{action}</button>}</div>}
@@ -45,7 +53,7 @@ export default function WorkingMemory({ isActive }) {
         <div className="fw-focus-strip"><FocusTimeline interval={interval} bounds={bounds} savedInterval={focus.saved} events={context?.sessions.flatMap(s => s.events) || []} onPreview={workspace.preview} onCommit={workspace.commitRange} /></div>
         <div className="fw-workbench" data-inspecting={Boolean(route.session)}>
           <div className="fw-primary" aria-hidden={undefined}>
-            {route.surface === 'activity' ? <MemoryActivity workspace={workspace} onSession={openSession} hrefForSession={hrefForSession} /> : scoped && <MemoryDesk data={scoped} route={route} interval={interval} onSession={openSession} onReview={openReview} hrefForSession={hrefForSession} onFilter={patch => navigate({ offset: 0, ...patch })} />}
+            {route.surface === 'activity' ? <MemoryActivity workspace={workspace} onSession={openSession} hrefForSession={hrefForSession} viewNavigation={viewNavigation} /> : scoped && <MemoryDesk data={scoped} route={route} interval={interval} onSession={openSession} onReview={openReview} hrefForSession={hrefForSession} onFilter={patch => navigate({ offset: 0, ...patch })} viewNavigation={viewNavigation} />}
           </div>
           {route.session && <MemoryInspector workspace={workspace} onClose={closeSession} onCloseFile={closeFile} />}
         </div>

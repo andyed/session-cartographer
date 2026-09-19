@@ -70,9 +70,13 @@ the same routes against the built preview host.
 
 `node tests/browser/focus-workspace.cjs` verifies exact interval boundaries,
 saved return points, range-editor dismissal and draft preservation, filtering,
-file provenance, keyboard gestures, inspector return, and shared timeline scope.
+file provenance, keyboard and pointer gestures, inspector return, and shared timeline scope.
 Use `--preview` for the built Explorer or `--viewport-proof` for the focused
-seven-day selection / one-day viewport regression. Screenshots are written to
+seven-day selection / one-day viewport regression. `--pointer-proof` isolates
+native mouse selection, endpoint resizing, panning, cancellation, and the
+inverted vertical timeline. Only the pointer-cancel event is synthesized; lost
+capture is exercised with the browser's capture API during a native drag.
+The complete journey includes these checks. Screenshots are written to
 `carto-focus-workspace-artifacts`. CI runs the complete built-preview journey.
 
 ### The GH Pages demo

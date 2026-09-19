@@ -40,18 +40,23 @@ export function useFocusGesture({ interval, bounds, onPreview, onCommit, disable
     onPointerDown(event) {
       if (disabled || event.button !== 0) return;
       event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.focus?.({ preventScroll: true });
       const frozenBounds = { ...bounds }, start = { ...latest.current };
       const mapper = valueFromPointer(event, frozenBounds);
       pointer.current = { id: event.pointerId, operation, start, bounds: frozenBounds, mapper, origin: mapper(event) };
       event.currentTarget.setPointerCapture?.(event.pointerId);
+      onPreview(start);
     },
     onPointerMove(event) {
       const tx = pointer.current;
       if (!tx || tx.id !== event.pointerId) return;
       const value = tx.mapper(event);
-      const draft = tx.operation === 'pan'
-        ? shiftFocusRange(tx.start, value - tx.origin, tx.bounds)
-        : resizeFocusRange(tx.start, tx.operation, value, tx.bounds);
+      const draft = tx.operation === 'select'
+        ? { from: Math.min(tx.origin, value), through: Math.max(tx.origin, value), lower: 'closed' }
+        : tx.operation === 'pan'
+          ? shiftFocusRange(tx.start, value - tx.origin, tx.bounds)
+          : resizeFocusRange(tx.start, tx.operation, value, tx.bounds);
       tx.draft = draft;
       onPreview(draft);
     },

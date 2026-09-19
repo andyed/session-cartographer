@@ -12,7 +12,7 @@ The compact range selector opens an inline editor. Presets, Done, Cancel, Escape
 
 File results name the contributing tasks. Changes display the actual session commit range; Current file explicitly describes current workspace state. Missing diffs remain an unavailable Changes view rather than silently becoming a file preview. Markdown preview/source and split/unified changes reuse the existing renderers and security checks.
 
-Field, Wake, and Compare remain under Explore activity. Search retains its existing distribution view. A dedicated `/timeline` route preserves query/project filters without accidentally opening Search; `/?view=concurrent` remains supported.
+Tasks, Files, and Activity share navigation directly above the view they switch. Field, Wake, and Compare remain within Activity. Search retains its existing distribution view. A dedicated `/timeline` route preserves query/project filters without accidentally opening Search; `/?view=concurrent` remains supported.
 
 ## Evidence and state
 
@@ -53,3 +53,17 @@ For a seven-day sample with 105 tasks and 10,829 evidence records, the context-o
 - Harnesses: `focus-workspace.cjs`, `memory-entry.cjs`, and `demo-memory.cjs`.
 
 Muriel delta: the focus interval joins the existing timeline grammar; task/file evidence is primary and exploratory charts are secondary. The final range control replaces the command row with an inline editor and dated return marker. Rendered checks and behavioral tests establish those mechanics; faster human catch-up remains for user evaluation. No new jury ranking is claimed for this implementation pass.
+
+## Pointer and navigation repair
+
+The first delivery missed a real pointer defect. Pixel positions produced fractional milliseconds, while shared range validation required integer milliseconds. Keyboard checks and integer-friendly geometry fixtures passed without exercising this failure. The center control also advertised movement when the selected range already filled the entire visible interval, and repeated the date over the histogram.
+
+Pointer coordinates now round to the timestamp contract at the geometry boundary. Dragging across the strip selects a range; its edges resize it; a narrowed selection can move within the visible bounds. Full-width selections do not expose a no-op pan control. Preview begins on pointer-down, freezing the gesture's source and bounds. The toolbar carries the single date label, and the activity histogram remains visible through the transparent selection.
+
+Muriel synthesis: use the existing interval as the direct manipulation target, keep the date in one place, and place Tasks / Files / Activity beside the content they change. This bounded repair uses the canonical workspace route and gesture state. The decisive proof is actual pointer input and rendered geometry, because keyboard success did not establish pointer behavior.
+
+Muriel delta: thin range grips retain 44-pixel targets; the narrowed range becomes the move target; view navigation stays at the same vertical position when Activity opens. Live 1440- and 390-pixel checks verified selection, local navigation, target bounds, and absence of horizontal overflow. The regression harness now covers native mouse selection, both horizontal edges, panning, Escape, capture loss, and the inverted vertical edge; explicit pointer cancellation is the one synthesized lifecycle event.
+
+Repair validation: 22 focused Node 22 unit checks passed; the fast pointer journey passed; the normal production build and both complete built-preview journeys (Memory entry and exact-focus workspace) passed. Source-marketplace smoke verified the runtime mirror at unchanged version 0.7.7. Activity duration labels use the existing duration formatter, so an arbitrary selection reads `11h 31m` rather than fractional hours. Final desktop and narrow screenshots are `refined-memory-{1440,390}.png` and `refined-activity-{1440,390}.png` in the preview runtime directory.
+
+The repaired static demo build and browser journey also passed under Node 22 (7 sessions, 5 groups, edit/commit/event axes). The normal production build was restored afterward.

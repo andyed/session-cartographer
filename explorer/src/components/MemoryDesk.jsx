@@ -18,7 +18,7 @@ export function SessionHandoff({ session }) {
     <span role="status">{message}</span>
   </div>;
 }
-export default function MemoryDesk({ data, route, interval, onSession, hrefForSession, onReview, onFilter }) {
+export default function MemoryDesk({ data, route, interval, onSession, hrefForSession, onReview, onFilter, viewNavigation }) {
   const pageSize = 60;
   const orders = useRef(new Map());
   const scopeKey = JSON.stringify([route.q, route.project, route.providers, route.evidence, route.result, route.kind, route.brush, route.sort, route.mode === 'fixed' ? interval : route.mode]);
@@ -39,7 +39,7 @@ export default function MemoryDesk({ data, route, interval, onSession, hrefForSe
   const noun = files ? 'files' : 'tasks';
   const open = (event, session) => { if (plainLinkClick(event)) { event.preventDefault(); onSession(session); } };
   return <section className="fw-results" aria-label="Work results">
-    <div className="fw-results-head"><nav className="fw-tabs" aria-label="Result type">{['tasks', 'files'].map(result => <button key={result} aria-pressed={route.result === result} onClick={() => onFilter({ result })}>{result === 'tasks' ? 'Tasks' : 'Files'}</button>)}</nav>
+    <div className="fw-results-head">{viewNavigation}
       {files && <label><span className="md-sr">File kind</span><select aria-label="File kind" value={route.kind} onChange={e => onFilter({ kind: e.target.value })}><option value="all">All files</option><option value="md">Markdown</option></select></label>}
       <span className="fw-result-count" role="status">{data.evidenceComplete === false ? 'At least ' : ''}{rows.length} {noun}</span>
       <button onClick={() => onFilter({ sort: Date.now() })}>{newCount ? `${newCount} new ${noun} · refresh order` : 'Latest first'}</button>

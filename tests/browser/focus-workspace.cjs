@@ -13,6 +13,7 @@ const { createFocusWorkspaceFixture } = require('./fixtures/focus-workspace.cjs'
 const root = path.resolve(__dirname, '../..');
 const preview = process.argv.includes('--preview');
 const viewportProof = process.argv.includes('--viewport-proof');
+const pointerProof = process.argv.includes('--pointer-proof');
 const pause = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
 
 async function unusedPort() {
@@ -93,6 +94,117 @@ async function verifyViewportUnion(page, origin, fixture) {
   assert.ok(oneDayHeight >= 479 && oneDayHeight <= 500, `one-day visual frame should be 480px, got ${oneDayHeight}`);
 }
 
+function urlRange(page) {
+  const url = new URL(page.url());
+  return { from: Date.parse(url.searchParams.get('from')), through: Date.parse(url.searchParams.get('through')) };
+}
+
+async function committedPointerDrag(page, control, visualSelector, delta, changedEdges) {
+  const box = await control.boundingBox();
+  assert.ok(box, `pointer control is not rendered: ${await control.getAttribute('aria-label')}`);
+  const origin = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const beforeURL = page.url(), beforeRange = urlRange(page);
+  const beforeHistory = await page.evaluate(() => history.length);
+  const beforeVisual = await page.locator(visualSelector).getAttribute('style');
+  await page.mouse.move(origin.x, origin.y);
+  await page.mouse.down();
+  await page.mouse.move(origin.x + delta.x, origin.y + delta.y, { steps: 4 });
+  await page.waitForFunction(({ selector, before }) => document.querySelector(selector)?.getAttribute('style') !== before,
+    { selector: visualSelector, before: beforeVisual });
+  assert.equal(page.url(), beforeURL, 'pointer preview must not write history before release');
+  await page.mouse.up();
+  await page.waitForFunction(before => location.href !== before, beforeURL);
+  const afterRange = urlRange(page);
+  for (const edge of ['from', 'through']) {
+    assert.equal(afterRange[edge] !== beforeRange[edge], changedEdges.includes(edge),
+      `${edge} ${changedEdges.includes(edge) ? 'did not change' : 'changed unexpectedly'} after pointer commit`);
+  }
+  assert.equal(await page.evaluate(() => history.length), beforeHistory + 1,
+    'one completed pointer drag must create exactly one history entry');
+  return { beforeRange, afterRange };
+}
+
+async function cancelledPointerDrag(page, control, visualSelector, delta, cancel) {
+  const box = await control.boundingBox();
+  assert.ok(box, `pointer control is not rendered: ${await control.getAttribute('aria-label')}`);
+  const origin = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  const beforeURL = page.url();
+  const beforeHistory = await page.evaluate(() => history.length);
+  const beforeVisual = await page.locator(visualSelector).getAttribute('style');
+  const controlName = await control.getAttribute('aria-label');
+  const beforeValue = await control.getAttribute('aria-valuenow');
+  await page.mouse.move(origin.x, origin.y);
+  await page.mouse.down();
+  await page.mouse.move(origin.x + delta.x, origin.y + delta.y, { steps: 3 });
+  await page.waitForFunction(({ selector, before }) => document.querySelector(selector)?.getAttribute('style') !== before,
+    { selector: visualSelector, before: beforeVisual });
+  await cancel(control, { x: origin.x + delta.x, y: origin.y + delta.y });
+  await page.waitForFunction(({ name, before }) => [...document.querySelectorAll('[role="slider"]')]
+    .find(element => element.getAttribute('aria-label') === name)?.getAttribute('aria-valuenow') === before,
+  { name: controlName, before: beforeValue }, { timeout: 5000 });
+  await page.mouse.up();
+  assert.equal(page.url(), beforeURL, 'cancelled pointer drag changed the URL');
+  assert.equal(await page.evaluate(() => history.length), beforeHistory, 'cancelled pointer drag wrote history');
+}
+
+async function runPointerProof(page, browser, origin, scope, pageErrors) {
+  const active = '.focus-active-range';
+  // The default focus fills its loaded window, so it must not advertise a pan
+  // gesture that can only clamp back to the same interval.
+  await page.goto(`${origin}/memory?project=alpha`);
+  await ensureWorkspace(page);
+  await page.waitForFunction(() => new URL(location.href).searchParams.has('from'));
+  assert.equal(await page.getByRole('slider', { name: 'Move focus interval' }).count(), 0,
+    'a full-window focus exposed a no-op pan control');
+
+  // Dragging unused strip background creates a narrower focus and commits it
+  // once; this is the primary pointer path from the default full window.
+  const selection = await committedPointerDrag(page, page.locator('.focus-timeline-track'), active,
+    { x: 180, y: 0 }, ['from', 'through']);
+  assert.ok(selection.afterRange.from > selection.beforeRange.from);
+  assert.ok(selection.afterRange.through < selection.beforeRange.through);
+
+  const start = page.getByRole('slider', { name: 'Adjust focus start' });
+  const end = page.getByRole('slider', { name: 'Adjust focus end' });
+  const startResult = await committedPointerDrag(page, start, active, { x: -48, y: 0 }, ['from']);
+  assert.ok(startResult.afterRange.from < startResult.beforeRange.from);
+  const endResult = await committedPointerDrag(page, end, active, { x: -28, y: 0 }, ['through']);
+  assert.ok(endResult.afterRange.through < endResult.beforeRange.through);
+
+  const pan = page.getByRole('slider', { name: 'Move focus interval' });
+  await pan.waitFor();
+  const panResult = await committedPointerDrag(page, pan, active, { x: -36, y: 0 }, ['from', 'through']);
+  assert.equal(panResult.afterRange.through - panResult.afterRange.from,
+    panResult.beforeRange.through - panResult.beforeRange.from, 'pan changed focus duration');
+
+  await cancelledPointerDrag(page, start, active, { x: 24, y: 0 }, async () => page.keyboard.press('Escape'));
+  // Playwright's mouse API cannot directly initiate pointercancel, so dispatch
+  // that event explicitly during an otherwise native drag.
+  await cancelledPointerDrag(page, start, active, { x: 24, y: 0 }, async control =>
+    control.dispatchEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', bubbles: true }));
+  await cancelledPointerDrag(page, start, active, { x: 24, y: 0 }, async (control, current) => {
+    await control.evaluate(element => {
+      if (!element.hasPointerCapture(1)) throw new Error('mouse drag did not acquire pointer capture');
+      element.dataset.lostCaptureObserved = 'false';
+      element.addEventListener('lostpointercapture', () => { element.dataset.lostCaptureObserved = 'true'; }, { once: true });
+      element.releasePointerCapture(1);
+    });
+    // Pointer capture changes are processed at the next pointer event.
+    await page.mouse.move(current.x + 1, current.y);
+    assert.equal(await control.getAttribute('data-lost-capture-observed'), 'true',
+      'Chromium did not dispatch lostpointercapture after native release');
+  });
+
+  const timeline = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: 'reduce' });
+  timeline.on('pageerror', error => pageErrors.push(`pointer timeline: ${error.message}`));
+  await timeline.goto(`${origin}/timeline?view=concurrent&${scope}`);
+  await ensureWorkspace(timeline, { results: false });
+  const vertical = timeline.getByRole('button', { name: 'Adjust focus through time' });
+  const verticalResult = await committedPointerDrag(timeline, vertical, '.focus-range-band', { x: 0, y: 30 }, ['through']);
+  assert.ok(verticalResult.afterRange.through < verticalResult.beforeRange.through);
+  await timeline.close();
+}
+
 (async () => {
   const work = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'carto-focus-workspace-')));
   const artifacts = path.join(os.tmpdir(), 'carto-focus-workspace-artifacts');
@@ -153,6 +265,17 @@ async function verifyViewportUnion(page, origin, fixture) {
       return;
     }
 
+    await page.goto(`${origin}/memory?${scope}`);
+    await ensureWorkspace(page);
+
+    await runPointerProof(page, browser, origin, scope, pageErrors);
+    if (pointerProof) {
+      assert.deepEqual(pageErrors, []);
+      console.log('PASS: horizontal and vertical pointer focus gestures');
+      return;
+    }
+    // Pointer proof intentionally commits several ranges. Reset the full
+    // journey to its exact fixture URL without carrying those interactions.
     await page.goto(`${origin}/memory?${scope}`);
     await ensureWorkspace(page);
 
@@ -235,7 +358,7 @@ async function verifyViewportUnion(page, origin, fixture) {
     await editor.waitFor({ state: 'hidden' });
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Edit time range');
 
-    const horizontal = page.getByRole('button', { name: 'Adjust focus start' });
+    const horizontal = page.getByRole('slider', { name: 'Adjust focus start' });
     const beforeHorizontal = page.url();
     assert.equal(await horizontal.isEnabled(), true);
     await horizontal.focus();

@@ -1,6 +1,6 @@
 import { brushHits, semanticLevel, zoomCameraAt, projectAffinity, resolveBrushFocus, connectionDistance } from './memory-brush';
 import { sessionMetricsAt, formatDuration, formatCount } from './memory-metrics';
-import { plainLinkClick, normalizeMemoryRoute, formatMemoryWindow, CAM_MIN_SCALE, CAM_MAX_SCALE } from './memory-route';
+import { plainLinkClick, normalizeMemoryRoute, CAM_MIN_SCALE, CAM_MAX_SCALE } from './memory-route';
 // Canvas field and semantic zoom. Data comes from the warm corpus; positions stay stable as it updates.
 
 export function createMemoryWeather(root, initialData, {
@@ -135,8 +135,7 @@ export function createMemoryWeather(root, initialData, {
   const routeKey = r => [r.hours, r.view, r.x, r.y, r.at, r.end, camKey(r.cam), (r.panels || []).join(), (r.brush || []).join()].join('|');
   const fieldPanel = () => panels.find(panel => panel.mode === 'field');
   let pendingRouteKey = null;
-  const windowHours = () => (data.end - data.start) / 3600000;
-  function windowLabel() { return formatMemoryWindow(windowHours()); }
+  function windowLabel() { return formatDuration(data.end - data.start); }
   function viewState() {
     const v = fieldPanel()?.view;
     return {

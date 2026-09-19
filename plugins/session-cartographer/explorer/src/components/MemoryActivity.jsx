@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createMemoryWeather } from './memory-weather.js';
 import { projectMemoryScope } from '../../shared/activity-scope.js';
 import { memoryAxes } from '../api.js';
-export default function MemoryActivity({ workspace, onSession, hrefForSession }) {
+export default function MemoryActivity({ workspace, onSession, hrefForSession, viewNavigation }) {
   const host = useRef(null), weather = useRef(null), latest = useRef(workspace);
   latest.current = { ...workspace, onSession, hrefForSession };
   const [axes, setAxes] = useState(null);
@@ -23,5 +23,5 @@ export default function MemoryActivity({ workspace, onSession, hrefForSession })
     weather.current.applyRoute({ ...workspace.route, at: workspace.interval.through, end: workspace.interval.through });
   }, [chartData, workspace.route, axes]);
   useEffect(() => () => { weather.current?.destroy(); weather.current = null; }, []);
-  return <section className="fw-activity" aria-label="Explore activity"><div className="fw-activity-intro"><p>Field, Wake and Compare describe the same focus. Selecting a cohort does not change the interval.</p><button onClick={() => workspace.handoff('timeline', { timelineView: 'concurrent' })}>Open Concurrent timeline ↗</button></div><div ref={host} id="memory-weather" /></section>;
+  return <section className="fw-activity" aria-label="Explore activity"><div className="fw-results-head">{viewNavigation}</div><div ref={host} id="memory-weather" /></section>;
 }
