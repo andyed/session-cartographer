@@ -2,6 +2,13 @@
 
 The Memory work desk and the existing Concurrent, Sessions, and Event Feed views now use one exact time-window contract. Work is on `codex/memory-focus-window`, isolated from the installed Explorer.
 
+## Delivery state — 2026-09-19
+
+- `2bd468b` implements the shared workspace; `0c7b6aa` repairs pointer gestures and moves Memory view navigation beside its content.
+- Implementation and runtime mirror are committed. The preview is running at [Memory](http://127.0.0.1:2537/memory) and [Concurrent](http://127.0.0.1:2537/?view=concurrent), from `/private/tmp/carto-focus-window` with its isolated API on port 2536.
+- The canonical checkout remains on `feat/carto-codex-port`, with its existing untracked `docs/MEMORY_WORKSPACE_IMPLEMENTATION_PLAN.md` preserved. This branch has not been merged or pushed, and the installed plugin has not been refreshed. Version remains 0.7.7.
+- The normal production build is restored after demo verification. Automated and rendered checks establish the tested mechanics; they do not establish human usability acceptance.
+
 ## Interaction
 
 The default desk concentrates on Tasks and Files. Selecting a result opens the shared evidence inspector; on narrow screens the inspector becomes the single pane. Escape returns one level and restores the originating control and scroll position.
@@ -27,9 +34,9 @@ Tasks, Files, and Activity share navigation directly above the view they switch.
 - Live polling is ten seconds; fixed views poll every thirty seconds. Timeline requests only the context response shape, avoiding a duplicated full payload.
 - Timeline framing changes only the visible span. The loaded source covers the union of the viewport and selected interval, so a one-day view cannot silently narrow a seven-day selection.
 
-## Validation
+## Initial implementation validation (`2bd468b`)
 
-- Final Node 22.23.2 unit suite: 487 passed, zero failures (40.2 seconds).
+- Node 22.23.2 unit suite at the initial implementation: 487 passed, zero failures (40.2 seconds). This full suite was not rerun for the later pointer repair; its focused and browser checks are recorded below.
 - Live rendered checks at 1440×1000 and 390×844: task/file drill-down, both Escape returns, Timeline inspector, and no page errors.
 - Inline range editor: save/return marker, Done, Cancel, Escape, outside click, normal document flow, and 390px control bounds passed.
 - Final static demo build and browser journey passed: 7 sessions, 5 groups, exact fixed fixture, saved interval reload, Memory/Timeline handoff, Field/Compare, outside-fixture coverage, and no escaped API calls. The normal production build was restored afterward.
@@ -67,3 +74,13 @@ Muriel delta: thin range grips retain 44-pixel targets; the narrowed range becom
 Repair validation: 22 focused Node 22 unit checks passed; the fast pointer journey passed; the normal production build and both complete built-preview journeys (Memory entry and exact-focus workspace) passed. Source-marketplace smoke verified the runtime mirror at unchanged version 0.7.7. Activity duration labels use the existing duration formatter, so an arbitrary selection reads `11h 31m` rather than fractional hours. Final desktop and narrow screenshots are `refined-memory-{1440,390}.png` and `refined-activity-{1440,390}.png` in the preview runtime directory.
 
 The repaired static demo build and browser journey also passed under Node 22 (7 sessions, 5 groups, edit/commit/event axes). The normal production build was restored afterward.
+
+## Resume and open decisions
+
+Start from this branch and worktree, not the task's original Histospire directory. The session digest attributes the task to that starting directory and leaves file paths unresolved; Git and the preview listener identify the actual Cartographer implementation. Correcting hook/digest project attribution is separate follow-up work.
+
+The user rejected the permanent Save / Return / Undo row, repeated date labels, dead-looking controls, and navigation detached from its view. Preserve the compact range editor, single date label, direct range manipulation, and local Tasks / Files / Activity navigation when continuing.
+
+The return point remains an explicit browser-local bookmark. Automatically remembering the last window is still an open product decision. Integration into the canonical checkout and installed plugin is also pending; the current preview remains available for evaluation. Warm local performance measurements do not establish cold-start behavior or larger-corpus performance beyond the current 90-day limit.
+
+The preview process metadata and logs live in `/private/tmp/carto-focus-window-runtime`. Keep the worktree and that runtime directory while the preview is in use; they are temporary filesystem paths, while the commits remain in the repository's Git history. If a restart becomes necessary, inspect `preview.json` and listener ownership first; `restart.py` manages only this isolated 2536/2537 preview. It is not the installed service controller.
