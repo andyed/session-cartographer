@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { epochMsFromTimestamp, scoreBM25 } from './bm25.js';
 import { projectMatcher } from './project-filter.js';
 import { isResolved } from '../../scripts/sentinels.js';
+import { cachedCodexMemoryStale } from '../../scripts/codex-memory-stale.js';
 
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
@@ -472,11 +473,8 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   const FUSION_DEPTH = 500;
   // Native Codex memory imports are append-only revisions. The small derived
   // id list suppresses replaced/removed versions in both search ladders.
-  let staleMemory = new Set();
-  try {
-    const file = join(process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev'), '.carto', 'codex-memory-stale-ids.txt');
-    staleMemory = new Set(readFileSync(file, 'utf8').split('\n').filter(Boolean));
-  } catch { /* No import yet. */ }
+  // Cached across queries: a stat per search, a re-read only after an import.
+  const staleMemory = cachedCodexMemoryStale();
   // Always run BM25 and get full pool
   const keywordStarted = performance.now();
   const bm25All = scoreBM25(index, query, { project, sinceMs, beforeMs });

@@ -981,6 +981,8 @@ rank_fuse_and_display() {
   # RRF with k=60 (standard constant)
   # Input: TSV lines from all sources
   # Output: faceted summary of top 500, then detailed top N results
+  # codex_memory_stale mirrors CODEX_MEMORY_STALE_RELATIVE in
+  # codex-memory-stale.js; tests/unit/codex-memory-stale.test.js pins them.
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \

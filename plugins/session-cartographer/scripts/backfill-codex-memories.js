@@ -5,8 +5,9 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { codexMemoryStalePath } from './codex-memory-stale.js';
 
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
@@ -16,7 +17,7 @@ const projectFilter = projectArg >= 0 ? process.argv[projectArg + 1] : '';
 const root = process.env.CARTOGRAPHER_CODEX_MEMORIES_DIR || join(homedir(), '.codex', 'memories');
 const dev = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
 const logPath = join(dev, 'changelog.jsonl');
-const stalePath = join(dev, '.carto', 'codex-memory-stale-ids.txt');
+const stalePath = codexMemoryStalePath(dev);
 
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const flat = (value) => value.replace(/[\r\n\t]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -113,7 +114,7 @@ function readHistory() {
 }
 
 function atomicWrite(file, content) {
-  mkdirSync(join(dev, '.carto'), { recursive: true });
+  mkdirSync(dirname(file), { recursive: true });
   const temporary = `${file}.${process.pid}.tmp`;
   writeFileSync(temporary, content);
   renameSync(temporary, file);

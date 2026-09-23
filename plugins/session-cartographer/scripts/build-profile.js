@@ -28,6 +28,7 @@ import path from 'path';
 import { familyLookup } from './project-registry.js';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { ownerNames, isOwnEvent } from './ownership.js';
+import { codexMemoryStalePath, readCodexMemoryStale } from './codex-memory-stale.js';
 
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME, 'Documents/dev');
 const CHANGELOG = process.env.CARTOGRAPHER_CHANGELOG || path.join(DEV, 'changelog.jsonl');
@@ -205,11 +206,7 @@ const compactions = recent.filter((e) => String(e.type).startsWith('milestone_co
 
 // Preferences and decisions come from the whole corpus, not the window — a
 // standing instruction does not expire because it was written in March.
-const staleMemoryIds = new Set(
-  (fs.existsSync(path.join(DEV, '.carto', 'codex-memory-stale-ids.txt'))
-    ? fs.readFileSync(path.join(DEV, '.carto', 'codex-memory-stale-ids.txt'), 'utf8')
-    : '').split('\n').filter(Boolean),
-);
+const staleMemoryIds = readCodexMemoryStale(codexMemoryStalePath(DEV));
 const memoryEvents = own.filter((e) =>
   (e.type === 'memory_feedback' || e.type === 'memory_user'
     || (e.type === 'memory_codex_overview' && e.memory_key?.endsWith('#User preferences')))
