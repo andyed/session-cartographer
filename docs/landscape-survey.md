@@ -1,6 +1,6 @@
 # Claude Code Memory & Session Augmentation Landscape
 
-*Survey date: 2026-03-26; updated through 2026-09-04 with Tree Ring Memory and Funes. Context: positioning session-cartographer (née CCSB fork) against existing projects.*
+*Survey date: 2026-03-26; updated through 2026-09-23 with Tree Ring Memory, Funes, and Michael Albers's claude-memory-context. Context: positioning session-cartographer (née CCSB fork) against existing projects.*
 
 ## The Problem Space
 
@@ -22,6 +22,7 @@ These capture context during sessions and inject it into future ones. The domina
 | [context-keeper](https://github.com/sreedhargs89/context-keeper) | Low | Plugin, auto-inject on session start | Filesystem | Simple "never lose your place" restoration. |
 | [flashbacker](https://github.com/agentsea/flashbacker) | 55 | 20 specialist sub-agents, REMEMBER.md + WORKING_PLAN.md | Filesystem | Persona system (architecture, security, DB agents). Cognitive framework, not just memory. |
 | [memory-store-plugin](https://github.com/julep-ai/memory-store-plugin) | 7 | Queue-based (`.memory-queue.jsonl`), MCP backend | JSONL + CLAUDE.md | **Archived.** Was attempting team CLAUDE.md sync. |
+| [claude-memory-context](https://github.com/malbers/claude-memory-context) | — | File templates, `current.md` handoffs, indexed typed memory, `/savestate`, and decision status lifecycle | Markdown files in the project | Michael Albers's lightweight write-forward structure; explicit session bookends and verified saves complement Cartographer's searchable event history. |
 
 ### 2. Cross-Session Search & Recall
 
@@ -112,6 +113,7 @@ For reference — what ships with Claude Code itself.
 4. **Lightweight infrastructure.** Shell scripts + JSONL + existing Qdrant (when we add embeddings). No new databases, no background services, no subscriptions.
 
 **Closest neighbors:**
+- **[claude-memory-context](https://github.com/malbers/claude-memory-context)** (Michael Albers) — A complementary write-forward memory practice. Its `current.md` handoffs, short memory index, typed files, `/savestate` verification, and explicit decision statuses offer useful lifecycle patterns for Cartographer's native-memory import and future handoffs. The two projects keep distinct storage and session-navigation models.
 - **[Funes](https://github.com/huggingface/funes)** — Closest retrieval-substrate neighbor: deterministic local ingestion across several agent formats, stored-block reconstruction, progressive indexing tiers, and hybrid reranking. Cartographer's advantage is the layer above retrieval: structured work events with stable IDs and deep links, project/time/type facets, user-to-next-user turn units, cross-project topology, a human Explorer, exact-use telemetry, and evidence-backed strategic promotion. Borrow its storage and adapter mechanics without collapsing Cartographer into transcript-only memory.
 - **episodic-memory** (obra) — Also does cross-session transcript search with embeddings. But it's memory-focused, not navigation-focused. No event IDs, no deep links, no energy viz.
 - **claude-history** (raine) — Also navigates past sessions. But it's a standalone TUI, not an agent skill. No semantic search.

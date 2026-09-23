@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### docs(landscape): add Michael Albers's claude-memory-context
+
+The related-project survey now includes its write-forward memory structure,
+session handoffs, verified savestates, and decision lifecycle as a complementary
+reference for Cartographer's native-memory migration.
+
 ### feat(memory): import curated Codex memory with revision-aware recall
 
 The native Codex registry, overview, and rollout summaries can now be imported
