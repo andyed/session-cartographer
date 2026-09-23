@@ -12,7 +12,7 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 
 **[Live demo →](https://andyed.github.io/session-cartographer/)** — Explorer running against a test set from building Session Cartographer with Claude Code. Try the example queries.
 
-## What you get
+## What you (and your agents) get
 
 ### Use it
 
