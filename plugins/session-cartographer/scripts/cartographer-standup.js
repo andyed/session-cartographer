@@ -164,8 +164,40 @@ function contentionKey(absolutePath) {
   return mainRoot ? join(mainRoot, filePath.slice(worktreeRoot.length)) : filePath;
 }
 
+/**
+ * Does a contention key belong to `project`?
+ *
+ * Hooks name a project after its repository root (`basename` of
+ * `git rev-parse --show-toplevel`), so the answer is the nearest ancestor that
+ * holds `.git`. Matching any path segment instead pulled
+ * `psychodeli-webgl-port/apps/electron/x.js` into a `--project electron` view.
+ * The walk stops below the corpus root, so a workspace that is itself a repo
+ * does not claim every loose file; a file in no repository falls back to its
+ * first directory under the corpus root. Keys are worktree-collapsed already,
+ * and lookups are cached per directory — a stat per ancestor, no git calls.
+ */
+const repoRootCache = new Map();
+let devRootReal = null;
+function repoRootOf(filePath, stopAt) {
+  const visited = [];
+  let root = null;
+  for (let dir = dirname(filePath); dir !== stopAt && dir !== dirname(dir); dir = dirname(dir)) {
+    if (repoRootCache.has(dir)) { root = repoRootCache.get(dir); break; }
+    visited.push(dir);
+    if (existsSync(join(dir, '.git'))) { root = dir; break; }
+  }
+  for (const dir of visited) repoRootCache.set(dir, root);
+  return root;
+}
+
 function fileInProject(filePath, project) {
-  return filePath.split('/').includes(project);
+  if (devRootReal === null) {
+    try { devRootReal = realpathSync(dev); } catch { devRootReal = resolvePath(dev); }
+  }
+  const root = repoRootOf(filePath, devRootReal);
+  if (root) return root.split('/').pop() === project;
+  if (!filePath.startsWith(`${devRootReal}/`)) return false;
+  return filePath.slice(devRootReal.length + 1).split('/')[0] === project;
 }
 
 function parseCommit(e) {

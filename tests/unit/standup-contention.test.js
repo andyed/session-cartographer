@@ -301,6 +301,40 @@ test('an edit candidate that resolves to nothing is reported, not dropped', () =
   assert.match(run(dir, ['--since', '6h']), /did not resolve to a file on disk/);
 });
 
+test('--project matches a file by repository root, not by any path segment', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-segment-'));
+  // A repo with a subdirectory that shares its name with another project, and
+  // a repository nested one level down (interests/interests2025 shape).
+  const repo = path.join(dir, 'widgetworks');
+  const nested = path.join(dir, 'family', 'gizmo');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(repo, 'apps', 'electron'), { recursive: true });
+  fs.mkdirSync(path.join(nested, '.git'), { recursive: true });
+  const decoy = path.join(repo, 'apps', 'electron', 'main.js');
+  const inner = path.join(nested, 'inner.js');
+  for (const f of [decoy, inner]) fs.writeFileSync(f, '// fixture\n');
+  const rows = [];
+  for (const [sid, minutes] of [[ALPHA, 9], [BETA, 8]]) {
+    for (const f of [decoy, inner]) {
+      rows.push({ event_id: `e-${sid.slice(0, 4)}-${path.basename(f)}`, timestamp: iso(minutes), type: 'tool_file_edit',
+        provider: 'claude', session_id: sid, project: 'dev', cwd: dir, summary: `Modified: ${f}` });
+    }
+  }
+  fs.writeFileSync(path.join(dir, 'changelog.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+
+  const electron = JSON.parse(run(dir, ['--since', '1h', '--project', 'electron', '--json']));
+  assert.deepEqual(electron.contention.files, [], 'apps/electron inside widgetworks is not project "electron"');
+  assert.equal(electron.sessions.length, 0);
+
+  const owner = JSON.parse(run(dir, ['--since', '1h', '--project', 'widgetworks', '--json']));
+  assert.deepEqual(owner.contention.files.map((f) => path.basename(f.path)), ['main.js']);
+
+  const gizmo = JSON.parse(run(dir, ['--since', '1h', '--project', 'gizmo', '--json']));
+  assert.deepEqual(gizmo.contention.files.map((f) => path.basename(f.path)), ['inner.js'], 'the nested repo root names the project');
+  const family = JSON.parse(run(dir, ['--since', '1h', '--project', 'family', '--json']));
+  assert.deepEqual(family.contention.files, [], 'a folder that holds a repo is not that repo');
+});
+
 test('--project scopes contention, not only the roster', () => {
   const { dir } = build();
   const data = JSON.parse(run(dir, ['--since', '6h', '--project', 'lonely', '--json']));
