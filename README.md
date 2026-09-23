@@ -14,22 +14,50 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 
 ## What you get
 
-- **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
-- **`/turbo` in Claude Code or `$session-cartographer:turbo` in Codex** — Keep the index warm so `/remember` answers in about 0.3 s instead of about 12 s on a 150,000-event corpus. Opt-in, one setting for both agents, ~630 MB resident at that size. [Details →](#turbo-mode-warm-recall-for-both-agents)
-- **`$session-cartographer:setup` in Codex** — Diagnose semantic-search reachability and, with explicit consent, add least-privilege access to local Qdrant and the embedding server. Sandbox denial is reported as configuration—not as a service outage.
-- **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
-- **`/standup`** — The peer view: which sessions were recently active, in which repos, and which files more than one session touched in the selected window. `--commit <sha>` names the logged session behind a recent commit. It reads the same session-attributed events the hooks already write. An explicit [shared-goal briefing](docs/STANDUP_SHARED_GOAL_PLAN.md) is planned; project overlap alone does not establish a common objective.
+### Use it
+
+**Recall**
+
+- **`/remember`** — Ask Claude or Codex what was decided, researched, or fixed before, in either agent's sessions.
+- **`/turbo`** (Claude Code) or **`$session-cartographer:turbo`** (Codex) — Turn on warm recall: about 0.3 s per `/remember` instead of about 12 s on a 150,000-event corpus. One setting covers both agents. [Details →](#turbo-mode-warm-recall-for-both-agents)
+- **`/focus <project>`** — Orient before diving in: recent milestones and commits, related cross-project threads, and the project's recurring maneuvers.
+
+**Coordinate**
+
+- **`/standup`** — See which sessions were recently active, in which repos, and which files more than one session touched. `--commit <sha>` names the session behind a commit you did not make. A [shared-goal briefing](docs/STANDUP_SHARED_GOAL_PLAN.md) is planned; today, sharing a project is not treated as sharing an objective.
+
+**Browse**
+
+- **`/carto`** — Open the Explorer: timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type; click a timeline dot to jump to that result.
 - **Memory Desk (alpha)** — A visual workspace in the Explorer for live and replayed sessions, token and activity comparisons, and per-session file review. Early and changing. [Details →](#memory-desk-alpha)
-- **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
-- **`/wrapup`** — Promotes a material session into strategic memory. It renders a [session digest](#the-session-digest), then records decisions, discoveries, and unfinished threads with separate, verified receipts for the durable JSONL write and semantic index. Structured `decisions[]` feed the standing profile; ordinary sessions remain preserved by transcripts and hooks without requiring manual synthesis.
-- **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus: the source-control orgs, LAN hosts, buckets, data stores, and non-standard CLIs your work actually touches, each with a hit count. **Not a replacement for Claude Code's built-in setup wizard** — on a fresh install that wizard is the better tool, since it scans the machine directly and needs no history. Check what it scanned before accepting its write, though: a run scoped to one project — or to a git worktree, which gets its own transcript directory — pins the otherwise-dynamic `Trusted repo` and `Primary use` entries to that project, at user scope. This is the *update* path: once a corpus exists, proposals are usage-weighted (a repo you pushed to twenty-seven times outranks one that merely exists under `$HOME`), span Codex as well as Claude sessions, and are diffed against your current settings so a re-run proposes only the delta. On a thin corpus it says so and hands you a fill-in template instead of a confident-looking panel built from forty events.
-- **`/investigate`** — Diagnosis gate for bug work. Forces a written root-cause hypothesis (cause + mechanism + disproof) before any fix code, and logs it as a searchable event for later recall.
-- **`.carto/profile.md`** — A derived standing summary of the whole corpus: active projects, standing preferences, durable decisions, work shape, cadence. Start recall here when the question is about the shape of the work rather than one past moment. Rebuild with `node scripts/build-profile.js`; never hand-edit — it regenerates.
-- **Exact fetch (`--get`)** — Search output is lossy by design: summaries are single-line and truncated for display. `--get evt-a,evt-b` returns the complete records — `transcript_path`, `files_changed`, `diff_shape` — so a shortlist can be checked before committing to a 100MB transcript. Missing ids are reported, not silently dropped.
-- **Delta serving** — Repeat `/remember` calls in one session suppress ids already returned, so each call surfaces fresh material instead of the same top-K. `--all` bypasses it.
-- **Faceted search** — Server computes distributions over the top 500 fused results. Filter by project, event type (fetch/search/commit/edit/bash), and match source (keyword/semantic). Client-side filtering, URL-persisted state.
-- **Hybrid ranking** — BM25 keyword scoring + Qdrant semantic similarity, merged via RRF (k=60). Graceful degradation — keyword-only if Qdrant isn't running.
-- **Bounded machine feeds** — `scripts/cartographer-feed.sh` turns an explicit project allowlist and time window into a compact, summary-only Markdown pulse for another local agent or scheduled job. It does not copy the index or pollute human recall telemetry; see [Project Registry & Briefings](docs/BRIEFINGS.md#bounded-machine-feeds).
+
+**Record judgment**
+
+- **`/wrapup`** — Promote a material session into strategic memory: a [session digest](#the-session-digest), then its decisions, discoveries, and unfinished threads. Ordinary sessions are already preserved by hooks and need no wrapup.
+- **`/investigate`** — Before any bug-fix code, write a root-cause hypothesis (cause, mechanism, disproof). It is logged as a searchable event.
+
+**Set up**
+
+- **`$session-cartographer:setup`** (Codex) — Check whether semantic search can reach local Qdrant and the embedding server, and, with your consent, add least-privilege access.
+- **`/trustmap`** — Propose auto mode's `autoMode.environment` from your history: the orgs, hosts, buckets, data stores, and CLIs your work actually touches. On a fresh install, Claude Code's built-in setup wizard is the better tool. Check the scan scope before accepting: a run scoped to one project or git worktree pins `Trusted repo` and `Primary use` to that project at user scope.
+
+**From scripts and other agents**
+
+- **`cartographer-search.sh --get evt-a,evt-b`** — Fetch complete records (`transcript_path`, `files_changed`, `diff_shape`) for a shortlist before opening a 100 MB transcript. Missing ids are reported, not dropped.
+- **`scripts/cartographer-feed.sh`** — A compact, summary-only Markdown pulse for an explicit project allowlist and time window, for another local agent or a scheduled job. See [Project Registry & Briefings](docs/BRIEFINGS.md#bounded-machine-feeds).
+- **`.carto/profile.md`** — A standing summary of the whole corpus (active projects, preferences, durable decisions, work shape, cadence). Read it first when the question is about the shape of the work rather than one moment. Rebuild with `node scripts/build-profile.js`; do not hand-edit.
+
+### How it works
+
+- **Capture.** Hooks in both agents append URLs, file edits, commits, tool use, and lifecycle events to one provider-neutral JSONL history. Nothing is sent off the machine.
+- **Hybrid ranking.** BM25 keyword scoring and Qdrant semantic similarity are merged with Reciprocal Rank Fusion (k=60). The portable path is bash + awk with no dependencies, and it falls back to keyword-only when Qdrant is not running.
+- **Warm index (Turbo).** An opt-in local service holds the index resident (~630 MB at 150,000 events) and serves ordinary queries over loopback HTTP, or a private file transport inside restricted Codex sandboxes. Any failure falls back once to the portable path.
+- **Facets.** Distributions are computed over the top 500 fused results by project, event type, match source, and time; the Explorer filters client-side and keeps the state in the URL.
+- **Delta serving.** Repeat `/remember` calls in one session suppress ids already returned, so each call surfaces new material. `--all` bypasses it.
+- **Lossy summaries, exact records.** Search output is single-line and truncated by design; `--get` is the path to the full record.
+- **Durable judgment.** `/wrapup` writes to the JSONL log and the semantic index with separate, verified receipts, and its structured `decisions[]` feed the standing profile.
+- **Usage-weighted trust proposals.** `/trustmap` ranks each candidate by hit count (a repo pushed to twenty-seven times outranks one that merely exists under `$HOME`), spans Claude and Codex sessions, and diffs against current settings so a re-run proposes only the delta. On a thin corpus it says so and returns a fill-in template.
+- **Sandbox-aware setup.** In Codex, a sandbox denial of localhost is reported as a configuration issue, not as a service outage.
 
 ## The session digest
 
