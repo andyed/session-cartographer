@@ -12,10 +12,11 @@ Fusion — then facets the results by project, event type, source, and time.
 ## What you get
 
 - **`/remember`** — Ask Claude or Codex to recall past decisions, research, and fixes from either agent. Runs BM25 + RRF search across event logs and transcripts. Zero dependencies (bash + awk).
-- **`/turbo` in Claude Code or `$session-cartographer:turbo` in Codex** — Discover, enable, disable, or inspect the experimental warm recall backend. One opt-in covers ordinary `/remember` queries from both agents.
+- **`/turbo` in Claude Code or `$session-cartographer:turbo` in Codex** — Keep the index warm so `/remember` answers in about 0.3 s instead of about 12 s on a 150,000-event corpus. Opt-in, one setting for both agents, ~630 MB resident at that size. [Details →](#turbo-mode-warm-recall-for-both-agents)
 - **`$session-cartographer:setup` in Codex** — Diagnose semantic-search reachability and, with explicit consent, add least-privilege access to local Qdrant and the embedding server. Sandbox denial is reported as configuration—not as a service outage.
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
 - **`/standup`** — The peer view: which sessions were recently active, in which repos, and which files more than one session touched in the selected window. `--commit <sha>` names the logged session behind a recent commit. It reads the same session-attributed events the hooks already write. An explicit [shared-goal briefing](docs/STANDUP_SHARED_GOAL_PLAN.md) is planned; project overlap alone does not establish a common objective.
+- **Memory Desk (alpha)** — A visual workspace in the Explorer for live and replayed sessions, token and activity comparisons, and per-session file review. Early and changing. [Details →](#memory-desk-alpha)
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — Promotes a material session into strategic memory. It renders a [session digest](#the-session-digest), then records decisions, discoveries, and unfinished threads with separate, verified receipts for the durable JSONL write and semantic index. Structured `decisions[]` feed the standing profile; ordinary sessions remain preserved by transcripts and hooks without requiring manual synthesis.
 - **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus: the source-control orgs, LAN hosts, buckets, data stores, and non-standard CLIs your work actually touches, each with a hit count. **Not a replacement for Claude Code's built-in setup wizard** — on a fresh install that wizard is the better tool, since it scans the machine directly and needs no history. Check what it scanned before accepting its write, though: a run scoped to one project — or to a git worktree, which gets its own transcript directory — pins the otherwise-dynamic `Trusted repo` and `Primary use` entries to that project, at user scope. This is the *update* path: once a corpus exists, proposals are usage-weighted (a repo you pushed to twenty-seven times outranks one that merely exists under `$HOME`), span Codex as well as Claude sessions, and are diffed against your current settings so a re-run proposes only the delta. On a thin corpus it says so and hands you a fill-in template instead of a confident-looking panel built from forty events.
@@ -103,35 +104,70 @@ the percentage. Defaults are tunable with
 `CARTOGRAPHER_WRAPUP_MIN_EVENTS`, `CARTOGRAPHER_WRAPUP_MIN_MINUTES`, and
 `CARTOGRAPHER_WRAPUP_STALE_HOURS`.
 
-### Turbo Mode: one opt-in for both agents
+### Turbo Mode: warm recall for both agents
 
-Turbo Mode routes ordinary `/remember` queries through a warm in-memory index.
-On a ~122,000-event corpus a standard recall returns in tens of milliseconds
-where the portable search takes ~11 seconds; the daily cross-project pulse went
-from 12.4 s to 1.9 s end to end. It stays off by default, and it is still an
-experiment: the utility canary in
-[docs/TURBO_MODE_SPEC.md](docs/TURBO_MODE_SPEC.md) requires 50 exact calls per
-backend before any graduation decision, and the portable control cohort is far
-short of that. Speed is measured; *better recall* is not yet demonstrated.
-Exact ranking parity with the portable CLI is an explicit non-goal.
+Turbo keeps the event index resident in a small local service, so `/remember`
+answers from memory instead of re-reading the logs on every call. On the
+maintainer's corpus (~150,000 events, 16 GB of transcripts) a recall returns in
+**about 0.3 s end to end, against about 12 s for the portable path** — see
+[grep vs. cartographer](#grep-vs-cartographer) for the per-query table. The
+daily cross-project pulse went from 12.4 s to 1.9 s. One setting covers Claude
+Code and Codex.
 
-Enabling it writes one provider-neutral user setting, starts a zero-dependency
-headless recall service, and applies to future Claude Code and Codex sessions
-alike:
+The cost is memory: at that corpus size the service holds ~630 MB resident
+(~350 MB JavaScript heap). That trade is why Turbo is opt-in and off by default;
+the portable CLI has no resident cost. [docs/ADOPTING.md](docs/ADOPTING.md#footprint)
+has per-event figures for planning.
 
-In Claude Code, invoke `/turbo` with `enable`, `status`, or `disable`. In Codex,
-invoke `$session-cartographer:turbo` and ask for the same action. The skill
-resolves its installed runtime, so users do not need to locate a plugin cache.
-The underlying controller remains available to checkout developers as
-`node scripts/cartographer-turbo.js enable|status|disable`.
+**Turn it on.** In Claude Code, invoke `/turbo` with `enable`, `status`, or
+`disable`. In Codex, invoke `$session-cartographer:turbo` and ask for the same
+action. The skill resolves its installed runtime, so there is no plugin cache to
+locate; checkout developers can call `node scripts/cartographer-turbo.js
+enable|status|disable` directly. Enabling writes one provider-neutral setting to
+`~/.config/session-cartographer/config.json` (override with
+`CARTOGRAPHER_CONFIG`), not to either agent's settings, starts a
+zero-dependency headless service, and applies to future sessions of both agents.
 
-The Explorer's **memory** tab is also a Turbo entry point. Run
-`cd explorer && npm run memory` and open `http://127.0.0.1:2527/memory`.
-The UI stays available while Turbo is off: **Start Turbo** starts the managed
-service, **Enable Turbo** also enables the shared preference, and **Refresh
-Turbo** replaces an owned older service that lacks the memory API. Opening the
-page alone never starts Turbo. Field and Wake show all recorded sessions in the
-last 24 hours, refreshing every five seconds. **Compare** plots recorded span
+**What it serves.** Ordinary `/remember` queries, keyword and semantic, reuse an
+already-compatible Explorer API or the managed headless service. Exact
+`--get`/`--touch`/`--thread`, intent-only, and raw-transcript operations stay on
+the portable path by design. Turbo and the portable CLI fuse the same sources,
+but exact ranking parity is a non-goal: the two can order results differently.
+
+**When it cannot answer.** A failed or incompatible warm request falls back once
+to the portable CLI; `--no-turbo` forces that path for one call. Each fallback
+records a stable `fallback_reason` class and the underlying `fallback_detail` in
+`$CARTOGRAPHER_DEV_DIR/.carto/search-calls.jsonl`, so a contract rejection that
+recurs on every call is distinguishable from a service that was briefly down.
+The service indexes one corpus, fixed at spawn time, and refuses a request naming
+a different `corpus_root` rather than answering from the wrong one. Restricted
+Codex sandboxes use a private file request transport when loopback HTTP is
+unavailable, so the same opt-in still applies.
+
+**Session-start reminder.** While enabled, a small agent-only note at session
+start suggests `remember` or `focus` when a task depends on prior work — not for
+self-contained requests, and it never runs either skill itself. One exposure
+receipt per session goes to `$CARTOGRAPHER_DEV_DIR/.carto/turbo-awareness.jsonl`,
+so adoption can be measured against explicit result use rather than query volume.
+
+**What is and is not proven.** The speed is measured, and backend-attributed
+call telemetry is written for every search. Whether warm recall leads to better
+answers is a separate question, tracked by the utility canary in
+[docs/TURBO_MODE_SPEC.md](docs/TURBO_MODE_SPEC.md); turning Turbo on by default
+waits on that evidence, not on latency.
+
+### Memory Desk (alpha)
+
+An early visual workspace over recorded sessions, served by the Explorer and
+backed by the Turbo service. Expect the layout, views, and URL grammar below to
+change between releases. Run `cd explorer && npm run memory` and open
+`http://127.0.0.1:2527/memory`. The page works while Turbo is off: **Start
+Turbo** starts the managed service, **Enable Turbo** also enables the shared
+preference, and **Refresh Turbo** replaces an owned older service that lacks the
+memory API. Opening the page alone never starts Turbo.
+
+Field and Wake show all recorded sessions in the last 24 hours, refreshing
+every five seconds. **Compare** plots recorded span
 or observed active periods against generated tokens, processed tokens, edits,
 files, research, commits, or total activity. Active periods join non-lifecycle
 events at most 15 minutes apart; they estimate activity, not measured effort.
@@ -163,31 +199,6 @@ For example, `/memory?view=compare&x=activeMs&session=SESSION_ID` opens that
 session from Compare. Older session links reopen their last recorded 24-hour
 window after leaving the live field. File links still show the current local
 file and changes from HEAD; the link is not a historical file snapshot.
-
-The preference lives at `~/.config/session-cartographer/config.json` (override
-with `CARTOGRAPHER_CONFIG`), not in either agent's settings. Each standard query
-reuses an already-compatible Explorer API or the managed headless service.
-At session start, an enabled preference injects a small agent-only reminder to
-use `remember` or `focus` when the task depends on prior work—not for
-self-contained requests, and without automatically running either skill. One
-exposure receipt per session is written to
-`$CARTOGRAPHER_DEV_DIR/.carto/turbo-awareness.jsonl` so adoption can be measured
-against explicit result use rather than raw query volume.
-Restricted Codex sandboxes use a private file request transport when loopback
-HTTP is unavailable, so the same opt-in still applies. A failed or incompatible
-warm request falls back once to the portable CLI; `--no-turbo` forces that
-control path for one call. A fallback records both a stable
-`fallback_reason` class and the underlying `fallback_detail` message in
-`.carto/search-calls.jsonl`, so a contract rejection that recurs on every
-identical call is distinguishable from a service that was briefly down. The
-warm service indexes one corpus fixed at spawn time; a request naming a
-different `corpus_root` is refused rather than answered from the wrong one. Exact `--get`/`--touch`/`--thread`, intent-only, and
-raw-transcript operations remain portable by design.
-
-This is the experimental 0.7.x opt-in. Backend-attributed call telemetry is
-written to `$CARTOGRAPHER_DEV_DIR/.carto/search-calls.jsonl`; graduation to the
-0.8 supported surface remains gated on measured recall utility, not latency
-alone.
 
 ## Co-occurrence graph & maneuver map
 
@@ -300,7 +311,7 @@ cd session-cartographer/explorer && npm install && npm run dev
 Then use `/carto` to open it in your browser.
 
 Timeline, search, sessions, and transcripts are served by the UI host and work
-with Turbo off or already running. The memory tab uses the managed Turbo backend
+with Turbo off or already running. The alpha memory tab uses the managed Turbo backend
 on its configured port. `npm run memory` starts the same host and is convenient
 when opening `/memory`; it keeps all other tabs available. For a standalone API
 on port 2526, use `npm run server` separately when that port is free.
@@ -430,33 +441,52 @@ for memory.
 
 ## grep vs. cartographer
 
-Measured on 2.9 GB of transcripts, 4,400 indexed events, 186 sessions. Metric is unique sessions surfaced — the unit that matters for recovering context.
+Measured 2026-09-23 on the maintainer's machine: 16 GB of Claude Code and Codex
+transcripts, ~150,000 indexed events. Metric is unique sessions surfaced — the
+unit that matters for recovering context. Regenerate with
+`bash scripts/bench-grep-vs-turbo.sh`.
 
 ```
-                            ── grep ──         ── cartographer ──
-Query                       sessions    sec    sessions    sec
-──────────────────────────  ────────  ──────   ────────  ──────
-"BM25"                           73    18.3         11     1.5
-"facets"                         45    24.5         19     1.5
-"transcript viewer"              21    20.5         14     1.6
-"backfill"                       49    25.2         17     1.5
-"concurrent timeline"            10    26.2         15     1.5
-"diff shape"                     14    26.0         27     1.5
-"session milestones"             27    21.2         42     1.6
-"fisheye autocomplete"            7    25.5         12     1.5
-──────────────────────────  ────────  ──────   ────────  ──────
-MEAN                             31    23.4         20     1.5
+                          ── grep ──        ── portable ──       ── turbo ──
+Query                     sessions   sec    sessions    sec    sessions   sec
+────────────────────────  ────────  ─────   ────────  ─────    ────────  ─────
+"BM25"                        1059   2.36         12   8.62          14   0.28
+"facets"                      1172   1.99         31   8.66          27   0.30
+"transcript viewer"            113   2.75         24  17.18          27   0.29
+"backfill"                     792   2.19          9   9.45          17   0.32
+"concurrent timeline"          187   2.12         31  10.41          25   0.31
+"diff shape"                   213   2.47         26  16.57          21   0.33
+"session milestones"           261   2.35         27  18.52          41   0.32
+"fisheye autocomplete"          59   2.49          8   9.95          11   0.29
+────────────────────────  ────────  ─────   ────────  ─────    ────────  ─────
+MEAN                           482   2.34         21  12.42          23   0.31
 ```
 
-Cartographer is **15× faster** on average. grep session counts are inflated by CLAUDE.md content echoed in every session and compaction summaries that parrot parent conversations. Cartographer deduplicates through event-level indexing: each git commit, URL fetch, and milestone is one event with a session_id linking back to the source transcript.
-
-For queries that only appear in conversation text (not in indexed events), cartographer falls back to transcript search via ripgrep + BM25 — slower but still ranked.
+**Turbo is about 40× faster than the portable path and about 7.5× faster than
+grep**, while returning a ranked, deduplicated shortlist. grep is `rg -l -i -F`
+over every transcript file, run with a warm filesystem cache, and its session
+count is the number of matching files. Cartographer counts distinct sessions in
+the top 50 ranked results. Each figure is one call per query, wall-clock,
+including process start.
 
 ### Where grep still wins
 
-The speed numbers above compare the wrong things. grep searches raw conversation text across 2.9 GB of transcripts. Cartographer searches a 1.5 MB event index. They have different recall surfaces: grep finds anything ever said in a session; cartographer only finds what hooks captured (commits, fetches, milestones, file edits). For terms like "facets" that never appear in event logs — only in conversation — cartographer's keyword path returns nothing until the transcript fallback kicks in, which is slower than grep.
+grep searches every word ever written in a session; cartographer ranks the
+events its hooks captured (commits, fetches, milestones, file edits, tool use)
+plus semantically indexed transcript turns. A term that appears only in
+unindexed conversation text is invisible to cartographer's default path, and
+`--transcript` falls back to a slower ranked scan. On raw speed, ripgrep over a
+cached corpus now beats the portable path: in March, on a 2.9 GB corpus, the
+portable path was the faster one. Only Turbo is faster than grep here.
 
-Cartographer's real advantage is **ranking and deduplication**, not coverage. grep returns 73 sessions for "BM25" because the term appears in echoed CLAUDE.md content in every session — that's noise, not recall. Cartographer returns 11 sessions with ranked, deduplicated events linked to source transcripts. The hybrid path (BM25 + Qdrant semantic) adds phrase-level understanding that bag-of-words keyword search can't match: "diff shape" as a concept vs. "diff" and "shape" as independent words. [Evaluation results and phrase matching roadmap →](docs/GHPAGES_DEMO_SPEC.md#ground-truth--evaluation)
+Cartographer's advantage is **ranking and deduplication**, not coverage. grep
+reports 1,059 sessions for "BM25" because the term is echoed in CLAUDE.md
+content, compaction summaries, and tool output across the corpus; that is noise,
+not recall. Cartographer returns a dozen or so ranked sessions, each linked to
+its source transcript. The hybrid path (BM25 + Qdrant semantic) adds
+phrase-level matching that bag-of-words keyword search cannot: "diff shape" as a
+concept versus "diff" and "shape" as independent words. [Evaluation results and
+phrase matching roadmap →](docs/GHPAGES_DEMO_SPEC.md#ground-truth--evaluation)
 
 ### Precision evaluation (4 labeled queries)
 

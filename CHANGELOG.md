@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### docs(readme): lead with Turbo's measured speed; mark the Memory Desk alpha
+
+Turbo's section now opens with the recall latency and its memory cost, and the
+Memory Desk has its own section labeled alpha. The grep comparison was
+re-measured on the current 16 GB, ~150,000-event corpus with a Turbo column
+(mean 0.31 s Turbo, 12.42 s portable, 2.34 s grep) and is reproducible with
+`scripts/bench-grep-vs-turbo.sh`. The March claim that the portable path beats
+grep no longer holds on this corpus and was removed.
+
+### fix(standup): scope --project files by repository root
+
+`--project` matched any path segment, so a subdirectory sharing a project's
+name joined that project's view. It now uses the file's nearest repository root,
+the same rule the hooks use to name projects.
+
+### refactor(memory): one definition of the Codex stale-id list
+
+The stale-id path is shared by the importer, profile, and Explorer/Turbo search,
+and a test pins the shell search's copy. Turbo caches the list between queries.
+
 ### docs(landscape): add Michael Albers's claude-memory-context
 
 The related-project survey now includes its write-forward memory structure,

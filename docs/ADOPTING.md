@@ -411,6 +411,7 @@ JSONL logs on disk and the warm service's resident set.
 | Measurement | Value |
 |---|---|
 | Explorer process (2026-08-29, ~108k events) | ~583 MB RSS, ~283 MB JavaScript heap |
+| Headless Turbo service (2026-09-23, ~149.6k events) | ~627 MB RSS, ~351 MB JavaScript heap |
 | Event load (2026-08-29) | 1.00 s for ~108k events |
 | Event load (2026-09-08, [FACTS.md](FACTS.md)) | 881 ms for 127,129 events |
 
