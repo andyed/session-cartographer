@@ -4,6 +4,9 @@ Searchable memory for Claude Code and Codex. Hooks capture URLs, file edits,
 git commits, and lifecycle events into one provider-neutral JSONL history.
 Search fuses BM25 keyword scoring with vector similarity via Reciprocal Rank
 Fusion — then facets the results by project, event type, source, and time.
+Opt-in [Turbo Mode](#turbo-mode-warm-recall-for-both-agents) keeps the index
+warm so recall returns in about 0.3 s instead of about 12 s on a
+150,000-event corpus, for both agents from one setting.
 
 ![/remember in action](docs/remember_remember_skill.png)
 

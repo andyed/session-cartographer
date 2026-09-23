@@ -1,7 +1,7 @@
 {
   "name": "session-cartographer",
   "version": "0.7.8",
-  "description": "Search and explore Claude Code and Codex session history, with guided semantic-search setup and optional shared fast recall",
+  "description": "Search and explore Claude Code and Codex session history, with guided semantic-search setup and opt-in Turbo recall (about 0.3 s instead of about 12 s)",
   "author": {
     "name": "Andy Edmonds"
   },
@@ -20,8 +20,8 @@
   "hooks": "./hooks/hooks.json",
   "interface": {
     "displayName": "Session Cartographer",
-    "shortDescription": "Recall agent history, optionally faster",
-    "longDescription": "Capture, search, and explore Claude Code and Codex session history through a shared event index, with an optional globally shared Turbo recall backend.",
+    "shortDescription": "Recall agent history, warm in 0.3 s",
+    "longDescription": "Capture, search, and explore Claude Code and Codex session history through a shared event index, with opt-in Turbo Mode: one setting for both agents keeps the index warm so recall returns in about 0.3 s instead of about 12 s on a 150,000-event corpus.",
     "developerName": "Andy Edmonds",
     "category": "Productivity",
     "capabilities": [
