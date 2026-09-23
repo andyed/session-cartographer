@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### feat(turbo): default on for 16 GB+ machines via /carto; idle exit below that
+
+`/carto` now runs `cartographer-turbo.js enable --if-recommended`, which turns
+Turbo on only with 16 GB+ RAM and a memory estimate within 8% of it, and
+otherwise reports the estimate without changing anything. The estimate is
+2.6 KB per log row, measured against a live service. On machines under 16 GB a
+service exits after 30 idle minutes unless `turbo.idle_minutes` says otherwise;
+an open Explorer stream counts as activity. `status` reports the memory plan and
+the effective idle window.
+
 ## 0.7.9 — 2026-09-23
 
 ### feat(registry): ship no aliases; add `bootstrap-project-registry.js --update`

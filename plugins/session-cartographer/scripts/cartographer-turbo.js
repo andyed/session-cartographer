@@ -14,6 +14,7 @@ import {
   updateTurboConfig,
   validateTurboUrl,
   writeJsonAtomic,
+  machineTurboPlan,
 } from './turbo-common.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -97,6 +98,21 @@ async function recallContractAlreadyServed(url) {
   }
 }
 
+/**
+ * Minutes of inactivity before the service exits; 0 never. An explicit setting
+ * wins; otherwise the machine's memory plan decides (30 under 16 GB of RAM).
+ * Computed only when spawning: counting rows reads every log, and ensureRunning
+ * runs on every search.
+ */
+function effectiveIdleMinutes(settings, env = process.env) {
+  if (env.CARTOGRAPHER_TURBO_IDLE_MINUTES !== undefined && env.CARTOGRAPHER_TURBO_IDLE_MINUTES !== '') {
+    const forced = Number(env.CARTOGRAPHER_TURBO_IDLE_MINUTES);
+    if (Number.isFinite(forced) && forced >= 0) return forced;
+  }
+  if (settings.idleMinutes !== null) return settings.idleMinutes;
+  return machineTurboPlan(env).default_idle_minutes;
+}
+
 async function ensureRunning(env = process.env) {
   const settings = effectiveTurboSettings(env);
   let current = managedServerRecord(env);
@@ -129,6 +145,7 @@ async function ensureRunning(env = process.env) {
       CARTOGRAPHER_TURBO_URL: settings.url,
       CARTOGRAPHER_TURBO_STATE_DIR: current.paths.state,
       CARTOGRAPHER_TURBO_INSTANCE_TOKEN: instanceToken,
+      CARTOGRAPHER_TURBO_IDLE_MINUTES: String(effectiveIdleMinutes(settings, env)),
     },
   });
   child.unref();
@@ -238,8 +255,27 @@ try {
         settings.file,
       ].join('\t'));
     }
+  } else if (command === 'enable' && process.argv.includes('--if-recommended')) {
+    // The /carto path: turn Turbo on only where it is cheap (16 GB+ RAM and an
+    // estimate within 8% of it). Elsewhere, report the plan and change nothing.
+    const current = readTurboConfig();
+    const plan = machineTurboPlan();
+    if (current.enabled) {
+      console.log(JSON.stringify({ action: 'already_enabled', plan }, null, 2));
+    } else if (!plan.recommend) {
+      console.log(JSON.stringify({ action: 'ask', plan }, null, 2));
+    } else {
+      const settings = updateTurboConfig({ enabled: true, auto_start: true });
+      const service = process.argv.includes('--no-start') ? null : await ensureRunning();
+      console.log(JSON.stringify({ action: 'enabled', config: settings.file, plan, service }, null, 2));
+    }
   } else if (command === 'enable') {
     const url = option('--url');
+    const idleRaw = option('--idle-minutes');
+    const idle = idleRaw === '' ? undefined : Number(idleRaw);
+    if (idle !== undefined && (!Number.isFinite(idle) || idle < 0)) {
+      throw new Error('--idle-minutes must be 0 (never) or a positive number of minutes');
+    }
     const timeoutRaw = option('--timeout');
     const current = readTurboConfig();
     const timeout = timeoutRaw ? Number(timeoutRaw) : current.timeoutMs;
@@ -251,6 +287,7 @@ try {
       auto_start: true,
       url: validateTurboUrl(url || current.url),
       timeout_ms: timeout,
+      ...(idle === undefined ? {} : { idle_minutes: idle }),
     });
     let service = null;
     if (!process.argv.includes('--no-start')) service = await ensureRunning();
@@ -302,6 +339,8 @@ try {
       url: settings.url,
       timeout_ms: settings.timeoutMs,
       config: settings.file,
+      idle_minutes: effectiveIdleMinutes(settings),
+      memory: machineTurboPlan(),
       transport,
       service: {
         running: service.alive,

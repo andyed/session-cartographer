@@ -36,7 +36,11 @@ keeps the setting in `~/.config/session-cartographer/config.json` (or
 `CARTOGRAPHER_CONFIG`).
 
 Afterward, report whether the global preference is enabled, whether its managed
-service is running and compatible, and which transport the receipt names. When
+service is running and compatible, and which transport the receipt names.
+`status` also carries `memory` (estimated MB against this machine's RAM) and
+`idle_minutes`; mention both when the user is weighing whether to turn it on.
+On machines under 16 GB, an enabled service exits after 30 idle minutes unless
+the user sets `--idle-minutes` on `enable` (0 keeps it warm). When
 enabled, ordinary recall starts or reuses the warm service automatically and
 falls back to the portable CLI if it is unavailable. `--no-turbo` bypasses it
 for one search; exact fetch, touch, thread, intent-only, and raw-transcript

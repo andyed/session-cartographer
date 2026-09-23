@@ -22,6 +22,14 @@ try {
 } catch {}
 const url = new URL(validateTurboUrl(process.env.CARTOGRAPHER_TURBO_URL || 'http://127.0.0.1:2526'));
 const spoolOnly = process.env.CARTOGRAPHER_TURBO_SPOOL_ONLY === '1';
+// Minutes without a request before this process exits; 0 or unset never. The
+// controller sets it from the machine's memory plan (30 under 16 GB of RAM), so
+// a smaller machine gets its memory back when recall goes quiet. The next
+// search restarts the service, paying one cold load.
+const idleMinutes = Math.max(0, Number(process.env.CARTOGRAPHER_TURBO_IDLE_MINUTES) || 0);
+let lastActivity = Date.now();
+let openResponses = 0;
+const touchActivity = () => { lastActivity = Date.now(); };
 
 fs.mkdirSync(paths.requests, { recursive: true, mode: 0o700 });
 // The orphan-reaping regression holds a child before its first ready publish.
@@ -103,6 +111,8 @@ async function processRequestFile(file) {
   const requestPath = path.join(paths.requests, file);
   const responsePath = path.join(paths.requests, file.replace(/\.request\.json$/, '.response.json'));
   try {
+    touchActivity();
+    touchActivity();
     const envelope = JSON.parse(fs.readFileSync(requestPath, 'utf8'));
     const result = await handleSpooled(envelope);
     writeJsonAtomic(responsePath, {
@@ -137,6 +147,11 @@ let httpStatus = spoolOnly ? 'disabled' : 'starting';
 
 if (!spoolOnly) {
   httpServer = http.createServer(async (req, res) => {
+    // A response still open (the Memory Desk's live stream) is activity for as
+    // long as it stays open, so an Explorer tab keeps the service warm.
+    touchActivity();
+    openResponses += 1;
+    res.on('close', () => { openResponses -= 1; touchActivity(); });
     if (await handleMemory(req, res)) return;
     if (req.method === 'GET' && req.url === '/api/recall/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -271,9 +286,22 @@ console.log(`[turbo] loaded ${events.length} events / ${index.docs.size} docs; f
 const leaseInterval = setInterval(checkLease, LEASE_INTERVAL_MS);
 leaseInterval.unref();
 
+let idleInterval = null;
+if (idleMinutes > 0) {
+  const idleMs = idleMinutes * 60000;
+  // Check often enough to exit within about a quarter of the window.
+  idleInterval = setInterval(() => {
+    if (openResponses > 0 || Date.now() - lastActivity < idleMs) return;
+    console.log(`[turbo] idle for ${idleMinutes} min; exiting to free memory. The next search restarts it.`);
+    shutdown();
+  }, Math.max(250, Math.min(60000, idleMs / 4)));
+  idleInterval.unref();
+}
+
 function shutdown() {
   clearInterval(requestInterval);
   clearInterval(leaseInterval);
+  if (idleInterval) clearInterval(idleInterval);
   stopWatching();
   try {
     const ready = JSON.parse(fs.readFileSync(paths.ready, 'utf8'));

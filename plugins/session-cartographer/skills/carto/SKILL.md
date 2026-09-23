@@ -20,6 +20,27 @@ Resolve `ROOT` from `CARTOGRAPHER_ROOT`, `CLAUDE_PLUGIN_ROOT`, or
 reported base directory (`../..` from `skills/carto`); use the conventional
 checkout only as a legacy fallback.
 
+## Turn on Turbo where it is cheap
+
+The Explorer's search and memory views are served by Turbo. Before launching,
+let the controller decide from this machine's RAM:
+
+```bash
+ROOT="${CARTOGRAPHER_ROOT:-${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-$HOME/Documents/dev/session-cartographer}}}"
+node "$ROOT/scripts/cartographer-turbo.js" enable --if-recommended
+```
+
+Report the `action` in one line, with `plan.estimate_mb` and `plan.total_ram_gb`:
+
+- `enabled` — 16 GB+ RAM and the corpus fits in 8% of it. Say Turbo is now on
+  for Claude Code and Codex, roughly how much memory it holds, and that
+  `/turbo disable` turns it off.
+- `already_enabled` — say nothing unless asked.
+- `ask` — the machine has under 16 GB, or the corpus would take over 8% of RAM.
+  Do not enable it. Mention the estimate and that `/turbo enable` turns it on;
+  on machines under 16 GB it then exits after 30 idle minutes to give the memory
+  back. Launch the Explorer either way.
+
 ## Usage
 
 ```bash

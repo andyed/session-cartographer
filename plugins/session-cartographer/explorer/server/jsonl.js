@@ -20,13 +20,16 @@ export const CORPUS_ROOT = DEV_DIR;
 // projects the same content into prompt-history.jsonl with stable ids. Do not
 // re-add the raw history file: the same prompts would be indexed twice under
 // two different identities, and the id-less copy would win nothing.
-export const LOG_FILES = {
-  changelog: join(DEV_DIR, 'changelog.jsonl'),
-  research: join(DEV_DIR, 'research-log.jsonl'),
-  milestones: join(DEV_DIR, 'session-milestones.jsonl'),
-  'tool-use': join(DEV_DIR, 'tool-use-log.jsonl'),
-  prompts: join(DEV_DIR, 'prompt-history.jsonl'),
+export const LOG_FILE_NAMES = {
+  changelog: 'changelog.jsonl',
+  research: 'research-log.jsonl',
+  milestones: 'session-milestones.jsonl',
+  'tool-use': 'tool-use-log.jsonl',
+  prompts: 'prompt-history.jsonl',
 };
+export const LOG_FILES = Object.fromEntries(
+  Object.entries(LOG_FILE_NAMES).map(([source, name]) => [source, join(DEV_DIR, name)]),
+);
 
 /**
  * Read all events from a JSONL file. Skips malformed lines (mid-flush writes).

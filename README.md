@@ -145,10 +145,20 @@ maintainer's corpus (~150,000 events, 16 GB of transcripts) a recall returns in
 daily cross-project pulse went from 12.4 s to 1.9 s. One setting covers Claude
 Code and Codex.
 
-The cost is memory: at that corpus size the service holds ~630 MB resident
-(~350 MB JavaScript heap). That trade is why Turbo is opt-in and off by default;
-the portable CLI has no resident cost. [docs/ADOPTING.md](docs/ADOPTING.md#footprint)
-has per-event figures for planning.
+The cost is memory: at that corpus size the service holds ~650 MB resident,
+about 2.6 KB per log row. So the default depends on the machine:
+
+- **16 GB of RAM or more:** opening the Explorer with `/carto` turns Turbo on
+  when its estimate fits within 8% of RAM, and says so. Once running, it stays
+  warm until reboot.
+- **Under 16 GB, or a corpus over 8% of RAM:** `/carto` reports the estimate and
+  leaves Turbo off. If you enable it on a machine under 16 GB, it exits after 30
+  idle minutes and restarts on the next search, so memory comes back when recall
+  goes quiet. `/turbo enable --idle-minutes N` sets your own window (0 = never).
+
+`/turbo status` shows the estimate against this machine's RAM. The portable CLI
+has no resident cost. [docs/ADOPTING.md](docs/ADOPTING.md#footprint) has more
+planning figures.
 
 **Turn it on.** In Claude Code, invoke `/turbo` with `enable`, `status`, or
 `disable`. In Codex, invoke `$session-cartographer:turbo` and ask for the same
