@@ -115,8 +115,8 @@ predates hook coverage — say which, do not guess at authorship.
 
 ## Reporting it
 
-Lead with the collision, not the census. Andy runs 3-5 concurrent sessions by
-design; a list of them is not news. Useful:
+Lead with the collision, not the census. Someone running several concurrent
+sessions by design already knows the list; it is not news. Useful:
 
 > `a1986975` landed `c61e0e83` (jukebox chip colours) 50m ago in the same repo.
 > No file overlap with your work — `311a6cf7` and `7ca82aba` are both in

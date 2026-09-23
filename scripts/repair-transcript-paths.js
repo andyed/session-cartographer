@@ -88,7 +88,7 @@ for (const TARGET of (DO_QDRANT ? [] : TARGETS)) {
     if (!AS_JSON) console.error(`skip (not found): ${TARGET}`);
     continue;
   }
-  // Andy runs several concurrent agent sessions and the hooks append to these
+  // Users often run several concurrent agent sessions, and the hooks append to these
   // logs on every tool use. A read-modify-write therefore races live writers:
   // anything appended between the read and the write would be silently dropped.
   // Record the size we read, and refuse to write if the file grew.

@@ -150,7 +150,7 @@ and prints one panel. Every later step traces to a row in it.
     +    27  github.com/andyed
 
   Internal / LAN hosts contacted
-    +     4  192.168.1.42:8769
+    +     4  10.0.0.5:8443
 
   Non-standard CLIs by frequency
     +   966  adb          +   436  xcodebuild

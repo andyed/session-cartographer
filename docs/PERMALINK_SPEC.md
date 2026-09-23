@@ -65,7 +65,7 @@ CARTOGRAPHER_VIEWER_PREFIX="claude-history://session/"
 
 When `/carto` outputs a search result, the deeplink uses this prefix:
 ```
-transcript: /Users/andyed/.claude/projects/.../abc123.jsonl
+transcript: /Users/you/.claude/projects/.../abc123.jsonl
 deeplink: http://localhost:2527/session/%2FUsers%2Fandyed%2F...
 ```
 

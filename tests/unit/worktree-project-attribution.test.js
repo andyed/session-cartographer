@@ -153,8 +153,17 @@ test('no skill records a project it derived from its own toplevel', () => {
   // The write sites are markdown, so this is the only place the regression shows.
   // A cwd-basename fallback is legitimate, but only AFTER the shared script has
   // been tried — so assert on order, not on absence.
-  for (const skill of ['wrapup', 'investigate', 'trustmap']) {
-    const lines = fs.readFileSync(path.join(SKILLS, skill, 'SKILL.md'), 'utf8')
+  // /investigate delegates its write to record-investigation.sh, so the order
+  // check moves to that script; the skill must not derive a project itself.
+  const investigate = fs.readFileSync(path.join(SKILLS, 'investigate', 'SKILL.md'), 'utf8');
+  assert.ok(investigate.includes('record-investigation.sh'), 'investigate must write through record-investigation.sh');
+  assert.ok(!/--show-toplevel/.test(investigate), 'investigate must not derive a project itself');
+  const sources = [
+    ...['wrapup', 'trustmap'].map((skill) => [skill, path.join(SKILLS, skill, 'SKILL.md')]),
+    ['record-investigation.sh', path.join(ROOT, 'scripts', 'record-investigation.sh')],
+  ];
+  for (const [skill, file] of sources) {
+    const lines = fs.readFileSync(file, 'utf8')
       .split('\n').filter(l => !/^\s*#/.test(l));
     const shared = lines.findIndex(l => l.includes('cartographer-project.sh'));
     assert.notEqual(shared, -1,

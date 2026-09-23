@@ -228,7 +228,7 @@ mislead rather than ignored.
   "sample": 3,
   "budget": 200,
   "purpose": "frakbot-pulse",
-  "corpus_root": "/Users/andyed/Documents/dev",
+  "corpus_root": "/Users/you/Documents/dev",
   "cursor": ""
 }
 ```
@@ -311,7 +311,7 @@ Identical for all three verbs; only `facts` changes shape.
   "backend": "explorer",
   "verb": "census",
   "call_id": "facts-20260908T0913-41822",
-  "corpus_root": "/Users/andyed/Documents/dev",
+  "corpus_root": "/Users/you/Documents/dev",
   "index_generation": "b41e0c7d92a55f10",
   "corpus_events": 127129,
   "indexed_docs": 127129,

@@ -184,7 +184,7 @@ appropriate substring there. Format and worked examples:
 
 `integrations/hermes/frakbot-carto-feed.sh` is a personal policy wrapper. It:
 
-- hardcodes `CARTO_ROOT` to `/Users/andyed/Documents/dev/session-cartographer`
+- defaults `CARTO_ROOT` to `$HOME/Documents/dev/session-cartographer`
   (overridable with `CARTOGRAPHER_ROOT`);
 - carries a 35-name personal project allowlist (overridable with
   `FRAKBOT_CARTO_PROJECTS`);

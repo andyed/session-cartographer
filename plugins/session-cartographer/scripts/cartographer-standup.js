@@ -3,8 +3,8 @@
  * Peer-session standup: what else is running, and what is it about to hit.
  *
  * `/focus` answers "what has happened in this PROJECT"; this answers "who ELSE
- * is in it with me right now". Those are different questions because Andy runs
- * 3-5 concurrent sessions and the corpus is already session-attributed — every
+ * is in it with me right now". Those are different questions because many users run
+ * several concurrent sessions and the corpus is already session-attributed — every
  * changelog event carries session_id, cwd, project and a summary that names the
  * file or the commit. Nothing new has to be captured; the grouping just has
  * never been exposed outside the Explorer's ConcurrentTimeline, which requires

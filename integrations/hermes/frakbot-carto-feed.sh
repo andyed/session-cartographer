@@ -12,7 +12,7 @@ set -euo pipefail
 # question has no relevance gradient to work with, so it returns *an* answer
 # with no way for this wrapper to know it is not *the* answer.
 
-CARTO_ROOT="${CARTOGRAPHER_ROOT:-/Users/andyed/Documents/dev/session-cartographer}"
+CARTO_ROOT="${CARTOGRAPHER_ROOT:-$HOME/Documents/dev/session-cartographer}"
 PULSE="$CARTO_ROOT/scripts/cartographer-pulse.sh"
 
 # The allowlist is admission, not discovery: a project absent from it is

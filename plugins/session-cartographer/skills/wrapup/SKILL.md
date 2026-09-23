@@ -217,35 +217,35 @@ If the session produced a non-obvious discovery, preference, or decision that fu
 What the digest looks like (Step 0 output — show it as-is):
 
 ```
-━━ session digest · attentional-foraging ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━ session digest · widget-api ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
   session   dbc9ac21 · claude · 1242 events
   span      2026-05-01 02:36 → 2026-05-05 15:23 UTC · 108h47m
   tempo     ▂·▁▁▁▁▁▁··█▄▂▅▄·▁▅▄▁▃▄·▃▂▂▁▁▁·▁▆  (3h24m/mark)
-  projects  attentional-foraging 1054 · approach-retreat 77 · movies-mindbendi…
+  projects  widget-api 1054 · widget-sdk 77 · docs-site 12
   activity  580 edits · 608 bash · 4 searches · 6 compactions · subagents Plan
 
   commits   26 · 15 pushes
             15 feature · 8 docs · 2 fix · 1 refactor  ▸  17 construct · 6 surg…
 
-            05-05 13:23  d6be69e  feat(ltr): typed-cascade migration + Pe…  +4724 −139
-            05-03 17:55  7de5c98  docs(lit-notes): Dumais 2010 IIiX entry…      +12 −1
+            05-05 13:23  d6be69e  feat(auth): token refresh with retry bud…  +4724 −139
+            05-03 17:55  7de5c98  docs(api): pagination cursor semantics        +12 −1
             … 20 more
 
   files     173 touched
-            docs/drafts/cikm-2026/paper-v4.md                                   ×41
+            src/auth/refresh.ts                                                 ×41
 
   recall    3 calls → 22 served · 2 used (9%)
             evt-7apd8osl9sud evt-wprsakq31ca5
 
-  leaving   attentional-foraging@feat/dd-top-…  1 uncommitted
-            approach-retreat@main               14 uncommitted
+  leaving   widget-sdk@feat/retry-budget        1 uncommitted
+            docs-site@main                      14 uncommitted
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 
 Good synthesis:
-> "Trimmed root CLAUDE.md from 20KB to 4KB by moving project map, testing, and library details to per-project CLAUDE.md files. Created CLAUDE.md for scrutinizer2025, iblipper2025, interests2025. Pruned 4 stale memories. Key insight: /focus and /remember make the project map redundant in root context — saves ~4000 tokens per turn."
+> "Trimmed root CLAUDE.md from 20KB to 4KB by moving project map, testing, and library details to per-project CLAUDE.md files. Created CLAUDE.md for widget-api, widget-sdk, and docs-site. Pruned 4 stale memories. Key insight: /focus and /remember make the project map redundant in root context — saves ~4000 tokens per turn."
 
 Bad synthesis:
 > "Worked on various improvements to the codebase. Made things more efficient. Updated some files."

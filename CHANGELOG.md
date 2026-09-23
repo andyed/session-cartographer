@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+### feat(investigate): recall past diagnoses and close the loop
+
+`/investigate` no longer prescribes a debugging procedure. It recalls earlier
+investigations and their outcomes for the symptom or files, records the new
+hypothesis, and closes it later as confirmed, refuted, or abandoned. Writes go
+through `scripts/record-investigation.sh`, which replaces the inline jq block
+that agents paraphrased into incompatible record shapes. Closing events are
+`investigation_outcome` records that name the original event id.
+
+### docs: remove maintainer-specific examples from shipped skills
+
+Shipped skills and docs no longer carry a real session digest, a home-network
+address, or maintainer anecdotes; synthetic examples replace them.
+
 ### docs(readme): lead with Turbo's measured speed; mark the Memory Desk alpha
 
 Turbo's section now opens with the recall latency and its memory cost, and the

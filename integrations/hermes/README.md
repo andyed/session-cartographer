@@ -8,8 +8,8 @@ Install the wrapper under Hermes:
 
 ```bash
 cp integrations/hermes/frakbot-carto-feed.sh \
-  /Users/andyed/.hermes/scripts/frakbot-carto-feed.sh
-chmod +x /Users/andyed/.hermes/scripts/frakbot-carto-feed.sh
+  "$HOME"/.hermes/scripts/frakbot-carto-feed.sh
+chmod +x "$HOME"/.hermes/scripts/frakbot-carto-feed.sh
 ```
 
 Attach it as the pre-script on the `frakbot-dream-molt` job. Hermes runs the

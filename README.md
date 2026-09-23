@@ -34,7 +34,7 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 **Record judgment**
 
 - **`/wrapup`** — Promote a material session into strategic memory: a [session digest](#the-session-digest), then its decisions, discoveries, and unfinished threads. Ordinary sessions are already preserved by hooks and need no wrapup.
-- **`/investigate`** — Before any bug-fix code, write a root-cause hypothesis (cause, mechanism, disproof). It is logged as a searchable event.
+- **`/investigate`** — Bring past diagnoses to a bug before fixing it, including hypotheses that were refuted; record the new root-cause hypothesis; close it as confirmed or refuted once the fix is verified.
 
 **Set up**
 
