@@ -8,7 +8,7 @@ memory events, session transcripts, hooks, and Qdrant points are not rewritten.
 
 ## Upgrade an existing installation
 
-Install 0.7.8 from the unified marketplace archive using its README. An existing
+Install 0.7.8 or later from the unified marketplace archive using its README. An existing
 local marketplace can use
 `codex plugin add session-cartographer@session-cartographer` to refresh its
 managed copy; Claude Code uses

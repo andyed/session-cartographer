@@ -1,6 +1,6 @@
 {
   "name": "session-cartographer",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Search and explore shared Claude Code and Codex session history — /remember recalls it, /carto opens the Explorer, /standup shows who else is in the repo and which files you both touch, and /turbo keeps the index warm so recall answers in about 0.3 s instead of about 12 s",
   "author": {
     "name": "Andy Edmonds"

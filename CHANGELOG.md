@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.9 — 2026-09-23
 
 ### feat(registry): ship no aliases; add `bootstrap-project-registry.js --update`
 
@@ -51,6 +51,8 @@ the same rule the hooks use to name projects.
 
 The stale-id path is shared by the importer, profile, and Explorer/Turbo search,
 and a test pins the shell search's copy. Turbo caches the list between queries.
+
+## 0.7.8 — 2026-09-23
 
 ### docs(landscape): add Michael Albers's claude-memory-context
 
