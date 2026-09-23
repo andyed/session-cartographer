@@ -39,6 +39,7 @@ for skill_file in "$ROOT"/plugins/session-cartographer/skills/*/SKILL.md; do
 done
 bash "$ROOT/scripts/copy-plugin-runtime.sh" "$PLUGIN"
 cp "$ROOT/docs/RELEASE_INSTALL.md" "$BUNDLE/README.md"
+cp "$ROOT/docs/MIGRATION_CODEX_MEMORY.md" "$BUNDLE/MIGRATION_CODEX_MEMORY.md"
 
 find "$BUNDLE" \( -name '.DS_Store' -o -name 'CLAUDE.md' \) -delete
 

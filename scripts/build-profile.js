@@ -205,10 +205,18 @@ const compactions = recent.filter((e) => String(e.type).startsWith('milestone_co
 
 // Preferences and decisions come from the whole corpus, not the window — a
 // standing instruction does not expire because it was written in March.
-const memoryEvents = own.filter((e) => e.type === 'memory_feedback' || e.type === 'memory_user');
+const staleMemoryIds = new Set(
+  (fs.existsSync(path.join(DEV, '.carto', 'codex-memory-stale-ids.txt'))
+    ? fs.readFileSync(path.join(DEV, '.carto', 'codex-memory-stale-ids.txt'), 'utf8')
+    : '').split('\n').filter(Boolean),
+);
+const memoryEvents = own.filter((e) =>
+  (e.type === 'memory_feedback' || e.type === 'memory_user'
+    || (e.type === 'memory_codex_overview' && e.memory_key?.endsWith('#User preferences')))
+  && !staleMemoryIds.has(e.event_id));
 const latestByName = new Map();
 for (const e of memoryEvents) {
-  const key = e.memory_name || e.event_id;
+  const key = e.memory_key || e.memory_name || e.event_id;
   const prev = latestByName.get(key);
   if (!prev || (toMs(e.timestamp) || 0) > (toMs(prev.timestamp) || 0)) latestByName.set(key, e);
 }
@@ -331,10 +339,12 @@ if (preferences.length) {
     minLines: 2,
     note: 'Derived from captured memory files. The memory file is authoritative; this is an index.',
     lines: preferences.slice(0, 6).map((p) => {
-      const summary = clip(String(p.summary || '').replace(/^Memory \[[a-z]+\]:\s*/, ''), 140);
+      const summary = clip(String(p.summary || '')
+        .replace(/^Memory \[[a-z]+\]:\s*/, '')
+        .replace(/^Codex memory: User preferences\.\s*-\s*/, 'Codex: '), 140);
       // Root-scoped memories carry the home directory as their "project".
       // Tagging every global preference with it is noise.
-      const scope = NON_PROJECTS.has(p.project) || /^Users-/.test(p.project || '') ? '' : p.project;
+      const scope = p.project === 'global' || NON_PROJECTS.has(p.project) || /^Users-/.test(p.project || '') ? '' : p.project;
       return `- ${summary}${scope ? ` _(${scope})_` : ''}`;
     }),
   });

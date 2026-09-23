@@ -26,11 +26,13 @@ the conventional checkout as a legacy fallback.
 node "$ROOT/scripts/cartographer-standup.js" --since 6h
 ```
 
-Reports every session active in the window: provider, projects, idle time, span,
+Reports every session with logged activity in the window: provider, projects, idle time, span,
 event count, and its last commits (subjects recovered from git when the corpus
-blanked them). `●` means active inside the last 20 minutes, `○` means gone
-quiet. Your own session is marked `(you)` — it is identified from the event this
-very invocation just logged, so it is reliable while you are the one running it.
+blanked them). `●` means an event was logged inside the last 20 minutes; `○`
+means the last logged event is older. Neither proves process liveness. Your own session is marked `(you)` when a session environment variable or
+the freshly logged invocation identifies it. Use `--me <full-session-id>` if a
+standalone shell did not log this invocation. Displayed ids expand beyond eight
+characters whenever two sessions share the same prefix.
 
 Scope it when the workspace is loud:
 
@@ -49,7 +51,8 @@ do next.
   work. Note it, do not act on it.
 - **File contention** is the strong signal. Before you edit a file listed there,
   re-read it from disk rather than trusting anything you read earlier in the
-  session, and prefer a narrow commit over a sweep.
+  session. For separate worktrees, inspect the peer's changes as well as your
+  own file; the copies can diverge without changing one another.
 
 Three things shape that list:
 
@@ -59,11 +62,14 @@ Three things shape that list:
   a file's identity is its path, and two sessions running from the workspace
   root collide on a file just as hard as two in a named repo.
 - **A worktree edit and a main-checkout edit of one repo file are one file.**
-  `repo/js/x.js` and `repo/.claude/worktrees/<name>/js/x.js` collapse to a
-  single entry, flagged `[same file, separate worktrees]`. Agent control rooms
-  put a worktree behind every task, so this is the common shape now.
-- **`--project` scopes contention as well as the roster**, so a run headed with
-  one project never names a file in another.
+  Claude's `repo/.claude/worktrees/<name>/js/x.js` layout collapses directly.
+  Codex's `~/.codex/worktrees/<id>/<repo>/js/x.js` layout is matched through
+  Git's common directory, cached per worktree. The output flags the result as
+  `[same file, separate worktrees]`. A Codex worktree that Git cannot verify is
+  counted in `NOT COUNTED`; matching directory names alone are insufficient.
+- **`--project` scopes contention as well as the roster.** A session logged
+  under the workspace-root label `dev` stays in scope when a resolved file path
+  belongs to the requested project. The roster marks that match `(file)`.
 
 ## What it could not count
 
@@ -82,6 +88,11 @@ real file deleted or renamed after the edit lands in the same bucket, and its
 collision is simply absent from the list above. A large count next to a
 suspiciously empty contention section is worth a second look.
 
+The log reports recent activity, not a live process or a shared objective. Two
+sessions in one project may be working toward different goals. The proposed
+goal-linked briefing and explicit handoff records are not yet part of this
+command.
+
 Sentinel session ids (`unknown`, `""`) are counted here and never grouped: they
 are truthy and equal to each other, so keying on them would fuse every
 unattributed event — across providers — into one phantom session that appears to
@@ -97,7 +108,8 @@ node "$ROOT/scripts/cartographer-standup.js" --commit c61e0e83 --since 24h
 ```
 
 Prints the owning session, project, timestamp, files, and how many commits that
-session landed in the window. Match on sha or on any substring of the commit
+session landed in the window. The commit itself must be inside `--since`.
+Match on sha or on any substring of the commit
 subject. A miss means the window is too short (`--since 3d`) or the commit
 predates hook coverage — say which, do not guess at authorship.
 
@@ -129,11 +141,11 @@ liveness — `●` means it was active recently, which is a different claim. Say
 | flag | default | |
 |---|---|---|
 | `--since` | `6h` | window; `30m`, `12h`, `3d` |
-| `--project` | all | restrict roster to sessions touching this project |
+| `--project` | all | restrict roster to sessions labeled with or editing files in this project |
 | `--commit` | — | attribute a sha or subject substring to its session |
 | `--live` | `20m` | idle threshold for the `●` marker |
 | `--me` | inferred | override self-identification |
 | `--all` | off | keep your own session in the peer roster |
-| `--json` | off | machine-readable; adds `unattributed_events`, per-session `edits_unresolved`, and `worktree_split`/`paths` on each contested file |
+| `--json` | off | machine-readable; adds `unattributed_events`, `worktrees_unmapped`, per-session `edits_unresolved`, and `worktree_split`/`paths` on each contested file |
 
 Read-only. Writes nothing to the changelog and emits no retrieval telemetry.

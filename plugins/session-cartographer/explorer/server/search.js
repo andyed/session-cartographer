@@ -470,6 +470,13 @@ export function computeFacets(items) {
 export async function hybridSearch(index, query, { project = '', sinceMs = null, beforeMs = null } = {}) {
   const started = performance.now();
   const FUSION_DEPTH = 500;
+  // Native Codex memory imports are append-only revisions. The small derived
+  // id list suppresses replaced/removed versions in both search ladders.
+  let staleMemory = new Set();
+  try {
+    const file = join(process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev'), '.carto', 'codex-memory-stale-ids.txt');
+    staleMemory = new Set(readFileSync(file, 'utf8').split('\n').filter(Boolean));
+  } catch { /* No import yet. */ }
   // Always run BM25 and get full pool
   const keywordStarted = performance.now();
   const bm25All = scoreBM25(index, query, { project, sinceMs, beforeMs });
@@ -523,8 +530,10 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
     });
   };
 
-  const keywordPool = windowed(bm25All.items, (entry) => entry.event);
-  const semanticPool = windowed(semanticAll, (entry) => entry.event);
+  const keywordPool = windowed(bm25All.items, (entry) => entry.event)
+    .filter((entry) => !staleMemory.has(entry.event?.event_id));
+  const semanticPool = windowed(semanticAll, (entry) => entry.event)
+    .filter((entry) => !staleMemory.has(entry.event?.event_id));
 
   const keywordLadders = bucketBySource(keywordPool.slice(0, FUSION_DEPTH));
   if (semanticPool.length > 0 || keywordLadders.length > 0) {

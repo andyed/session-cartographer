@@ -74,7 +74,7 @@ Event types are dynamic — they depend on which hooks you enable and how you us
 | `tool_bash` | tool-use hook | Bash (opt-in) |
 | `git_commit` | tool-use hook / backfill | Git commits |
 | `git_push` | tool-use hook | Git pushes |
-| `memory_*` | backfill-memories.sh | Claude Code memory files |
+| `memory_*` | backfill-memories.sh | Claude Code files and versioned Codex registry, overview, and rollout summaries; Codex source files remain authoritative |
 
 Discover your actual type distribution:
 ```bash

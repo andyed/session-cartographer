@@ -18,9 +18,9 @@
  *
  * Read-only. Never writes to the changelog or to retrieval telemetry.
  */
-import { statSync, existsSync, openSync, readSync, closeSync } from 'fs';
+import { statSync, realpathSync, existsSync, openSync, readSync, closeSync } from 'fs';
 import { execFileSync } from 'child_process';
-import { join, isAbsolute, resolve as resolvePath, relative } from 'path';
+import { join, dirname, isAbsolute, resolve as resolvePath, relative } from 'path';
 import { homedir } from 'os';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { editSummaryPaths } from './edit-paths.js';
@@ -124,20 +124,48 @@ function eventFiles(e) {
 }
 
 /**
- * Collapse a Claude Code worktree path onto the repository it belongs to.
+ * Collapse a worktree file onto the repository file it represents.
  *
  * Agent control rooms put a worktree behind every task, so the emerging default
  * collision is one agent in `repo/js/x.js` and another in
  * `repo/.claude/worktrees/<name>/js/x.js`. Those are two absolute paths and one
  * file, and keying on the path alone makes exactly the collision this tool
  * exists for invisible. The real path is kept for display; only the contention
- * key is canonical. Scoped to the `.claude/worktrees` layout on purpose —
- * a worktree parked anywhere else needs a git call to recognise, and this
- * command makes none on the roster path.
+ * key is canonical. Codex worktrees live outside the repository, so their
+ * Git common directory identifies the main checkout. Cache that lookup per
+ * worktree: a directory name alone is not proof that two repositories match.
  */
 const WORKTREE_SEGMENT = /\/\.claude\/worktrees\/[^/]+(?=\/)/;
+const CODEX_WORKTREE = /\/\.codex\/worktrees\/[^/]+\/[^/]+(?=\/)/;
+const codexWorktreeRoots = new Map();
+const unmappedWorktrees = new Set();
 function contentionKey(absolutePath) {
-  return absolutePath.replace(WORKTREE_SEGMENT, '');
+  // Git resolves macOS's /var alias to /private/var. Canonicalise an existing
+  // file first so the worktree's common-dir and a main-checkout edit share a key.
+  let filePath = absolutePath;
+  try { filePath = realpathSync(absolutePath); } catch { /* Commits may name a deleted file. */ }
+  const claudePath = filePath.replace(WORKTREE_SEGMENT, '');
+  if (claudePath !== filePath) return claudePath;
+  const match = CODEX_WORKTREE.exec(filePath);
+  if (!match) return filePath;
+  const worktreeRoot = filePath.slice(0, match.index + match[0].length);
+  if (!codexWorktreeRoots.has(worktreeRoot)) {
+    let mainRoot = null;
+    try {
+      const common = execFileSync('git', ['-C', worktreeRoot, 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+        encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+      }).trim();
+      if (common.endsWith('/.git')) mainRoot = dirname(common);
+    } catch { /* A vanished worktree cannot be matched safely. */ }
+    codexWorktreeRoots.set(worktreeRoot, mainRoot);
+    if (!mainRoot) unmappedWorktrees.add(worktreeRoot);
+  }
+  const mainRoot = codexWorktreeRoots.get(worktreeRoot);
+  return mainRoot ? join(mainRoot, filePath.slice(worktreeRoot.length)) : filePath;
+}
+
+function fileInProject(filePath, project) {
+  return filePath.split('/').includes(project);
 }
 
 function parseCommit(e) {
@@ -189,11 +217,15 @@ if (!existsSync(changelog)) {
 
 const now = Date.now();
 const all = readTail(changelog, windowMs);
+const events = all.filter((e) => {
+  const t = Date.parse(e.timestamp);
+  return Number.isFinite(t) && t >= now - windowMs && t <= now;
+});
 
 // ---- commit attribution (--commit) ------------------------------------
 if (commitQuery) {
   const q = commitQuery.replace(/^#/, '').toLowerCase();
-  const hits = all.filter((e) => e.type === 'git_commit' && (e.summary || '').toLowerCase().includes(q));
+  const hits = events.filter((e) => e.type === 'git_commit' && (e.summary || '').toLowerCase().includes(q));
   if (!hits.length) {
     console.log(`No commit matching "${commitQuery}" in the last ${opt('since', '6h')} of the event log.`);
     console.log('Widen with --since 3d, or the commit predates hook coverage.');
@@ -217,7 +249,7 @@ if (commitQuery) {
     // Only meaningful when the session is real — matching undefined against
     // undefined would gather every unattributed commit into one phantom.
     if (attributed) {
-      const sib = all.filter((x) => x.session_id === e.session_id && x.type === 'git_commit');
+      const sib = events.filter((x) => x.session_id === e.session_id && x.type === 'git_commit');
       if (sib.length > 1) console.log(`  context  ${sib.length} commits from this session in window`);
     }
     console.log();
@@ -226,11 +258,6 @@ if (commitQuery) {
 }
 
 // ---- roster -----------------------------------------------------------
-const events = all.filter((e) => {
-  const t = Date.parse(e.timestamp);
-  return Number.isFinite(t) && now - t <= windowMs;
-});
-
 // Self-identification, in order of trustworthiness. The env chain is what the
 // rest of the CLI already uses; CLAUDE_SESSION_ID is legacy and never actually
 // set, so it usually falls through. The heuristic behind it works because the
@@ -286,7 +313,8 @@ for (const e of events) {
 }
 
 let roster = [...sessions.values()].sort((a, b) => b.last - a.last);
-if (projectFilter) roster = roster.filter((s) => s.projects.has(projectFilter));
+if (projectFilter) roster = roster.filter((s) => s.projects.has(projectFilter)
+  || [...s.files.keys()].some((file) => fileInProject(file, projectFilter)));
 
 const mine = roster.find((s) => s.id === selfId);
 const peers = roster.filter((s) => s.id !== selfId || includeSelf);
@@ -301,7 +329,7 @@ const peers = roster.filter((s) => s.id !== selfId || includeSelf);
 // would be the fourth divergent copy.
 const NON_PROJECTS = nonProjectNames(process.env, dev);
 const byProject = new Map();
-for (const s of roster) for (const p of s.projects.keys()) {
+for (const s of roster) for (const p of (projectFilter ? [projectFilter] : s.projects.keys())) {
   if (isNonProject(p, NON_PROJECTS)) continue;
   if (projectFilter && p !== projectFilter) continue;
   if (!byProject.has(p)) byProject.set(p, []);
@@ -316,7 +344,7 @@ const contestedProjects = [...byProject.entries()].filter(([, ss]) => ss.length 
 // advertises as a scope, narrows this list.
 const byFile = new Map();
 for (const s of roster) for (const [key, meta] of s.files) {
-  if (projectFilter && meta.project !== projectFilter) continue;
+  if (projectFilter && meta.project !== projectFilter && !fileInProject(key, projectFilter)) continue;
   if (!byFile.has(key)) byFile.set(key, []);
   byFile.get(key).push({ s, t: meta.t, cwd: meta.cwd, path: meta.path });
 }
@@ -329,6 +357,7 @@ if (asJson) {
     window: opt('since', '6h'), generated: new Date(now).toISOString(), self: selfId,
     unattributed_events: unattributed,
     edits_unresolved: roster.reduce((n, s) => n + s.unresolvedEdits, 0),
+    worktrees_unmapped: unmappedWorktrees.size,
     sessions: roster.map((s) => ({
       id: s.id, provider: s.provider, is_self: s.id === selfId,
       last_active: new Date(s.last).toISOString(), idle_ms: now - s.last,
@@ -352,20 +381,25 @@ if (asJson) {
 }
 
 // ---- render -----------------------------------------------------------
-const short = (id) => id.slice(0, 8);
+const short = (id) => {
+  let length = 8;
+  while (length < id.length && roster.some((s) => s.id !== id && s.id.slice(0, length) === id.slice(0, length))) length++;
+  return id.slice(0, length);
+};
 const out = [];
 out.push(`STANDUP — last ${opt('since', '6h')}${projectFilter ? ` · ${projectFilter}` : ''}   ${roster.length} session${roster.length === 1 ? '' : 's'}`);
 if (mine) out.push(`you are ${short(mine.id)} · ${[...mine.projects.keys()].join(', ')}`);
 out.push('');
 
 if (!peers.length) {
-  out.push('No other sessions in this window. You have the workspace to yourself.');
+  out.push('No other logged sessions in this window' + (projectFilter ? ' for this project.' : '.'));
 } else {
   for (const s of peers) {
     const idle = now - s.last;
     const mark = idle <= liveMs ? '●' : '○';
     const self = s.id === selfId ? ' (you)' : '';
     const projs = [...s.projects.entries()].sort((a, b) => b[1] - a[1]).map(([p]) => p);
+    if (projectFilter && !s.projects.has(projectFilter)) projs.unshift(`${projectFilter} (file)`);
     out.push(`${mark} ${short(s.id)}${self}  ${s.provider.padEnd(6)} ${projs.join(' + ')}`);
     out.push(`    ${fmtAge(idle)} idle · ${fmtAge(s.last - s.first)} span · ${s.n} events` +
       (s.commits.length ? ` · ${s.commits.length} commit${s.commits.length === 1 ? '' : 's'}` : '') +
@@ -405,11 +439,12 @@ if (contestedFiles.length || contestedProjects.length) {
 // `n.name`) — but a file deleted or renamed since the edit lands here too, and
 // its collision is simply absent from the list above.
 const unresolvedTotal = roster.reduce((n, s) => n + s.unresolvedEdits, 0);
-if (unresolvedTotal || unattributed) {
+if (unresolvedTotal || unattributed || unmappedWorktrees.size) {
   out.push('');
   const notes = [];
   if (unresolvedTotal) notes.push(`${unresolvedTotal} edit candidate${unresolvedTotal === 1 ? '' : 's'} did not resolve to a file on disk (mostly the hook's non-paths; a since-deleted file also lands here)`);
   if (unattributed) notes.push(`${unattributed} event${unattributed === 1 ? '' : 's'} carry no resolvable session id and were counted, not grouped`);
+  if (unmappedWorktrees.size) notes.push(`${unmappedWorktrees.size} Codex worktree${unmappedWorktrees.size === 1 ? '' : 's'} could not be mapped to a main checkout`);
   out.push(`NOT COUNTED — ${notes.join('; ')}.`);
 }
 

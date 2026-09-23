@@ -89,6 +89,15 @@ portable CLI when the warm service is unavailable.
 Before uninstalling, invoke the skill with `disable` to opt out and stop the
 verified managed process.
 
+## Upgrading from an earlier release
+
+After updating the installed plugin, follow the
+[Codex memory migration guide](MIGRATION_CODEX_MEMORY.md)
+to import native Codex memory, optionally index it for semantic recall, and
+refresh a running Turbo process. Import is on demand; installing the plugin
+does not modify native memory files. The 0.7.8 standup improvements require no
+data migration.
+
 ## Verify the download
 
 The GitHub release includes a matching `.sha256` file:

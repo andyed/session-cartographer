@@ -985,6 +985,7 @@ rank_fuse_and_display() {
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
       -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
+      -v codex_memory_stale="$DEV/.carto/codex-memory-stale-ids.txt" \
       -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
       -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
       -v output_format="$OUTPUT_FORMAT" '
@@ -1013,6 +1014,12 @@ rank_fuse_and_display() {
     for (i = lo; i <= hi; i++) order[i] = scratch[i]
   }
   BEGIN {
+    if (codex_memory_stale != "") {
+      while ((getline stale_id < codex_memory_stale) > 0) {
+        if (stale_id != "") stale_memory[stale_id] = 1
+      }
+      close(codex_memory_stale)
+    }
     # Delta-serving: load already-served event_ids for this session
     if (served_in != "") {
       while ((getline served_line < served_in) > 0) {
@@ -1088,6 +1095,7 @@ rank_fuse_and_display() {
     # result. Without this, rank coerces to 0 → score 1/(60+0) — above every
     # legitimate rank-1 result — and fragments merge under key "" at the top.
     if (key == "" || rank !~ /^[0-9]+$/) next
+    if (key in stale_memory) next
     # RRF expects each source list to contain a document at most once. Some
     # historical logs contain duplicate rows with the same event_id; counting
     # every copy both inflates relevance and produces source labels such as

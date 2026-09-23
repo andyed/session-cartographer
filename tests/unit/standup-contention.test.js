@@ -178,6 +178,14 @@ test('--commit attributes a sha to its session even with a blank subject', () =>
   assert.match(out, /src\/shared\.js/);
 });
 
+test('--commit applies the requested time window', () => {
+  const { dir } = build();
+  assert.match(run(dir, ['--commit', 'deadbee1', '--since', '2h']), /deadbee1/);
+  const recent = run(dir, ['--commit', 'deadbee1', '--since', '30m']);
+  assert.match(recent, /No commit matching/);
+  assert.doesNotMatch(recent, /session  aaaaaaaa/);
+});
+
 test('a window with one session reports no contention rather than failing open', () => {
   const { dir } = build();
   // Narrow enough that only SOLO's last edit is in frame.
@@ -205,6 +213,15 @@ test('the workspace-root project label does not suppress a file collision', () =
   assert.deepEqual([...hit.sessions].sort(), [ROOTED, SOLO].sort());
 });
 
+test('--project retains file edits logged under the workspace root', () => {
+  const { dir } = build();
+  const data = JSON.parse(run(dir, ['--since', '6h', '--project', 'widgetworks', '--json']));
+  const hit = data.contention.files.find((f) => path.basename(f.path) === 'root-shared.js');
+  assert.ok(hit, 'the scope must include a matching file despite its dev project label');
+  assert.deepEqual([...hit.sessions].sort(), [ROOTED, SOLO].sort());
+  assert.ok(data.sessions.some((s) => s.id === ROOTED), 'the file owner must remain in the roster');
+});
+
 test('a worktree edit collides with the main checkout of the same file', () => {
   const { dir } = build();
   const data = JSON.parse(run(dir, ['--since', '6h', '--json']));
@@ -214,6 +231,67 @@ test('a worktree edit collides with the main checkout of the same file', () => {
   assert.equal(hit.worktree_split, true);
   assert.equal(hit.paths.length, 2, 'both real paths are preserved for display');
   assert.match(run(dir, ['--since', '6h']), /separate worktrees/);
+});
+
+test('a Codex worktree edit collides with its Git main checkout', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-codex-worktree-'));
+  const repo = path.join(dir, 'widgetworks');
+  const worktree = path.join(dir, '.codex', 'worktrees', '1234', 'widgetworks');
+  fs.mkdirSync(path.join(repo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'src', 'shared.js'), '// fixture\n');
+  const git = (...args) => {
+    const res = spawnSync('git', args, { encoding: 'utf-8' });
+    assert.equal(res.status, 0, `git ${args.join(' ')}: ${res.stderr}`);
+  };
+  git('-C', repo, 'init', '-q');
+  git('-C', repo, 'add', 'src/shared.js');
+  git('-C', repo, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-qm', 'fixture');
+  fs.mkdirSync(path.dirname(worktree), { recursive: true });
+  git('-C', repo, 'worktree', 'add', '--detach', worktree, 'HEAD');
+  const rows = [
+    { event_id: 'main-edit', timestamp: iso(7), type: 'tool_file_edit', provider: 'codex',
+      session_id: WT_MAIN, project: 'widgetworks', cwd: repo, summary: 'Modified: src/shared.js' },
+    { event_id: 'worktree-edit', timestamp: iso(6), type: 'tool_file_edit', provider: 'codex',
+      session_id: WT_TREE, project: 'widgetworks', cwd: worktree, summary: 'Modified: src/shared.js' },
+  ];
+  fs.writeFileSync(path.join(dir, 'changelog.jsonl'), rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+  const data = JSON.parse(run(dir, ['--project', 'widgetworks', '--since', '1h', '--json']));
+  assert.equal(data.contention.files.length, 1, 'the two Git checkouts refer to one repo file');
+  assert.deepEqual(data.contention.files[0].sessions.sort(), [WT_MAIN, WT_TREE].sort());
+  assert.equal(data.contention.files[0].path, fs.realpathSync(path.join(repo, 'src', 'shared.js')));
+  assert.equal(data.contention.files[0].worktree_split, true);
+});
+
+test('an unverified Codex worktree is reported rather than paired by directory name', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-unmapped-worktree-'));
+  const repo = path.join(dir, 'widgetworks');
+  const worktree = path.join(dir, '.codex', 'worktrees', '1234', 'widgetworks');
+  for (const root of [repo, worktree]) {
+    fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'src', 'shared.js'), '// fixture\n');
+  }
+  const rows = [repo, worktree].map((cwd, i) => ({
+    event_id: `unmapped-${i}`, timestamp: iso(5 - i), type: 'tool_file_edit', provider: 'codex',
+    session_id: i ? WT_TREE : WT_MAIN, project: 'widgetworks', cwd, summary: 'Modified: src/shared.js',
+  }));
+  fs.writeFileSync(path.join(dir, 'changelog.jsonl'), rows.map((row) => JSON.stringify(row)).join('\n') + '\n');
+  const data = JSON.parse(run(dir, ['--since', '1h', '--json']));
+  assert.equal(data.contention.files.length, 0, 'matching directory names do not prove repository identity');
+  assert.equal(data.worktrees_unmapped, 1);
+  assert.match(run(dir, ['--since', '1h']), /1 Codex worktree could not be mapped/);
+});
+
+test('displayed session ids are unique when Codex ids share eight characters', () => {
+  const { dir, repo } = build();
+  const ids = ['01a0ce54-d281-7aa2-a237-78f50d1b5cfe', '01a0ce54-d477-79c1-8723-f3baedb49b60'];
+  fs.appendFileSync(path.join(dir, 'changelog.jsonl'), ids.map((id, i) => JSON.stringify({
+    event_id: `near-${i}`, timestamp: iso(2), type: 'tool_bash', provider: 'codex',
+    session_id: id, project: 'widgetworks', cwd: repo, summary: 'Ran: true',
+  })).join('\n') + '\n');
+  const labels = [...run(dir, ['--since', '6h']).matchAll(/^[●○] (\S+)/gm)].map((match) => match[1]);
+  assert.equal(new Set(labels).size, labels.length, 'every displayed peer must have an unambiguous id');
+  assert.ok(labels.some((label) => label.startsWith('01a0ce54-d2')));
+  assert.ok(labels.some((label) => label.startsWith('01a0ce54-d4')));
 });
 
 test('an edit candidate that resolves to nothing is reported, not dropped', () => {

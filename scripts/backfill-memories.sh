@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# backfill-memories.sh — Index Claude Code memory files into cartographer event logs.
+# backfill-memories.sh — Index native Claude Code and Codex memory files.
 #
 # Reads MEMORY.md index files and individual memory .md files from
 # ~/.claude/projects/*/memory/, extracts frontmatter + content, and
@@ -147,3 +147,18 @@ done
 
 echo ""
 echo "Done. $total memories indexed, $skipped already existed."
+
+# Codex uses a different curated layout: a registry, a compact overview, and
+# per-rollout summaries. Keep its versioned importer separate from the legacy
+# Claude file format; it never writes to the native memory directory.
+CODEX_MEMORIES_DIR="${CARTOGRAPHER_CODEX_MEMORIES_DIR:-$HOME/.codex/memories}"
+if [ ! -d "$CODEX_MEMORIES_DIR" ]; then
+  echo "Codex memory import skipped: $CODEX_MEMORIES_DIR is unavailable"
+elif command -v node >/dev/null 2>&1; then
+  codex_args=()
+  $DRY_RUN && codex_args+=(--dry-run)
+  [ -n "$PROJECT_FILTER" ] && codex_args+=(--project "$PROJECT_FILTER")
+  node "$(dirname "$0")/backfill-codex-memories.js" "${codex_args[@]}"
+else
+  echo "Codex memory import skipped: Node.js is unavailable" >&2
+fi

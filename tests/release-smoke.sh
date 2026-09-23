@@ -29,6 +29,8 @@ for required in \
   "$PLUGIN/skills/setup/SKILL.md" \
   "$PLUGIN/skills/turbo/SKILL.md" \
   "$PLUGIN/scripts/cartographer-search.sh" \
+  "$PLUGIN/scripts/backfill-codex-memories.js" \
+  "$PLUGIN/scripts/cartographer-standup.js" \
   "$PLUGIN/scripts/cartographer-feed.sh" \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/cartographer-turbo.js" \
@@ -52,7 +54,8 @@ for required in \
   "$PLUGIN/src/lib/devtools-adapted/compaction-detector.js" \
   "$PLUGIN/explorer/server/recall-contract.js" \
   "$PLUGIN/explorer/server/recall.js" \
-  "$PLUGIN/project-registry.json"; do
+  "$PLUGIN/project-registry.json" \
+  "$BUNDLE/MIGRATION_CODEX_MEMORY.md"; do
   [ -f "$required" ] || { echo "Missing release file: $required" >&2; exit 1; }
 done
 

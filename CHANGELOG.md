@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### feat(memory): import curated Codex memory with revision-aware recall
+
+The native Codex registry, overview, and rollout summaries can now be imported
+as versioned events without editing Codex's source files. Repeated imports append
+only changed or removed entries. CLI and API search suppress superseded event
+IDs before ranking, and the standing profile includes current Codex preference
+context. The semantic leg is optional and refreshed explicitly with `--index`;
+the importer does not watch source files. A migration guide covers existing
+installations and a detached Turbo process.
+
+### fix(standup): scope recent evidence and identify Codex worktrees
+
+Commit attribution now respects `--since`. Project scoping retains file edits
+logged from the workspace root, and Codex worktree edits are paired with their
+main checkout only when Git verifies the common directory. Unmapped worktrees
+are counted rather than guessed. Displayed session IDs expand when eight
+characters collide, and the documentation describes logged activity without
+claiming process liveness. A separate shared-goal briefing remains a plan.
+
 ### fix(turbo): a server cannot outlive its record
 
 Six `turbo-server.js` processes were found on 2026-09-13 reparented to launchd,
@@ -25,9 +44,11 @@ seconds, and on every publish, it checks that its state dir exists and that
 `ready.json` is present and names its own pid, and exits otherwise; it no
 longer recreates a state dir removed under it. A replacement server writing
 its own pid reads the same way as a deletion, which also closes the window
-where an old server outlives `stop`'s three-second wait. The TESTING.md scratch
-recipe gains its own state dir and a `kill`. The regression test replays the
-chain by freezing a freshly spawned child past the budget.
+where an old server outlives `stop`'s three-second wait. An HTTP ready update
+checks the initial lease before writing, so it cannot recreate a ready file
+removed between startup and the listen callback. The TESTING.md scratch recipe
+gains its own state dir and a `kill`. The regression test replays the timeout
+by freezing a child before its first ready publish.
 
 ## 0.7.7 — 2026-09-13
 

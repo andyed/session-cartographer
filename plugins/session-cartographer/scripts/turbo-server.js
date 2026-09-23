@@ -24,6 +24,12 @@ const url = new URL(validateTurboUrl(process.env.CARTOGRAPHER_TURBO_URL || 'http
 const spoolOnly = process.env.CARTOGRAPHER_TURBO_SPOOL_ONLY === '1';
 
 fs.mkdirSync(paths.requests, { recursive: true, mode: 0o700 });
+// The orphan-reaping regression holds a child before its first ready publish.
+// This opt-in test seam makes that ordering independent of suite load.
+if (process.env.CARTOGRAPHER_TURBO_TEST_STARTUP_DELAY_MS) {
+  const delay = Number(process.env.CARTOGRAPHER_TURBO_TEST_STARTUP_DELAY_MS);
+  if (Number.isFinite(delay) && delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+}
 
 let events = readAllEvents();
 let index = buildIndex(events);
@@ -219,6 +225,7 @@ if (!spoolOnly) {
 // a replacement server writing its own pid is seen the same way as a deletion.
 const LEASE_INTERVAL_MS = 2000;
 let leaseLost = false;
+let readyPublished = false;
 
 function loseLease(reason) {
   if (leaseLost) return;
@@ -238,6 +245,10 @@ function checkLease() {
 
 function publishReady() {
   if (leaseLost) return;
+  // The HTTP listen callback may arrive after a caller removed or replaced the
+  // initial ready file. An update must honor that lost lease, not recreate it.
+  if (readyPublished) checkLease();
+  if (leaseLost) return;
   // Never resurrect a state dir that was removed under us — that is exactly the
   // orphan shape. `writeJsonAtomic` would mkdir it back.
   if (!fs.existsSync(paths.state)) return loseLease('state dir is gone');
@@ -252,6 +263,7 @@ function publishReady() {
     http: httpStatus,
     spool: paths.requests,
   });
+  readyPublished = true;
 }
 
 publishReady();

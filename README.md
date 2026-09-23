@@ -15,7 +15,7 @@ Fusion — then facets the results by project, event type, source, and time.
 - **`/turbo` in Claude Code or `$session-cartographer:turbo` in Codex** — Discover, enable, disable, or inspect the experimental warm recall backend. One opt-in covers ordinary `/remember` queries from both agents.
 - **`$session-cartographer:setup` in Codex** — Diagnose semantic-search reachability and, with explicit consent, add least-privilege access to local Qdrant and the embedding server. Sandbox denial is reported as configuration—not as a service outage.
 - **`/focus`** — Orient on a project before diving in: recent milestones and commits, plus cross-project research threads and recurring maneuvers from the co-occurrence graph.
-- **`/standup`** — The peer view: which other sessions are live, in which repos, and — the part that matters — which **files two sessions are both editing**. `/focus` answers what has happened in a project; this answers who else is in it with you. `--commit <sha>` names the session behind a commit that landed underneath you. Reads the same session-attributed events the hooks already write; captures nothing new.
+- **`/standup`** — The peer view: which sessions were recently active, in which repos, and which files more than one session touched in the selected window. `--commit <sha>` names the logged session behind a recent commit. It reads the same session-attributed events the hooks already write. An explicit [shared-goal briefing](docs/STANDUP_SHARED_GOAL_PLAN.md) is planned; project overlap alone does not establish a common objective.
 - **`/carto`** — Visual Explorer with timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type. Click a timeline dot to jump to that result.
 - **`/wrapup`** — Promotes a material session into strategic memory. It renders a [session digest](#the-session-digest), then records decisions, discoveries, and unfinished threads with separate, verified receipts for the durable JSONL write and semantic index. Structured `decisions[]` feed the standing profile; ordinary sessions remain preserved by transcripts and hooks without requiring manual synthesis.
 - **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus: the source-control orgs, LAN hosts, buckets, data stores, and non-standard CLIs your work actually touches, each with a hit count. **Not a replacement for Claude Code's built-in setup wizard** — on a fresh install that wizard is the better tool, since it scans the machine directly and needs no history. Check what it scanned before accepting its write, though: a run scoped to one project — or to a git worktree, which gets its own transcript directory — pins the otherwise-dynamic `Trusted repo` and `Primary use` entries to that project, at user scope. This is the *update* path: once a corpus exists, proposals are usage-weighted (a repo you pushed to twenty-seven times outranks one that merely exists under `$HOME`), span Codex as well as Claude sessions, and are diffed against your current settings so a re-run proposes only the delta. On a thin corpus it says so and hands you a fill-in template instead of a confident-looking panel built from forty events.
@@ -322,7 +322,7 @@ Session Cartographer is installed. Skills:
 - `/carto` — open the Explorer web app for visual browsing
 - `/wrapup` — promote a material session into strategic memory (decisions, discoveries, next steps)
 - `/investigate <bug>` — root-cause diagnosis gate before writing fix code
-- `/standup` — who else is working right now, and which files you are both in
+- `/standup` — recent peer activity and shared-file evidence; not process liveness
 - `/trustmap` — derive or update auto mode's `autoMode.environment` from the corpus
 
 When you need context from a previous conversation, use `/remember`. The skill
@@ -378,8 +378,11 @@ To backfill existing history:
 # Git commits across your repos (fast, no Qdrant needed)
 bash scripts/backfill-git-history.sh --since 2026-01-01
 
-# Claude Code memory files (feedback, project notes)
+# Native memory: Claude Code files plus the Codex registry and rollout summaries
 bash scripts/backfill-memories.sh
+
+# Optional: add current Codex memory entries to Qdrant when its services run
+node scripts/backfill-codex-memories.js --index
 
 # Historical transcripts into Qdrant (requires Qdrant + embedding server)
 bash scripts/retro-index.sh --limit-days 30
@@ -393,6 +396,13 @@ node scripts/reconstruct-history.js
 # this catches turns indexed before intent classification was added.
 node scripts/backfill-prompt-intents.js
 ```
+
+Rerun `backfill-memories.sh` after native memory files change. The Codex import
+appends revisions to the log and keeps a derived stale-id list so replaced or
+removed entries do not appear in normal recall. Run the optional `--index`
+command again to refresh semantic recall. Neither command edits Codex memory
+files; import is currently run on demand rather than watched automatically.
+For existing installations, follow the [Codex memory migration guide](docs/MIGRATION_CODEX_MEMORY.md).
 
 ## Footprint
 

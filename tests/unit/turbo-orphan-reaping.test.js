@@ -101,6 +101,7 @@ function commandOf(pid) {
 
 test('start reaps the child it spawned when readiness times out', async () => {
   const ws = await isolated();
+  ws.env.CARTOGRAPHER_TURBO_TEST_STARTUP_DELAY_MS = '10000';
   let pid = null;
   try {
     // Run `start` and, the moment it has recorded its child, freeze that child
