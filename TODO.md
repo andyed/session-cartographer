@@ -118,11 +118,11 @@ SC has never been benchmarked against LongMemEval. It probably shouldn't be the 
 
 MenteDB is a Rust-native cognition-aware DB engine for AI agent memory. Different consumer (LLMs in a single forward pass, not humans browsing history), but several architectural choices map cleanly to SC's gaps. Each design choice below targets a specific LongMemEval failure mode.
 
-- **[ ] Temporal reasoning — `--since` / `--before` filters + recency-aware ranking.** *Andy's first pick (2026-04-24).* Time-window filtering as a first-class CLI + Explorer concept. Recency boost in RRF formula (small weight, time-decayed score). Time-aware query rewriting in `/remember` ("last week" → `--since 7d`). Targets the LongMemEval temporal-reasoning category.
+- **[ ] Temporal reasoning — `--since` / `--before` filters + recency-aware ranking.** *Maintainer's first pick (2026-04-24).* Time-window filtering as a first-class CLI + Explorer concept. Recency boost in RRF formula (small weight, time-decayed score). Time-aware query rewriting in `/remember` ("last week" → `--since 7d`). Targets the LongMemEval temporal-reasoning category.
 - **[ ] Delta serving — track what `/remember` already returned in this session, only send what's new on subsequent calls.** MenteDB claims ~90% retrieval-token reduction across multi-turn conversations. For SC: maintain a per-session bloom filter or LRU of returned event_ids; default `/remember` filters those out unless `--all` requested. Targets multi-session reasoning + token economy.
 - **[ ] U-curve context assembly — when `/remember` returns N results, place highest-confidence at start AND end of the returned block, supporting context in middle.** Research-backed: that's how transformer attention actually works (Liu et al. "Lost in the Middle"). Cheap reorder, no new data, real comprehension delta.
 - **[ ] Phantom detection — when a `/remember` query mentions an entity SC has zero info on, flag the gap rather than return weak top-K matches.** Auto-memory hooks could emit these as "knowledge to capture next session" signals. Targets LongMemEval abstention category — answers "is the gap because the question is bad, or because we genuinely don't know?"
-- **[ ] Pain signals + emotional valence on auto-memory feedback entries.** Existing `feedback_*.md` memories already encode "this approach failed" lessons. Extending with explicit decay (exponential, recent pain weighted higher) and surfacing them via spreading activation would be a small change with big "last time you tried X, here's what broke" payoff. SC adjacent — most relevant in Andy's auto-memory layer.
+- **[ ] Pain signals + emotional valence on auto-memory feedback entries.** Existing `feedback_*.md` memories already encode "this approach failed" lessons. Extending with explicit decay (exponential, recent pain weighted higher) and surfacing them via spreading activation would be a small change with big "last time you tried X, here's what broke" payoff. SC adjacent — most relevant in the user's auto-memory layer.
 - **[ ] Knowledge-update edges — when a memory is contradicted or superseded, mark it (Supersedes / Contradicts edge equivalent) so retrieval can suppress stale beliefs without losing them.** Jsonl is append-only, so "edges" are virtual. Could be implemented as a sidecar `event_relations.jsonl` consumed at query time. Targets knowledge-update category. Larger scope.
 
 ### Vision-stage MenteDB ideas (track, don't build)
@@ -137,7 +137,7 @@ Aspirational research targets in MenteDB's `VISION.md`. None are shipping; worth
 
 ### Open question for SC's strategic scope
 
-If SC's role expands from "human session search" to "Claude's primary memory while in a long conversation," LongMemEval becomes the actual benchmark. Worth a sandbox test against a single project (Psychodeli or muriel) where MenteDB's ingestion/retrieval is compared to `/remember`'s on the same questions, to size the gap.
+If SC's role expands from "human session search" to "Claude's primary memory while in a long conversation," LongMemEval becomes the actual benchmark. Worth a sandbox test against a single project (one busy project) where MenteDB's ingestion/retrieval is compared to `/remember`'s on the same questions, to size the gap.
 
 ## Topic tracks — the missing pyramid layer (added 2026-08-14)
 
@@ -147,10 +147,10 @@ SC already instantiates most of that thesis, and converged independently on the 
 
 The ablation is the reason to care. Removing the upper layers and running records-only drops their average from 62.74 → 44.93 — a bigger delta than removing RL training (→ 48.39) or removing the navigation interface entirely (→ 54.08). Multi-granularity is doing more work than either of the headline contributions.
 
-**Andy's framing (2026-08-14): topic tracks are a dreaming outcome, not a write path.** That resolves the tension that has blocked this. Tracks are consolidated, evolving, *rewritten* narratives — which reads as a direct violation of SC's append-only discipline until you notice they aren't a log at all. They're the output of a background consolidation pass over the log. The JSONL stays immutable; dreaming produces derived, fully regenerable track files. Delete them and the next dream rebuilds them. Same relationship `profile.md` already has to the corpus, one granularity down.
+**Maintainer's framing (2026-08-14): topic tracks are a dreaming outcome, not a write path.** That resolves the tension that has blocked this. Tracks are consolidated, evolving, *rewritten* narratives — which reads as a direct violation of SC's append-only discipline until you notice they aren't a log at all. They're the output of a background consolidation pass over the log. The JSONL stays immutable; dreaming produces derived, fully regenerable track files. Delete them and the next dream rebuilds them. Same relationship `profile.md` already has to the corpus, one granularity down.
 
 This also connects three things already on this list that have been circling the same idea:
-- **Dream Engine** (MenteDB vision, above) — background analogical recombination across memory clusters. Tracks are the concrete, buildable version: not "your deployment pattern is structurally identical to your migration pattern," just "here is the running narrative of the psychodeli audio work, with links down to the events."
+- **Dream Engine** (MenteDB vision, above) — background analogical recombination across memory clusters. Tracks are the concrete, buildable version: not "your deployment pattern is structurally identical to your migration pattern," just "here is the running narrative of one project's audio work, with links down to the events."
 - **Topics facet** (mindmap-mcp section, below) — its cohesion filter (`cosineExcluding`, candidates surviving only if members are similar *after* removing the shared term) is the natural selector for *which* topics deserve a track. Don't dream 200 tracks; dream the ~20 that cohere.
 - **Knowledge-update edges** — supersession has no home in an append-only log. It has an obvious home in a track: the consolidation pass is exactly where "he said X in March, then Y in June" gets resolved into one current narrative, without mutating either event.
 
@@ -161,7 +161,7 @@ Sketch, when it gets built:
 - [ ] **Supersession resolution inside the pass** — when two events make contradictory claims about the same thing, the track states the current one and links both.
 - [ ] **A `read_file`-shaped entry point** so `/remember` can open a track by name, the way it now reads `profile.md`.
 
-Open question worth settling before building: whether tracks are per-project (cheap, obvious, mostly redundant with `/focus`) or per-*topic-across-projects* (the actual gap — "the AOI work" spans approach-retreat, allserp-paper, and cikm-leakycursor, and no current lens holds that together). The co-occurrence graph's `--related` already knows those cross-project threads exist; it just has nowhere to write the narrative down.
+Open question worth settling before building: whether tracks are per-project (cheap, obvious, mostly redundant with `/focus`) or per-*topic-across-projects* (the actual gap — "the AOI work" spans cursor-lib, paper-a, and paper-c, and no current lens holds that together). The co-occurrence graph's `--related` already knows those cross-project threads exist; it just has nowhere to write the narrative down.
 
 ---
 
@@ -174,7 +174,7 @@ Open question worth settling before building: whether tracks are per-project (ch
 - [ ] **Transcript match display** — transcript search results show raw JSONL (`{"parentUuid":"...","isSidechain":false,...}`) instead of the conversation text. Need to extract the human-readable content from the message payload and display it as a summary, same as event log results.
 
 ## Search
-- [ ] Stemming / lemmatization — collapse word variants in autocomplete (refactor/refactored/refactoring → one entry). Two approaches: (a) Porter stemmer at index time, classical NLP. (b) Embed top-N suggestions via mxbai-embed-large (already on :8890), cluster by cosine similarity, show one representative per cluster. Option b handles domain terms (psychodeli/psychodeliplus) that stemmers can't.
+- [ ] Stemming / lemmatization — collapse word variants in autocomplete (refactor/refactored/refactoring → one entry). Two approaches: (a) Porter stemmer at index time, classical NLP. (b) Embed top-N suggestions via mxbai-embed-large (already on :8890), cluster by cosine similarity, show one representative per cluster. Option b handles domain terms (widget/widgetplus) that stemmers can't.
 - [ ] Stopword model refinement — co-terms flyout still surfaces noise. Consider TF-IDF distinctiveness scoring or a learned stopword list from the index.
 - [ ] `--list-types` — auto-discover event types from JSONL files
 - [ ] Wildcard expansion feedback — show "expanded to N terms" in results meta
@@ -197,7 +197,7 @@ Open question worth settling before building: whether tracks are per-project (ch
   - **120s execSync timeout** in `scripts/eval-search.js` gets hit by every query that lands in the transcript BM25 path — 5 of 9 queries time out with transcripts enabled, all reporting 0/0/0. Either bump to 600s or split transcript scoring into its own harness.
 - [ ] Query rewrite — synonym expansion (builds on phrase matching above)
 - [ ] **Transcript BM25 speed vs recall tradeoff** — Transcript search is the recall backstop: queries like "facets" that never appear in event logs only surface through raw transcript grep. But BM25-scoring full transcript files is slow (2-3s per file × N files). With `LC_ALL=C`, macOS grep silently drops files with multibyte (finds 0). Without it, grep takes 10s+ for file identification alone. `rg` solves the file-finding (0.5s, unicode-safe) but the per-file awk BM25 scoring is the real bottleneck. Current mitigation: cap at 20 transcript files. Proper fix needs a truth dataset to evaluate recall/speed tradeoffs — build this as part of the GH Pages demo with sample data (see backlog). Options: (a) pre-index transcript text into the event log at ingest time, (b) tiered search — fast path first, transcript fallback only on zero results, (c) transcript-level IDF precomputation.
-- [ ] **Turn off the local Turbo holdout once the CLI cohort reaches 50.** Andy-machine-only launchd job `com.andyed.carto-holdout` (script `~/.config/session-cartographer/holdout.sh`, installed 2026-09-17) flips the shared Turbo preference off at p=0.20 every 15 min so ordinary `/remember` calls fill the CLI cohort for the `docs/TURBO_MODE_SPEC.md` graduation gate. It idles itself at 50 CLI calls but stays loaded. When `node scripts/hit-rate-report.js` shows `cli` ≥ 50 calls: judge the gate on matched cohorts, then `launchctl unload -w ~/Library/LaunchAgents/com.andyed.carto-holdout.plist` and delete the plist + script + `holdout.state`/`holdout.log`. Pause without removing: `touch ~/.config/session-cartographer/holdout.off`. Never port this into the plugin or `config.json` — it must not ship.
+- [ ] **Turn off the local Turbo holdout once the CLI cohort reaches 50.** Maintainer-machine-only launchd job (the local Turbo holdout agent; script `~/.config/session-cartographer/holdout.sh`, installed 2026-09-17) flips the shared Turbo preference off at p=0.20 every 15 min so ordinary `/remember` calls fill the CLI cohort for the `docs/TURBO_MODE_SPEC.md` graduation gate. It idles itself at 50 CLI calls but stays loaded. When `node scripts/hit-rate-report.js` shows `cli` ≥ 50 calls: judge the gate on matched cohorts, then `launchctl unload -w` its LaunchAgent plist and delete the plist + script + `holdout.state`/`holdout.log`. Pause without removing: `touch ~/.config/session-cartographer/holdout.off`. Never port this into the plugin or `config.json` — it must not ship.
 - [ ] **Live `/remember` precision pass from explicit-use evidence.** Baseline from 2026-07-26: 25/1,317 served rows had an explicit `--touch`, MRR was 0.113 across 56 attributed calls, and 42 calls recorded no used result. Treat that as a conservative instrumentation baseline—not a 1.9% effectiveness claim—because older consumers did not reliably touch results. The qualitative failure is nevertheless clear: exact hashes (`26815f9 703c6d7`) returned the two right commits immediately, while “another agent checked in my changes” repeatedly filled the result set with generic agent milestones, research, and weak lexical matches. Turn that incident into a regression pack and address it as one coherent pass:
   1. Route commit/ownership queries toward `git_commit` and tool-use evidence while down-ranking research and generic agent-completion milestones; keep procedural queries on the maneuver map.
   2. Collapse duplicate event provenance and repeated source labels before presentation so one event occupies one result slot.
@@ -222,8 +222,8 @@ Reference: https://github.com/metalaureate/tend-cli — pull-based status board 
 
 - [ ] **Board view in Explorer** — Aggregate existing event logs into one glanceable row per project, sorted by last activity. Layout (stealing directly from tend):
   ```
-  1. scrutinizer2025       ◐ working   shader: foveation ramp fix      (4m ago)
-  2. psychodeli-webgl      ◌ idle      7 files changed                 (46m ago)
+  1. tracker2025       ◐ working   shader: foveation ramp fix      (4m ago)
+  2. widget-web      ◌ idle      7 files changed                 (46m ago)
   3. session-cartographer  ◉ done      feat: concurrent timeline       (1d ago)
   ```
   Data sources already exist: `project-registry.json` for the project list, `isOngoingFromActivities()` in compaction-detector for state, last event/commit for the summary line.
@@ -237,14 +237,14 @@ Reference: https://github.com/metalaureate/tend-cli — pull-based status board 
 **Explicitly NOT taking from tend-cli:**
 - `.tend/events` per-repo append-only logs (conflicts with cartographer's central event pipeline)
 - Manual `tend emit working/done/stuck` protocol in AGENTS.md (hooks already infer this)
-- `relay.tend.cx` hosted service (Andy's sessions all run on one Mac; no remote agents)
+- `relay.tend.cx` hosted service (the maintainer's sessions all run on one Mac; no remote agents)
 - `tend init` scaffolding per repo (cartographer uses a single registry)
 
 ## Topics Facet (mindmap-mcp-inspired)
 
 Reference: https://github.com/ravi-labs/mindmap-mcp-server (`src/graph.ts`), reviewed 2026-06-12. Cross-tool memory MCP server; weak search but a good zero-dependency topic-graph engine. The *storage and capture model* doesn't fit (LLM-written summaries, JSON-file-per-thread, capture discipline required — passive hooks are SC's moat), but the topic extraction maps cleanly onto SC's corpus.
 
-- [ ] **Topics facet in Explorer.** *Andy's pick (2026-06-12).* Auto-derive recurring topic labels across events/sessions and surface them as a facet pill row (and eventually a graph lens). Algorithm to port from `graph.ts`:
+- [ ] **Topics facet in Explorer.** *Maintainer's pick (2026-06-12).* Auto-derive recurring topic labels across events/sessions and surface them as a facet pill row (and eventually a graph lens). Algorithm to port from `graph.ts`:
   1. Per doc: TF-IDF top-10 terms, field-weighted (title ×3, tags ×2, body ×1). SC already has the TF-IDF machinery in `explorer/server/bm25.js`.
   2. Category candidates: terms appearing in ≥3 docs and ≤60% of corpus, shortlist top-40 by document frequency.
   3. **Cohesion filter — the part worth stealing:** a candidate survives only if its member docs are cosine-similar to each other *after excluding the shared term* (`cosineExcluding`, threshold ~0.012). Kills spurious categories whose members share nothing else. This directly addresses the existing "Stopword model refinement" TODO — cohesion scoring is the principled version of a learned stopword list.
@@ -264,8 +264,8 @@ Reference: https://github.com/ravi-labs/mindmap-mcp-server (`src/graph.ts`), rev
 Reference: [DeepBlueDynamics/lume](https://github.com/DeepBlueDynamics/lume) — Rust hybrid search with a Semantic Knowledge Graph layer (entity co-occurrence + significance weighting). Built `scripts/cooccurrence-graph.js` (2026-06-19): one G² engine, two graphs over **structured entities** (never tokenized prose). Zero external deps (fs/path/os only), ~46 KB artifact, the whole maneuver layer is **3.3 KB**.
 
 **Shipped (wired into `/focus` + `/remember`; documented in `docs/COOCCURRENCE.md`):**
-- [x] **Project co-activity graph** — document = calendar DAY, entity = project. `--related <project>` surfaces cross-project research threads (approach-retreat ↔ allserp-paper ↔ ettac-paper). Day-grain is load-bearing: 97% of sessions are single-project, so same-session co-occurrence is dead — the cross-thread signal lives in same-DAY co-activity (Andy's 3-5 concurrent sessions/day).
-- [x] **Maneuver map** — entities = tech-signals from a signature catalog (ff-merge, gh-release, cloudflare-pages, netlify, overleaf-sync…) matched against `summary + files_changed`. Two views: *composition* (signal×signal, doc=session — which markers compose one maneuver; e.g. gh-release+version-tag+lfs = the Psychodeli DMG release) and *transfer* (project×project, doc=signal — which projects share a procedure; the two mindbendingpixels sites share the CF-deploy; cikm ↔ ettac share the overleaf dance). `--maneuvers <project>` = a project's profile + transfer peers.
+- [x] **Project co-activity graph** — document = calendar DAY, entity = project. `--related <project>` surfaces cross-project research threads (cursor-lib ↔ paper-a ↔ paper-b). Day-grain is load-bearing: 97% of sessions are single-project, so same-session co-occurrence is dead — the cross-thread signal lives in same-DAY co-activity (typically 3-5 concurrent sessions/day).
+- [x] **Maneuver map** — entities = tech-signals from a signature catalog (ff-merge, gh-release, cloudflare-pages, netlify, overleaf-sync…) matched against `summary + files_changed`. Two views: *composition* (signal×signal, doc=session — which markers compose one maneuver; e.g. gh-release+version-tag+lfs = a desktop app's DMG release) and *transfer* (project×project, doc=signal — which projects share a procedure; the two mindbendingpixels sites share the CF-deploy; paper-c ↔ paper-b share the overleaf dance). `--maneuvers <project>` = a project's profile + transfer peers.
 - [x] **Dunning G² over lume's z-score+tanh.** Key finding from prototyping on the real corpus: lume's significance formula *saturates* — for a perfectly-correlated pair (a=b=k) the z-score collapses to √N regardless of count, so a 3-session fluke and a 30-session pattern score identically. G² ("surprise and coincidence," Dunning 1993) scales with evidence.
 
 **Deferred:**

@@ -42,7 +42,7 @@ These render session activity for human comprehension.
 
 | Project | Stars | Approach | Key Differentiator |
 |---------|-------|----------|--------------------|
-| [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) | 726 | Tauri desktop app, React UI | Most full-featured viewer. SessionBoard multi-lane timeline (Andy contributed), zoom levels, analytics. |
+| [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) | 726 | Tauri desktop app, React UI | Most full-featured viewer. SessionBoard multi-lane timeline (the maintainer contributed), zoom levels, analytics. |
 | [ccstat](https://github.com/ktny/ccstat) | 16 | TypeScript CLI, color-coded timeline blocks | Lightweight. No desktop app. Git integration for project grouping. |
 | [claude-history-explorer](https://github.com/adewale/claude-history-explorer) | 18 | Python CLI, rich terminal, narrative generation | "Wrapped" yearly stats. Detects concurrent instances. |
 | [claude-code-otel](https://github.com/ColeMurray/claude-code-otel) | Low | OTel Collector → Prometheus + Loki + Grafana | Enterprise observability stack. Real-time dashboards. |
@@ -131,12 +131,12 @@ Current `/remember` uses grep. Upgrading to semantic search:
 
 | Option | Pros | Cons |
 |--------|------|------|
-| **Qdrant (interests2025 infra)** | Already running locally (port 6333), embedding server at 8890, proven with 21k+ browsing items | Couples to interests2025 runtime |
+| **Qdrant (notes2025 infra)** | Already running locally (port 6333), embedding server at 8890, proven with 21k+ browsing items | Couples to notes2025 runtime |
 | **sqlite-vec (episodic-memory pattern)** | Self-contained, no external services | Less capable than Qdrant, another DB to maintain |
 | **Transformers.js (local)** | No server dependency | Slower, M3 resource concerns |
 | **memsearch approach (Milvus)** | Battle-tested hybrid search | Heavy infrastructure for this use case |
 
-Recommended: **Qdrant as a service dependency, not a code dependency.** Call the existing embedding server at 8890, store in a dedicated Qdrant collection (`session-cartographer`). Keep interests2025 as infrastructure, not imported code.
+Recommended: **Qdrant as a service dependency, not a code dependency.** Call the existing embedding server at 8890, store in a dedicated Qdrant collection (`session-cartographer`). Keep notes2025 as infrastructure, not imported code.
 
 ---
 

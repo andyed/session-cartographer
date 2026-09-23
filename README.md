@@ -90,7 +90,7 @@ This is a real session from this repository:
             README.md                                                           ×9
             explorer/server/index.js                                            ×4
 
-  leaving   sciprogfi-web@main                  37 uncommitted
+  leaving   docs-site@main                      37 uncommitted
             session-cartographer@main           2 uncommitted
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -240,10 +240,10 @@ file and changes from HEAD; the link is not a historical file snapshot.
 
 ```bash
 # Cross-project threads co-active with a project (shared days · G²)
-node scripts/cooccurrence-graph.js --related approach-retreat
+node scripts/cooccurrence-graph.js --related widget-api
 
 # A project's maneuver profile + the projects that share it (shared signals · G²)
-node scripts/cooccurrence-graph.js --maneuvers psychodeli
+node scripts/cooccurrence-graph.js --maneuvers widget
 
 # Which projects run a maneuver, and what it composes with (powers /remember "how do I deploy X")
 node scripts/cooccurrence-graph.js --signal cloudflare
@@ -275,11 +275,11 @@ claude plugin install session-cartographer@session-cartographer
 
 ### First, if you are not the maintainer
 
-This repo was built on one machine, and some of it ships configured for that
-machine: `project-registry.json` carries the maintainer's project aliases, the
-corpus root defaults to `~/Documents/dev`, and `integrations/hermes/` is a
-personal wrapper rather than a supported entry point. Create a user-owned
-project registry to replace the shipped aliases. Git backfill imports configured
+This repo was built on one machine, and a few defaults reflect it: the corpus
+root defaults to `~/Documents/dev` (set `CARTOGRAPHER_DEV_DIR` to change it).
+The shipped project registry is empty; derive your own family aliases with
+`node scripts/bootstrap-project-registry.js --dry-run`, and keep them current
+with `--update`. Git backfill imports configured
 corpus owners by default; review that owner list and a `--dry-run` before
 importing history. Use `--author "Name One,Name Two"` to override the list for
 one run, or `--all-authors` to deliberately include every contributor. Nothing

@@ -304,7 +304,7 @@ test('an edit candidate that resolves to nothing is reported, not dropped', () =
 test('--project matches a file by repository root, not by any path segment', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-segment-'));
   // A repo with a subdirectory that shares its name with another project, and
-  // a repository nested one level down (interests/interests2025 shape).
+  // a repository nested one level down (notes/notes2025 shape).
   const repo = path.join(dir, 'widgetworks');
   const nested = path.join(dir, 'family', 'gizmo');
   fs.mkdirSync(path.join(repo, '.git'), { recursive: true });

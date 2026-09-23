@@ -3,13 +3,10 @@
 #
 # WHY THIS EXISTS
 #
-# The registry that ships in this repo is the MAINTAINER's: ten aliases naming
-# his repositories. Every adopter of the public plugin installs it. An alias the
-# resolver does not know falls through as a literal project name rather than
-# erroring, so an adopter who runs `--project devtools` gets zero results for a
-# scope they believe they set — a silent wrong answer, not a failure. Worse,
-# the shipped `frakbot` alias expands to `openclaw`, which this project treats
-# as deprecated archive material that is never a valid source.
+# Aliases describe one person's projects, so the registry that ships in the
+# public plugin is empty and each user derives their own
+# (bootstrap-project-registry.js). An alias the resolver does not know falls
+# through as a literal project name rather than erroring.
 #
 # So: a user-level registry that REPLACES the shipped one, resolved in exactly
 # one place. Four consumers (cartographer-search.sh, cartographer-feed.sh,
@@ -31,18 +28,18 @@
 #   3. <dir of this script>/../project-registry.json   the shipped default
 #
 # LAYERS DO NOT MERGE. A user registry replaces the shipped one wholesale.
-# Merging would leave `frakbot -> openclaw` reachable in an adopter's install
-# forever, and an alias the user deliberately deleted would keep working.
+# Merging would keep a shipped alias reachable in every install forever, and
+# an alias the user deliberately deleted would keep working.
 #
 # ERRORS ARE LOUD. A registry that is present but unparseable returns nonzero
 # instead of falling back to the shipped file — a silent fallback would answer
-# an adopter's query with the maintainer's aliases, which is the exact failure
+# a query from a different registry than the one the user wrote, the exact failure
 # this file was written to remove.
 #
 # Usage:
 #   . "$(dirname "$0")/project-registry.sh"
 #   REGISTRY=$(cartographer_registry_path) || exit 3
-#   cartographer_expand_alias psychodeli        # one member per line
+#   cartographer_expand_alias widget            # one member per line
 #
 #   bash scripts/project-registry.sh --path     # print the resolved path
 #   bash scripts/project-registry.sh --aliases  # list alias keys

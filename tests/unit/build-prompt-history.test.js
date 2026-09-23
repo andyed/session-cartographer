@@ -25,7 +25,7 @@ const MS = Date.UTC(2026, 2, 1, 12, 0, 0);
 const HISTORY = [
   { display: 'why does the fusion awk drop rows with an empty key', pastedContents: {}, timestamp: MS, project: '/Users/x/Documents/dev/session-cartographer', sessionId: SESSION },
   { display: 'first line\nsecond line\twith a tab\r\nand a return', pastedContents: {}, timestamp: MS + 1000, project: '/Users/x/Documents/dev/session-cartographer', sessionId: SESSION },
-  { display: '[Pasted text #3 +412 lines]', pastedContents: {}, timestamp: MS + 2000, project: '/Users/x/Documents/dev/psychodeli-webgl-port', sessionId: GONE },
+  { display: '[Pasted text #3 +412 lines]', pastedContents: {}, timestamp: MS + 2000, project: '/Users/x/Documents/dev/gadget-web', sessionId: GONE },
   // junk: empty, whitespace-only, and a bare slash command under 4 chars
   { display: '', pastedContents: {}, timestamp: MS + 3000, project: '/Users/x/Documents/dev', sessionId: SESSION },
   { display: '   \n  ', pastedContents: {}, timestamp: MS + 4000, project: '/Users/x/Documents/dev', sessionId: SESSION },

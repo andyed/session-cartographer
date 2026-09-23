@@ -37,7 +37,7 @@ characters whenever two sessions share the same prefix.
 Scope it when the workspace is loud:
 
 ```bash
-node "$ROOT/scripts/cartographer-standup.js" --project psychodeli-webgl-port --since 12h
+node "$ROOT/scripts/cartographer-standup.js" --project widget-web --since 12h
 ```
 
 ## The part that matters

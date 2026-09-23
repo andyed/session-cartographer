@@ -77,7 +77,7 @@ The repaired static demo build and browser journey also passed under Node 22 (7 
 
 ## Resume and open decisions
 
-Development can resume from the canonical Cartographer checkout on `feat/carto-codex-port`; the isolated worktree still hosts the preview. The task's original Histospire directory is unrelated to the implementation. The session digest attributes the task to that starting directory and leaves file paths unresolved; Git and the preview listener identify the actual Cartographer implementation. Correcting hook/digest project attribution is separate follow-up work.
+Development can resume from the canonical Cartographer checkout on `feat/carto-codex-port`; the isolated worktree still hosts the preview. The task's original starting directory is unrelated to the implementation. The session digest attributes the task to that starting directory and leaves file paths unresolved; Git and the preview listener identify the actual Cartographer implementation. Correcting hook/digest project attribution is separate follow-up work.
 
 The user rejected the permanent Save / Return / Undo row, repeated date labels, dead-looking controls, and navigation detached from its view. Preserve the compact range editor, single date label, direct range manipulation, and local Tasks / Files / Activity navigation when continuing.
 

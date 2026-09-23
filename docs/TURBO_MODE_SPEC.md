@@ -180,8 +180,8 @@ Request:
 {
   "contract_version": 1,
   "call_id": "recall-...",
-  "query": "psychodeli audio reactivity",
-  "project": "psychodeli-audio-lab",
+  "query": "widget audio reactivity",
+  "project": "widget-audio-lab",
   "since": "30d",
   "before": "",
   "limit": 15,
@@ -452,7 +452,7 @@ The warm service now answers a second question class alongside recall.
 aggregates over the same resident corpus — `census`, `tempo`, and `delta` — for
 callers that need to know what is *true* of the corpus rather than what is
 *relevant* to a phrase. A ranking engine asked a census question has no
-relevance gradient to work with; the measured case is FrakBot's daily pulse
+relevance gradient to work with; the measured case is a scheduled agent's daily pulse
 returning 1 event from a 24-hour window that deterministically contained 736.
 
 Full design, contract, and evidence: **[docs/FACTS.md](FACTS.md)**.

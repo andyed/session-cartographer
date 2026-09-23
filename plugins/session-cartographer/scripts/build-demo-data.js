@@ -7,8 +7,16 @@
 // Usage:
 //   cd explorer && npm run dev &   # start server
 //   node scripts/build-demo-data.js
+//
+// Name sanitization: the repo ships only generic scrubs (home paths, the local
+// username). Real project / person names that must not reach the public demo
+// live in an optional local JSON file, never committed:
+//   $CARTOGRAPHER_DEMO_SANITIZE, else ~/.config/session-cartographer/demo-sanitize.json
+// Shape: { "replacements": { "Real Name": "fake-name", ... } }. Matching is
+// case-insensitive, longest key first. A missing file means generic scrubs only.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
+import { homedir, userInfo } from 'os';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -20,41 +28,29 @@ const API = `http://127.0.0.1:${API_PORT}`;
 
 // ─── Sanitization ───
 
-// Map of real project names → fake replacements
-// Case-insensitive replacements — product names appear in conversation text too
+// Real → fake name replacements. Generic entries only; private names are
+// loaded from the local sanitize file described in the header.
+function localUsername() {
+  try { return userInfo().username; } catch { return ''; }
+}
+
+function loadDemoSanitizeMap() {
+  const file = process.env.CARTOGRAPHER_DEMO_SANITIZE
+    || join(homedir(), '.config', 'session-cartographer', 'demo-sanitize.json');
+  if (!existsSync(file)) {
+    console.warn(`No demo sanitize map at ${file}; applying generic scrubs only.`);
+    return {};
+  }
+  const parsed = JSON.parse(readFileSync(file, 'utf-8'));
+  const map = parsed && typeof parsed.replacements === 'object' ? parsed.replacements : parsed;
+  return Object.fromEntries(
+    Object.entries(map || {}).filter(([k, v]) => !k.startsWith('_') && typeof v === 'string'),
+  );
+}
+
 const REAL_TO_FAKE = {
-  // Product/brand names (case-sensitive patterns added below)
-  'Scrutinizer': 'Quantum Toaster', 'scrutinizer2025': 'quantum-toaster', 'scrutinizer-www': 'quantum-toaster-www',
-  'scrutinizer-figma': 'quantum-toaster-figma', 'scrutinizer': 'quantum-toaster',
-  'Psychodeli+': 'Turtle Surfboard+', 'Psychodeli': 'Turtle Surfboard', 'PsychoDeli': 'Turtle Surfboard',
-  'psychodeli-webgl-port': 'turtle-surfboard', 'psychodeli-plus-tvos': 'turtle-surfboard-tvos',
-  'psychodeli-plus-firetv': 'turtle-surfboard-firetv', 'psychodeli-brand-guide': 'turtle-surfboard-brand',
-  'psychodeli-metal': 'turtle-surfboard-metal', 'psychodeli-osx-vx': 'turtle-surfboard-osx',
-  'psychodeli': 'turtle-surfboard',
-  'iBlipper': 'Haunted Spreadsheet', 'iblipper2025': 'haunted-spreadsheet', 'iblipper': 'haunted-spreadsheet',
-  'ClickSense': 'Robot Bartender', 'clicksense': 'robot-bartender',
-  'interests2025': 'hobbit-village', 'interests': 'hobbit-village',
-  'histospire': 'hobbit-village-sensor',
-  'Mind Bending Pixels': 'Demo Brand', 'mindbendingpixels-www': 'demo-brand-www', 'mindbendingpixels': 'demo-brand',
-  'sciprogfi-web': 'yeti-memoir-web', 'sciprogfi': 'yeti-memoir',
-  'oled-fireworks-tvos': 'disco-jellyfish-tvos', 'oled-fireworks-firetv': 'disco-jellyfish-firetv',
-  'cymatics-firetv': 'disco-jellyfish-cymatics',
-  'pixelbop': 'disco-jellyfish-pixels',
-  'nokings-blipper-firetv': 'protest-penguin', 'nokings': 'protest-penguin',
-  'fisheye-menu': 'fisheye-menu',
-  'marginalia': 'footnote-factory',
-  'arxiv-paper': 'paper-airplane',
-  'science-agent': 'lab-hamster',
-  'reading_depth': 'bookmark-worm',
-  'claude-code-session-bridge': 'bridge-troll',
-  'claude-code-history-viewer': 'time-machine',
-  'fovi': 'owl-vision',
-  'nanobot': 'nanobot',
-  'reference-hallucination-benchmark': 'truth-detector',
-  'pize': 'parallel-universe',
-  'andyed': 'demo-user',
-  'Andy Edmonds': 'Demo User',
-  'Andy': 'Demo',
+  ...(localUsername() ? { [localUsername()]: 'demo-user' } : {}),
+  ...loadDemoSanitizeMap(),
 };
 
 function scrubProjectNames(str) {

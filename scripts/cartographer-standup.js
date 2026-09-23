@@ -170,7 +170,7 @@ function contentionKey(absolutePath) {
  * Hooks name a project after its repository root (`basename` of
  * `git rev-parse --show-toplevel`), so the answer is the nearest ancestor that
  * holds `.git`. Matching any path segment instead pulled
- * `psychodeli-webgl-port/apps/electron/x.js` into a `--project electron` view.
+ * `widget-web/apps/electron/x.js` into a `--project electron` view.
  * The walk stops below the corpus root, so a workspace that is itself a repo
  * does not claim every loose file; a file in no repository falls back to its
  * first directory under the corpus root. Keys are worktree-collapsed already,

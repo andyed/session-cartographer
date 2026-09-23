@@ -80,9 +80,9 @@ async function qdrantSearch(body) {
  * Qdrant's `match: { value }` is exact keyword equality, but every other stage
  * scopes by case-insensitive substring, so a family name reached the keyword
  * ladder as its whole family and the semantic ladder as nothing at all:
- * `--project psycho` returned 20 keyword rows and 0 semantic ones, and
+ * `--project widg` returned 20 keyword rows and 0 semantic ones, and
  * `/api/recall` (which does no registry expansion) does the same for a bare
- * `psychodeli`. Nothing errored — the ladder was simply absent.
+ * `widget`. Nothing errored — the ladder was simply absent.
  *
  * Resolving the spec against the values actually present keeps one filter in
  * one query while preserving substring semantics exactly. Measured at 8-13 ms

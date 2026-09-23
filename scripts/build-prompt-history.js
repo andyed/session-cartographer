@@ -98,7 +98,7 @@ export function toIsoUtc(raw) {
  * arguments, not length.
  *
  * A command WITH arguments is kept: `/remember the shader fix` and
- * `/focus psychodeli` carry the intent the bare form lacks. /wrapup is dropped
+ * `/focus widget` carry the intent the bare form lacks. /wrapup is dropped
  * with the rest because the synthesis it produces is already in the log as a
  * milestone at salience 0.9 — far richer than the six characters that invoked it.
  */

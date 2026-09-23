@@ -55,7 +55,7 @@ and that assumption fails in the unsafe direction.
 
 **`/trustmap` found, and the wizard reported as `None configured`:** 24 CLIs it
 never saw, including `adb` (966 hits), `ffmpeg` (958), `xcodebuild` (436),
-`hermes` (296), and `netlify` (96) — against the wizard's own note that "only
+`agentctl` (296), and `netlify` (96) — against the wizard's own note that "only
 claude, npx, pwd" appeared in its evidence. Also a LAN host, two additional
 source-control remotes, and 11 data stores outside the project, four of them not
 gitignored.
@@ -154,7 +154,7 @@ and prints one panel. Every later step traces to a row in it.
 
   Non-standard CLIs by frequency
     +   966  adb          +   436  xcodebuild
-    +   910  ffmpeg       +   296  hermes
+    +   910  ffmpeg       +   296  agentctl
 ```
 
 **1 — Draft prose entries.** Entries are natural language, not patterns. The

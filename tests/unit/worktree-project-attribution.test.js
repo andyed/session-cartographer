@@ -5,7 +5,7 @@
  * --show-toplevel)`. Inside a git worktree that basename is the WORKTREE
  * directory, not the repo — so a session run in
  *
- *     psychodeli-webgl-port/.claude/worktrees/brave-thompson-40e495
+ *     gadget-web/.claude/worktrees/brave-thompson-40e495
  *
  * was filed under the project `brave-thompson-40e495`. Agent worktrees are
  * routine here, so each throwaway directory became a phantom "project" that
@@ -33,7 +33,7 @@
  * again. Measured 2026-09-10, four months of clean hook logs (newest
  * worktree-named event in changelog/tool-use-log: 2026-08) against milestones
  * still arriving wrong in September, one of which contradicted itself: project
- * "confident-yalow-e1cdc6" beside a digest reading {psychodeli-webgl-port: 118},
+ * "confident-yalow-e1cdc6" beside a digest reading {gadget-web: 118},
  * because the digest is built from hook events and the project field was not.
  * scripts/cartographer-project.sh is the command-line face of the same function
  * so the skills call the definition instead of copying it.

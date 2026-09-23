@@ -971,7 +971,7 @@
       "source": "transcript",
       "timestamp": "2026-03-22T00:19:01.510Z",
       "project": "-Users-demo-user",
-      "cwd": "/home/user/.openclaw/workspace/substrate-tests",
+      "cwd": "/home/user/.agent/workspace/substrate-tests",
       "summary": "Now let me also check some of the most differentiated responses — particularly the word association and Category E data. | project: -Users-demo-user",
       "session": "",
       "_score": 0.007194244604316547,
@@ -1866,7 +1866,7 @@
       "timestamp": "2026-03-22T01:53:18.365Z",
       "project": "-Users-demo-user",
       "cwd": "/home/user",
-      "summary": "that's good... I think we'll wreite this from my POVz quoting FrakBot.  we should lead with the tests results for competencies, then go into the word association. 500 words target. 60/40 me / frakbot. separate doc | project: -Users-demo-user",
+      "summary": "that's good... I think we'll wreite this from my POVz quoting the agent.  we should lead with the tests results for competencies, then go into the word association. 500 words target. 60/40 me / agent. separate doc | project: -Users-demo-user",
       "session": "",
       "_score": 0.004524886877828055,
       "_sources": "semantic"
@@ -1877,7 +1877,7 @@
       "timestamp": "2026-02-28T21:37:05.801Z",
       "project": "-Users-demo-user-Documents-dev",
       "cwd": "/home/user/Documents/dev",
-      "summary": "lots of interesting stuff here, https://nblauch.github.io/presentations/, what sthis about? Brain-like functional organization in topographic transformer models of language processing any relevance to our plan to model top down semantic pre-attention? | project: -Users-demo-user-Documents-dev",
+      "summary": "lots of interesting stuff here, https://example.org/presentations/, what sthis about? Brain-like functional organization in topographic transformer models of language processing any relevance to our plan to model top down semantic pre-attention? | project: -Users-demo-user-Documents-dev",
       "session": "",
       "_score": 0.0045045045045045045,
       "_sources": "semantic"

@@ -1,18 +1,15 @@
 /**
  * tests/unit/project-registry-resolution.test.js
  *
- * `project-registry.json` ships in a PUBLIC plugin carrying the maintainer's ten
- * aliases, so every adopter installs a description of someone else's machine.
- * The failure is silent: an alias the registry does not define falls through as
- * a literal project name rather than erroring, so `--project devtools` returns
- * zero results for a scope the caller believes they set. And the shipped
- * `frakbot` alias expands to `openclaw`, which this project treats as
- * deprecated archive material that is never a valid source.
+ * `project-registry.json` ships EMPTY in the public plugin: a project list
+ * describes one person's machine. An alias the registry does not define falls
+ * through as a literal project name rather than erroring.
  *
  * The fix is a user-level registry that REPLACES the shipped one. "Replaces" is
- * the load-bearing word and the reason for the second test below: merging the
- * layers would leave `frakbot -> openclaw` reachable in an adopter's install
- * forever, and an alias a user deliberately deleted would keep resolving.
+ * the load-bearing word: merging the layers would keep a shipped alias
+ * reachable in every install forever, and an alias a user deliberately deleted
+ * would keep resolving. A fixture install below gives the shipped layer aliases
+ * so that property stays observable.
  *
  * Two resolvers exist — bash for the shell consumers, JS for build-profile.js.
  * The last test asserts they agree, because two spellings of one rule is exactly
@@ -30,7 +27,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 for (const name of [
   'CARTOGRAPHER_SESSION_ID',
@@ -55,6 +52,24 @@ const {
 
 const FIXTURE_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'carto-registry-'));
 process.on('exit', () => { try { fs.rmSync(FIXTURE_DIR, { recursive: true, force: true }); } catch {} });
+
+// The real shipped registry is empty, so "replace, don't merge" cannot be seen
+// against it. Both resolvers locate the shipped file relative to themselves;
+// copy them beside a fixture registry to get an install whose shipped layer has
+// aliases to leak.
+const INSTALL = path.join(fs.realpathSync(FIXTURE_DIR), 'install');
+fs.mkdirSync(path.join(INSTALL, 'scripts'), { recursive: true });
+for (const f of ['project-registry.js', 'project-registry.sh']) {
+  fs.copyFileSync(path.join(ROOT, 'scripts', f), path.join(INSTALL, 'scripts', f));
+}
+const INSTALL_SHIPPED = path.join(INSTALL, 'project-registry.json');
+fs.writeFileSync(INSTALL_SHIPPED, `${JSON.stringify({ aliases: {
+  family: ['family-api', 'family-web'],
+  legacy: ['archived-thing'],
+} }, null, 2)}\n`);
+const installed = await import(pathToFileURL(path.join(INSTALL, 'scripts', 'project-registry.js')).href);
+const installedSh = (env, ...args) =>
+  spawnSync('bash', [path.join(INSTALL, 'scripts', 'project-registry.sh'), ...args], { encoding: 'utf8', env: shellEnv(env) });
 
 let caseCounter = 0;
 /** An isolated HOME/config/dev triple, plus the env that points every resolver at it. */
@@ -128,35 +143,36 @@ test('an explicit path that does not exist is an error, not a fallback', () => {
   assert.equal(r.stdout.trim(), '');
 });
 
+test('the public shipped registry carries no aliases', () => {
+  // A maintainer's project list is private and useless to adopters; the
+  // bootstrap script derives each user's own.
+  const shipped = JSON.parse(fs.readFileSync(SHIPPED, 'utf8'));
+  assert.deepEqual(shipped.aliases, {});
+});
+
 test('a user registry REPLACES the shipped one — shipped-only aliases stop resolving', () => {
   const w = workspace();
-  // `frakbot` exists only in the maintainer's shipped registry and expands to
-  // `openclaw`, deprecated archive material. If the layers merged, it would stay
-  // reachable in every adopter install forever.
-  const shipped = JSON.parse(fs.readFileSync(SHIPPED, 'utf8'));
-  assert.ok(Array.isArray(shipped.aliases.frakbot), 'shipped registry no longer defines frakbot');
-  assert.ok(shipped.aliases.frakbot.includes('openclaw'), 'shipped frakbot no longer names openclaw');
-
   writeRegistry(w.userRegistry, { mystuff: ['alpha', 'beta'] });
 
-  assert.equal(resolveProjectRegistryPath(w.env), w.userRegistry);
-  assert.deepEqual(expandProjectAlias('mystuff', w.env), ['alpha', 'beta']);
+  assert.equal(installed.resolveProjectRegistryPath(w.env), w.userRegistry);
+  assert.deepEqual(installed.expandProjectAlias('mystuff', w.env), ['alpha', 'beta']);
   // Not merged: the shipped alias is now an unknown name, which passes through
-  // as a literal rather than expanding to the maintainer's repos.
-  assert.deepEqual(expandProjectAlias('frakbot', w.env), ['frakbot']);
-  assert.deepEqual(expandProjectAlias('psychodeli', w.env), ['psychodeli']);
-  assert.equal(sh(w.env, '--expand', 'frakbot').stdout.trim(), 'frakbot');
-  assert.equal(sh(w.env, '--aliases').stdout.trim(), 'mystuff');
+  // as a literal rather than expanding to another install's repos.
+  assert.deepEqual(installed.expandProjectAlias('legacy', w.env), ['legacy']);
+  assert.deepEqual(installed.expandProjectAlias('family', w.env), ['family']);
+  assert.equal(installedSh(w.env, '--expand', 'legacy').stdout.trim(), 'legacy');
+  assert.equal(installedSh(w.env, '--aliases').stdout.trim(), 'mystuff');
 });
 
 test('no user registry falls back to the shipped default', () => {
   const w = workspace();
   assert.equal(fs.existsSync(w.userRegistry), false);
+  assert.equal(installed.resolveProjectRegistryPath(w.env), INSTALL_SHIPPED);
+  assert.deepEqual(installed.expandProjectAlias('family', w.env), ['family-api', 'family-web']);
+  assert.equal(installedSh(w.env, '--path').stdout.trim(), INSTALL_SHIPPED);
+  // The real install falls back to its empty default: every name is literal.
   assert.equal(resolveProjectRegistryPath(w.env), SHIPPED);
-  assert.deepEqual(expandProjectAlias('devtools', w.env), [
-    'session-cartographer', 'claude-code-session-bridge', 'claude-code-history-viewer',
-  ]);
-  assert.equal(sh(w.env, '--path').stdout.trim(), SHIPPED);
+  assert.deepEqual(expandProjectAlias('devtools', w.env), ['devtools']);
 });
 
 test('a malformed user registry is a loud error, not a silent fallback to the maintainer aliases', () => {
@@ -263,6 +279,31 @@ test('bootstrap refuses to overwrite an existing user registry without --force',
   const written = JSON.parse(fs.readFileSync(w.userRegistry, 'utf8'));
   assert.deepEqual(Object.keys(written.aliases), ['alpha']);
   assert.deepEqual([...written.aliases.alpha].sort(), ['alpha-cli', 'alpha-web']);
+});
+
+test('bootstrap --update adds new projects and never restores a removed one', () => {
+  const w = workspace();
+  seedLogs(w.devDir, { 'alpha-web': 5, 'alpha-cli': 5 });
+  assert.equal(bootstrap(w.env).status, 0);
+
+  // The user removes alpha-cli from the family by hand; it stays in _known.
+  const edited = JSON.parse(fs.readFileSync(w.userRegistry, 'utf8'));
+  edited.aliases.alpha = ['alpha-web'];
+  edited.aliases.mine = ['hand-picked'];
+  fs.writeFileSync(w.userRegistry, `${JSON.stringify(edited, null, 2)}\n`);
+
+  seedLogs(w.devDir, { 'alpha-web': 5, 'alpha-cli': 5, 'alpha-docs': 3, 'beta-api': 4, 'beta-web': 4, solo: 2 });
+  const r = bootstrap(w.env, '--update');
+  assert.equal(r.status, 0, r.stderr);
+  const updated = JSON.parse(fs.readFileSync(w.userRegistry, 'utf8'));
+  assert.deepEqual(updated.aliases.alpha, ['alpha-web', 'alpha-docs'], 'new member joins; removed member stays out');
+  assert.deepEqual([...updated.aliases.beta].sort(), ['beta-api', 'beta-web'], 'two new names sharing a stem form a family');
+  assert.deepEqual(updated.aliases.mine, ['hand-picked'], 'hand-written aliases are untouched');
+  assert.equal(updated.aliases.solo, undefined, 'a lone new name is not an alias');
+  assert.ok(updated._known.includes('solo') && updated._known.includes('alpha-cli'));
+
+  const again = bootstrap(w.env, '--update');
+  assert.match(again.stdout, /0 project names not seen before/);
 });
 
 test('bootstrap --dry-run writes nothing', () => {

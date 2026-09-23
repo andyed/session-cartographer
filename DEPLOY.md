@@ -3,7 +3,7 @@
 **Live URL:** https://andyed.github.io/session-cartographer/
 **Source branch:** `gh-pages`, path `/`
 **Deploy trigger:** **Manual.** No GH Actions workflow in repo; no `deploy`
-script in any `package.json`. Recent `gh-pages` commits are authored by Andy
+script in any `package.json`. Recent `gh-pages` commits are authored by the maintainer
 directly (not `github-actions[bot]`) with generic messages ("Updates") — which
 is what the default `gh-pages` npm tool produces.
 
@@ -49,14 +49,14 @@ npx gh-pages -d .            # push the whole working-tree root
 git subtree push --prefix=<subdir> origin gh-pages
 ```
 
-**Andy: fill in the actual command you use so future touches don't guess.**
+**TODO (maintainer): record the actual command used so future touches don't guess.**
 
 ## Minimal-change protocol (text-only patches)
 
 For analytics-key changes, copy edits, small fixes in the demo / landing site:
 
 Since `gh-pages` holds the deployed artifact directly, prefer `sed` on the
-`gh-pages` branch via the worktree pattern (same as attentional-foraging):
+`gh-pages` branch via the worktree pattern (same as other gh-pages repos):
 
 ```bash
 cd ~/Documents/dev/session-cartographer

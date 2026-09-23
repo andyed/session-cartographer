@@ -103,7 +103,7 @@ const XFER_LLR_GATE = 6.63;  // χ²(1df) at p≈0.01 (N = #signals is small, so
 // surfaces only if significant (G² ≥ 6.63, p≈0.01) AND not a thin two-day fluke: a k<3 pair must
 // clear the stricter p≈0.001 bar (10.83). Cheap stand-in for Tier-2 bootstrap stability — it cuts
 // solo-project coincidence (session-cartographer 8→1 related edges) while keeping real low-k
-// threads (allserp↔trail-telegraph: k=2, G²=14). See docs/COOCCURRENCE_EVAL.md Tier 2.
+// threads (paper-a↔trail-telegraph: k=2, G²=14). See docs/COOCCURRENCE_EVAL.md Tier 2.
 const REL_LLR_FLOOR = 6.63;
 const REL_THIN_K = 3;
 const REL_THIN_LLR = 10.83;
@@ -234,7 +234,7 @@ function neighbors(edges, node) {
   return out;
 }
 
-// Tolerate /focus aliases & partial names (e.g. "scrutinizer" → "scrutinizer2025"): exact, then
+// Tolerate /focus aliases & partial names (e.g. "tracker" → "tracker2025"): exact, then
 // case-insensitive, then substring either direction, choosing the highest-df match.
 function resolveProject(name) {
   if (projectDF.has(name)) return name;

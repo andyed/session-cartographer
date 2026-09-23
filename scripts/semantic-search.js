@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node scripts/semantic-search.js "what was the shader fix"
- *   node scripts/semantic-search.js "foveation paper" --project scrutinizer --limit 10
+ *   node scripts/semantic-search.js "foveation paper" --project tracker --limit 10
  *
  * Environment:
  *   CARTOGRAPHER_EMBED_URL    — embedding endpoint (default: http://localhost:8890/v1/embeddings)

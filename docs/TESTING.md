@@ -175,10 +175,10 @@ CLI() { env -u CLAUDE_SESSION_ID -u CLAUDE_CODE_SESSION_ID -u CODEX_SESSION_ID -
   bash scripts/cartographer-search.sh "$@" --limit 30 --format jsonl --all --no-turbo 2>/dev/null; }
 
 # 1. A short window must still reach every ladder.
-CLI 'commit fix' --project psychodeli-webgl-port --since 24h | jq -r '.source' | sort | uniq -c
+CLI 'commit fix' --project widget-web --since 24h | jq -r '.source' | sort | uniq -c
 
 # 2. A family prefix must reach BOTH ladders — registered or not.
-for p in psychodeli psycho webgl; do
+for p in widget widg web; do
   printf '%-12s %s semantic\n' "$p" "$(CLI 'shader palette' --project $p | jq -r '.source' | grep -c semantic)"
 done
 

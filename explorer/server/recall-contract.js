@@ -31,7 +31,7 @@ export const RECALL_LIMIT_MAX = 200;
 
 // `project` is not one name: callers pass a pipe-delimited alternation of every
 // alias a project expands to, and the bound has to cover the widest real
-// allowlist rather than the widest single name. FrakBot's daily feed expands 20
+// allowlist rather than the widest single name. A scheduled agent's daily feed expands 20
 // project names into 37 aliases packing to 576 characters — over the original
 // 512-character cap, so the feed failed the contract on `project` even after
 // the result ceiling was raised, and fell back to the ~11 s portable search

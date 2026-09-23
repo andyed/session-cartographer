@@ -123,17 +123,12 @@ test('a limit above the ceiling is rejected rather than silently clamped', async
 // still failed the contract, on a different field, and still fell back to the
 // ~11 s portable search. Pin the whole registry's packed width against the cap
 // so registry growth fails here rather than silently degrading the feed.
-test('the full project registry packs inside the contract project cap', async () => {
-  const registry = JSON.parse(
-    readFileSync(new URL('../../project-registry.json', import.meta.url), 'utf8'),
-  );
-  const names = new Set();
-  for (const [alias, expansions] of Object.entries(registry.aliases || {})) {
-    names.add(alias);
-    for (const name of expansions) names.add(name);
-  }
-  const packed = [...names].sort().join('|');
-  assert.ok(names.size > 0, 'project-registry.json exposed no aliases');
+test('a realistic project registry packs inside the contract project cap', async () => {
+  // The shipped registry is empty; the real one lives in each user's config.
+  // The maintainer's measured 37 names packed to 559 characters. Pin three
+  // times that size (111 names of 14 characters) so ordinary growth still fits.
+  const names = Array.from({ length: 111 }, (_, i) => `project-${String(i).padStart(6, '0')}`);
+  const packed = names.sort().join('|');
   assert.ok(
     packed.length <= RECALL_PROJECT_MAX,
     `registry packs to ${packed.length} chars but the contract cap is ${RECALL_PROJECT_MAX}`,

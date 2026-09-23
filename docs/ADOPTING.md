@@ -4,7 +4,7 @@ What you inherit, what you must configure, and what leaves your machine.
 
 Session Cartographer was built and tuned on one person's machine. Most of that
 is invisible and harmless — hooks, scorers, contracts. Some of it is not: the
-project registry ships with someone else's project names, the corpus root
+project registry ships empty until you derive yours, the corpus root
 defaults to one particular directory, and git backfill depends on your configured
 corpus owners. Review those settings before importing history or querying a
 project family.
@@ -136,66 +136,44 @@ configured, not a defect.
 
 ---
 
-## Configuration you inherit from the maintainer
+## Configuration you inherit
 
-### `project-registry.json` — someone else's projects
+### `project-registry.json` — ships empty
 
-The file that ships is the maintainer's, with 10 aliases:
+The registry maps short family aliases to the directory basenames that appear in
+your event logs. It is an **expansion table**, consumed by
+`cartographer-search.sh --project`, `/focus`, `cartographer-feed.sh`,
+`cartographer-pulse.sh`, `build-profile.js`, and other registry-aware callers.
+The plugin ships it with no aliases: every name passes through as a literal
+project name, and `--project` substring matching still scopes most searches.
 
-```
-scrutinizer  psychodeli  tvapps  interests  sciprogfi
-websites     iblipper    devtools  frakbot   wyrdforge
-```
+Create your own at `~/.config/session-cartographer/project-registry.json`, or
+beside the file named by `CARTOGRAPHER_CONFIG`. Set
+`CARTOGRAPHER_PROJECT_REGISTRY` to select an explicit path. The first available
+layer wins: explicit path, user registry, then shipped registry. **Layers do not
+merge**: your registry replaces the shipped one. A selected file that is invalid
+is an error, rather than a silent fallback.
 
-Each maps to a list of directory basenames as they appear in the maintainer's
-event logs (`psychodeli-webgl-port`, `oled-fireworks-tvos`, and so on).
-
-It is an **expansion table**, consumed by `cartographer-search.sh --project`,
-`/focus`, `cartographer-feed.sh`, `cartographer-pulse.sh`, `build-profile.js`,
-and other registry-aware callers. A name that is *not* an alias passes
-through as a literal project name, so an unedited registry does not break
-anything — but a name that *is* an alias expands to repositories that do not
-exist on your machine, and you get zero results for a scope you thought you had
-set. `frakbot`, for instance, expands to `nanobot`, `openclaw`, and a
-deprecated OpenClaw path.
-
-Create your own registry at
-`~/.config/session-cartographer/project-registry.json`, or beside the file named
-by `CARTOGRAPHER_CONFIG`. Set `CARTOGRAPHER_PROJECT_REGISTRY` to select an explicit
-path. The first available layer wins: explicit path, user registry, then shipped
-registry. **Layers do not merge**: your registry replaces the shipped aliases.
-A selected file that is invalid is an error, rather than a silent fallback.
-
-Bootstrap from your event logs, then review the inferred groups:
+Bootstrap from your event logs, review the inferred groups, and keep it current:
 
 ```bash
 node scripts/bootstrap-project-registry.js --dry-run
 node scripts/bootstrap-project-registry.js
+node scripts/bootstrap-project-registry.js --update --dry-run   # later: new projects only
 bash scripts/project-registry.sh --path
 ```
 
-The writer refuses to overwrite an existing registry without `--force`. Edit
-the user-owned file; plugin updates can overwrite the shipped copy. Direct
-`/api/recall` calls do not expand registry aliases, so pass project names or an
-appropriate substring there. Format and worked examples:
+The writer refuses to overwrite an existing registry without `--force`;
+`--update` adds only project names it has not considered before, so your edits
+survive. Direct `/api/recall` calls do not expand registry aliases, so pass
+project names or an appropriate substring there. Format and worked examples:
 [BRIEFINGS.md](BRIEFINGS.md#project-registry).
 
-### `integrations/hermes/` — a worked example, not a supported entry point
+### Scheduled-agent feeds
 
-`integrations/hermes/frakbot-carto-feed.sh` is a personal policy wrapper. It:
-
-- defaults `CARTO_ROOT` to `$HOME/Documents/dev/session-cartographer`
-  (overridable with `CARTOGRAPHER_ROOT`);
-- carries a 35-name personal project allowlist (overridable with
-  `FRAKBOT_CARTO_PROJECTS`);
-- appends a consumer instruction paragraph aimed at one specific scheduled agent.
-
-Read it for the shape of a policy wrapper — in particular its comment block on
-what it deliberately excludes and why, which is the reusable part. Do not
-install it as-is.
-
-**`scripts/cartographer-pulse.sh` is the supported generic entry point.** Write
-your own thin wrapper around it with your own allowlist.
+**`scripts/cartographer-pulse.sh` is the supported entry point.** Write a thin
+wrapper around it with your own project allowlist, and document in the wrapper
+what it deliberately excludes and why.
 
 ### Corpus root — and the 409 that catches you getting it wrong
 
@@ -450,8 +428,8 @@ above.
 [ ] Set CARTOGRAPHER_DEV_DIR if your projects are not under ~/Documents/dev,
     before the first hook fires.
 [ ] If that directory is a git repo, gitignore .carto/ and the five *.jsonl logs.
-[ ] Create a user-owned project registry and verify it with
-    `bash scripts/project-registry.sh --path`; it replaces the shipped aliases.
+[ ] Bootstrap a user-owned project registry and verify it with
+    `bash scripts/project-registry.sh --path`.
 [ ] Set CARTOGRAPHER_PROFILE_AUTHORS if you commit under a name other than
     `git config --global user.name`.
 [ ] Backfill git history per-repo with --project, after a --dry-run.
@@ -462,6 +440,5 @@ above.
     Qdrant. It needs neither Qdrant nor the embedder.
 [ ] Read one full pulse output yourself before piping it into any scheduled
     agent. Summaries carry bash command lines and verbatim prompts.
-[ ] Write your own wrapper around scripts/cartographer-pulse.sh. Do not install
-    integrations/hermes/frakbot-carto-feed.sh as-is.
+[ ] Write your own wrapper around scripts/cartographer-pulse.sh.
 ```

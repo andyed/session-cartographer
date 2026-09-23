@@ -156,7 +156,7 @@ Present the recovered command(s) with project + recency. They're the user's own 
 
 ### Cross-thread broadening (related projects)
 
-When a recall centers on one project but the work spans a thread, surface the co-active siblings so you can widen the search. The graph knows, e.g., `approach-retreat` co-threads with `allserp-paper` / `ettac-paper`:
+When a recall centers on one project but the work spans a thread, surface the co-active siblings so you can widen the search. The graph knows, e.g., `cursor-lib` co-threads with `paper-a` / `paper-b`:
 
 ```bash
 node "$ROOT/scripts/cooccurrence-graph.js" --related <project>
@@ -198,7 +198,7 @@ CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<sear
 
 If the user mentioned a specific project, add `--project <name>`:
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --project scrutinizer
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<terms>" --project tracker
 ```
 
 For more results, add `--limit 25` or `--limit 50`. If the user says "more" or "keep going" after seeing results, re-run with a higher limit:
@@ -299,11 +299,11 @@ The access ledger records that order for first- and last-access MRR.
 /remember that paper about foveated rendering
 /remember what we decided about the shader approach
 /remember the commit that fixed blur
-/remember Blauch collaboration notes
-/remember recent feature commits --project scrutinizer
+/remember the collaboration notes
+/remember recent feature commits --project tracker
 /remember what was I working on last session
-/remember what did I do this morning on Psychodeli
-    → bash cartographer-search.sh "Psychodeli" --since today
+/remember what did I do this morning on Widget
+    → bash cartographer-search.sh "Widget" --since today
 /remember the audio reactivity work from last week
     → bash cartographer-search.sh "audio reactivity" --since "last week"
 /remember Wednesday's debugging session
@@ -315,11 +315,11 @@ The access ledger records that order for first- and last-access MRR.
     → bash cartographer-search.sh _ --get git-abc1234      (full files_changed + diff_shape)
 /remember what am I working on these days
     → read ~/Documents/dev/.carto/profile.md               (standing question, not a search)
-/remember how do I deploy movies-mindbendingpixels
-    → node cooccurrence-graph.js --maneuvers movies-mindbendingpixels   (→ cloudflare-pages)
+/remember how do I deploy widget-site
+    → node cooccurrence-graph.js --maneuvers widget-site   (→ cloudflare-pages)
     → recover the invocation from the changelog, present it
 /remember my cloudflare deploy process
     → node cooccurrence-graph.js --signal cloudflare
-/remember what else was I working on around the approach-retreat AOI work
-    → node cooccurrence-graph.js --related approach-retreat   (→ allserp-paper, ettac-paper…)
+/remember what else was I working on around the cursor-lib AOI work
+    → node cooccurrence-graph.js --related cursor-lib   (→ paper-a, paper-b…)
 ```

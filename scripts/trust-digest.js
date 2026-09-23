@@ -261,7 +261,7 @@ for (const e of events) {
   // Frequency, not recency. A session `cd`s into other repos to read things,
   // and those events keep the session's own `project` while carrying the other
   // repo's `cwd`. Taking the latest one attributed session-cartographer's rows
-  // to attentional-foraging's remote — and a wrong remote here means proposing
+  // to a sibling repo's remote — and a wrong remote here means proposing
   // trust for a repo you never push to.
   if (e.cwd) bump(p.cwds, e.cwd);
 }

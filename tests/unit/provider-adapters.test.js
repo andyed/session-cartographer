@@ -77,7 +77,7 @@ describe('Codex project inference', () => {
       { type: 'session_meta', payload: { cwd: '/workspace' } },
       { type: 'response_item', payload: { type: 'custom_tool_call', input: '{"workdir":"/workspace/session-cartographer"}' } },
       { type: 'response_item', payload: { type: 'custom_tool_call', input: 'tools.exec({"workdir":"/workspace/session-cartographer/scripts"})' } },
-      { type: 'response_item', payload: { type: 'custom_tool_call', input: '{"workdir":"/workspace/psychodeli-webgl-port"}' } },
+      { type: 'response_item', payload: { type: 'custom_tool_call', input: '{"workdir":"/workspace/gadget-web"}' } },
     ]);
     const project = execFileSync('node', [CODEX_PROJECT_INFERER, path, '/workspace'], { encoding: 'utf8' }).trim();
     assert.equal(project, 'session-cartographer');

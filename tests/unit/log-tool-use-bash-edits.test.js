@@ -133,7 +133,7 @@ test('a variable-bound write is still found when the content carries a fake `>` 
             `assert old in s`,
             `open(p,'w').write(s.replace(old,new,1))`,
             `EOF`,
-            `sed -n '/Notes/,/FrakBot/p' CLAUDE.md`
+            `sed -n '/Notes/,/Workflow/p' CLAUDE.md`
         ].join('\n'));
         assert.equal(last(recs).type, 'tool_file_edit', 'a `<placeholder>` in the content hid the write');
         assert.match(last(recs).summary, /\/Users\/andyed\/CLAUDE\.md/);

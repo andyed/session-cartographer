@@ -97,7 +97,7 @@ jq 'select(.related_ids[]? == "evt-abc123")' changelog.jsonl
 
 ```bash
 # All events for a project
-jq 'select(.project == "scrutinizer")' ~/Documents/dev/changelog.jsonl
+jq 'select(.project == "tracker")' ~/Documents/dev/changelog.jsonl
 
 # Get deep link for a specific event
 jq 'select(.event_id == "evt-abc123") | .deeplink' ~/Documents/dev/changelog.jsonl

@@ -23,7 +23,7 @@ caller can verify it with `cartographer-search.sh --get` rather than trust it.
 
 ## Why now
 
-The motivating failure is measured, not hypothetical. FrakBot's daily pulse
+The motivating failure is measured, not hypothetical. a scheduled agent's daily pulse
 asked the ranking path for the last 24 hours and received **1 event** from a
 window that deterministically contained **736 events, 22 sessions, 12 projects,
 and 20 commits/pushes across four repos**. Nothing errored. The pulse simply
@@ -66,7 +66,7 @@ These measurements establish opportunity, not a verdict. See
 - `docs/TURBO_MODE_SPEC.md`, `docs/SCORING.md`, `docs/RANK_FUSION.md`,
   `docs/INTERNALS.md` — the recall contract, scoring semantics, and the
   telemetry boundary this endpoint must not cross;
-- the timings and the FrakBot starvation case above.
+- the timings and the scheduled-agent starvation case above.
 
 ## Why there is no index
 
@@ -227,7 +227,7 @@ mislead rather than ignored.
   "top": 20,
   "sample": 3,
   "budget": 200,
-  "purpose": "frakbot-pulse",
+  "purpose": "agent-pulse",
   "corpus_root": "/Users/you/Documents/dev",
   "cursor": ""
 }
@@ -254,7 +254,7 @@ mislead rather than ignored.
 
 | Constant | Value | Reason |
 |---|---:|---|
-| `FACTS_PROJECT_MAX` | 2048 | Matches `RECALL_PROJECT_MAX`. Callers do not pass one name; they pass every alias a family expands to. FrakBot's feed alone expands 20 names into 37 aliases packing to 576 characters. A tighter bound would reject the exact caller this endpoint is for. |
+| `FACTS_PROJECT_MAX` | 2048 | Matches `RECALL_PROJECT_MAX`. Callers do not pass one name; they pass every alias a family expands to. One scheduled agent's feed alone expands 20 names into 37 aliases packing to 576 characters. A tighter bound would reject the exact caller this endpoint is for. |
 | `FACTS_TOP_MAX` | 200 | Generous enough to cover every project in the corpus at once (the registry is well under this), bounded so a response cannot grow with the corpus. |
 | `FACTS_SAMPLE_MAX` | 10 | Audit ids per bucket. Cheap enough to attach to every bucket of every dimension; the default of 3 is enough to spot-check a count. |
 | `FACTS_DELTA_BUDGET_MAX` | 2000 | A page size, not a ceiling. The cursor advances only past consumed lines, so a saturated delta is resumable. |
@@ -494,7 +494,7 @@ scheduled job makes its first run:
 
 ```bash
 node scripts/cartographer-facts.js --verb delta \
-  --cursor-file ~/.carto/frakbot-pulse.cursor \
+  --cursor-file ~/.carto/agent-pulse.cursor \
   --project "session-cartographer|carto" --budget 500
 ```
 
@@ -651,7 +651,7 @@ produce two defensible answers with no way to tell which one described the
 requested corpus. `event-time.js` is the shared home of the timestamp
 normalization `search.js` used to own privately; `project-filter.js` matches the
 case-insensitive substring behaviour of `bm25.js`, so a family name selects its
-repositories (`psychodeli` selects `psychodeli-webgl-port`).
+repositories (`widget` selects `widget-web`).
 
 ## Ownership
 
@@ -710,7 +710,7 @@ after the assignment). All three facts test files do this.
 
 ## Open questions and what is not yet proven
 
-**Utility is unmeasured.** The speed is real and the FrakBot starvation is
+**Utility is unmeasured.** The speed is real and the scheduled-agent starvation is
 measured, but nobody has yet shown that a *counted* pulse produces better agent
 behavior than a *ranked* one. It is entirely possible that an agent handed 736
 events and 20 commits writes a worse daily summary than one handed a single

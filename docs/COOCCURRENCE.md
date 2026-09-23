@@ -18,9 +18,9 @@ Entities are structured log fields — `project`, detected tech-signals — **ne
 
 ### Grain is load-bearing
 
-The project graph's document is a calendar **day**, not a session. Measured on the real corpus: **97% of sessions touch a single project**, so same-*session* co-occurrence is nearly empty — the cross-thread signal lives in same-*day* co-activity (3–5 concurrent sessions/day). Pick the session grain and the project graph is dead. This is why `--related` recovers research threads (`allserp-paper ↔ ettac-paper`) that no per-session view could see.
+The project graph's document is a calendar **day**, not a session. Measured on the real corpus: **97% of sessions touch a single project**, so same-*session* co-occurrence is nearly empty — the cross-thread signal lives in same-*day* co-activity (3–5 concurrent sessions/day). Pick the session grain and the project graph is dead. This is why `--related` recovers research threads (`paper-a ↔ paper-b`) that no per-session view could see.
 
-The maneuver views invert the document/entity roles to ask two different questions from one signal-detection pass: *composition* (entities = signals, doc = session) finds markers that fire together — `gh-release + version-tag + lfs` is the Psychodeli DMG release; *transfer* (entities = projects, doc = signal) finds projects with a shared procedure profile — the two mindbendingpixels sites share the Cloudflare deploy; `cikm` and `ettac` share the Overleaf dance.
+The maneuver views invert the document/entity roles to ask two different questions from one signal-detection pass: *composition* (entities = signals, doc = session) finds markers that fire together — `gh-release + version-tag + lfs` is a desktop app's DMG release; *transfer* (entities = projects, doc = signal) finds projects with a shared procedure profile — the two mindbendingpixels sites share the Cloudflare deploy; `paper-c` and `paper-b` share the Overleaf dance.
 
 ## Scoring: Dunning's G², not lume's z-tanh
 
@@ -70,14 +70,14 @@ node scripts/cooccurrence-graph.js --signal   <maneuver> # which projects run it
 node scripts/cooccurrence-graph.js --show maneuvers --top 40 --out <path>
 ```
 
-Query modes print and exit without rewriting the JSON. Project names tolerate aliases / partials (`psychodeli` → `psychodeli-webgl-port`) via `resolveProject()`: exact, then case-insensitive, then substring either direction, choosing the highest-`df` match. `--signal` fuzzy-matches the maneuver name the same way. `PROJECT_BLOCKLIST` filters cwd-path fragments (`Users`, `Documents`, `tmp`, …) that aren't real projects.
+Query modes print and exit without rewriting the JSON. Project names tolerate aliases / partials (`widget` → `widget-web`) via `resolveProject()`: exact, then case-insensitive, then substring either direction, choosing the highest-`df` match. `--signal` fuzzy-matches the maneuver name the same way. `PROJECT_BLOCKLIST` filters cwd-path fragments (`Users`, `Documents`, `tmp`, …) that aren't real projects.
 
 Output env: `CARTOGRAPHER_GRAPH` or `$CARTOGRAPHER_DEV_DIR/cooccurrence-graph.json`.
 
 ## Properties to keep in mind
 
 - **Maneuver data is intrinsically thin** (~29 maneuver-sessions) — maneuvers are *punctual* events. The map is high-precision and grows with corpus depth, not with more modeling. Report maneuver edges as descriptive, not predictive.
-- **The related-threads lens needs a stability gate before it's reliably useful for narrow/solo projects** — low-`k` day-overlaps are calendar coincidence, not threads. Bootstrap stability (eval Tier 2) is the intended filter: surface only edges stable across resamples. Until then, `--related` on a solo tool (e.g. the cartographer repo itself) returns mostly noise; on thread-embedded projects (the papers, Psychodeli) it returns real structure.
+- **The related-threads lens needs a stability gate before it's reliably useful for narrow/solo projects** — low-`k` day-overlaps are calendar coincidence, not threads. Bootstrap stability (eval Tier 2) is the intended filter: surface only edges stable across resamples. Until then, `--related` on a solo tool (e.g. the cartographer repo itself) returns mostly noise; on thread-embedded projects (the papers, a long-running app) it returns real structure.
 
 ## See also
 

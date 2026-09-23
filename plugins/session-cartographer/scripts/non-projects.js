@@ -12,7 +12,7 @@
  *
  *   2. Auto-named agent worktrees. Hooks derived the project as
  *      `basename $(git rev-parse --show-toplevel)`, which inside
- *      `psychodeli-webgl-port/.claude/worktrees/brave-thompson-40e495` is the
+ *      `widget-web/.claude/worktrees/brave-thompson-40e495` is the
  *      throwaway worktree directory. ~5,700 events were filed under directories
  *      that no longer exist (see tests/unit/worktree-project-attribution.test.js).
  *      The hook is fixed; the historical events are still in the logs.

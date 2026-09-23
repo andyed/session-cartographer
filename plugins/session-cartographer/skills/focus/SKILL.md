@@ -32,26 +32,28 @@ CARTOGRAPHER_PURPOSE=focus bash "$ROOT/scripts/cartographer-search.sh" "recent a
 ```
 
 The `<PROJECT>` argument supports:
-- **Direct project names**: `session-cartographer`, `scrutinizer2025`
-- **Registry aliases**: `devtools`, `scrutinizer`, `psychodeli` — expanded via the resolved project registry (user-level if present, else the shipped default) to match all repos in the family
+- **Direct project names**: `session-cartographer`, `widget-api`
+- **Substrings**: `widget` matches every project whose name contains it
+- **Registry aliases**: family names defined in the user's project registry, expanded to every repo in the family. The plugin ships no aliases.
 
 ## Step 1: Resolve the project
 
 If the user gives a vague name, list the aliases. Resolve the registry through
 the shared resolver rather than reading `$ROOT/project-registry.json` directly —
-the file that ships is the maintainer's, and a user-level registry under
+the file that ships is empty, and a user-level registry under
 `~/.config/session-cartographer/` replaces it:
 
 ```bash
 bash "$ROOT/scripts/project-registry.sh" --aliases
-bash "$ROOT/scripts/project-registry.sh" --expand psychodeli   # members, one per line
+bash "$ROOT/scripts/project-registry.sh" --expand widget   # members, one per line
 ```
 
-If the aliases name repositories that are not yours, the install is still using
-the shipped registry. Derive your own:
+If there are no aliases, the user has no registry yet; substring scoping still
+works. To derive one, or to add projects that appeared since:
 
 ```bash
 node "$ROOT/scripts/bootstrap-project-registry.js" --dry-run
+node "$ROOT/scripts/bootstrap-project-registry.js" --update --dry-run
 ```
 
 ## Step 2: Search recent activity
@@ -88,7 +90,7 @@ Present a concise orientation:
 ## Examples
 
 ```
-/focus scrutinizer
+/focus session-cartographer
+/focus widget
 /focus devtools
-/focus psychodeli
 ```

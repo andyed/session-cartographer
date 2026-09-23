@@ -2,10 +2,30 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+
+// Real names the demo must never contain, from the maintainer-local sanitize map
+// (see the header of scripts/build-demo-data.js). Absent file: no extra names.
+function localSanitizeNames() {
+  const file = process.env.CARTOGRAPHER_DEMO_SANITIZE
+    || join(homedir(), '.config', 'session-cartographer', 'demo-sanitize.json');
+  if (!existsSync(file)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(file, 'utf8'));
+    const map = parsed && typeof parsed.replacements === 'object' ? parsed.replacements : parsed;
+    // A name mapped to itself is not private, and fake values may legitimately
+    // contain a short real key, so only keys that were actually rewritten count.
+    return Object.entries(map || {})
+      .filter(([k, v]) => !k.startsWith('_') && typeof v === 'string' && k.toLowerCase() !== v.toLowerCase())
+      .map(([k]) => k);
+  } catch {
+    return [];
+  }
+}
 const SOURCE = join(ROOT, 'demo', 'memory', 'state.json');
 // demo.js fetches ${BASE}demo/demo/… — the nested copy under explorer/public is
 // the one a browser actually loads. Three copies of the demo corpus already
@@ -94,9 +114,13 @@ describe('demo working-memory fixture', () => {
     // The fixture is derived from already-sanitized demo data, so this is a
     // regression guard on that property rather than a scrub of its own: if a
     // future builder ever reads the live corpus instead, this fails first.
+    // Private names are not listed here; they come from the same optional local
+    // sanitize map scripts/build-demo-data.js reads, so the guard is strongest on
+    // the machine that builds the demo and still checks paths everywhere else.
     const raw = readFileSync(SOURCE, 'utf8');
-    for (const forbidden of ['/Users/', 'andyed', 'psychodeli', 'scrutinizer', 'iblipper', 'clicksense', 'histospire']) {
-      assert.ok(!new RegExp(forbidden, 'i').test(raw), `fixture leaks ${forbidden}`);
+    const forbidden = ['/Users/', 'andyed', ...localSanitizeNames()];
+    for (const name of forbidden) {
+      assert.ok(!raw.toLowerCase().includes(name.toLowerCase()), `fixture leaks ${name}`);
     }
   });
 

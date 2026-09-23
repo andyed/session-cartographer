@@ -2,11 +2,9 @@
 /**
  * bootstrap-project-registry.js — derive a starter project registry from YOUR corpus.
  *
- * The registry that ships with this plugin is the maintainer's. An alias it does
- * not know falls through as a literal project name instead of erroring, so an
- * adopter who scopes a search to `devtools` gets zero results for a scope they
- * believe they set — and the shipped `frakbot` alias expands to `openclaw`,
- * which this project treats as deprecated archive material, never a source.
+ * The plugin ships an empty registry. An alias nobody defined falls through as a
+ * literal project name instead of erroring, so scoping a search to a family name
+ * finds nothing until a registry defines it. This script derives one.
  *
  * This writes a user-level registry (which REPLACES the shipped one; see
  * scripts/project-registry.sh for the resolution order) built from the project
@@ -21,6 +19,12 @@
  *   node scripts/bootstrap-project-registry.js --dry-run
  *   node scripts/bootstrap-project-registry.js
  *   node scripts/bootstrap-project-registry.js --force        # overwrite an existing one
+ *   node scripts/bootstrap-project-registry.js --update       # add projects seen since
+ *
+ * --update keeps every alias and member you edited. It considers only project
+ * names absent from the registry's `_known` list, so a name you removed from an
+ * alias stays removed: it is known, just not grouped. New names join the alias
+ * named by their stem, or form a new alias when two or more share a stem.
  *   node scripts/bootstrap-project-registry.js --out PATH --min-events 5
  */
 import fs from 'node:fs';
@@ -52,6 +56,7 @@ const valueAfter = (flag, fallback) => {
 
 const DRY_RUN = has('--dry-run');
 const FORCE = has('--force');
+const UPDATE = has('--update');
 const OUT = path.resolve(valueAfter('--out', userRegistryPath(process.env)));
 const MIN_EVENTS = Math.max(1, Number.parseInt(valueAfter('--min-events', '1'), 10) || 1);
 
@@ -60,11 +65,11 @@ const NON_PROJECT_NAMES = nonProjectNames(process.env, DEV);
 /**
  * The family stem of a project name: leading token, trailing digits stripped.
  *
- *   psychodeli-webgl-port -> psychodeli      scrutinizer2025 -> scrutinizer
- *   psychodeli-plus-tvos  -> psychodeli      scrutinizer-www -> scrutinizer
+ *   widget-api     -> widget      notes2025  -> notes
+ *   widget-web-app -> widget      notes-www  -> notes
  *
- * Digits are stripped because year-suffixed repos (`interests2025`,
- * `iblipper2025`) are the same family as their unsuffixed siblings, and a
+ * Digits are stripped because year-suffixed repos (`notes2025`,
+ * `tracker2024`) are the same family as their unsuffixed siblings, and a
  * prefix-only rule puts them in separate groups of one. The stem is discarded
  * when stripping leaves too little to be a name.
  */
@@ -141,7 +146,10 @@ const registry = {
   ].join(' '),
   _generated: new Date().toISOString(),
   aliases,
+  _known: [...kept.keys()].sort(),
 };
+
+if (UPDATE) update();
 
 // ─── Report ───
 const out = [];
@@ -189,3 +197,64 @@ fs.mkdirSync(path.dirname(OUT), { recursive: true });
 fs.writeFileSync(OUT, `${JSON.stringify(registry, null, 2)}\n`);
 console.log(`Wrote ${OUT}`);
 console.log('This replaces the plugin\'s shipped registry. Edit it — the grouping above is inference.');
+
+/**
+ * Merge projects first seen since the last run into an existing registry
+ * without touching anything the user edited. Exits the process.
+ */
+function update() {
+  if (!fs.existsSync(OUT)) {
+    console.error(`bootstrap-project-registry: ${OUT} does not exist. Run without --update to create it.`);
+    process.exit(1);
+  }
+  let current;
+  try {
+    current = JSON.parse(fs.readFileSync(OUT, 'utf8'));
+  } catch (error) {
+    console.error(`bootstrap-project-registry: ${OUT} is not valid JSON (${error.message}). Fix it first.`);
+    process.exit(1);
+  }
+  const existing = current.aliases && typeof current.aliases === 'object' && !Array.isArray(current.aliases)
+    ? current.aliases : {};
+  // A registry written before `_known` existed: everything it names is known.
+  const known = new Set(Array.isArray(current._known) ? current._known
+    : Object.entries(existing).flatMap(([alias, members]) => [alias, ...members]));
+  const fresh = [...kept.keys()].filter((name) => !known.has(name));
+
+  const next = Object.fromEntries(Object.entries(existing).map(([k, v]) => [k, [...v]]));
+  const added = [];
+  const pending = new Map();
+  for (const name of fresh) {
+    const stem = familyStem(name);
+    if (stem.length >= 3 && Array.isArray(next[stem])) {
+      next[stem].push(name);
+      added.push(`${stem} += ${name}`);
+    } else if (stem.length >= 3 && !(stem in next)) {
+      if (!pending.has(stem)) pending.set(stem, []);
+      pending.get(stem).push(name);
+    }
+  }
+  for (const [stem, members] of pending) {
+    if (members.length < 2) continue;
+    next[stem] = members.sort((a, b) => kept.get(b) - kept.get(a));
+    added.push(`${stem} = ${next[stem].join(', ')}`);
+  }
+
+  const result = {
+    ...current,
+    aliases: next,
+    _known: [...new Set([...known, ...kept.keys()])].sort(),
+    _updated: new Date().toISOString(),
+  };
+  console.log(`--update: ${fresh.length} project name${fresh.length === 1 ? '' : 's'} not seen before`);
+  console.log(added.length ? added.map((line) => `  ${line}`).join('\n') : '  no alias changes');
+  const ungroupedFresh = fresh.filter((name) => !added.some((line) => line.includes(name)));
+  if (ungroupedFresh.length) console.log(`  left ungrouped: ${ungroupedFresh.slice(0, 20).join(', ')}`);
+  if (DRY_RUN) {
+    console.log(`--dry-run: would update ${OUT}`);
+    process.exit(0);
+  }
+  fs.writeFileSync(OUT, `${JSON.stringify(result, null, 2)}\n`);
+  console.log(`Updated ${OUT}`);
+  process.exit(0);
+}

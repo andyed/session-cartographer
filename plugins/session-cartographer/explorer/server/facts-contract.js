@@ -6,7 +6,7 @@
  * different loss functions, and conflating them is not a tuning problem:
  * a ranking engine asked a census question — "what happened yesterday" — has no
  * relevance gradient to work with, so it returns *an* answer with no way for
- * the caller to know it is not *the* answer. The measured case: FrakBot's daily
+ * the caller to know it is not *the* answer. The measured case: a scheduled agent's daily
  * pulse surfaced 1 event from a window that deterministically contained 736
  * events across 22 sessions and 20 commits.
  *
@@ -32,8 +32,8 @@ export class FactsContractError extends Error {
 }
 
 // Matches RECALL_PROJECT_MAX. `project` is not one name: callers pass a
-// pipe-delimited alternation of every alias a project expands to, and FrakBot's
-// feed alone expands 20 names into 37 aliases packing to 576 characters. A
+// pipe-delimited alternation of every alias a project expands to, and one scheduled
+// agent's feed alone expands 20 names into 37 aliases packing to 576 characters. A
 // tighter bound here would reject the exact caller this endpoint is for.
 export const FACTS_PROJECT_MAX = 2048;
 

@@ -226,7 +226,7 @@ bash scripts/retro-index.sh --provider codex
 bash scripts/retro-index.sh --limit-days 30
 
 # Filter to a specific project
-bash scripts/retro-index.sh --project scrutinizer
+bash scripts/retro-index.sh --project tracker
 ```
 
 Groups each transcript into conversation turns (user prompt + assistant responses up to the next user prompt), then pipes one event per turn through `index-event.sh` → Qdrant. Deterministic `turn-<session>-<idx>` IDs — safe to rerun.

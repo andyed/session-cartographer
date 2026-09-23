@@ -202,16 +202,16 @@ test('project matching is substring and case-insensitive over a pipe-delimited s
   // Matches bm25.js. A family name has to select its repositories, or a census
   // and a recall over the same --project would disagree about scope.
   const events = [
-    { event_id: 'e1', timestamp: '2026-05-10T12:00:00Z', project: 'Psychodeli-WebGL-Port' },
-    { event_id: 'e2', timestamp: '2026-05-10T12:01:00Z', project: 'psychodeli-metal' },
-    { event_id: 'e3', timestamp: '2026-05-10T12:02:00Z', project: 'scrutinizer' },
+    { event_id: 'e1', timestamp: '2026-05-10T12:00:00Z', project: 'Gadget-Web' },
+    { event_id: 'e2', timestamp: '2026-05-10T12:01:00Z', project: 'gadget-metal' },
+    { event_id: 'e3', timestamp: '2026-05-10T12:02:00Z', project: 'tracker' },
     { event_id: 'e4', timestamp: '2026-05-10T12:03:00Z', project: '' },
   ];
 
-  assert.equal(census(events, request({ project: 'psychodeli' })).events, 2);
-  assert.equal(census(events, request({ project: 'PSYCHODELI' })).events, 2, 'matching is case-insensitive');
-  assert.equal(census(events, request({ project: 'nope|scrutinizer' })).events, 1);
-  assert.equal(census(events, request({ project: 'psychodeli|scrutinizer' })).events, 3);
+  assert.equal(census(events, request({ project: 'gadget' })).events, 2);
+  assert.equal(census(events, request({ project: 'GADGET' })).events, 2, 'matching is case-insensitive');
+  assert.equal(census(events, request({ project: 'nope|tracker' })).events, 1);
+  assert.equal(census(events, request({ project: 'gadget|tracker' })).events, 3);
   assert.equal(census(events, request({ project: 'nothing-here' })).events, 0);
   assert.equal(census(events, request({ project: '' })).events, 4, 'no scope requested, no scope applied');
 });
@@ -639,7 +639,7 @@ test('an unresolvable project scope is distinguishable from a quiet one', () => 
   // census that is the worst available failure: the number looks like an answer.
   const events = [
     { event_id: 'e1', timestamp: '2026-05-10T12:00:00Z', project: 'session-cartographer', type: 't', _source: 'changelog' },
-    { event_id: 'e2', timestamp: '2026-05-10T12:01:00Z', project: 'psychodeli-webgl-port', type: 't', _source: 'changelog' },
+    { event_id: 'e2', timestamp: '2026-05-10T12:01:00Z', project: 'gadget-web', type: 't', _source: 'changelog' },
   ];
   const ctx = { events, index: { docs: new Map() } };
   const call = (project) => executeFacts(ctx, {
@@ -650,9 +650,9 @@ test('an unresolvable project scope is distinguishable from a quiet one', () => 
   assert.equal(unscoped.project_scope.status, 'all', 'no scope requested, no scope applied');
   assert.equal(unscoped.facts.events, 2);
 
-  const resolved = call('psychodeli');
+  const resolved = call('gadget');
   assert.equal(resolved.project_scope.status, 'resolved');
-  assert.deepEqual(resolved.project_scope.matched, ['psychodeli-webgl-port'],
+  assert.deepEqual(resolved.project_scope.matched, ['gadget-web'],
     'a family name reports which repositories it actually admitted');
   assert.equal(resolved.facts.events, 1);
 

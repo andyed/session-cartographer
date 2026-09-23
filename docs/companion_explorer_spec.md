@@ -65,12 +65,12 @@ To provide a fast, keyboard-centric filtering experience similar to GitHub, the 
 
 ### 1. GitHub-Style Query Syntax
 Users can mix unstructured semantic/keyword terms with strict categorical filters.
-- `repo:foo` or `project:foo`: Restricts results to a specific Git repository (e.g., `repo:psychodeli-plus-tvos`). Sent to the backend via the `--project` flag.
+- `repo:foo` or `project:foo`: Restricts results to a specific Git repository (e.g., `repo:widget-tvos`). Sent to the backend via the `--project` flag.
 - `type:bar`: Filters by event type (e.g., `type:research_fetch`, `type:tool_bash`, `type:session_milestone`, `type:transcript`). Applied as a high-speed post-filter in the React frontend against the incoming TSV stream.
 - `path:baz`: Filters results where the transcript path or URL matches the string.
 
 **Example Query**:
-`"focus management repo:psychodeli-plus-tvos type:research_fetch"`
+`"focus management repo:widget-tvos type:research_fetch"`
 
 ### 2. Autocomplete Dictionary
 The React frontend will power an autocomplete dropdown to discover available filters without leaving the keyboard.

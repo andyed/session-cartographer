@@ -1,12 +1,12 @@
 # Evaluating the Co-occurrence Graph
 
-How do we know the graph is *right*? There is no labeled ground-truth co-occurrence graph to score against — the edges are descriptive claims about Andy's own work. So validity has to come from two places: the **human oracle** (Andy knows which threads are real) for face validity, and **self-supervised predictive structure** (does the past predict the future?) for rigor that needs no labels.
+How do we know the graph is *right*? There is no labeled ground-truth co-occurrence graph to score against — the edges are descriptive claims about the corpus owner's own work. So validity has to come from two places: the **human oracle** (the corpus owner knows which threads are real) for face validity, and **self-supervised predictive structure** (does the past predict the future?) for rigor that needs no labels.
 
 This is the structural sibling of [`eval-search.js`](../scripts/eval-search.js): that harness scores *retrieval* (precision@k vs. labeled truth queries); this one scores *structure* (predictive validity, stability) with no labels. Different paradigm, same repo discipline (Node, zero new deps).
 
 ## What we're actually testing — three separable claims
 
-1. **Project co-activity edges are real research threads, not calendar coincidences.** (e.g. `allserp-paper ↔ ettac-paper` real; `blog ↔ psychodeli-osx-vx` at k=2 a fluke.)
+1. **Project co-activity edges are real research threads, not calendar coincidences.** (e.g. `paper-a ↔ paper-b` real; `blog ↔ widget-osx` at k=2 a fluke.)
 2. **The ranking statistic earns its keep** — Dunning G² beats raw count, Jaccard, and lume's z-score+tanh. This is the one design decision the whole feature rests on; it should be validated empirically, not just by the saturation algebra.
 3. **Maneuver signatures detect real maneuvers** (precision) without missing them (recall).
 
@@ -16,11 +16,11 @@ Each claim wants a different test.
 
 ## Tier 0 — Face validity (human oracle, ~30 min, do first)
 
-The sanity floor. Dump the top-N edges of each graph; Andy labels each `real / coincidence / wrong`.
+The sanity floor. Dump the top-N edges of each graph; the corpus owner labels each `real / coincidence / wrong`.
 
 - `--audit` mode prints top-20 project edges, maneuver compositions, and transfer edges as a checklist.
 - **Metric:** precision@10, precision@20 per graph.
-- **Why it's legitimate:** Andy *is* the ground-truth oracle for his own corpus. No one else can label "is approach-retreat↔ettac a real thread."
+- **Why it's legitimate:** The corpus owner *is* the ground-truth oracle for their own corpus. No one else can label "is cursor-lib↔paper-b a real thread."
 - **Target:** precision@10 ≥ 0.8 on project edges. Lower is fine on maneuver transfer (N=19 signals, known-thin).
 
 ## Tier 1 — Predictive validation (self-supervised; ran first, demoted — see Result)
@@ -53,9 +53,9 @@ The intended rigor test: **does co-activity structure learned on the past predic
 
 Two readings, both honest:
 1. **The narrow claim holds.** G² beats lume's z-tanh in every run (0.564 vs 0.485; 0.578 vs 0.530; and at 70/30, 0.461 vs 0.456). The z-saturation fix is real.
-2. **But prediction is the wrong objective for this feature.** Raw count and activity *dominate* both significance scores — because predicting recurrence rewards exactly the base-rate/activity signal that significance scoring is *designed to remove*. G² deflates the always-active-together pairs (`andyed↔interests2025`); those are the ones that recur, so G² underperforms at prediction **by construction**. The activity baseline winning is almost tautological.
+2. **But prediction is the wrong objective for this feature.** Raw count and activity *dominate* both significance scores — because predicting recurrence rewards exactly the base-rate/activity signal that significance scoring is *designed to remove*. G² deflates the always-active-together pairs (`home↔notes2025`); those are the ones that recur, so G² underperforms at prediction **by construction**. The activity baseline winning is almost tautological.
 
-Tier 1 falsified the *metric*, not the feature. `/focus` doesn't want to predict recurrence — it wants *distinctive* threads (`allserp↔ettac`), which is what G² does and raw count cannot. The right yardsticks are therefore **Tier 0** (are surfaced threads real/useful?) and **Tier 2** (are they stable?), both of which measure distinctiveness — which prediction cannot. Tier 1 is demoted to a diagnostic.
+Tier 1 falsified the *metric*, not the feature. `/focus` doesn't want to predict recurrence — it wants *distinctive* threads (`paper-a↔paper-b`), which is what G² does and raw count cannot. The right yardsticks are therefore **Tier 0** (are surfaced threads real/useful?) and **Tier 2** (are they stable?), both of which measure distinctiveness — which prediction cannot. Tier 1 is demoted to a diagnostic.
 
 **The predictive variant that *would* favor significance: link prediction.** Predict *new* co-occurrence among pairs that did NOT co-occur in train. With no prior count to lean on, raw count can't compete and a structural/significance score has room to win. That's the one predictive test worth building next, if any.
 
@@ -65,7 +65,7 @@ Quantifies the "punctual / thin" worry directly: which edges are load-bearing vs
 
 - **Procedure:** resample days with replacement (B = 1000), rebuild the graph each time, track each top-N edge's rank.
 - **Metric:** how often each top-20 edge stays top-20 across resamples; Kendall's τ of the top-list across bootstraps.
-- **Expected:** `scrutinizer-www↔scrutinizer2025` (19 shared days) rock-stable; the k=2 edges thrash. 
+- **Expected:** `tracker-www↔tracker2025` (19 shared days) rock-stable; the k=2 edges thrash. 
 - **Payoff:** the stability score can *gate what `/focus` shows* — surface only edges stable in ≥90% of resamples, so thin coincidences never reach the user.
 
 ## Tier 3 — Maneuver signature precision / recall
@@ -78,7 +78,7 @@ Validates the signature catalog (claim 3) and finds gaps.
 
 ## Tier 4 — Downstream utility (deferred, qualitative)
 
-The real question — *does the `/focus` related-threads block actually surface a useful cross-project connection during live orientation?* — resists clean measurement. Track anecdotally: the test is whether Andy follows a surfaced thread he'd forgotten. This is the LongMemEval **multi-session-reasoning** capability (the cross-session join the project graph provides; see [TODO.md](../TODO.md)) made concrete for this corpus.
+The real question — *does the `/focus` related-threads block actually surface a useful cross-project connection during live orientation?* — resists clean measurement. Track anecdotally: the test is whether the user follows a surfaced thread they'd forgotten. This is the LongMemEval **multi-session-reasoning** capability (the cross-session join the project graph provides; see [TODO.md](../TODO.md)) made concrete for this corpus.
 
 ---
 
@@ -106,7 +106,7 @@ Reuses the builder's scoring functions (export `dunningLLR`, `zSig`-equivalent, 
 
 **Revised after the Tier 1 result.** Tier 1 ran and is demoted to a diagnostic — it measures predictive recurrence, which rewards the activity base rate that significance scoring deliberately removes, so it cannot validate a *distinctiveness* feature. Next:
 
-1. **Tier 0** — Andy labels the top threads. The only test of whether surfaced threads are actually useful, which is the feature's real objective.
+1. **Tier 0** — the corpus owner labels the top threads. The only test of whether surfaced threads are actually useful, which is the feature's real objective.
 2. **Tier 2** — bootstrap stability; use it to gate which edges `/focus` shows (only edges stable in ≥90% of resamples).
 3. **Link-prediction variant** (Tier 1 follow-up) — the one predictive test where significance scoring could genuinely beat raw count.
 4. Tier 3 when tuning the signature catalog; Tier 4 (downstream utility) is ongoing.

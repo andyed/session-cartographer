@@ -12,25 +12,25 @@ Three layers, first hit wins, **no merging** — a user registry *replaces* the 
 |---|----------|-----|
 | 1 | `$CARTOGRAPHER_PROJECT_REGISTRY` | explicit path; tests and one-offs |
 | 2 | `~/.config/session-cartographer/project-registry.json` (or `$CARTOGRAPHER_CONFIG`'s directory) | **yours** |
-| 3 | the plugin's own `project-registry.json` | the maintainer's, shipped default |
+| 3 | the plugin's own `project-registry.json` | shipped empty: every name is literal |
 
-Layer 2 replaces layer 3 wholesale rather than merging with it. Merging would leave shipped aliases — `frakbot`, which expands to the deprecated `openclaw` — reachable in every adopter install forever, and an alias you deliberately deleted would keep resolving.
+Layer 2 replaces layer 3 wholesale rather than merging with it, so an alias you deliberately deleted stops resolving. The plugin ships layer 3 empty: a project list describes one person's machine and is no use to anyone else.
 
 Ask which one is live:
 
 ```bash
 bash scripts/project-registry.sh --path
 bash scripts/project-registry.sh --aliases
-bash scripts/project-registry.sh --expand psychodeli
+bash scripts/project-registry.sh --expand widget
 ```
 
-A registry that is present but unparseable is an error, not a fallback: falling back would answer your query with the maintainer's aliases and never say so.
+A registry that is present but unparseable is an error, not a fallback: falling back would answer your query from a different registry and never say so.
 
 ```json
 {
   "aliases": {
-    "devtools": ["session-cartographer", "claude-code-session-bridge", "claude-code-history-viewer"],
-    "scrutinizer": ["scrutinizer2025", "scrutinizer-www", "PooledStatisticsMetamers", "fovi", "clicksense"]
+    "devtools": ["session-cartographer", "claude-code-history-viewer"],
+    "widget": ["widget-api", "widget-web", "gizmo-sdk", "billing-core"]
   }
 }
 ```
@@ -44,11 +44,11 @@ Used by:
 
 Scoping does not require an alias. `--project` matches by **case-insensitive
 substring** (`projectMatcher` in `explorer/server/project-filter.js`), so
-`--project psycho` already selects every `psychodeli-*` repository, and
-`--project webgl` selects anything with `webgl` in its name. The registry earns
-its keep where a substring cannot express the set — `scrutinizer` also has to
-reach `PooledStatisticsMetamers`, `fovi` and `clicksense`, which share no common
-string — and where a loose prefix would over-select.
+`--project widg` already selects every `widget-*` repository, and
+`--project api` selects anything with `api` in its name. The registry earns
+its keep where a substring cannot express the set — `widget` also has to reach
+`gizmo-sdk` and `billing-core`, which share no common string — and where a loose
+prefix would over-select.
 
 Both ladders honour the same predicate. The semantic leg used to scope by exact
 equality against Qdrant, which meant an unregistered prefix returned keyword
@@ -57,39 +57,30 @@ values present in the corpus and filters on those. `/api/recall` performs no
 registry expansion at all, so an API caller passing a family name depends
 entirely on that substring behaviour.
 
-### Current aliases
-
-| Alias | Projects |
-|-------|----------|
-| scrutinizer | scrutinizer2025, scrutinizer-www, PooledStatisticsMetamers, fovi, clicksense |
-| psychodeli | psychodeli-webgl-port, -plus-tvos, -plus-firetv, -metal, -osx-vx, -brand-guide |
-| tvapps | oled-fireworks-tvos, -firetv, cymatics-firetv, pixelbop |
-| interests | interests2025, histospire, mcp-chrome |
-| sciprogfi | sciprogfi-web, sciprogfi |
-| websites | mindbendingpixels-www, scrutinizer-www, sciprogfi-web |
-| iblipper | iblipper2025 |
-| devtools | session-cartographer, claude-code-session-bridge, claude-code-history-viewer |
-| nanobot | nanobot |
-| wyrdforge | wyrdforge |
-
 ### Bootstrapping your own
 
-The table above is the **maintainer's**. An alias that is not defined falls
-through as a literal project name rather than erroring, so scoping to one of
-someone else's aliases returns zero results for a scope you think you set.
-Derive your own from your event logs:
+The plugin ships no aliases. An alias that is not defined falls through as a
+literal project name rather than erroring, which is safe: substring matching
+still scopes most searches. Derive a registry from your event logs:
 
 ```bash
 node scripts/bootstrap-project-registry.js --dry-run   # see what it infers
 node scripts/bootstrap-project-registry.js             # write it (refuses to clobber; --force to replace)
+node scripts/bootstrap-project-registry.js --update    # later: add projects seen since
 ```
 
-It groups project names by shared stem (`psychodeli-webgl-port` +
-`psychodeli-plus-tvos` → `psychodeli`) and drops cwd-derived non-projects: the
+It groups project names by shared stem (`widget-api` + `widget-web` →
+`widget`) and drops cwd-derived non-projects: the
 workspace root, your home directory, auto-named agent worktrees
 (`brave-thompson-40e495`), and bare `repo`/`dist`/`spec`. Grouping by prefix is
 a guess about how you think about your work — the script prints what it grouped
 and what it left alone, and expects you to edit the result.
+
+`--update` maintains an existing registry. It records every project name it has
+considered in a `_known` list and only acts on names absent from it: a new name
+joins the alias its stem names, or two or more new names sharing a stem form a
+new alias. Aliases you wrote, and members you removed, stay as you left them.
+Run it with `--dry-run` first to see the proposed changes.
 
 ### Adding an alias by hand
 
@@ -132,7 +123,7 @@ allowlist; an unscoped whole-corpus feed fails closed.
 
 ```bash
 bash scripts/cartographer-feed.sh \
-  --projects psychodeli,interests,sciprogfi,session-cartographer \
+  --projects widget,notes,session-cartographer \
   --since 24h \
   --max-results 20
 ```

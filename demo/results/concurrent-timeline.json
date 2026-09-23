@@ -2747,7 +2747,7 @@
       "timestamp": "2026-03-14T02:32:05.823Z",
       "project": "-Users-demo-user-Documents-dev",
       "cwd": "/home/user/Documents/dev/Quantum Toaster-repo/quantum-toaster",
-      "summary": "yes, sounds like we also need to document a sequence cosntraint -- adopting blauch mapping is P0, what comes next | project: -Users-demo-user-Documents-dev",
+      "summary": "yes, sounds like we also need to document a sequence cosntraint -- adopting reference mapping is P0, what comes next | project: -Users-demo-user-Documents-dev",
       "session": "",
       "_score": 0.0049261083743842365,
       "_sources": "semantic"
@@ -3923,7 +3923,7 @@
       "timestamp": "2026-03-25T22:50:35.050Z",
       "project": "-Users-demo-user",
       "cwd": "/home/user",
-      "summary": "That's the Quantum Toaster TODO, not FrakBot's. Let me add it to the episodic buffer instead — FrakBot will pick it up. | project: -Users-demo-user",
+      "summary": "That's the Quantum Toaster TODO, not the agent's. Let me add it to the episodic buffer instead — the agent will pick it up. | project: -Users-demo-user",
       "session": "",
       "_score": 0.0032258064516129032,
       "_sources": "semantic"
@@ -4989,7 +4989,7 @@
       "timestamp": "2026-03-22T14:33:35.862Z",
       "project": "-Users-demo-user",
       "cwd": "/home/user/Documents/dev/hobbit-village/hobbit-village",
-      "summary": "All 6 done. Let me update FrakBot's research-requests.md to mark them completed: | project: -Users-demo-user",
+      "summary": "All 6 done. Let me update the agent's research-requests.md to mark them completed: | project: -Users-demo-user",
       "session": "",
       "_score": 0.0024390243902439024,
       "_sources": "semantic"

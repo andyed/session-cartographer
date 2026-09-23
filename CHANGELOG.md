@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### feat(registry): ship no aliases; add `bootstrap-project-registry.js --update`
+
+The shipped `project-registry.json` is empty: a project list describes one
+person's machine and does nothing for anyone else. Users derive their own with
+`bootstrap-project-registry.js`, and `--update` now keeps it current by adding
+only project names absent from a recorded `_known` list, so hand edits and
+deliberate removals survive. The personal Hermes/FrakBot wrapper left the repo;
+`cartographer-pulse.sh` remains the supported entry point for scheduled feeds.
+`build-demo-data.js` reads private name replacements from a local
+`~/.config/session-cartographer/demo-sanitize.json` instead of listing them.
+
+### docs: remove the maintainer's project names, research tracks, and identity
+
+Examples, fixtures, comments, and specs use synthetic project names. Behavior is
+unchanged.
+
 ### feat(investigate): recall past diagnoses and close the loop
 
 `/investigate` no longer prescribes a debugging procedure. It recalls earlier
@@ -359,7 +375,7 @@ and kept writing phantom projects into `session-milestones.jsonl` — the log
 `/remember` most depends on. On the development corpus `changelog.jsonl` and
 `tool-use-log.jsonl` had been clean since August while milestones were still
 arriving misattributed in September, one of them carrying project
-`confident-yalow-e1cdc6` beside a digest reading `{psychodeli-webgl-port: 118}`,
+`confident-yalow-e1cdc6` beside a digest reading `{widget-web: 118}`,
 because the digest is built from hook events and the project field was not.
 
 Skills are markdown and cannot source a shell library, so
@@ -422,7 +438,7 @@ changes below are included in the 0.7.6 candidate.
 `POST /api/facts` answers "what is true of the corpus" — `census`, `tempo` and
 `delta`. Conflating the two is not a tuning problem: a ranker handed a census
 question has no relevance gradient to work with, so it returns *an* answer with
-no way for the caller to know it is not *the* answer. The daily FrakBot pulse
+no way for the caller to know it is not *the* answer. The daily scheduled-agent pulse
 surfaced **1 event** from a 24h window that deterministically held **736 events,
 22 sessions and 20 commits across four repositories**.
 
@@ -476,7 +492,7 @@ events fell *outside* the requested scope so the blind spot is visible. With the
 facts service unreachable it degrades to the search section and says so, rather
 than emitting a zeroed census that reads as a quiet day.
 
-The FrakBot allowlist was widened for the first time against evidence rather
+The scheduled agent's project allowlist was widened for the first time against evidence rather
 than recall: a 30-day census diffed against the registry-expanded list. The
 blind spot went from 232 events across six projects to 93 across two, both
 deliberate.
@@ -577,7 +593,7 @@ byte-identical to an unwindowed run.
 **The two ladders disagreed about what `--project` meant.** `semanticSearch`
 scoped by Qdrant `match: {value}` — exact equality — while both BM25 scorers
 use the case-insensitive substring of `projectMatcher`, and `/api/recall` does
-no registry expansion. A bare `--project psychodeli` therefore reached the
+no registry expansion. A bare `--project widget` therefore reached the
 keyword ladder as its whole family and the semantic ladder as a literal string
 matching nothing: **0 semantic rows against 9,943 indexed points**. The spec now
 resolves against the project values actually present and emits a `should` of
@@ -594,7 +610,7 @@ measured 20 keyword rows and 0 semantic.
 | Feed query, 24 h | 1 row | 24 rows |
 | `commit fix`, 24 h (API, controlled) | 4 | 37 |
 | `test`, 7 d (in-window keyword rows kept) | 74 | 1,096 |
-| `--project psychodeli` (semantic rows) | 0 | 104 |
+| `--project widget` (semantic rows) | 0 | 104 |
 | Semantic stage, 24 h | 180–480 ms | 80–90 ms |
 
 Keyword stage is unchanged at ~27 ms, and unscoped, unwindowed queries are
@@ -698,7 +714,7 @@ against the pre-fix hook.
 Turbo was measurably fast and quietly unusable for the one caller that ran
 every day. The recall contract capped `limit` at 100; `cartographer-feed.sh`
 fans out across every active project and clamps its own limit to 200, so every
-FrakBot daily pulse since Turbo shipped failed the contract and fell back to
+scheduled-agent daily pulse since Turbo shipped failed the contract and fell back to
 the ~11 s portable search. Raising the ceiling exposed a second blocker on the
 same path — `project` carries a pipe-delimited alternation of every expanded
 alias, and the real allowlist packs to 576 characters against a 512-character
@@ -719,7 +735,7 @@ requests may assert it, and a mismatch is refused instead of answered.
 `blocked` rather than `failed` — the file spool is a complete recall path, not
 a broken server.
 
-Measured on the real FrakBot feed: 12,386 ms via CLI fallback before,
+Measured on the real scheduled-agent feed: 12,386 ms via CLI fallback before,
 1,915 ms through Turbo after, with no fallback recorded.
 
 ### fix(turbo): warm ranking ignored salience and fused one flat list
@@ -1210,7 +1226,7 @@ drafts.
 
 Sessions `cd` into other repositories to read things, and those events keep the
 session's own `project` while carrying the other repo's `cwd`. Taking the latest
-one attributed `session-cartographer`'s rows to `attentional-foraging`'s remote —
+one attributed `session-cartographer`'s rows to `another-repo`'s remote —
 so the tool proposed trusting a repo on the strength of activity that happened
 somewhere else, and paid a `gh` call to confirm the wrong answer.
 
@@ -1496,7 +1512,7 @@ release smoke tests before GitHub publishes the archive.
 
 ### feat(graph): significance-weighted co-occurrence graph + maneuver map
 
-Two orientation lenses search can't provide, from one Dunning-G² engine over the **structured** fields of the event logs (project, detected tech-signals) — never tokenized prose (a prose term-graph just rebuilt machinery cliques and duplicated the Qdrant path). **Project co-activity** (`--related <project>`) uses the calendar *day* as the document — 97% of sessions are single-project, so the cross-thread signal lives in same-day concurrency, not same-session — surfacing research threads like `allserp-paper ↔ ettac-paper`. **Maneuver map** (`--maneuvers <project>`) detects tech-signals (`gh-release`, `cloudflare-pages`, `overleaf-sync`, …) from a signature catalog over `summary + files_changed`, in two views: *composition* (signal × signal, doc = session — `gh-release + version-tag + lfs` = the Psychodeli DMG release) and *transfer* (project × project, doc = signal — which projects share a procedure).
+Two orientation lenses search can't provide, from one Dunning-G² engine over the **structured** fields of the event logs (project, detected tech-signals) — never tokenized prose (a prose term-graph just rebuilt machinery cliques and duplicated the Qdrant path). **Project co-activity** (`--related <project>`) uses the calendar *day* as the document — 97% of sessions are single-project, so the cross-thread signal lives in same-day concurrency, not same-session — surfacing research threads like `paper-a ↔ paper-b`. **Maneuver map** (`--maneuvers <project>`) detects tech-signals (`gh-release`, `cloudflare-pages`, `overleaf-sync`, …) from a signature catalog over `summary + files_changed`, in two views: *composition* (signal × signal, doc = session — `gh-release + version-tag + lfs` = a desktop app's DMG release) and *transfer* (project × project, doc = signal — which projects share a procedure).
 
 Edges rank by **Dunning's log-likelihood ratio (G², 1993)**, not lume's z-score+tanh: for a perfectly-correlated pair the z-score collapses to `√N` regardless of count, so a 3-session fluke ties a 30-session pattern — it saturates. A temporal-holdout eval confirmed G² beats z-tanh in every split, and also that *prediction is the wrong yardstick* (raw count dominates both — forecasting recurrence rewards the base rate significance is designed to remove); `/focus` wants distinctive threads, not predictable ones. The artifact is an **index, not a store** (~46 KB; maneuver layer 3.3 KB): it records which `(project, signal)` cells are non-empty, never the commands — those stay in the changelog and are recovered on demand, so no secrets (CF tokens / zone IDs) are indexed. Inspired by DeepBlueDynamics/lume's Semantic Knowledge Graph layer.
 

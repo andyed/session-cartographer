@@ -2643,7 +2643,7 @@
     {
       "timestamp": "2026-03-13T21:12:07Z",
       "type": "fetch",
-      "url": "https://raw.githubusercontent.com/nblauch/owl-vision/main/owl-vision/sensing/coords.py",
+      "url": "https://raw.githubusercontent.com/example/vision-lib/main/sensing/coords.py",
       "prompt": "Focus specifically on the _compute_isotropic_r_and_num_theta function. Extract:\n1. How radius_diff is computed — exact code lines\n2. How n_angles is computed — exact code lines  \n3. What the default value of cmf_a is if any\n4. Whether it uses (r[i+1]-r[i-1])/2 or some other formulation for radial spacing\n5. Any comments about the complex log mapping w=log(z+a)",
       "category": "other",
       "project": "quantum-toaster",
@@ -3052,7 +3052,7 @@
       "source": "transcript",
       "timestamp": "2026-03-22T00:19:01.510Z",
       "project": "-Users-demo-user",
-      "cwd": "/home/user/.openclaw/workspace/substrate-tests",
+      "cwd": "/home/user/.agent/workspace/substrate-tests",
       "summary": "Now let me also check some of the most differentiated responses — particularly the word association and Category E data. | project: -Users-demo-user",
       "session": "",
       "_score": 0.005050505050505051,

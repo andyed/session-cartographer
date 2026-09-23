@@ -1,11 +1,11 @@
 // Every stage scopes `--project` by case-insensitive substring so a family name
 // selects its repositories — except Qdrant, whose match:{value} is exact
 // equality. The two ladders therefore disagreed about what the scope meant:
-// `--project psycho` reached the keyword ladder as the whole psychodeli family
+// `--project gadg` reached the keyword ladder as the whole gadget family
 // and the semantic ladder as a literal string matching nothing, and /api/recall
-// does the same for a bare `psychodeli` because it performs no registry
-// expansion. Measured on the live corpus: exact `psychodeli` = 0 points,
-// `psychodeli-webgl-port` = 9,943. Nothing errored; the ladder was just absent.
+// does the same for a bare `gadget` because it performs no registry
+// expansion. Measured on the live corpus: exact `gadget` = 0 points,
+// `gadget-web` = 9,943. Nothing errored; the ladder was just absent.
 process.env.CARTOGRAPHER_SEMANTIC = '0';
 
 import test from 'node:test';
@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { buildIndex, projectMatcher, scoreBM25 } from '../../explorer/server/bm25.js';
 import { resolveProjectValues } from '../../explorer/server/search.js';
 
-const FAMILY = ['psychodeli-webgl-port', 'psychodeli-plus-tvos', 'psychodeli-metal'];
+const FAMILY = ['gadget-web', 'gadget-tvos', 'gadget-metal'];
 
 function corpus() {
   const events = [];
@@ -29,21 +29,21 @@ function corpus() {
 
 test('a family prefix resolves to the concrete project values present', () => {
   const index = buildIndex(corpus());
-  assert.deepEqual(resolveProjectValues(index, 'psychodeli').sort(), [...FAMILY].sort());
-  assert.deepEqual(resolveProjectValues(index, 'psycho').sort(), [...FAMILY].sort());
+  assert.deepEqual(resolveProjectValues(index, 'gadget').sort(), [...FAMILY].sort());
+  assert.deepEqual(resolveProjectValues(index, 'gadg').sort(), [...FAMILY].sort());
   // A substring that spans no project name selects nothing — an answer, not a failure.
   assert.deepEqual(resolveProjectValues(index, 'zzz-no-such-project'), []);
 });
 
 test('an exact project name still resolves to exactly itself', () => {
   const index = buildIndex(corpus());
-  assert.deepEqual(resolveProjectValues(index, 'psychodeli-webgl-port'), ['psychodeli-webgl-port']);
+  assert.deepEqual(resolveProjectValues(index, 'gadget-web'), ['gadget-web']);
 });
 
 test('a pipe-delimited alias list resolves to the union', () => {
   const index = buildIndex(corpus());
-  const got = resolveProjectValues(index, 'psychodeli-metal|session-cartographer').sort();
-  assert.deepEqual(got, ['psychodeli-metal', 'session-cartographer']);
+  const got = resolveProjectValues(index, 'gadget-metal|session-cartographer').sort();
+  assert.deepEqual(got, ['gadget-metal', 'session-cartographer']);
 });
 
 test('the resolved scope is exactly the scope the keyword ladder used', () => {
@@ -51,7 +51,7 @@ test('the resolved scope is exactly the scope the keyword ladder used', () => {
   // filter must name. If these ever diverge, one ladder is searching a corpus
   // the other cannot see.
   const index = buildIndex(corpus());
-  for (const spec of ['psychodeli', 'psycho', 'psychodeli-webgl-port', 'noise']) {
+  for (const spec of ['gadget', 'gadg', 'gadget-web', 'noise']) {
     const keyword = new Set(
       scoreBM25(index, 'shader palette widget glacier lantern', { project: spec })
         .items.map((it) => it.event.project),
@@ -64,9 +64,9 @@ test('the resolved scope is exactly the scope the keyword ladder used', () => {
 });
 
 test('projectMatcher is the one predicate, and an empty spec scopes to everything', () => {
-  const matches = projectMatcher('psychodeli');
-  assert.equal(matches('psychodeli-webgl-port'), true);
-  assert.equal(matches('PSYCHODELI-Metal'), true, 'matching is case-insensitive');
+  const matches = projectMatcher('gadget');
+  assert.equal(matches('gadget-web'), true);
+  assert.equal(matches('GADGET-Metal'), true, 'matching is case-insensitive');
   assert.equal(matches('session-cartographer'), false);
   assert.equal(matches(''), false, 'an event with no project is not in any scope');
   assert.equal(projectMatcher('')('anything'), true);

@@ -128,7 +128,7 @@ EXPANDED_PROJECT_FILE="$WORK/projects.txt"
 : > "$EXPANDED_PROJECT_FILE"
 
 # The census and the search have to describe the same corpus. If the two halves
-# resolved `psychodeli` to different alias sets, the counted section would be
+# resolved `widget` to different alias sets, the counted section would be
 # measuring a scope the search section never looked at, and the reader has no way
 # to tell. That used to be guaranteed by copying the feed's jq verbatim; it is
 # now guaranteed by both calling the same resolver.
@@ -287,7 +287,7 @@ else
     outside=$((all_events - scoped_events))
     if [ "$outside" -gt 0 ]; then
       # The excluded set is derived with the same substring rule the server's
-      # projectMatcher uses, so a family name (`psychodeli`) is not reported as
+      # projectMatcher uses, so a family name (`widget`) is not reported as
       # excluding its own repositories. Counting the excluded projects here
       # rather than reusing the unscoped project total matters: those are
       # different numbers, and printing the total next to the word "excluded"
