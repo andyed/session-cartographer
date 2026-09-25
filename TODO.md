@@ -1,5 +1,7 @@
 ## Archival recall is buried by recency weighting
 
+**Working plan: [docs/ARCHIVAL_RECALL.md](docs/ARCHIVAL_RECALL.md)** (2026-09-24) — frecency over own activity, query-aware decay, and the age-curve measurement that gates both.
+
 Evidence gathered 2026-09-07 while adding the prompt-history source.
 
 A near-exact text match on a January prompt ranks **1st in its own source
