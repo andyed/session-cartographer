@@ -4,7 +4,7 @@ Searchable memory for Claude Code and Codex. Hooks capture URLs, file edits,
 git commits, and lifecycle events into one provider-neutral JSONL history.
 Search fuses BM25 keyword scoring with vector similarity via Reciprocal Rank
 Fusion — then facets the results by project, event type, source, and time.
-Opt-in [Turbo Mode](#turbo-mode-warm-recall-for-both-agents) keeps the index
+[Turbo Mode](#turbo-mode-warm-recall-for-both-agents) keeps the index
 warm so recall returns in about 0.3 s instead of about 12 s on a
 150,000-event corpus, for both agents from one setting.
 
@@ -51,7 +51,7 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 
 - **Capture.** Hooks in both agents append URLs, file edits, commits, tool use, and lifecycle events to one provider-neutral JSONL history. Nothing is sent off the machine.
 - **Hybrid ranking.** BM25 keyword scoring and Qdrant semantic similarity are merged with Reciprocal Rank Fusion (k=60). The portable path is bash + awk with no dependencies, and it falls back to keyword-only when Qdrant is not running.
-- **Warm index (Turbo).** An opt-in local service holds the index resident (~630 MB at 150,000 events) and serves ordinary queries over loopback HTTP, or a private file transport inside restricted Codex sandboxes. Any failure falls back once to the portable path.
+- **Warm index (Turbo).** A local service, on by default via `/carto` on machines with 16 GB+ RAM, holds the index resident (~630 MB at 150,000 events) and serves ordinary queries over loopback HTTP, or a private file transport inside restricted Codex sandboxes. Any failure falls back once to the portable path.
 - **Facets.** Distributions are computed over the top 500 fused results by project, event type, match source, and time; the Explorer filters client-side and keeps the state in the URL.
 - **Delta serving.** Repeat `/remember` calls in one session suppress ids already returned, so each call surfaces new material. `--all` bypasses it.
 - **Lossy summaries, exact records.** Search output is single-line and truncated by design; `--get` is the path to the full record.
@@ -623,7 +623,7 @@ bash tests/private/benchmark.sh         # 8-query speed comparison
 - [docs/CHANGELOG_SPEC.md](docs/CHANGELOG_SPEC.md) — Event envelope format
 - [docs/EXPLORER_SPEC.md](docs/EXPLORER_SPEC.md) — Explorer implementation architecture
 - [docs/INTERNALS.md](docs/INTERNALS.md) — On-demand utility, coverage, and operations view
-- [docs/TURBO_MODE_SPEC.md](docs/TURBO_MODE_SPEC.md) — Opt-in, utility-first sequence for routing `/remember` through the warm Explorer index
+- [docs/TURBO_MODE_SPEC.md](docs/TURBO_MODE_SPEC.md) — Utility-first sequence (now graduated) for routing `/remember` through the warm Explorer index
 - [docs/PERMALINK_SPEC.md](docs/PERMALINK_SPEC.md) — `claude-history://` URI scheme
 - [docs/landscape-survey.md](docs/landscape-survey.md) — 30+ Claude Code memory projects compared
 - [docs/GHPAGES_DEMO_SPEC.md](docs/GHPAGES_DEMO_SPEC.md) — Demo site architecture + ground truth evaluation spec

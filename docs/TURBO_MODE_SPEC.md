@@ -1,6 +1,6 @@
 # Turbo Mode — utility-first Explorer recall
 
-Status: experimental global opt-in implemented for 0.7.x; utility graduation pending · 2026-08-30
+Status: graduated · 2026-09-23. Default on via `/carto` for machines that fit it (0.7.9); experimental opt-in 2026-08-30 → 2026-09-23
 
 ## Decision
 
@@ -9,9 +9,11 @@ opt-in for ordinary `/remember` queries. Introduce it early, measure utility on
 real recall traffic, and reconcile ranking differences only when they reduce
 observed utility.
 
-Exact CLI/API result parity is not the launch gate. Turbo Mode never enables
-itself silently: the portable CLI remains the default, control path, and
-fallback. Memory use is measured and exposed, but the observed ~583 MB resident
+Exact CLI/API result parity is not the launch gate. As of 0.7.9 Turbo is the
+default where it fits: `/carto` runs `enable --if-recommended`, which turns it on
+only with 16 GB+ RAM and a memory estimate within 8% of it, and reports the plan
+either way. Nothing else enables it. The portable CLI remains the control path
+and the single fallback. Memory use is measured and exposed, but the observed ~583 MB resident
 footprint is not by itself a blocker if the opt-in creates materially better
 recall behavior.
 
@@ -148,6 +150,16 @@ Root `scripts/` and `explorer/` files remain canonical. Files copied under
   the utility canary;
 - localhost binding remains `127.0.0.1`.
 
+## Graduation
+
+Graduated 2026-09-23 by maintainer decision, shipped as the 0.7.9 `/carto`
+default. The latency gate is met by a wide margin (Explorer p50 ~270 ms against
+~16.5 s for the CLI cohort). The utility thresholds were not judged on matched
+50-call cohorts: the CLI cohort stood at 21 calls. Its lower use rate (14% vs
+43% explicit use) is confounded by latency — a 16-second wait suppresses use on
+its own — so it is not evidence that Turbo ranks better, only that it is not
+visibly worse. The thresholds below are kept as the record of the original plan.
+
 ### Provisional decision thresholds
 
 Evaluate only after at least 50 exact calls in each backend cohort. This is a
@@ -247,7 +259,8 @@ opting in once applies to ordinary recall in every session from either agent.
 | `node scripts/cartographer-turbo.js enable` | Persistently opt this user into Turbo Mode and start the managed service. |
 | `--no-turbo` | Force the portable CLI for one call. |
 | `node scripts/cartographer-turbo.js disable` | Persistently opt out and stop the managed service. |
-| no shared preference | Default: portable CLI, with no service start or probe. |
+| `node scripts/cartographer-turbo.js enable --if-recommended` | Run by `/carto`: enable only when the memory plan fits; otherwise report the plan and change nothing. |
+| no shared preference | Portable CLI, with no service start or probe, until `/carto` or `enable` sets one. |
 
 The setting is stored in `~/.config/session-cartographer/config.json` (or
 `CARTOGRAPHER_CONFIG`). Precedence is the per-call flag, explicit
@@ -368,7 +381,8 @@ Acceptance:
 Owner: runtime and packaging.
 
 1. Keep Turbo explicitly off by default and persist one provider-neutral opt-in
-   for every Claude Code and Codex session.
+   for every Claude Code and Codex session. (Superseded at graduation: `/carto`
+   now enables it when the memory plan fits; see Graduation.)
 2. First reuse an already-running Explorer API; do not require the React/Vite
    process for agent recall.
 3. Ship a zero-dependency headless API with bounded on-demand bootstrap. Use a
