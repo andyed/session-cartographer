@@ -20,7 +20,7 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 
 - **`/remember`** — Ask Claude or Codex what was decided, researched, or fixed before, in either agent's sessions.
 - **`/turbo`** (Claude Code) or **`$session-cartographer:turbo`** (Codex) — Turn on warm recall: about 0.3 s per `/remember` instead of about 12 s on a 150,000-event corpus. One setting covers both agents. [Details →](#turbo-mode-warm-recall-for-both-agents)
-- **`/focus <project>`** — Orient before diving in: recent milestones and commits, related cross-project threads, and the project's recurring maneuvers.
+- **`/remember --project <name>`** with no question — Orient before diving in: recent milestones and commits, related cross-project threads, and the project's recurring maneuvers. (This replaced `/focus`, which Claude Code now uses for a built-in view.)
 
 **Coordinate**
 
@@ -186,7 +186,7 @@ Codex sandboxes use a private file request transport when loopback HTTP is
 unavailable, so the same opt-in still applies.
 
 **Session-start reminder.** While enabled, a small agent-only note at session
-start suggests `remember` or `focus` when a task depends on prior work — not for
+start suggests `remember` when a task depends on prior work — not for
 self-contained requests, and it never runs either skill itself. One exposure
 receipt per session goes to `$CARTOGRAPHER_DEV_DIR/.carto/turbo-awareness.jsonl`,
 so adoption can be measured against explicit result use rather than query volume.
@@ -243,7 +243,7 @@ file and changes from HEAD; the link is not a historical file snapshot.
 
 ## Co-occurrence graph & maneuver map
 
-`scripts/cooccurrence-graph.js` builds a significance-weighted co-occurrence graph over the **structured** fields in your event logs (projects, detected tech-signals) — never tokenized prose. One scoring engine, two graphs. Zero external dependencies (Node `fs`/`path`/`os` only). It's wired into `/focus` (related threads + maneuvers) and `/remember` (`--signal` procedural recall), with an opt-in `SessionStart` hook that surfaces orientation automatically — not yet a lens in the Explorer UI. Method doc: [docs/COOCCURRENCE.md](docs/COOCCURRENCE.md).
+`scripts/cooccurrence-graph.js` builds a significance-weighted co-occurrence graph over the **structured** fields in your event logs (projects, detected tech-signals) — never tokenized prose. One scoring engine, two graphs. Zero external dependencies (Node `fs`/`path`/`os` only). It's wired into `/remember`: orientation (related threads + maneuvers) and `--signal` procedural recall, with an opt-in `SessionStart` hook that surfaces orientation automatically — not yet a lens in the Explorer UI. Method doc: [docs/COOCCURRENCE.md](docs/COOCCURRENCE.md).
 
 - **Project co-activity** — `--related <project>` surfaces cross-project research threads. The document is a calendar **day**, not a session: 97% of sessions touch a single project, so the cross-thread signal lives in same-day co-activity, not same-session.
 - **Maneuver map** — `--maneuvers <project>` shows a project's procedure profile (detected signals like `ff-merge`, `gh-release`, `cloudflare-pages`, `netlify`, `overleaf-sync`) and which other projects share it. Two views: *composition* (signal × signal, which markers compose one maneuver) and *transfer* (project × project, which projects share a procedure).
@@ -370,7 +370,7 @@ After installing, add this so the agent knows to use cartographer:
 
 Session Cartographer is installed. Skills:
 - `/remember <query>` — search past session history (decisions, research, fixes)
-- `/focus <project>` — orient on a project before diving in
+- `/remember --project <name>` — orient on a project before diving in
 - `/carto` — open the Explorer web app for visual browsing
 - `/wrapup` — promote a material session into strategic memory (decisions, discoveries, next steps)
 - `/investigate <bug>` — root-cause diagnosis gate before writing fix code
@@ -546,7 +546,7 @@ Hooks are the foundation. Everything else is a lens.
 
 ![Architecture diagram](diagrams/architecture.png)
 
-Each layer is independent. You can use `/remember` without the Explorer, `/focus` without `/remember`, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
+Each layer is independent. You can use `/remember` without the Explorer, orientation without the Explorer, or just the hooks with your own tooling. The JSONL event logs ([schema](docs/LOG_SCHEMAS.md)) are the shared data layer.
 
 There is no global Claude/Codex mode. Each hook invocation and normalized turn
 carries provider provenance, while both agents search the same logs and Qdrant

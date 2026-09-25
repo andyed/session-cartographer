@@ -658,7 +658,7 @@ SERVED_OUT="$TMPDIR/served-this-call.txt"
 : > "$SERVED_OUT"
 
 # ─── Capture stdout so we can report context-window fill at the end ───
-# /remember and /focus pipe this output into agent context — surface how much
+# /remember (recall and orientation) pipes this output into agent context — surface how much
 # it costs, concisely. A named pipe preserves live streaming without Bash's
 # /dev/fd process substitution, which is denied in the Codex sandbox.
 OUTPUT_CAPTURE="$TMPDIR/_output.txt"
@@ -1867,7 +1867,7 @@ fi
 
 # ─── Context-window fill report (concise) ───
 # Restore real stdout so the tee child can flush, then read the captured
-# byte count and print one-line token estimate. /remember and /focus both
+# byte count and print one-line token estimate. /remember recall and orientation both
 # pipe this into Claude's context; users want to see what it costs.
 exec 1>&3
 exec 3>&-

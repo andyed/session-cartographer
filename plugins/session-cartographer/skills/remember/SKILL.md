@@ -1,6 +1,6 @@
 ---
 name: remember
-description: Recall past work across Claude Code and Codex sessions. Finds decisions, research, fixes, and conversations by intent.
+description: Recall past work across Claude Code and Codex sessions. Finds decisions, research, fixes, and conversations by intent; with only a project and no question, orients on that project's recent state.
 allowed-tools:
   - Bash
   - Read
@@ -184,6 +184,35 @@ CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<term
 
 To wipe the per-session served list entirely (rare; only when starting a genuinely fresh investigation): pass `--reset-served`.
 
+## Orientation: a project and no question
+
+`/remember --project <name>` with no query (or "where was I on X", "catch me up on
+X") is orientation, not recall: there is nothing to rank against, so show the
+project's recent state. This replaces the retired `focus` skill.
+
+Resolve vague names first. The shipped registry is empty; a user-level registry
+under `~/.config/session-cartographer/` replaces it:
+
+```bash
+bash "$ROOT/scripts/project-registry.sh" --aliases
+bash "$ROOT/scripts/project-registry.sh" --expand <alias>   # members, one per line
+```
+
+Then run the recency search and the two graph lenses:
+
+```bash
+CARTOGRAPHER_PURPOSE=focus bash "$ROOT/scripts/cartographer-search.sh" "recent activity" --project <PROJECT> --limit 20
+node "$ROOT/scripts/cooccurrence-graph.js" --related <PROJECT>
+node "$ROOT/scripts/cooccurrence-graph.js" --maneuvers <PROJECT>
+```
+
+(`focus` stays the telemetry purpose so orientation calls remain comparable
+with the history recorded before the rename.) Skip a lens silently when it prints
+`(no co-active…)` or `(no maneuvers…)`. Present, briefly: the last recorded
+branch and state, what was being worked on (milestones and commits), recent
+research, related threads, recurring maneuvers, and the transcript path for
+more. For who else is working in the project right now, that is `/standup`.
+
 ## IMPORTANT: Use the search script
 
 Do NOT freestyle grep or jq commands. Always use the unified search script.
@@ -301,6 +330,8 @@ The access ledger records that order for first- and last-access MRR.
 /remember the commit that fixed blur
 /remember the collaboration notes
 /remember recent feature commits --project tracker
+/remember --project session-cartographer
+    → orientation: recent activity + --related + --maneuvers (no query)
 /remember what was I working on last session
 /remember what did I do this morning on Widget
     → bash cartographer-search.sh "Widget" --since today

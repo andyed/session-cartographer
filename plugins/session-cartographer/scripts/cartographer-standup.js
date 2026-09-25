@@ -2,7 +2,7 @@
 /**
  * Peer-session standup: what else is running, and what is it about to hit.
  *
- * `/focus` answers "what has happened in this PROJECT"; this answers "who ELSE
+ * `/remember --project` answers "what has happened in this PROJECT"; this answers "who ELSE
  * is in it with me right now". Those are different questions because many users run
  * several concurrent sessions and the corpus is already session-attributed — every
  * changelog event carries session_id, cwd, project and a summary that names the

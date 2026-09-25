@@ -169,7 +169,7 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_COLLECTION` | `session-cartographer` | Qdrant collection name |
 | `CARTOGRAPHER_LOG_TOOL_USE` | `false` | Set `true` to log Edit/Write/Bash + git commits |
 | `CARTOGRAPHER_REUSE_WEIGHT` | `0.3` | Promote-on-reuse activation weight (`0` disables) |
-| `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to auto-surface `/focus` orientation (related threads + maneuvers) on session start — opt-in, dormant by default |
+| `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to auto-surface project orientation (related threads + maneuvers) on session start — opt-in, dormant by default |
 | `CARTOGRAPHER_AUTO_CATCHUP` | `1` | Set `0` to disable the background Codex transcript catch-up on session start |
 | `CARTOGRAPHER_CATCHUP_INTERVAL_SECONDS` | `900` | Minimum interval between successful automatic catch-up runs |
 | `CARTOGRAPHER_CATCHUP_LIMIT_DAYS` | `7` | Recent transcript window scanned by automatic catch-up |
@@ -191,7 +191,7 @@ developers can call `node scripts/cartographer-turbo.js enable|status|disable`
 directly.
 
 When Turbo is active, the shared SessionStart hook gives the agent a concise
-reminder to use `remember` or `focus` only when prior work matters. It does not
+reminder to use `remember` only when prior work matters. It does not
 run a search or show a recurring user-facing banner. Exposure receipts are
 deduplicated per session in `.carto/turbo-awareness.jsonl`; join their session
 ids to search-call and access telemetry when evaluating whether awareness led
@@ -306,7 +306,7 @@ install, check the inventory and repair any missing link:
 
 ```bash
 # Check which skills are installed
-ls -la ~/.claude/skills/{remember,focus,carto,wrapup,investigate,trustmap,turbo} 2>&1
+ls -la ~/.claude/skills/{remember,carto,wrapup,investigate,trustmap,turbo} 2>&1
 
 # Fix any missing one using its name from the list above
 ln -s /path/to/session-cartographer/plugins/session-cartographer/skills/<skill> ~/.claude/skills/<skill>

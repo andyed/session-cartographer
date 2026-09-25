@@ -68,7 +68,7 @@ if [ -n "$SESSION_KEY" ]; then
 fi
 
 CTX="[Session Cartographer · Turbo active]
-Warm shared recall is available across Claude Code and Codex. When this task depends on prior decisions, fixes, research, or recent project state, use Session Cartographer's remember or focus skill before guessing. Skip recall for self-contained requests; do not run focus automatically."
+Warm shared recall is available across Claude Code and Codex. When this task depends on prior decisions, fixes, research, or recent project state, use Session Cartographer's remember skill before guessing. Skip recall for self-contained requests; do not run it automatically."
 
 jq -n --arg ctx "$CTX" \
   '{hookSpecificOutput:{hookEventName:"SessionStart",additionalContext:$ctx}}'

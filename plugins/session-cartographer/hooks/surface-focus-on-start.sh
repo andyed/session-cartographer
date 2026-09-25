@@ -1,8 +1,8 @@
 #!/bin/bash
-# SessionStart hook (TRIAL, opt-in): auto-surface /focus orientation on entering a project.
+# SessionStart hook (TRIAL, opt-in): auto-surface project orientation on entering a project.
 #
 # Injects the co-occurrence graph's two orientation lenses as session context, so the
-# cross-thread connections surface without a manual /focus:
+# cross-thread connections surface without a manual /remember --project:
 #   --related   <project>  → other projects co-active with this one (research threads)
 #   --maneuvers <project>  → recurring technical procedures this project runs
 #
@@ -99,7 +99,7 @@ Related threads (co-active projects): ${REL_LINE}"
 [ -n "$MAN_LINE" ] && CTX="${CTX}
 Maneuvers it runs: ${MAN_LINE}"
 CTX="${CTX}
-→ Run /focus ${PROJECT} for full orientation (recent milestones, commits, research)."
+→ Run /remember --project ${PROJECT} for full orientation (recent milestones, commits, research)."
 
 # Inject as SessionStart context.
 jq -n --arg ctx "$CTX" \

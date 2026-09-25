@@ -8,7 +8,7 @@ allowed-tools:
 
 # Standup
 
-`/focus` answers *what has happened in this project*. `/standup` answers *who
+`/remember --project` answers *what has happened in this project*. `/standup` answers *who
 else is in it with me right now* — the peer view.
 
 Every changelog event already carries `session_id`, `project`, `cwd` and a

@@ -6,7 +6,7 @@
 //   • projects  — document = calendar DAY, entity = project active that day.
 //       Surfaces cross-project research threads. Measured: 97% of sessions touch a single project,
 //       so the cross-thread signal lives in same-DAY co-activity (3-5 concurrent sessions/day),
-//       not same-session. N = number of active days.   →  /focus "related threads"
+//       not same-session. N = number of active days.   →  /remember --related threads
 //
 //   • maneuvers — technical maneuvers detected from command / commit / config-file text via a
 //       signature catalog (entities = markers like ff-merge, gh-release, cloudflare-pages…).
@@ -223,7 +223,7 @@ const projEdges = buildEdges(countPairs(dayProjects), projectDF, N_days, PROJ_MI
 const compEdges = buildEdges(countPairs(sessionSignals), signalSessionDF, N_sigSessions, COMP_MIN_K, COMP_LLR_GATE);
 const xferEdges = buildEdges(countPairs(signalProjects), projectSignalDF, N_signals, XFER_MIN_K, XFER_LLR_GATE);
 
-// ─── Query modes (consumed by /focus) — print and exit, no file write ───
+// ─── Query modes (consumed by /remember orientation) — print and exit, no file write ───
 
 function neighbors(edges, node) {
   const out = [];
@@ -234,7 +234,7 @@ function neighbors(edges, node) {
   return out;
 }
 
-// Tolerate /focus aliases & partial names (e.g. "tracker" → "tracker2025"): exact, then
+// Tolerate registry aliases & partial names (e.g. "tracker" → "tracker2025"): exact, then
 // case-insensitive, then substring either direction, choosing the highest-df match.
 function resolveProject(name) {
   if (projectDF.has(name)) return name;

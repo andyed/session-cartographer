@@ -5,14 +5,13 @@ Hooks are the foundation — they produce JSONL event logs. Everything else is a
 ```
 Hooks (produce JSONL)
   ├── /remember (CLI search, bash + awk)
-  ├── /focus (project orientation from event logs)
   ├── /carto (web UI, Node + React)
   ├── /wrapup (strategic session-end preservation)
   └── Qdrant indexer (semantic search)
 ```
 
 - **`/remember`** — Codex uses this to recover context from past sessions. Agent's primary history tool.
-- **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
+- **`/remember --project <name>`** (no query) — Orient on a project or family before diving in. Replaced `/focus`, now a Claude Code built-in; `skills/focus` is a retirement stub.
 - **`/carto`** — Opens the Explorer web app for the human. Not an agent tool.
 - **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a milestone event. Agent-initiated.
 - **CLI** (`cartographer-search.sh`) — Standalone search, no install needed. Used by all skills.
@@ -41,10 +40,10 @@ scripts/
   backfill-prompt-intents.js    — Tag already-indexed turns with prompt_intent (payload-only, no re-embed)
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
-project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
+project-registry.json             — Project aliases for multi-repo families (used by search + orientation)
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Codex's context recovery tool)
-  skills/focus/SKILL.md         — /focus skill (project orientation from event logs)
+  skills/focus/SKILL.md         — retirement stub pointing to /remember orientation
   skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
   skills/wrapup/SKILL.md        — /wrapup skill (strategic session-end preservation)
   scripts/remember-search.sh    — Legacy keyword-only search (superseded by cartographer-search.sh)
@@ -84,7 +83,7 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Transcript search uses `find -exec grep {} +`** to batch file matching in one process. Do not revert to per-file subprocess loops (1,839 files = 40x slower).
 - **Hooks call `index-event.sh` for real-time Qdrant indexing.** Qdrant remains optional, but failures are recorded in `.carto/index-errors.jsonl` and return nonzero so backfills do not checkpoint incomplete sessions. Novelty rejects are recorded separately in `.carto/index-rejects.jsonl`; synchronous callers opt into a JSON receipt with `CARTOGRAPHER_INDEX_RECEIPT=1`.
 - **Turbo opt-in is user-global and provider-neutral.** Claude Code and Codex read the same `~/.config/session-cartographer/config.json`; do not add separate agent settings as competing sources of truth. Ordinary recall may use HTTP or the sandbox-safe private file transport, while control operations retain the portable CLI path.
-- **Turbo awareness is guidance, not automatic retrieval.** When the shared preference is active, SessionStart may remind the agent to use `remember` or `focus` for tasks that depend on prior work. Do not turn that into unconditional startup search; measure deduplicated session exposures against explicit result use.
+- **Turbo awareness is guidance, not automatic retrieval.** When the shared preference is active, SessionStart may remind the agent to use `remember` for tasks that depend on prior work. Do not turn that into unconditional startup search; measure deduplicated session exposures against explicit result use.
 - **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Path traversal protection on transcript endpoints. DOMPurify on rendered content.
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.

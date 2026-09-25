@@ -44,7 +44,8 @@ test('active Turbo injects targeted recall guidance and one exposure receipt', (
     const context = output.hookSpecificOutput.additionalContext;
     assert.equal(output.hookSpecificOutput.hookEventName, 'SessionStart');
     assert.match(context, /Turbo active/);
-    assert.match(context, /remember or focus/);
+    assert.match(context, /remember skill/);
+    assert.doesNotMatch(context, /focus/);
     assert.match(context, /self-contained/);
 
     const second = runHook(root, true);

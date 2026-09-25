@@ -5,7 +5,6 @@ Hooks are the foundation — they produce JSONL event logs. Everything else is a
 ```
 Hooks (produce JSONL)
   ├── /remember (CLI search, bash + awk)
-  ├── /focus (project orientation from event logs)
   ├── /standup (peer view: concurrent sessions and file contention)
   ├── /carto (web UI, Node + React)
   ├── /wrapup (strategic session-end preservation)
@@ -14,8 +13,8 @@ Hooks (produce JSONL)
 ```
 
 - **`/remember`** — Claude uses this to recover context from past sessions. Agent's primary history tool.
-- **`/focus`** — Orient on a project or family before diving in. Reads event logs, no git calls.
-- **`/standup`** — The peer view. `/focus` answers what happened in a project; this answers who else is in it right now: sessions active in the window, their projects and commits, and the files two sessions are both editing. `--commit <sha>` names the session behind a commit that landed underneath you. Groups the events the hooks already write by session; captures nothing new, writes nothing.
+- **`/remember --project <name>`** (no query) — Orient on a project or family before diving in. Replaced `/focus`, now a Claude Code built-in; `skills/focus` is a retirement stub.
+- **`/standup`** — The peer view. `/remember --project` answers what happened in a project; this answers who else is in it right now: sessions active in the window, their projects and commits, and the files two sessions are both editing. `--commit <sha>` names the session behind a commit that landed underneath you. Groups the events the hooks already write by session; captures nothing new, writes nothing.
 - **`/carto`** — Opens the Explorer web app for the human. Not an agent tool.
 - **`/wrapup`** — End-of-session synthesis. Captures decisions, discoveries, and unfinished threads as a milestone event. Agent-initiated.
 - **`/trustmap`** — Derives auto mode's `autoMode.environment` from the corpus. The same question Claude Code's setup wizard answers by rescanning the machine, answered instead from events already extracted — usage-weighted, cross-provider, and re-runnable so an update proposes only the delta.
@@ -56,10 +55,10 @@ scripts/
   repair-orphan-sessions.js     — One-time recovery of pre-0.5.0 milestones stamped session_id "unknown"
   repair-transcript-paths.js    — Rewrites Codex transcript_paths stale from archiving (dry-run default, --write)
   resolve-transcript.sh         — Single resolver: recorded path → archive basename → session-id hunt
-project-registry.json             — Project aliases for multi-repo families (used by search + /focus)
+project-registry.json             — Project aliases for multi-repo families (used by search + orientation)
 plugins/session-cartographer/
   skills/remember/SKILL.md      — /remember skill (Claude's context recovery tool)
-  skills/focus/SKILL.md         — /focus skill (project orientation from event logs)
+  skills/focus/SKILL.md         — retirement stub pointing to /remember orientation
   skills/standup/SKILL.md       — /standup skill (peer view: who else is working, file contention, commit attribution)
   skills/carto/SKILL.md         — /carto skill (launches Explorer web app for humans)
   skills/wrapup/SKILL.md        — /wrapup skill (strategic session-end preservation)

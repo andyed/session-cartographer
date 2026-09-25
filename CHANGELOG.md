@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### feat(remember)!: retire `/focus`; orientation moves into `/remember --project`
+
+Claude Code 2.1.269 ships a built-in `/focus` view, which shadows a skill of
+the same name, so typing `/focus` no longer reached this one. Rather than
+rename a lightly used command (68 typed invocations, almost all in April;
+13 `focus` search calls against 242 `remember`), orientation becomes a mode of
+`/remember`: a project and no question runs the recency search plus the
+`--related` and `--maneuvers` lenses. `skills/focus` remains as a pointer stub
+for one release so older instructions and other agents are redirected rather
+than broken. The telemetry purpose stays `focus` so orientation calls remain
+comparable across the change, and `CARTOGRAPHER_FOCUS_ON_START` keeps its name;
+its hook and the Turbo session-start note now point to `/remember`.
+
 ### feat(turbo): default on for 16 GB+ machines via /carto; idle exit below that
 
 `/carto` now runs `cartographer-turbo.js enable --if-recommended`, which turns
