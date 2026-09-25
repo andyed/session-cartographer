@@ -53,12 +53,25 @@ test("the owner's own commit is kept", () => {
   assert.equal(isOwnEvent({ type: 'git_commit', author: 'Ada Lovelace' }, OWNERS), true);
 });
 
-test('a commit made inside one of the owner\'s sessions is theirs whatever the author says', () => {
+test('a commit the hook recorded inside one of the owner\'s sessions is theirs whatever the author says', () => {
   // The rule is deliberately loose in this direction: an agent commit carrying
   // someone else's configured name, made in the owner's session, is still work
-  // the owner shipped.
+  // the owner shipped. The live hook records cwd; that is what vouches.
   assert.equal(
-    isOwnEvent({ type: 'git_commit', author: 'Grace Hopper', session_id: 'sess-1' }, OWNERS),
+    isOwnEvent({ type: 'git_commit', author: 'Grace Hopper', session_id: 'sess-1', cwd: '/repo' }, OWNERS),
+    true,
+  );
+});
+
+test('an imported commit is judged by its author even when a session was inferred for it', () => {
+  // enrich-sessions.js attached sessions by time overlap; a stranger's commit in
+  // a cloned repo must not become the owner's work by landing in that window.
+  assert.equal(
+    isOwnEvent({ type: 'git_commit', author: 'Grace Hopper', session_id: 'sess-1', commit_hash: 'abc' }, OWNERS),
+    false,
+  );
+  assert.equal(
+    isOwnEvent({ type: 'git_commit', author: 'Ada Lovelace', session_id: 'sess-1', commit_hash: 'abc' }, OWNERS),
     true,
   );
 });

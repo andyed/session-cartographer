@@ -15,11 +15,13 @@
  * owner's activity. That mattered more once counts began to be presented as
  * fact: a ranked result gets eyeballed, a census reads as authoritative.
  *
- * The rule itself is deliberately loose in one direction. A commit made inside
- * one of the owner's own sessions counts as theirs whatever the commit author
- * says, because agent-authored commits are what the owner shipped. It is strict
- * in the other: a commit with no session and an unrecognised author is somebody
- * else's, and stays out.
+ * The rule itself is deliberately loose in one direction. A commit the live
+ * hook recorded inside one of the owner's own sessions counts as theirs whatever
+ * the commit author says, because agent-authored commits are what the owner
+ * shipped. It is strict in the other: an imported commit is judged by its
+ * author, even when it carries a session — enrich-sessions.js used to attach
+ * sessions to imported commits by time overlap alone, which made a stranger's
+ * commit look like session work (repair-foreign-commit-sessions.js).
  */
 
 import { execFileSync } from 'node:child_process';
@@ -62,7 +64,9 @@ export function ownerNames(env = process.env) {
  */
 export function isOwnEvent(event, owners = ownerNames()) {
   if (event.type !== 'git_commit') return true;
-  if (event.session_id) return true;
+  // The live hook records cwd; git-history imports do not. Only a session the
+  // hook observed vouches for the commit.
+  if (event.session_id && 'cwd' in event) return true;
   return owners.has(event.author || '');
 }
 

@@ -14,6 +14,9 @@ import { readFileSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { execSync } from 'child_process';
 import { buildSessionWindows, defaultPaths, readJsonl, toSortedList } from './session-windows.js';
+import { ownerNames, isOwnEvent } from './ownership.js';
+
+const OWNERS = ownerNames();
 
 const { changelog: CHANGELOG, milestones: MILESTONES, transcripts: TRANSCRIPTS } = defaultPaths();
 
@@ -73,6 +76,11 @@ const updatedEvents = events.map(e => {
 
   // Skip memory events — they're not session-scoped
   if (e.type?.startsWith('memory_')) return e;
+
+  // Another contributor's commit is not the owner's session work, however its
+  // timestamp overlaps one. Time overlap alone attached 203 strangers' commits
+  // from cloned repositories to the owner's sessions.
+  if (!isOwnEvent(e, OWNERS)) return e;
 
   const match = findSession(e.timestamp, e.project);
   if (match) {

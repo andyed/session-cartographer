@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### fix(ownership): other people's commits no longer count as the owner's session work
+
+Commits imported from cloned repositories were given the owner's session ids by
+`enrich-sessions.js`, which matched on time overlap alone, and `ownership.js`
+then trusted any commit carrying a session. 203 commits by 8 other authors
+(broomy, c9watch, claude-code-session-bridge) were counted as the owner's work
+in search, digests, `/standup` and the profile. `isOwnEvent` now trusts a
+session only on commits the live hook recorded (they carry `cwd`); imported
+commits are judged by author. `enrich-sessions.js` skips non-owner commits.
+`scripts/repair-foreign-commit-sessions.js` detached the existing rows: dry run
+by default, `--apply` keeps a backup, marks each row with
+`session_detached_from`, and carries over rows appended during the rewrite.
+The semantic index needed no change; imported commits are embedded without a
+session.
+
 ### feat(standup): pre-edit collision check
 
 A PreToolUse hook on Edit, Write, MultiEdit, NotebookEdit and Codex
