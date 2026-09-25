@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### feat(standup): pre-edit collision check
+
+A PreToolUse hook on Edit, Write, MultiEdit, NotebookEdit and Codex
+`apply_patch` notes when another session edited or committed the same file in
+the last 45 minutes. It is silent otherwise and never blocks: the note goes to
+the agent as context and names the case — same checkout, where the peer's
+changes may be uncommitted and a commit here would sweep them in, or separate
+worktree, where the conflict arrives at merge. A warning repeats only after the
+peer touches the file again. Surfaced warnings are recorded in
+`.carto/collision-warnings.jsonl` so the check can be judged on whether it
+preceded real conflicts.
+
+`/standup`'s file-contention rules (edit-summary parsing, worktree collapse,
+tail budget) move to `scripts/contention.js` so the hook and the command cannot
+drift; `/standup --json` output is unchanged. The hook reads only the changelog
+tail and parses only lines naming the target file: about 0.17 s on an 80 MB
+changelog with a 24-hour window. Disable with `CARTOGRAPHER_COLLISION_CHECK=0`.
+
 ### feat(remember)!: retire `/focus`; orientation moves into `/remember --project`
 
 Claude Code 2.1.269 ships a built-in `/focus` view, which shadows a skill of

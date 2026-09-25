@@ -25,6 +25,7 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 **Coordinate**
 
 - **`/standup`** — See which sessions were recently active, in which repos, and which files more than one session touched. `--commit <sha>` names the session behind a commit you did not make. A [shared-goal briefing](docs/STANDUP_SHARED_GOAL_PLAN.md) is planned; today, sharing a project is not treated as sharing an objective.
+- **Collision check (automatic)** — Before an edit, a hook checks whether another session edited or committed the same file in the last 45 minutes, folding worktrees onto their repository. It stays silent otherwise, never blocks the edit, and says which case applies: the same checkout (their changes may be uncommitted in your file) or a separate worktree (expect a conflict at merge). `CARTOGRAPHER_COLLISION_CHECK=0` turns it off; `CARTOGRAPHER_COLLISION_WINDOW` changes the window.
 
 **Browse**
 

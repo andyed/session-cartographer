@@ -31,6 +31,9 @@ for required in \
   "$PLUGIN/scripts/cartographer-search.sh" \
   "$PLUGIN/scripts/backfill-codex-memories.js" \
   "$PLUGIN/scripts/cartographer-standup.js" \
+  "$PLUGIN/scripts/contention.js" \
+  "$PLUGIN/scripts/cartographer-collision.js" \
+  "$PLUGIN/hooks/check-edit-collision.sh" \
   "$PLUGIN/scripts/cartographer-feed.sh" \
   "$PLUGIN/scripts/catch-up-transcripts.sh" \
   "$PLUGIN/scripts/cartographer-turbo.js" \

@@ -15,6 +15,11 @@ Every changelog event already carries `session_id`, `project`, `cwd` and a
 summary naming the file or the commit, so this needs no new capture. It groups
 what the hooks wrote by session instead of by project.
 
+The file-level check also runs on its own: a PreToolUse hook
+(`hooks/check-edit-collision.sh`) adds a note before an edit when a peer touched
+the same file within 45 minutes. Its note is a prompt to run this skill for the
+wider view, not a replacement for it; both share `scripts/contention.js`.
+
 Before running, resolve `ROOT` to the Session Cartographer plugin root. Prefer
 `CARTOGRAPHER_ROOT`, then `CLAUDE_PLUGIN_ROOT` or `PLUGIN_ROOT`. Otherwise
 derive it from this skill's base directory (`../..` from `skills/standup`), with
