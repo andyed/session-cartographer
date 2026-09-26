@@ -34,6 +34,9 @@
 #   CARTOGRAPHER_CONFIG          — default: ~/.config/session-cartographer/config.json
 #   CARTOGRAPHER_TURBO           — explicit 1/0 override for the shared Turbo preference
 #   CARTOGRAPHER_TURBO_URL       — default: http://127.0.0.1:2526
+#   CARTOGRAPHER_SESSION_ID      — caller's session, for runtimes that export none of the
+#                                  agent chain below (Hermes: pass $HERMES_SESSION_ID)
+#   CARTOGRAPHER_PROVIDER        — caller's agent (claude, codex, hermes); inferred when unset
 #
 # Every displayed result is appended to CARTOGRAPHER_SERVED_LOG (query, rank,
 # source, event_id). Joined against the access ledger, this is the input to
@@ -82,6 +85,7 @@ append_portable_call_log() {
     -v results_served_ms="$PORTABLE_ENDED_MS" \
     -v requested_backend="$requested_backend" -v purpose="$PURPOSE" \
     -v session_id="$CONTEXT_SESSION_ID" -v provider="$CONTEXT_PROVIDER" \
+    -v attribution_status="$SESSION_ATTRIBUTION" -v session_source="$SESSION_SOURCE" \
     -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
     -v result_count="$result_count" -v elapsed_ms="$elapsed_ms" \
     -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" \
@@ -98,10 +102,11 @@ append_portable_call_log() {
       BEGIN {
         fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
         detail = fallback_detail == "" ? "null" : quoted(fallback_detail)
-        printf "{\"timestamp\":%s,\"request_started_at\":%s,\"results_served_at\":%s,\"request_started_ms\":%.0f,\"results_served_ms\":%.0f,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
+        printf "{\"timestamp\":%s,\"request_started_at\":%s,\"results_served_at\":%s,\"request_started_ms\":%.0f,\"results_served_ms\":%.0f,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"attribution_status\":%s,\"session_source\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
           quoted(timestamp), quoted(request_started_at), quoted(timestamp), request_started_ms + 0, results_served_ms + 0, \
           quoted(call_id), quoted(requested_backend), quoted(purpose), \
-          quoted(session_id), quoted(provider), quoted(query), quoted(project), quoted(since), \
+          quoted(session_id), quoted(provider), quoted(attribution_status), quoted(session_source), \
+          quoted(query), quoted(project), quoted(since), \
           quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail
       }
     ' >> "$SEARCH_CALL_LOG"; } 2>/dev/null; then
@@ -185,14 +190,52 @@ esac
 # CLAUDE_CODE_SESSION_ID is the variable Claude Code actually exports to tool
 # calls; CLAUDE_SESSION_ID was never set, which left every served row
 # unattributed and delta serving permanently dormant. Keep both.
-CLAUDE_SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
-CONTEXT_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-}}}"
+#
+# Take the first *resolved* value (scripts/sentinels.js), not the first
+# non-empty one. "unknown" is the pipeline's other spelling of absence; a plain
+# ${a:-$b} chain lets it shadow a real id further down, and then it becomes an
+# identity: one served row owner and one delta-serving list shared by every
+# caller that set it.
+CONTEXT_SESSION_ID=""
+SESSION_SOURCE=""
+for session_var in CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID; do
+  session_value="${!session_var:-}"
+  case "$(printf '%s' "$session_value" | tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')" in
+    ''|unknown) continue ;;
+  esac
+  CONTEXT_SESSION_ID="$session_value"
+  SESSION_SOURCE="$session_var"
+  break
+done
+# Served, call and access rows say why a session is missing rather than
+# leaving a bare "". A sessionless call is either a caller that exports no
+# chain variable (Hermes' terminal tool, cron, a plain shell) or a harness that
+# unset them on purpose; the provider below tells those apart where it can.
+if [ -n "$CONTEXT_SESSION_ID" ]; then
+  SESSION_ATTRIBUTION="session"
+else
+  SESSION_ATTRIBUTION="no_session"
+fi
 CONTEXT_PROVIDER="${CARTOGRAPHER_PROVIDER:-}"
 if [ -z "$CONTEXT_PROVIDER" ]; then
-  if [ -n "$CLAUDE_SID" ]; then
+  case "$SESSION_SOURCE" in
+    CLAUDE_SESSION_ID|CLAUDE_CODE_SESSION_ID) CONTEXT_PROVIDER="claude" ;;
+    CODEX_SESSION_ID) CONTEXT_PROVIDER="codex" ;;
+  esac
+fi
+if [ -z "$CONTEXT_PROVIDER" ]; then
+  # CARTOGRAPHER_SESSION_ID names no agent, and a sessionless call can still
+  # say which runtime made it. Hermes binds HERMES_SESSION_ID into every
+  # terminal-tool subprocess but is not in the chain above: adopting it would
+  # switch on delta serving for a gateway session that can stay open for weeks.
+  # Its wrappers opt in with CARTOGRAPHER_SESSION_ID (docs/SETUP.md).
+  if [ -n "${CLAUDE_SESSION_ID:-}${CLAUDE_CODE_SESSION_ID:-}" ]; then
     CONTEXT_PROVIDER="claude"
   elif [ -n "${CODEX_SESSION_ID:-}" ] || [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_HOME:-}" ]; then
     CONTEXT_PROVIDER="codex"
+  elif [ -n "${HERMES_SESSION_ID:-}" ]; then
+    CONTEXT_PROVIDER="hermes"
   else
     CONTEXT_PROVIDER="unknown"
   fi
@@ -353,14 +396,16 @@ fi
 # tokens, no new signal. Delta serving suppresses already-shown event_ids
 # from subsequent calls so each /remember surfaces fresh material.
 #
-# Activated when CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, or the legacy
-# CLAUDE_SESSION_ID is set (skill context) and --all is not.
+# Activated when the session chain resolves (CARTOGRAPHER_SESSION_ID, the legacy
+# CLAUDE_SESSION_ID, CLAUDE_CODE_SESSION_ID, or CODEX_SESSION_ID) and --all is
+# not. It keys on the same resolved id the telemetry rows carry, so a sentinel
+# can never name a served list.
 # The served-list file caps at the most recent 200 entries so old served IDs
 # eventually fall off and re-surface in fresh queries. --reset-served wipes
 # the per-session list. --all bypasses both reading and writing.
 SERVED_FILE=""
 SERVED_OUT=""
-ACTIVE_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-}}}"
+ACTIVE_SESSION_ID="$CONTEXT_SESSION_ID"
 if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
   SERVED_DIR="${TMPDIR_BASE:-/tmp}/cartographer-served"
   mkdir -p "$SERVED_DIR" 2>/dev/null
@@ -468,7 +513,7 @@ record_accesses() {
   records=$(jq -n -c \
     --rawfile served "$served_file" --rawfile accessed "$accessed_file" \
     --arg ids "$ids" --arg ts "$timestamp" --argjson timestamp_ms "$(clock_ms)" --arg sid "$CONTEXT_SESSION_ID" \
-    --arg provider "$CONTEXT_PROVIDER" --arg purpose "$PURPOSE" \
+    --arg provider "$CONTEXT_PROVIDER" --arg session_source "$SESSION_SOURCE" --arg purpose "$PURPOSE" \
     --arg explicit "$CALL_ID" --arg source "$source" --arg batch "$batch_id" '
       def rows: split("\n") | map(fromjson? | select(type == "object"));
       # Portable equivalent of scripts/sentinels.js:isResolved. Shared
@@ -495,7 +540,7 @@ record_accesses() {
          elif ($calls | length) > 1 then {attribution_status:"ambiguous_serve"}
          else {attribution_status:"no_compatible_serve"} end) as $attribution
       | {event_id:$eid, timestamp:$ts, timestamp_ms:$timestamp_ms, session_id:$sid, provider:$provider,
-          purpose:$purpose, source:$source, access_batch_id:$batch,
+          session_source:$session_source, purpose:$purpose, source:$source, access_batch_id:$batch,
           access_ordinal:($requested.key + 1)} + $attribution
         + if $explicit != "" then {requested_call_id:$explicit} else {} end
     ' 2>/dev/null) || {
@@ -1007,6 +1052,7 @@ rank_fuse_and_display() {
       -v codex_memory_stale="$DEV/.carto/codex-memory-stale-ids.txt" \
       -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
       -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
+      -v session_attribution="$SESSION_ATTRIBUTION" -v session_source="$SESSION_SOURCE" \
       -v output_format="$OUTPUT_FORMAT" '
   # Stable O(n log n) merge sort over order[] using score_map[]. The old
   # insertion sort was acceptable for tiny corpora, but common project terms
@@ -1438,8 +1484,14 @@ rank_fuse_and_display() {
         gsub(/\\/, "\\\\", esc_src); gsub(/"/, "\\\"", esc_src)
         esc_proj = (project[k] != "" ? project[k] : serve_project)
         gsub(/\\/, "\\\\", esc_proj); gsub(/"/, "\\\"", esc_proj)
-        printf "{\"timestamp\":\"%s\",\"call_id\":\"%s\",\"purpose\":\"%s\",\"session_id\":\"%s\",\"provider\":\"%s\",\"query\":\"%s\",\"event_id\":\"%s\",\"rank\":%d,\"source\":\"%s\",\"project\":\"%s\",\"backend\":\"cli\"}\n", \
-          serve_ts, call_id, purpose, context_session, context_provider, esc_q, k, i, esc_src, esc_proj >> served_log
+        # Session and provider come from the calling environment, not from a
+        # validated flag, so they are escaped like the query.
+        esc_sid = context_session
+        gsub(/\\/, "\\\\", esc_sid); gsub(/"/, "\\\"", esc_sid)
+        esc_prov = context_provider
+        gsub(/\\/, "\\\\", esc_prov); gsub(/"/, "\\\"", esc_prov)
+        printf "{\"timestamp\":\"%s\",\"call_id\":\"%s\",\"purpose\":\"%s\",\"session_id\":\"%s\",\"provider\":\"%s\",\"attribution_status\":\"%s\",\"session_source\":\"%s\",\"query\":\"%s\",\"event_id\":\"%s\",\"rank\":%d,\"source\":\"%s\",\"project\":\"%s\",\"backend\":\"cli\"}\n", \
+          serve_ts, call_id, purpose, esc_sid, esc_prov, session_attribution, session_source, esc_q, k, i, esc_src, esc_proj >> served_log
       }
     }
 
@@ -1721,6 +1773,7 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --request-started-ms "$REQUEST_STARTED_MS" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
+      --session-source "$SESSION_SOURCE" \
       --corpus-root "$DEV" \
       --url "$TURBO_URL" \
       --timeout "$TURBO_TIMEOUT_MS" \

@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { validateRecallResponse } from '../explorer/server/recall-contract.js';
+import { isResolved } from './sentinels.js';
 import { turboPaths, validateTurboUrl, writeJsonAtomic } from './turbo-common.js';
 
 function argsToObject(argv) {
@@ -43,6 +44,15 @@ const request = {
   provider: args.provider || 'unknown',
   corpus_root: args['corpus-root'] || '',
   excluded_event_ids: readExcluded(args['served-in']),
+};
+
+// Telemetry only; the recall contract does not carry these. cartographer-search.sh
+// names the variable its session came from, and a row without a session says so
+// instead of leaving a bare "" for the reader to guess at. Derived from the value
+// actually written, through the one sentinel definition.
+const attribution = {
+  attribution_status: isResolved(request.session_id) ? 'session' : 'no_session',
+  session_source: isResolved(request.session_id) ? (args['session-source'] || '') : '',
 };
 
 async function viaHttp() {
@@ -243,6 +253,7 @@ for (const [index, item] of response.results.entries()) {
     purpose: request.purpose,
     session_id: request.session_id,
     provider: request.provider,
+    ...attribution,
     query: request.query,
     event_id: item.event_id,
     rank: index + 1,
@@ -265,6 +276,7 @@ appendJsonl(args['call-log'], {
   purpose: request.purpose,
   session_id: request.session_id,
   provider: request.provider,
+  ...attribution,
   query: request.query,
   project: request.project,
   since: request.since,

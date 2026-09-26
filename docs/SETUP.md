@@ -179,6 +179,8 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_TURBO_URL` | `http://127.0.0.1:2526` | Loopback recall endpoint; file transport is used when a sandbox blocks it |
 | `CARTOGRAPHER_TURBO_TIMEOUT_MS` | `1500` | Warm request budget before portable fallback |
 | `CARTOGRAPHER_SEARCH_CALL_LOG` | `$CARTOGRAPHER_DEV_DIR/.carto/search-calls.jsonl` | Backend-attributed Turbo call telemetry |
+| `CARTOGRAPHER_SESSION_ID` | unset | Calling session for runtimes that export no session variable of their own (see [Recall telemetry from Hermes](#recall-telemetry-from-hermes)) |
+| `CARTOGRAPHER_PROVIDER` | inferred | Calling agent written on served, call and access rows (`claude`, `codex`, `hermes`) |
 
 Set these in your shell profile or Claude Code settings for your work machine.
 
@@ -205,6 +207,39 @@ currently expose this review screen. On macOS, desktop-only users can launch the
 bundled CLI at `/Applications/ChatGPT.app/Contents/Resources/codex`. Start a new
 task after approval. Codex records trust against the hook definition hash, so a
 later hook change requires review again.
+
+### Recall telemetry from Hermes
+
+Every served, search-call and access row names the calling session, taken from
+the first resolved value of `CARTOGRAPHER_SESSION_ID → CLAUDE_SESSION_ID →
+CLAUDE_CODE_SESSION_ID → CODEX_SESSION_ID`, plus `session_source` (which
+variable it came from). A row without one says so with
+`attribution_status: "no_session"`. Claude Code and Codex export their own
+variable. Hermes does not: its `terminal` tool binds `HERMES_SESSION_ID` (the
+`state.db` session id) into each subprocess, and a stdio MCP server it launches
+gets only a fixed env allowlist plus `~/.hermes/.env`, so no per-session value
+can reach one that way. On 2026-09-26, 11 of the 26 sessionless recall calls in
+a day, and all 11 sessionless `--touch` marks, came from a Hermes wrapper.
+
+Without opting in, Hermes rows carry `provider: "hermes"` (inferred from
+`HERMES_SESSION_ID`) and no session. A wrapper that Hermes runs through
+`terminal` opts in by exporting the id itself:
+
+```bash
+export CARTOGRAPHER_SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${HERMES_SESSION_ID:-}}"
+export CARTOGRAPHER_PROVIDER="${CARTOGRAPHER_PROVIDER:-hermes}"
+```
+
+and passes the `call_id` a search prints to `--touch` and `--get` with
+`--call-id`. A mark needs both. With no session, a `--touch` records
+`attribution_status: "no_session"` and no `call_id` even when one is given,
+because an empty session is never used to join a mark to a serve.
+
+A session id also switches on delta serving: later calls in that session
+suppress the last 200 event ids already shown. A Hermes gateway session can stay
+open for weeks, so a scheduled pulse that wants the full answer on every run
+should pass `--all`, which skips delta serving and leaves attribution intact.
+`HERMES_SESSION_ID` is deliberately not read as a session for this reason.
 
 ## Cold Start: Backfilling History
 

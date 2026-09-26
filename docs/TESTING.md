@@ -148,13 +148,21 @@ run an explicit dependency advisory audit separately when authorized.
      server answers `semantic_status: "disabled"` for every caller until it
      exits. Keep Turbo off in any test that pins the leg.
 
-3. **Telemetry writes.** A search run from a test or a shell pollutes the served
-   and access logs, which then change ranking through promote-on-reuse. Send
-   both to `/dev/null` for any exploratory query:
+3. **Telemetry writes.** A search run from a test or a shell pollutes the
+   served, access and search-call logs. The first two change ranking through
+   promote-on-reuse, and all three feed the attribution numbers. Send all three
+   to `/dev/null` for any exploratory query:
 
    ```bash
-   CARTOGRAPHER_SERVED_LOG=/dev/null CARTOGRAPHER_ACCESS_LEDGER=/dev/null
+   CARTOGRAPHER_SERVED_LOG=/dev/null CARTOGRAPHER_ACCESS_LEDGER=/dev/null CARTOGRAPHER_SEARCH_CALL_LOG=/dev/null
    ```
+
+   Unsetting the session variables without redirecting is the worst case: the
+   rows land in the live logs as sessionless calls that look like a runtime
+   exporting no session. On 2026-09-26, 15 of a day's 26 sessionless served
+   calls were one session replaying another agent's queries that way, and the
+   smoke helper below, which then redirected only two logs, left 39 more rows
+   in `search-calls.jsonl`.
 
 4. **Index writes.** A hook test writes to the live index unless both service
    URLs are pinned. Every hook that logs an event backgrounds
@@ -205,7 +213,7 @@ not the row count.**
 
 ```bash
 CLI() { env -u CLAUDE_SESSION_ID -u CLAUDE_CODE_SESSION_ID -u CODEX_SESSION_ID -u CARTOGRAPHER_SESSION_ID \
-  CARTOGRAPHER_SERVED_LOG=/dev/null CARTOGRAPHER_ACCESS_LEDGER=/dev/null \
+  CARTOGRAPHER_SERVED_LOG=/dev/null CARTOGRAPHER_ACCESS_LEDGER=/dev/null CARTOGRAPHER_SEARCH_CALL_LOG=/dev/null \
   bash scripts/cartographer-search.sh "$@" --limit 30 --format jsonl --all --no-turbo 2>/dev/null; }
 
 # 1. A short window must still reach every ladder.
