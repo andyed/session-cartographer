@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### fix(turbo): fall back once when a recall outruns its budget
+
+Every Turbo recall fallback in the 30 days to 2026-09-26, 6 of 260
+remember/focus calls, read "HTTP This operation was aborted; file transport
+spool response timed out" while the service was healthy, and took 13 to 89 s.
+The spool was working. The client gave the service 1.5 s, the semantic stage
+sometimes ran 1.7 to 2.7 s, and the client read its own abort as an unreachable
+service. It re-sent the request through the spool, where the same process ran
+the query a second time beside the abandoned first run. When that rerun also
+missed the spool's 3 s, the portable CLI ran. Every served call since 09-01
+whose semantic stage passed 1.2 s had arrived through the spool.
+
+The recall client now tells its own timeout from a failed connect. After a
+timeout it exits for the portable fallback at once, with "no answer within N
+ms" as the fallback detail. Only a refused connect tries the spool, and that
+is the sandbox case the spool exists for: 102 of the 104 spool calls since
+08-27 had failed HTTP within about 90 ms. The facts client follows the same
+rule and keeps its 1500 ms budget, since a fold costs 12 to 368 ms.
+
+The recall budget default moves from 1500 to 4000 ms
+(`TURBO_TIMEOUT_DEFAULT_MS`). The semantic stage ran 165 ms at p50 and 988 ms
+at p95 across 338 served calls, peaking at 2.7 s, and missing the budget costs
+a 9 to 85 s portable search, so a budget under the tail never made a call
+faster. `/turbo enable` writes the budget into the config, so configs written
+before this change keep `timeout_ms: 1500` until raised with `enable --timeout
+4000`.
+
+`turbo-timeout-fallback.test.js` counts what reaches a fake service: HTTP
+requests at the port and request files in the spool. A slow service must see
+the request once with no spool file; a 2 s service must be served over HTTP
+under the default budget; a refused connect must still be carried by the spool
+without waiting out the budget. The first two and the facts case fail against
+the previous code, the second with the exact production error.
+
 ### fix(explorer): hold the transcript toolbar and the find placeholder to 8:1
 
 The Transcript viewer's search field drew its placeholder in gray-500 on its

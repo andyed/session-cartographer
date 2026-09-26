@@ -63,18 +63,26 @@ export function validateTurboUrl(raw) {
   return parsed.origin;
 }
 
+// How long a recall waits for the warm service before running the portable
+// CLI. It has to cover the service's slow tail, not its median: missing the
+// budget costs a 9-85 s portable search, so a budget below the tail never makes
+// a call faster. The semantic stage runs 165 ms at p50 and 988 ms at p95, and
+// reached 2.7 s at most over 338 served calls (2026-09-01 to 09-26), when the
+// old 1.5 s budget turned each of those into a fallback.
+export const TURBO_TIMEOUT_DEFAULT_MS = 4000;
+
 export function readTurboConfig(env = process.env) {
   const file = turboConfigPath(env);
   const config = readJson(file, {});
   const turbo = config && typeof config.turbo === 'object' ? config.turbo : {};
-  const timeout = Number(turbo.timeout_ms ?? 1500);
+  const timeout = Number(turbo.timeout_ms ?? TURBO_TIMEOUT_DEFAULT_MS);
   return {
     file,
     config,
     enabled: turbo.enabled === true,
     autoStart: turbo.auto_start !== false,
     url: validateTurboUrl(turbo.url || 'http://127.0.0.1:2526'),
-    timeoutMs: Number.isFinite(timeout) && timeout >= 100 && timeout <= 30000 ? timeout : 1500,
+    timeoutMs: Number.isFinite(timeout) && timeout >= 100 && timeout <= 30000 ? timeout : TURBO_TIMEOUT_DEFAULT_MS,
     // null means "not chosen": the machine's memory plan picks at spawn time.
     idleMinutes: Number.isFinite(Number(turbo.idle_minutes)) && Number(turbo.idle_minutes) >= 0
       && turbo.idle_minutes !== null && turbo.idle_minutes !== ''

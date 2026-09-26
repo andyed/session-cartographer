@@ -177,7 +177,7 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_CONFIG` | `~/.config/session-cartographer/config.json` | Provider-neutral settings shared by Claude Code and Codex |
 | `CARTOGRAPHER_TURBO` | unset | Explicit `1`/`0` override for the persistent Turbo preference |
 | `CARTOGRAPHER_TURBO_URL` | `http://127.0.0.1:2526` | Loopback recall endpoint; file transport is used when a sandbox blocks it |
-| `CARTOGRAPHER_TURBO_TIMEOUT_MS` | `1500` | Warm request budget before portable fallback |
+| `CARTOGRAPHER_TURBO_TIMEOUT_MS` | `4000` | Warm recall budget before portable fallback. A config written by `/turbo enable` before 2026-09-26 pins `timeout_ms: 1500`; raise it with `node scripts/cartographer-turbo.js enable --timeout 4000 --no-start` |
 | `CARTOGRAPHER_TURBO_READY_TIMEOUT_MS` | `5000` | How long `start` waits for a spawned service's `ready.json` before killing it (500–120000). A failed start is recorded in `.carto/turbo/server.log` as a `[turbo-control]` line |
 | `CARTOGRAPHER_SEARCH_CALL_LOG` | `$CARTOGRAPHER_DEV_DIR/.carto/search-calls.jsonl` | Backend-attributed Turbo call telemetry |
 | `CARTOGRAPHER_SESSION_ID` | unset | Calling session for runtimes that export no session variable of their own (see [Recall telemetry from Hermes](#recall-telemetry-from-hermes)) |

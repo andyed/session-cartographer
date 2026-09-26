@@ -8,6 +8,8 @@
  * writes — because the reason the spool exists is unchanged: a Codex sandbox is
  * denied the loopback connect outright, and a client that only spoke HTTP would
  * report "turbo unavailable" for a service running fine three inches away.
+ * Only the budget differs: a fold costs 12-368 ms, so this keeps 1500 ms where
+ * recall, whose semantic stage runs to 2.7 s, waits longer.
  *
  * What is different is the writing. The recall client appends served rows and
  * call rows to retrieval telemetry; this one appends nothing, ever.
@@ -128,6 +130,14 @@ async function viaHttp() {
       throw error;
     }
     return body;
+  } catch (error) {
+    // Our own deadline: the service accepted the connection and has the request.
+    if (!error.serviceAnswered && controller.signal.aborted) {
+      const timeout = new Error(`no answer within ${timeoutMs} ms`);
+      timeout.timedOut = true;
+      throw timeout;
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -323,11 +333,16 @@ try {
 } catch (error) {
   httpError = error;
   // A rejection from the service is final. Only an unreachable service — a
-  // refused connection, a timeout, a sandbox denying the loopback syscall —
-  // is worth trying the file transport for.
+  // refused connection, a sandbox denying the loopback syscall — is worth
+  // trying the file transport for. A timeout is neither: the service is still
+  // running the request, and a spool retry would run it a second time.
   if (error.serviceAnswered) {
     console.error(`facts request rejected: ${error.message}`);
     process.exit(error.status >= 500 ? 75 : 2);
+  }
+  if (error.timedOut) {
+    console.error(`turbo timed out: HTTP ${error.message}; not retried on the file transport`);
+    process.exit(75);
   }
   try {
     response = await viaSpool();

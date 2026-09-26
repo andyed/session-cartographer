@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { validateRecallResponse } from '../explorer/server/recall-contract.js';
 import { isResolved } from './sentinels.js';
-import { turboPaths, validateTurboUrl, writeJsonAtomic } from './turbo-common.js';
+import {
+  TURBO_TIMEOUT_DEFAULT_MS, turboPaths, validateTurboUrl, writeJsonAtomic,
+} from './turbo-common.js';
 
 function argsToObject(argv) {
   const out = {};
@@ -18,7 +20,7 @@ function argsToObject(argv) {
 }
 
 const args = argsToObject(process.argv.slice(2));
-const timeoutMs = Math.max(100, Math.min(30000, Number(args.timeout || 1500)));
+const timeoutMs = Math.max(100, Math.min(30000, Number(args.timeout || TURBO_TIMEOUT_DEFAULT_MS)));
 const url = validateTurboUrl(args.url || 'http://127.0.0.1:2526');
 const outputFormat = args.format === 'jsonl' ? 'jsonl' : 'text';
 
@@ -78,6 +80,16 @@ async function viaHttp() {
       throw error;
     }
     return body;
+  } catch (error) {
+    // Our own deadline, not the network: the service accepted the connection
+    // and is working on the request. Say so, so the caller does not mistake a
+    // slow answer for an unreachable service.
+    if (!error.serviceAnswered && controller.signal.aborted) {
+      const timeout = new Error(`no answer within ${timeoutMs} ms`);
+      timeout.timedOut = true;
+      throw timeout;
+    }
+    throw error;
   } finally {
     clearTimeout(timer);
   }
@@ -221,6 +233,17 @@ try {
   // error message go away.
   if (error.serviceAnswered) {
     console.error(`turbo request rejected: ${error.message}`);
+    process.exit(75);
+  }
+  // A timeout is not an outage either. The spool reaches the same process,
+  // which is still running the abandoned HTTP request, so a retry there runs
+  // the query twice at once and usually misses its own deadline too. That was
+  // every recall fallback in the 30 days to 2026-09-26: a semantic stage of
+  // 1.7-2.7 s outran the 1.5 s budget, the spool rerun outran 3 s, and the
+  // portable CLI took 13-89 s. The spool is for a connect the sandbox refuses,
+  // which fails in milliseconds.
+  if (error.timedOut) {
+    console.error(`turbo timed out: HTTP ${error.message}; not retried on the file transport`);
     process.exit(75);
   }
   try {

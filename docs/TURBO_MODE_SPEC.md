@@ -275,7 +275,7 @@ Developer and canary controls remain underneath that product surface:
 | `CARTOGRAPHER_SEARCH_BACKEND=cli` | Portable control cohort. |
 | `CARTOGRAPHER_SEARCH_BACKEND=explorer` | Force a Turbo attempt while retaining the safety fallback. |
 | `CARTOGRAPHER_TURBO_URL` | Defaults to `http://127.0.0.1:2526`. |
-| `CARTOGRAPHER_TURBO_TIMEOUT_MS` | Warm request budget; default 1500 ms. |
+| `CARTOGRAPHER_TURBO_TIMEOUT_MS` | Warm recall budget; default 4000 ms (1500 ms before 2026-09-26). A timeout falls back to the portable CLI directly; only a refused connect tries the file spool. |
 
 ## Implementation sequence
 

@@ -40,7 +40,7 @@ Reference measurements on the local corpus:
 | Warm census through the engine | 44 ms | End to end, including index-generation hashing. |
 | Extraction-derived file-path postings | 368 ms | Regex extraction over free-text summaries. The one measured outlier. |
 
-Turbo's warm request budget is 1500 ms (`CARTOGRAPHER_TURBO_TIMEOUT_MS`). A full
+The facts client's default budget is 1500 ms (the pulse passes 5000). A full
 fold over all 127k events spends 0.8–1.5% of that budget; the measured 44 ms
 end-to-end census spends under 3%.
 
