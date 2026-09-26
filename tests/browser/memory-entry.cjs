@@ -397,6 +397,30 @@ async function port() {
     await primary.focus();
     await deskPage.keyboard.press('Space');
     await deskPage.waitForURL(url => url.searchParams.get('brush') === 'session-0');
+    // The field readout must be readable wherever the described point sits:
+    // every line below the panel header and inside the stage, and never over
+    // the point itself. It once sat in flow at the top of the stage, where the
+    // absolutely positioned header covered its first line.
+    async function assertReadoutClear(describedId, context) {
+      const layout = await deskPage.evaluate(id => {
+        const stage = document.querySelector('.mw-stage[data-panel=field]');
+        const label = stage.querySelector('.mw-brush-label');
+        const rect = el => { const r = el.getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right }; };
+        const target = stage.querySelector(`.mw-target[data-session="${CSS.escape(id)}"]`).getBoundingClientRect();
+        return {
+          hidden: label.hidden, placement: label.dataset.placement,
+          header: rect(stage.querySelector('.mw-panel-header')), stage: rect(stage), label: rect(label),
+          lines: [...label.children].filter(el => el.textContent.trim()).map(el => ({ text: el.textContent.slice(0, 40), ...rect(el) })),
+          point: { x: target.left + target.width / 2, y: target.top + target.height / 2 },
+        };
+      }, describedId);
+      assert.equal(layout.hidden, false, `${context}: field readout is hidden`);
+      assert.ok(layout.lines.length >= 2, `${context}: field readout has no text`);
+      for (const line of layout.lines) assert.ok(line.top >= layout.header.bottom - 1 && line.bottom <= layout.stage.bottom + 1, `${context}: readout line "${line.text}" is under the panel header or cut by the stage: ${JSON.stringify(layout)}`);
+      const { point, label } = layout;
+      assert.ok(!(point.x >= label.left && point.x <= label.right && point.y >= label.top && point.y <= label.bottom), `${context}: readout covers the point it describes: ${JSON.stringify(layout)}`);
+    }
+    await assertReadoutClear('session-0', 'brushed thread');
     const neighbour = deskPage.locator('.mw-stage[data-panel=field] .mw-target[data-session="session-4"]');
     await neighbour.focus();
     await deskPage.waitForFunction(() => document.querySelector('#memory-weather')?.dataset.secondary === 'session-4');
@@ -405,6 +429,23 @@ async function port() {
     await deskPage.waitForFunction(() => !document.querySelector('#memory-weather')?.dataset.secondary);
     assert.equal(new URL(deskPage.url()).searchParams.get('brush'), 'session-0');
     await deskPage.getByRole('button', { name: '1 selected tasks ×', exact: true }).click();
+    await deskPage.waitForURL(url => !url.searchParams.has('brush'));
+    // With no brush, focusing any point previews it. One point from each half
+    // of the field, so both readout placements are measured.
+    const halves = await deskPage.evaluate(() => {
+      const stage = document.querySelector('.mw-stage[data-panel=field]').getBoundingClientRect();
+      const middle = stage.top + stage.height / 2;
+      const points = [...document.querySelectorAll('.mw-stage[data-panel=field] .mw-target:not([hidden])')]
+        .map(el => { const r = el.getBoundingClientRect(); return { id: el.dataset.session, y: r.top + r.height / 2 }; });
+      return { upper: points.find(p => p.y < middle)?.id || null, lower: points.find(p => p.y >= middle)?.id || null };
+    });
+    assert.ok(halves.upper && halves.lower, `the fixture must place field points in both halves: ${JSON.stringify(halves)}`);
+    for (const [half, id] of [['upper', halves.upper], ['lower', halves.lower]]) {
+      await deskPage.locator(`.mw-stage[data-panel=field] .mw-target[data-session="${id}"]`).focus();
+      await deskPage.waitForFunction(expected => document.querySelector('.mw-stage[data-panel=field] .mw-target[data-brushed=true]')?.dataset.session === expected, id);
+      await assertReadoutClear(id, `${half}-half point`);
+    }
+    await deskPage.locator('.mw-stage[data-panel=field]').screenshot({ path: path.join(artifacts, 'carto-memory-field-readout.png') });
     await deskPage.getByRole('button', { name: 'Tasks', exact: true }).click();
 
     fs.appendFileSync(log, JSON.stringify({ event_id: 'after-return', session_id: docSession, session_title: 'Review the handoff', provider: 'codex', project: 'writing', timestamp: now + 1000, type: 'git_commit', summary: 'Commit abcdef1: clarify the return briefing', cwd: corpus }) + '\n');

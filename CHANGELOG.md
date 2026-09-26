@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### fix(memory): keep the field readout below its header and off its point
+
+In the full-size Activity view, the readout under the Field header (thread
+title, project, span · tokens · files) had its first line hidden. Since
+f1f7a5a moved it into the field's stage, it sat in normal flow at the top of
+that stage, and the panel header is absolutely positioned over the stage's top
+44 px. Measured in the browser harness: header 526–570 px, title line 554–577 px.
+It also covered the point it described (point at 599 px, readout 526–658 px),
+because the `data-placement` the field sets for each point was styled only in
+the compact desk. The full-size readout now uses the compact desk's overlay: it
+sits below the header when the point is in the lower half and at the bottom
+when the point is in the upper half. It has an opaque ground and does not take
+pointer events.
+
+The browser harness measures the readout for the brushed thread and for one
+point in each half of the field. Every line must sit below the header and
+inside the stage, and the readout must not cover its point. Against the
+previous CSS the brushed-thread check fails on the hidden title line. Without
+the placement rule, the lower-half check fails on the covered point.
+
 ### fix(turbo): fold a dual-logged event's second copy instead of dropping it
 
 The hooks write one event to its domain log and again to changelog, and each
