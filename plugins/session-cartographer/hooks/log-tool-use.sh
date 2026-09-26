@@ -115,50 +115,79 @@ $(printf '%s' "$cmd" | grep -oE "[\"'][^\"' ]*(/[^\"' ]+|[^\"' /]+\.[A-Za-z0-9]{
   printf '%s\n' "$raw" | bash_filter_paths | paste -sd ',' -
 }
 
-# True when a command is only noise. Strips leading `cd …` hops first so the
-# verdict is about what actually RUNS — `cd repo && ls` is noise, but
-# `cd repo && python3 …` is the session's actual work.
+# The command as the shell runs it: heredoc bodies removed, lines intact. Reads
+# stdin. Git and noise detection read this, never the raw text, because a body
+# is data — a memory file, release notes, a commit message — and it names
+# `git push` or `git commit` without running either. Over 30 days of transcripts
+# (83,302 Bash commands, 2026-09-26) a commit or push appeared only inside a
+# body 40 times and none of them ran there; read raw, each is a phantom push, or
+# turns a real `cat > notes.md <<EOF` edit into `Ran:` via the commit branch.
 #
-# Three separators, because `$COMMAND` reaches this function newline-flattened.
-# The 2026-08-28 fix handled `&&` only, so `cd repo\ngit commit …` arrived here
-# as `cd repo git commit …` with nothing left to mark the boundary, matched the
-# bare `cd\ *` pattern below, and took the commit down with it. Measured: this
-# repo's own f1f7a5a and db9b934 are absent from changelog.jsonl, and the test
-# runs and pushes written the same way went with them.
+# A delimiter must start with a letter or `_`, so arithmetic `1<<2` is not a
+# heredoc, and `<<<` is a here-string. A body with no terminator line is kept:
+# a misread `<<` then hides nothing.
+bash_strip_heredocs() {
+  awk -v Q="'" '
+    { L[++n] = $0 }
+    END {
+      i = 1
+      while (i <= n) {
+        line = L[i++]; print line
+        nq = 0; rest = line
+        while (match(rest, /<<-?[ \t]*[^ \t;&|<>()]+/)) {
+          before = (RSTART > 1) ? substr(rest, RSTART - 1, 1) : ""
+          tok = substr(rest, RSTART, RLENGTH)
+          rest = substr(rest, RSTART + RLENGTH)
+          if (before == "<") continue
+          d = tok; sub(/^<<-?[ \t]*/, "", d); gsub(/["\\]/, "", d); gsub(Q, "", d)
+          if (d !~ /^[A-Za-z_][A-Za-z0-9_.-]*$/) continue
+          q[++nq] = d; dash[nq] = (substr(tok, 3, 1) == "-")
+        }
+        # Bodies follow in the order their delimiters appeared on the line.
+        for (k = 1; k <= nq; k++) {
+          for (j = i; j <= n; j++) {
+            t = L[j]; sub(/\r$/, "", t)
+            if (dash[k]) sub(/^\t+/, "", t)
+            if (t == q[k]) break
+          }
+          if (j > n) break
+          i = j + 1
+        }
+      }
+    }'
+}
+
+# True when every command in a command line is noise: `cd repo && ls` is,
+# `cd repo && python3 …` is not. Reads the heredoc-stripped command with its
+# newlines, so each `&&`, `;` or newline segment is judged on its own.
 #
-# `&&` and `;` are stripped greedily to the separator, so an unquoted path with
-# spaces still resolves; whichever appears FIRST wins, or `cd a; b && c` would
-# strip past the semicolon. With no separator at all there is nothing to be
-# greedy about, so the hop is `cd` plus one argument — an unquoted spacey path
-# then degrades to "not noise", which is the safe direction: a logged command
-# costs a row, a dropped one costs the commit.
+# This used to judge the first command after any leading `cd` hops and ignore
+# the rest, so a leading `cat`/`echo`/`ls` took everything after it down. Commit
+# c29a684 (session 979b81b0, 2026-09-26) was lost that way: `cat > <scratchpad>
+# /commit-msg.txt <<EOF … EOF` then `git add … && git commit -F …`, where the
+# scratchpad path is filtered out of the writes that would have overridden the
+# verdict. Replayed over the same 30 days, the old rule dropped ~4,400 commands
+# of real work this way (node/python/npx runs, curl, 552 git writes) and ~9,900
+# inspection runs (`echo "==="; grep …`) that are logged whenever they lack the
+# leading echo.
+# Judging every segment logs both: a logged command costs a row, a dropped one
+# can cost a commit.
 bash_is_noise() {
-  local probe="$1" next="" amp="" semi=""
-  while :; do
-    case "$probe" in
-      cd\ *) : ;;
-      *) break ;;
+  local seg
+  while IFS= read -r seg; do
+    seg="${seg#"${seg%%[![:space:]]*}"}"
+    seg="${seg%"${seg##*[![:space:]]}"}"
+    case "$seg" in
+      # `ls*` used to swallow lsof/lsblk/lsattr too — anchored now.
+      ''|\#*|ls|ls\ *|cat\ *|echo\ *|pwd|cd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) ;;
+      *) return 1 ;;
     esac
-    amp=""; semi=""
-    case "$probe" in *"&&"*) amp="${probe%%&&*}" ;; esac
-    case "$probe" in *";"*) semi="${probe%%;*}" ;; esac
-    if [ -n "$amp" ] && { [ -z "$semi" ] || [ ${#amp} -lt ${#semi} ]; }; then
-      next=$(printf '%s' "$probe" | sed 's/^cd [^&]*&&[[:space:]]*//')
-    elif [ -n "$semi" ]; then
-      next=$(printf '%s' "$probe" | sed 's/^cd [^;]*;[[:space:]]*//')
-    else
-      next=$(printf '%s' "$probe" | sed -E 's/^cd +("[^"]*"|'"'"'[^'"'"']*'"'"'|[^ ]+)[[:space:]]*//')
-    fi
-    [ "$next" = "$probe" ] && break
-    probe="$next"
-  done
-  # A hop that consumed the whole command was a bare `cd` — still noise.
-  [ -z "$probe" ] && return 0
-  case "$probe" in
-    # `ls*` used to swallow lsof/lsblk/lsattr too — anchored now.
-    ls|ls\ *|cat\ *|echo\ *|pwd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) return 0 ;;
-  esac
-  return 1
+  done <<EOF
+$(printf '%s\n' "$1" | awk '
+    { if (sub(/\\$/, "")) { buf = buf $0 " "; next } print buf $0; buf = "" }
+    END { if (buf != "") print buf }' | awk '{ gsub(/&&|;/, "\n"); print }')
+EOF
+  return 0
 }
 
 # ── git subcommand detection ──────────────────────────────────────────────────
@@ -264,14 +293,24 @@ case "$TOOL_NAME" in
     # rewrite logged as `tool_bash` while a short one was caught. Capped well
     # above any real command so a pathological paste can't stall the hook.
     COMMAND_FULL=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 20000 | tr '\n\t\r' '   ' | tr -s ' ')
-    # A write outranks the noise filter — see bash_written_paths().
+    # Git and noise detection read the full command minus heredoc bodies — see
+    # bash_strip_heredocs(). They read the truncated copy until 2026-09-26, so a
+    # commit past char 500 was invisible: a `cat >> TODO.md <<EOF … EOF` or a
+    # long `printf` ahead of it is enough. Replayed over 30 days, 584 commands put
+    # a real `git commit` past that cut.
+    COMMAND_SHELL=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | bash_strip_heredocs | head -c 20000)
+    COMMAND_SHELL_FLAT=$(printf '%s' "$COMMAND_SHELL" | tr '\n\t\r' '   ' | tr -s ' ')
+    COMMIT_CALL=$(git_invocation "$COMMAND_SHELL_FLAT" commit)
+    PUSH_CALL=$(git_invocation "$COMMAND_SHELL_FLAT" push)
+
+    # A write outranks the noise filter — see bash_written_paths(). So does a
+    # commit or push, which a pipe can hide from the per-segment verdict
+    # (`cat msg.txt | git commit -F -` is one segment, and it starts with cat).
     BASH_WRITES=$(bash_written_paths "$COMMAND_FULL")
-    if [ -z "$BASH_WRITES" ] && bash_is_noise "$COMMAND"; then
+    if [ -z "$BASH_WRITES" ] && [ -z "$COMMIT_CALL" ] && [ -z "$PUSH_CALL" ] \
+       && bash_is_noise "$COMMAND_SHELL"; then
       exit 0
     fi
-
-    COMMIT_CALL=$(git_invocation "$COMMAND" commit)
-    PUSH_CALL=$(git_invocation "$COMMAND" push)
 
     # Detect git commit — extract commit hash, message, and changed files
     if [ -n "$COMMIT_CALL" ]; then

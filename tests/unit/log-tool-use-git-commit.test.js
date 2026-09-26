@@ -28,6 +28,14 @@
  *    lost). The tests at the bottom cover detection past global options and
  *    reading the repo that `-C` names instead of the hook's cwd.
  *
+ * 4. Detection read the command cut to 500 chars, so a long commit message
+ *    written to a file first put `git commit` past the cut.
+ *
+ * 5. A leading `cat` made the whole command noise unless it wrote a path the
+ *    write filter keeps, and scratch paths are filtered: c29a684 (session
+ *    979b81b0, 2026-09-26) was lost to `cat > <scratchpad>/commit-msg.txt
+ *    <<EOF … EOF` followed by `git commit -F`.
+ *
  * Run with: node --test tests/unit/log-tool-use-git-commit.test.js
  */
 import test from 'node:test';
@@ -354,5 +362,115 @@ test('git -C <repo> push is a push, attributed to that repo', () => {
     assert.equal(recs.length, 1);
     assert.equal(last(recs).type, 'git_push');
     assert.equal(last(recs).project, 'repo');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+// ── Commits past char 500, and behind a leading cat ──────────────────────────
+// Both found replaying synthetic payloads through the installed 0.7.9 hook on
+// 2026-09-26. Detection now reads the whole command minus heredoc bodies, and
+// the noise verdict judges every `&&` / `;` / newline segment, not the first.
+
+const LONG_BODY = 'The body explains why the change was needed. '.repeat(40);
+// Text only: the hook never reads the file, it reads HEAD. What matters is that
+// the write filter drops the path, as it drops every real scratchpad.
+const SCRATCH_MSG = '/private/tmp/claude-501/-Users-x/0000abcd/scratchpad/commit-msg.txt';
+
+test('a commit behind a heredoc longer than 500 chars is recorded', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'n.js', 'fix(hooks): a long message', ['-q']);
+    const cmd = `cat > msg.txt <<'EOF'\nfix(hooks): a long message\n\n${LONG_BODY}\nEOF\n`
+      + `git add n.js && git commit -q -F msg.txt`;
+    assert.ok(cmd.indexOf('git commit') > 500, 'the commit must sit past the old 500-char cut');
+    const recs = fire(ws, cmd, '');
+    assert.equal(commits(recs).length, 1, 'a commit past char 500 produced no git_commit row');
+    assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}: fix\\(hooks\\): a long message`));
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a commit behind any long prefix is recorded, heredoc or not', () => {
+  const ws = makeWorkspace();
+  try {
+    // Stripping heredoc bodies alone would shorten the case above and pass it;
+    // this prefix is shell, not a body, so only reading past char 500 does.
+    commit(ws, 'o.js', 'feat: after a long printf', ['-q']);
+    const cmd = `printf '%s' '${LONG_BODY}' >/dev/null && git add o.js && git commit -q -m 'feat: after a long printf'`;
+    assert.ok(cmd.indexOf('git commit') > 500);
+    const recs = fire(ws, cmd, '');
+    assert.equal(commits(recs).length, 1);
+    assert.equal(last(recs).commit_type, 'feature');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a commit after `cat > <scratch path> <<EOF` is recorded', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'p.js', 'fix(turbo): let status report a stale index', ['-q']);
+    const heredoc = `cat > ${SCRATCH_MSG} <<'EOF'\nfix(turbo): let status report a stale index\nEOF`;
+    // Without the commit the command must be noise: proof that the path is
+    // filtered from the writes, so nothing but the commit can keep this row.
+    assert.equal(fire(ws, heredoc, '').length, 0, 'the scratch write must be filtered');
+    const recs = fire(ws, `${heredoc}\ngit add p.js && git commit -q -F ${SCRATCH_MSG}`, '');
+    assert.equal(commits(recs).length, 1, 'a leading cat dropped the commit as noise');
+    assert.match(last(recs).summary, /let status report a stale index/);
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a commit fed through a pipe from cat is recorded', () => {
+  const ws = makeWorkspace();
+  try {
+    // One segment starting with `cat`: the per-segment verdict alone calls it
+    // noise, so a detected commit has to outrank the filter.
+    commit(ws, 'q.js', 'docs: piped message', ['-q']);
+    const recs = fire(ws, `cat ${SCRATCH_MSG} | git commit -q -F -`, '');
+    assert.equal(commits(recs).length, 1);
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('git named inside a heredoc body is data, not a commit or a push', () => {
+  const ws = makeWorkspace();
+  try {
+    // HEAD is fresh and unlogged, so the freshness guard would accept it: only
+    // reading around the body keeps this edit from becoming a phantom commit.
+    commit(ws, 'r.js', 'feat: fresh and unlogged', ['-q']);
+    const cmd = `cat >> CHANGELOG.md <<'EOF'\n### fix(hooks)\n`
+      + `Write the message, then git commit -F - and git push origin main.\nEOF`;
+    const recs = fire(ws, cmd, '');
+    assert.equal(recs.length, 1);
+    assert.equal(last(recs).type, 'tool_file_edit', 'a heredoc edit was misread as git work');
+    assert.match(last(recs).summary, /CHANGELOG\.md/);
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('work after a leading cat or echo is logged', () => {
+  const ws = makeWorkspace();
+  try {
+    for (const cmd of [
+      `echo "=== run ==="; node --test tests/unit/x.test.js`,
+      `cat package.json && npm test`,
+      `cd ${ws.repo} && ls && node scripts/build.js`,
+    ]) {
+      const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+      const recs = fire({ ...ws, dev }, cmd);
+      assert.equal(recs.length, 1, `dropped as noise: ${cmd}`);
+      assert.equal(last(recs).type, 'tool_bash');
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('plain reads, and scratch or stdout heredocs, are still noise', () => {
+  const ws = makeWorkspace();
+  try {
+    for (const cmd of [
+      'cat src/app.js',
+      'cat src/app.js | head -20',
+      `echo "=== state ==="; ls -la; pwd`,
+      `ls \\\n  -la`,
+      `cat > ${SCRATCH_MSG} <<'EOF'\nnotes\nEOF`,
+      // The body names a push; a heredoc to stdout runs nothing.
+      `cat <<'EOF'\nNext: git push origin main\nEOF`,
+    ]) {
+      assert.equal(fire(ws, cmd).length, 0, `expected no event for: ${JSON.stringify(cmd)}`);
+    }
   } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
 });

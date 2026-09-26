@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+### fix(hooks): record commits past char 500 and after a leading `cat`
+
+`log-tool-use.sh` lost real commits in two more ways. Both reproduce with
+synthetic payloads through the installed 0.7.9 hook. (1) Git detection read the
+command cut to 500 chars. `cat > msg.txt <<'EOF' <1,800-char message> EOF`
+followed by `git commit -F msg.txt` logged an edit and no commit. A JS port of
+the matcher, replayed over 30 days of Claude Code transcripts (83,302 Bash
+commands), found 584 commands that put a real `git commit` past the cut. (2) The noise filter judged only the first command
+after any `cd` hops. A leading `cat` dropped the whole line unless it wrote a
+path the write filter keeps, and scratch paths are filtered. c29a684 (session
+979b81b0) was lost to `cat > <scratchpad>/commit-msg.txt <<EOF … EOF` followed
+by `git add … && git commit -F …`.
+
+Git detection now reads the full command with heredoc bodies removed. Reading
+the raw 20,000-char copy would have turned 40 body-only mentions in the same 30
+days into phantom pushes, or into `Ran:` rows in place of real `cat > notes.md`
+edits, and none of those mentions ran git. The noise verdict now judges every
+`&&`, `;` and newline segment, and a detected commit or push outranks it, which
+covers `cat msg | git commit -F -`. Replayed over the same corpus, the old rule
+dropped ~4,400 commands of real work (node, python and npx runs, curl, 552 git
+writes) and ~9,900 inspection runs such as `echo "==="; grep …`. All of those
+are now logged: at most 22% more Bash rows, since the port ignores the writes
+that already kept some of them. The freshness and already-logged
+guards are unchanged. Seven tests in `log-tool-use-git-commit.test.js`; six
+fail against the previous hook, and three fail if detection reads the raw
+command without stripping heredocs.
+
 ### fix(hooks): record `git -C <repo> commit` and `git -C <repo> push`
 
 `log-tool-use.sh` detected commits with a literal `grep -q "git commit"`.
