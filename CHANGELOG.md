@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### fix(hooks): record `git -C <repo> commit` and `git -C <repo> push`
+
+`log-tool-use.sh` detected commits with a literal `grep -q "git commit"`.
+`git -C ~/Documents/dev/session-cartographer commit -F -` contains no such
+substring, so 9e3d014 (session 49614682, 2026-09-26) was logged as `tool_bash`
+and `/wrapup`'s digest printed no commits block. `git -C` is the natural way to
+avoid a leading bare `cd`, which already lost commits (68cf1db), so agents were
+steered into this form. `git -c k=v commit` had the same gap, and so did
+`git -C <repo> push`. Detection now matches `git`, any run of global options
+(`-C`, `-c`, `--git-dir`, `--work-tree`, `--no-pager`, …), then the subcommand
+in first position, so `git -C r log --grep commit` and `git commit-tree` are
+not commits. The repo is resolved from the invocation's own `-C` chain
+(`~`, `$HOME` and quotes handled by hand; nothing is evaluated), then
+`--work-tree`, or a `--git-dir` ending in `.git`, not from the hook's cwd.
+The freshness check, `diff-tree`, the remote URL and `project` all read that
+repo. From `~/Documents/dev` the old path found no repo, and from a sibling
+repo it found the wrong HEAD. The freshness and already-logged guards are
+unchanged. Replaying the original 1,691-char command: the previous hook writes
+`tool_bash` under project `dev`, the new one `git_commit` with the right sha
+under `session-cartographer`. Eight tests in `log-tool-use-git-commit.test.js`
+cover this; six fail against the previous hook, and four fail when only the
+matcher is fixed and the repo still comes from the cwd. That file's hook runs
+now point Qdrant and the embed server at a dead port: the backgrounded
+`index-event.sh` had put 18 `session: testsess` fixture points into the live
+collection.
+
 ### fix(search): the CLI honours `CARTOGRAPHER_SEMANTIC=0`
 
 Only `explorer/server/search.js` read the variable. `cartographer-search.sh`

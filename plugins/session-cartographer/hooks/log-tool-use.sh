@@ -27,7 +27,6 @@ TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
 CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
 # A worktree's basename is a throwaway name; resolve to the parent repo.
 . "$(dirname "$0")/common.sh"
 PROJECT=$(cartographer_project "$CWD")
@@ -162,6 +161,76 @@ bash_is_noise() {
   return 1
 }
 
+# ── git subcommand detection ──────────────────────────────────────────────────
+# `git -C <repo> commit` is how an agent avoids a leading `cd`, and it contains
+# no literal "git commit". The substring match that stood here logged 9e3d014
+# (session 49614682, 2026-09-26) as tool_bash, and /wrapup's digest printed no
+# commits block. So: `git`, then any run of global options, then the subcommand
+# in first position — `git -C r log --grep commit` is not a commit.
+#
+# A shell word is unquoted characters and quoted strings, concatenated
+# (`user.name="A B"` is one word). The options that take a separate argument
+# are listed; any other `--long[=value]` is a flag, and `-p`/`-P` are the only
+# bare short flags git takes before a subcommand.
+GIT_WORD='([^[:space:]"'"'"';&|<>()]|"[^"]*"|'"'"'[^'"'"']*'"'"')+'
+GIT_OPTS="([[:space:]]+(-[Cc][[:space:]]+${GIT_WORD}|--(git-dir|work-tree|namespace)[[:space:]]+${GIT_WORD}|--[a-z][a-z-]*(=${GIT_WORD})?|-[pP]))*"
+
+# The first `git [global options] <subcommand>` in a command, or nothing. Only
+# the options between `git` and the subcommand come back, so the `-C` of an
+# earlier `git -C a add` never lends its path to a later `git -C b commit`.
+git_invocation() {
+  printf '%s' "$1" | LC_ALL=C grep -oE "(^|[^[:alnum:]_.-])git${GIT_OPTS}[[:space:]]+$2([^[:alnum:]_-]|\$)" | head -1
+}
+
+# A path as written in a command, made absolute against a base directory. The
+# shell never saw this text, so `~` and `$HOME` are expanded by hand; nothing
+# in the command is ever evaluated.
+git_path() {
+  local p="$1"
+  case "$p" in
+    '~'|'$HOME'|'${HOME}') p="$HOME" ;;
+    '~/'*)       p="$HOME/${p:2}" ;;
+    '$HOME/'*)   p="$HOME/${p:6}" ;;
+    '${HOME}/'*) p="$HOME/${p:8}" ;;
+  esac
+  case "$p" in /*) ;; *) p="$2/$p" ;; esac
+  printf '%s' "$p"
+}
+
+# Toplevel of the repo a git_invocation() ran in; empty when there is none.
+# Starts at the hook's cwd and applies each `-C` in order, a relative one
+# resolving against the last, as git does. --work-tree and --git-dir resolve
+# after every -C, and a --git-dir only names a toplevel when it ends in `.git`.
+git_invocation_repo() {
+  local dir="$2" want="" tok wt="" gd=""
+  while IFS= read -r tok; do
+    tok=$(printf '%s' "$tok" | sed -E "s/\"([^\"]*)\"/\1/g; s/'([^']*)'/\1/g")
+    case "$want" in
+      C)    dir=$(git_path "$tok" "$dir"); want=""; continue ;;
+      wt)   wt="$tok"; want=""; continue ;;
+      gd)   gd="$tok"; want=""; continue ;;
+      skip) want=""; continue ;;
+    esac
+    case "$tok" in
+      -C)            want=C ;;
+      -c|--namespace) want=skip ;;
+      --work-tree)   want=wt ;;
+      --work-tree=*) wt="${tok#--work-tree=}" ;;
+      --git-dir)     want=gd ;;
+      --git-dir=*)   gd="${tok#--git-dir=}" ;;
+    esac
+  done <<EOF
+$(printf '%s' "$1" | LC_ALL=C grep -oE "$GIT_WORD")
+EOF
+  if [ -n "$wt" ]; then
+    dir=$(git_path "$wt" "$dir")
+  elif [ -n "$gd" ]; then
+    dir=$(git_path "${gd%/}" "$dir")
+    dir="${dir%/.git}"
+  fi
+  (cd "$dir" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+}
+
 case "$TOOL_NAME" in
   Edit|Write|apply_patch)
     if [ "$TOOL_NAME" = "apply_patch" ]; then
@@ -201,8 +270,16 @@ case "$TOOL_NAME" in
       exit 0
     fi
 
+    COMMIT_CALL=$(git_invocation "$COMMAND" commit)
+    PUSH_CALL=$(git_invocation "$COMMAND" push)
+
     # Detect git commit — extract commit hash, message, and changed files
-    if echo "$COMMAND" | grep -q "git commit"; then
+    if [ -n "$COMMIT_CALL" ]; then
+      # The repo the commit ran in, which `-C` makes different from the hook's
+      # cwd: every repo read below (freshness, diff-tree, remote) must hit it,
+      # or a commit made from ~/Documents/dev reads no HEAD, or the wrong one.
+      GIT_REPO=$(git_invocation_repo "$COMMIT_CALL" "$CWD")
+      [ -n "$GIT_REPO" ] && PROJECT=$(cartographer_project "$GIT_REPO")
       # Parse the commit output from tool_response. Use .stdout when it's an
       # object: jq -r of the whole object prints raw JSON whose \n escape
       # sequences then leak into COMMIT_MSG as literal backslash-n text.
@@ -321,7 +398,9 @@ case "$TOOL_NAME" in
         SALIENCE="0.2"
       fi
     # Detect git push
-    elif echo "$COMMAND" | grep -q "git push"; then
+    elif [ -n "$PUSH_CALL" ]; then
+      PUSH_REPO=$(git_invocation_repo "$PUSH_CALL" "$CWD")
+      [ -n "$PUSH_REPO" ] && PROJECT=$(cartographer_project "$PUSH_REPO")
       SUMMARY="Pushed: $COMMAND"
       TYPE="git_push"
       SALIENCE="0.6"
