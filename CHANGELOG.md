@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-09-26
 
 ### test(explorer): wait for the task before counting its hand-off controls
 
@@ -15,8 +15,6 @@ button, then called `locator.count()`, which does not wait. A 1.5 s delay on
 `assertHandoffTargets` now waits for the inspector's task heading, which draws
 with the row, before counting; with the delay in place it passes. The product
 is unchanged.
-
-## 0.8.0 — 2026-09-26
 
 ### test(explorer): measure the inspector's hand-off row
 
