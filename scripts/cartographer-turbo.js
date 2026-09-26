@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { RECALL_CONTRACT_VERSION } from '../explorer/server/recall-contract.js';
+import { watchLag, watchSample } from '../explorer/server/jsonl.js';
 import {
   effectiveTurboSettings,
   processIsAlive,
@@ -239,6 +240,46 @@ async function stopManaged(env = process.env) {
   return { stopped: true, pid: record.pid };
 }
 
+async function fetchRecallHealth(url) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 500);
+    const res = await fetch(new URL('/api/recall/health', url), { signal: controller.signal });
+    clearTimeout(timer);
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+// A healthy watcher consumes an append within its 100 ms debounce. A second
+// look this much later separates a stall from an append still in flight.
+const FRESHNESS_GRACE_MS = 1000;
+
+// `index_freshness: 'live'` used to mean only that the numbers came from the
+// running process rather than ready.json. On 2026-09-25 a log replaced by
+// write-temp-then-rename left the watcher bound to the unlinked inode, and
+// status said "live" while Turbo served 2 of 69 hermes milestones. Answering a
+// health request proves the process is up, not that its index still grows with
+// the logs, so compare what the watcher has consumed with the logs on disk.
+async function judgeFreshness(health, url) {
+  // A service from before the watcher reported its positions cannot be judged.
+  if (!health.watch) return { health, watch: null, freshness: 'unverified' };
+  const first = watchSample(health.watch);
+  let lag = watchLag(first);
+  if (Object.values(lag).some((source) => source.stale)) {
+    await new Promise((resolve) => setTimeout(resolve, FRESHNESS_GRACE_MS));
+    const again = await fetchRecallHealth(url);
+    // One look cannot tell a stall from an append in flight, so without the
+    // second there is no verdict to give.
+    if (!again?.watch) return { health, watch: null, freshness: 'unverified' };
+    health = again;
+    lag = watchLag(first, watchSample(again.watch));
+  }
+  const stale = Object.values(lag).some((source) => source.stale);
+  return { health, watch: lag, freshness: stale ? 'stale' : 'live' };
+}
+
 const command = process.argv[2];
 
 try {
@@ -315,14 +356,11 @@ try {
     // service when it can answer; fall back to the snapshot when it cannot
     // (a sandbox-blocked listener has no HTTP to ask).
     let live = null;
+    let watch = null;
+    let freshness = 'startup snapshot';
     if (service.alive && httpState === 'listening') {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 500);
-        const res = await fetch(new URL('/api/recall/health', settings.url), { signal: controller.signal });
-        clearTimeout(timer);
-        if (res.ok) live = await res.json();
-      } catch {}
+      live = await fetchRecallHealth(settings.url);
+      if (live) ({ health: live, watch, freshness } = await judgeFreshness(live, settings.url));
     }
     const transport = !service.alive
       ? 'none'
@@ -350,7 +388,11 @@ try {
         indexed_docs: live?.indexed_docs ?? service.ready?.indexed_docs ?? null,
         corpus_root: live?.corpus_root ?? null,
         heap_used_mb: live ? Math.round(live.process.heap_used / 1048576) : null,
-        index_freshness: live ? 'live' : 'startup snapshot',
+        index_freshness: freshness,
+        // Per log: bytes the watcher consumed against bytes on disk, and
+        // whether it is bound to the file now at the path. `stale` marks a
+        // log still behind after the grace period.
+        watch,
         pid: service.record?.pid ?? null,
         ready: service.ready,
         log: service.paths.log,

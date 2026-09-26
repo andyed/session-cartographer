@@ -37,6 +37,12 @@ keeps the setting in `~/.config/session-cartographer/config.json` (or
 
 Afterward, report whether the global preference is enabled, whether its managed
 service is running and compatible, and which transport the receipt names.
+Report `service.index_freshness` too. `live` means every log's watcher has
+consumed what is on disk; `stale` means at least one log is still behind after a
+one-second second look, so name the logs whose `watch` entry says `stale: true`
+(with `bytes_behind`, or `inode_mismatch` for a log replaced under the watcher)
+and offer `stop` then `start`. `unverified` is a service too old to report its
+watchers; `startup snapshot` means no HTTP answer, so the counts are from boot.
 `status` also carries `memory` (estimated MB against this machine's RAM) and
 `idle_minutes`; mention both when the user is weighing whether to turn it on.
 On machines under 16 GB, an enabled service exits after 30 idle minutes unless

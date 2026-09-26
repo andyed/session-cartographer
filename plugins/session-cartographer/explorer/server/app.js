@@ -131,7 +131,7 @@ export function createExplorerApp() {
   });
 
   app.get('/api/recall/health', (_req, res) => {
-    res.json(recallHealth({ events, index }));
+    res.json(recallHealth({ events, index, watch: stopWatching.positions() }));
   });
 
   app.post('/api/recall', async (req, res) => {

@@ -87,7 +87,7 @@ export async function executeRecall({ events, index }, rawRequest) {
   };
 }
 
-export function recallHealth({ events, index }) {
+export function recallHealth({ events, index, watch = null }) {
   return {
     status: 'ok',
     contract_version: RECALL_CONTRACT_VERSION,
@@ -96,6 +96,11 @@ export function recallHealth({ events, index }) {
     events: events.length,
     indexed_docs: index.docs.size,
     index_generation: recallIndexGeneration(events, index),
+    // Per log: the path watched, the bytes consumed, the inode the watcher is
+    // bound to. Answering this request proves only that the process is up;
+    // `cartographer-turbo.js status` compares these with the disk to show
+    // whether the index is still growing with the logs.
+    watch,
     process: {
       pid: process.pid,
       rss: process.memoryUsage().rss,

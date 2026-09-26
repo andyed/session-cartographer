@@ -368,12 +368,89 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
     }
   }
 
-  return () => {
+  const stop = () => {
     closed = true;
     for (const w of [...Object.values(fileWatchers), ...dirWatchers]) {
       try { w?.close(); } catch {}
     }
   };
+  // Where each source's watcher has read to, and which file it is bound to.
+  // Only a comparison with the disk can show a stalled watcher: on 2026-09-25 a
+  // log replaced by rename left this bound to the unlinked inode, and every
+  // health signal stayed green while Turbo served 2 of 69 hermes milestones. A
+  // stopped watcher keeps reporting where it stopped, as a stalled one would.
+  stop.positions = () => Object.fromEntries(Object.keys(logFiles).map((source) => [source, {
+    path: logFiles[source],
+    offset: offsets[source],
+    inode: inodes[source] ?? null,
+  }]));
+  return stop;
+}
+
+/**
+ * One look at a watcher from outside: the positions it reports, then the logs
+ * on disk as read after them. Read the disk second, so an append that lands in
+ * between shows as lag and earns a second look rather than hiding.
+ */
+export function watchSample(positions) {
+  const disk = {};
+  for (const [source, position] of Object.entries(positions || {})) {
+    try {
+      const stat = statSync(position.path);
+      disk[source] = { bytes: stat.size, inode: stat.ino };
+    } catch {
+      disk[source] = null;
+    }
+  }
+  return { positions: positions || {}, disk };
+}
+
+/**
+ * Judge whether a watcher is keeping up with its logs.
+ *
+ * One sample cannot separate a stall from an append the watcher has not reached
+ * yet: the logs grow continuously and the watcher waits out a 100 ms debounce.
+ * So with one sample `stale` is provisional, true for anything not caught up
+ * (bound to a file no longer at the path, or a byte count that differs from the
+ * file's). Pass a second sample taken a grace period later and each source is
+ * judged on whether the watcher reached what was on disk at the FIRST look.
+ * Bytes appended during the grace do not count against it.
+ *
+ * @returns { source: { consumed_bytes, disk_bytes, bytes_behind, inode_mismatch, stale } }
+ */
+export function watchLag(first, later = first) {
+  const lag = {};
+  for (const [source, position] of Object.entries(later.positions)) {
+    const then = first.disk[source] ?? null;
+    const disk = later.disk[source] ?? null;
+    const bound = position.inode ?? null;
+    const sameFile = disk !== null && bound === disk.inode;
+    let stale = false;
+    // A log absent at the first look has nothing to fall behind.
+    if (then !== null) {
+      if (bound !== then.inode && bound !== (disk?.inode ?? null)) {
+        // Bound to neither the file at the path then nor the file there now:
+        // the pre-fix rename stall, or a log that appeared and was never armed.
+        stale = true;
+      } else if (disk !== null && bound === then.inode && then.inode === disk.inode) {
+        // The same file throughout: short of the bytes it held at the first
+        // look, or claiming bytes neither look saw (a truncation it missed).
+        stale = position.offset < then.bytes
+          || position.offset > Math.max(then.bytes, disk.bytes);
+      }
+      // Otherwise the file was replaced between the looks and the watcher is
+      // on the newer one or has yet to move; the next status call can judge.
+    }
+    lag[source] = {
+      consumed_bytes: position.offset ?? null,
+      disk_bytes: disk?.bytes ?? null,
+      // Across a replacement the two counts describe different files.
+      bytes_behind: sameFile ? disk.bytes - position.offset : null,
+      inode_mismatch: disk !== null && !sameFile,
+      stale,
+    };
+  }
+  return lag;
 }
 
 /**

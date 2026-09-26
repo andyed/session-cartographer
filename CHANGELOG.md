@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### fix(turbo): `status` can report a stale index
+
+`cartographer-turbo.js status` printed `index_freshness: "live"` whenever the
+running service answered `/api/recall/health`. That shows the process is up,
+not that its watchers still follow the logs. On 2026-09-25 a log replaced by
+write-temp-then-rename left the watcher on the unlinked inode (fixed in
+9e3d014), and status said "live" while Turbo served 2 of 69 hermes milestones.
+`watchFiles` now reports, per log, the path it watches, the bytes it has
+consumed and the inode it is bound to. `/api/recall/health` carries that as
+`watch`, from the headless service and from the Explorer. `status` stats each
+log and reports a `watch` entry per source (`consumed_bytes`, `disk_bytes`,
+`bytes_behind`, `inode_mismatch`, `stale`). If any log lags at the first look,
+it looks again after one second. A log is stale when the watcher has still not
+reached what was on disk at the first look, so appends made during the wait do
+not count. `index_freshness` is then `live` or `stale`. A service that does not
+report `watch` reads `unverified`, and `startup snapshot` still means there was
+no HTTP answer. With nothing lagging, status takes 0.32 s against the live
+157k-event service, the same as the previous CLI over five runs each.
+`tests/unit/turbo-status-freshness.test.js` serves the positions of a real,
+stopped watcher to the real CLI: the previous CLI reports `live` for both an
+unread append and a replaced log. The recall and facts contracts are
+unchanged. Neither claimed liveness (`index_lag_ms` is `null`).
+
 ### fix(search): the CLI keyword engine reads JSON strings past an escaped quote
 
 `bm25-search.awk` cut every string field at its first double quote, escaped or

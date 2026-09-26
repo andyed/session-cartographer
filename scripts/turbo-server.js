@@ -155,7 +155,7 @@ if (!spoolOnly) {
     if (await handleMemory(req, res)) return;
     if (req.method === 'GET' && req.url === '/api/recall/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(recallHealth({ events, index })));
+      res.end(JSON.stringify(recallHealth({ events, index, watch: stopWatching.positions() })));
       return;
     }
     // Advertised separately so a client can discover which verbs this service

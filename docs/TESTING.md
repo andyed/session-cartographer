@@ -280,6 +280,7 @@ before any probe means anything.
 | API probe disagrees with the CLI | You are almost certainly talking to another checkout's server |
 | Old material never surfaces | Recency weighting; scope with `--since` before assuming loss |
 | Work missing from a digest | Committed from a worktree — verify with `git log` |
+| Turbo misses rows that are in the logs | `cartographer-turbo.js status`: `index_freshness` and the per-log `watch` entries compare what each watcher consumed with the disk |
 
 ## Ground rules
 
