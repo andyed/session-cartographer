@@ -50,6 +50,7 @@ scripts/
   trust-digest.js               — Derives infrastructure actually touched (orgs, LAN hosts, buckets, CLIs) for auto mode's autoMode.environment; used by /trustmap
   build-profile.js              — Derives .carto/profile.md: standing summary of projects, preferences, decisions, work shape, cadence
   sentinels.js                  — isResolved()/firstResolved(): the one definition of "field carries no real value"
+  recall-join.js                — The one served/access join: "marked used" = exact (call_id, event_id) result_used row; shared by Internals, session-digest.js, and the Memory Desk's Recall view
   session-windows.js            — Shared session time-window construction (enrich + repair consume it)
   session-match.js              — Strict orphan→session matching (project + proximity, refuses ambiguity)
   backfill-investigations.js    — Normalize /investigate hypotheses from .carto/events into the searched log
@@ -80,6 +81,7 @@ explorer/
     facts-contract.js           — Facts verbs, bounds, cursor encode/decode, request/response validation
     event-time.js               — One definition of "when did this happen" (shared by ranking and facts)
     project-filter.js           — One definition of "is this event in scope" (matches bm25.js substring behaviour)
+    memory-recall.js            — Recall calls for the Memory Desk (/api/memory/recall, /recall/call): on demand, read-only, unjoined marks listed not guessed
   src/                          — React 19 + Vite + Tailwind UI (:2527)
 docs/
   FACTS.md                      — /api/facts spec: census/tempo/delta, why folds not indexes, delta cursor rules
