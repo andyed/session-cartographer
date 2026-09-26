@@ -230,7 +230,7 @@ export default function SearchInput({ value, onChange, autoFocus = true }) {
         onKeyDown={handleKeyDown}
         onFocus={() => { if (suggestions.length > 0) setOpen(true); else if (isDemoMode) fetchSuggestions(''); }}
         placeholder="Search session history..."
-        className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
+        className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-gray-200 placeholder-muted focus:outline-none focus:border-gray-500"
         style={{ fontSize: '28px' }}
         autoFocus={autoFocus}
         role="combobox"
@@ -254,6 +254,11 @@ export default function SearchInput({ value, onChange, autoFocus = true }) {
             const fontSize = Math.round(35 * scale);
             const py = scale > 0.9 ? 6 : scale > 0.8 ? 4 : 2;
 
+            // The completion is set bold and the typed prefix regular, both
+            // in the row's colour. Two greys cannot both reach 8:1 here and
+            // still look different: on the active row's gray-700, 8:1 needs
+            // L >= 0.765 (gray-200 at 8.33:1 up to white). Hovering an option
+            // makes it the active one, so rows have no separate hover style.
             return (
               <li
                 key={term}
@@ -261,19 +266,17 @@ export default function SearchInput({ value, onChange, autoFocus = true }) {
                 role="option"
                 aria-selected={i === activeIndex}
                 className={`px-3 cursor-pointer font-mono transition-all duration-100 ${
-                  i === activeIndex
-                    ? 'bg-gray-700 text-gray-100'
-                    : 'text-gray-300 hover:bg-gray-750 hover:text-gray-100'
+                  i === activeIndex ? 'bg-gray-700 text-gray-100' : 'text-gray-300'
                 }`}
                 style={{ fontSize: `${fontSize}px`, padding: `${py}px 12px` }}
                 onMouseDown={(e) => { e.preventDefault(); applySuggestion(term); }}
                 onMouseEnter={() => handleItemEnter(i, term)}
                 onMouseLeave={handleItemLeave}
               >
-                <span className="text-gray-200">{term.slice(0, lastWord.length)}</span>
-                <span className="text-gray-500">{term.slice(lastWord.length)}</span>
+                <span>{term.slice(0, lastWord.length)}</span>
+                <span className="font-bold">{term.slice(lastWord.length)}</span>
                 {relatedFor === term && related.length > 0 && (
-                  <span className="text-gray-600 ml-2 text-xs">{'›'}</span>
+                  <span className="ml-2 text-xs">{'›'}</span>
                 )}
               </li>
             );
@@ -285,13 +288,14 @@ export default function SearchInput({ value, onChange, autoFocus = true }) {
       {related.length > 0 && relatedFor && flyoutPos && (
         <div
           ref={subRef}
+          id="search-coterms"
           className="fixed z-50 bg-gray-800 border border-gray-700 rounded shadow-lg w-fit min-w-32"
           style={{
             left: `${flyoutPos.left}px`,
             top: `${flyoutPos.top}px`,
           }}
         >
-          <div className="text-[10px] text-gray-500 px-2 pt-1.5 pb-0.5 font-mono">
+          <div className="text-[10px] text-muted px-2 pt-1.5 pb-0.5 font-mono">
             with "{relatedFor}"
           </div>
           {related.map((term, i) => {
@@ -305,9 +309,7 @@ export default function SearchInput({ value, onChange, autoFocus = true }) {
               <div
                 key={term}
                 className={`font-mono cursor-pointer transition-all duration-100 ${
-                  inFlyout && i === relatedIndex
-                    ? 'bg-gray-700 text-gray-200'
-                    : 'text-gray-400 hover:bg-gray-700 hover:text-gray-200'
+                  inFlyout && i === relatedIndex ? 'bg-gray-700 text-gray-100' : 'text-gray-300'
                 }`}
                 style={{ fontSize: `${fontSize}px`, padding: `${py}px 8px` }}
                 onMouseDown={(e) => { e.preventDefault(); appendTerm(term); }}

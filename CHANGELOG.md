@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### fix(explorer): hold the search combobox's text to 8:1
+
+The search combobox, inside the header, was left out of bf1044e. Its
+placeholder was gray-500 on the field's gray-900 (3.67:1). In the suggestion
+list (gray-800) each option was split by colour into the typed prefix, gray-200,
+and the completion, gray-500: 3.04:1 on the list and 2.13:1 on the active
+option (gray-700). The co-term flyout's heading was gray-500 (3.04:1), its
+terms gray-400 (5.78:1), and the `›` beside the option it belongs to gray-600,
+which renders on the active row at 1.36:1. The idle rows' `hover:bg-gray-750`
+is not a Tailwind 3.4 colour and had no effect.
+
+That split cannot be made with a second grey. On gray-700, 8:1 needs a
+relative luminance of at least 0.765, and only gray-200 (8.33:1) through white
+(10.31:1) qualify: too narrow a band for two greys to read as different.
+`muted` is 5.63:1 there. The completion is now set bold and the typed prefix
+regular, both in the row's colour: gray-300 idle (9.96:1), gray-100 active
+(9.37:1). The completion is the part that differs between rows, and the split
+no longer rests on colour alone. Bold monospace has the same advance width as
+regular (`auroral` is 147.5 px at 35 px either way), so the fisheye does not
+reflow. The flyout's terms are coloured as the list's are, the `›` is drawn in
+its row's colour, the heading is `muted` (8.01:1, the least headroom in the
+classic views), and the placeholder is `placeholder-muted` (9.69:1). Neither
+list has a hover style any more: hovering a row makes it the active one.
+
+`textContrast` now measures a text field's painted text: its value, or while it
+is empty its placeholder, in the colour `getComputedStyle(field,
+'::placeholder')` reports. `memory-entry.cjs` measures the empty combobox, the
+suggestion list with no option active and with one active, and the co-term
+flyout (now `#search-coterms`) opened from the keyboard. It also asserts that
+the completion computes heavier than the prefix, since no contrast probe would
+fail if the weight were lost. Against the old colours all five new probes
+failed, seven entries, the lowest the `›` at 1.36:1. After the fix all 1,518
+classic measurements pass, 1,496 of them non-exempt, the lowest the flyout
+heading at 8.01:1.
+
+The Transcript viewer's search field has the same `placeholder-gray-500` on
+gray-900 (3.67:1). It is not measured by any probe and is unchanged here.
+
 ### fix(turbo): record why a start failed in the log the error names
 
 On 2026-09-26, at load average 72 on 16 CPUs, `cartographer-turbo.js start`

@@ -212,7 +212,11 @@ async function port() {
     // back, so a caller can prove which ground it measured: a probe that finds
     // no text reports success on nothing. Running colour transitions settle
     // first: a classic card's selected background fades in, and a probe read
-    // mid-fade measures a frame nobody reads.
+    // mid-fade measures a frame nobody reads. A text field paints its value,
+    // or its placeholder while empty, and neither is a text node: the field
+    // is measured for whichever it shows, the placeholder in the colour
+    // getComputedStyle(field, '::placeholder') reports, labelled
+    // `::placeholder`.
     async function textContrast(targetPage, scope, { placements = {}, fixed = null, exempt = null, floor = 8 } = {}) {
       await targetPage.evaluate(() => Promise.all(document.getAnimations()
         .filter(animation => animation instanceof CSSTransition)
@@ -249,16 +253,20 @@ async function port() {
             if (done.has(element)) continue;
             done.add(element);
             if (!element.getClientRects().length || getComputedStyle(element).visibility === 'hidden') continue;
-            const text = [...element.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim();
+            const field = ['text', 'search', 'email', 'url', 'tel', 'number', 'password', 'textarea'].includes(element.type) && element.matches('input, textarea');
+            const placeholder = field && element.matches(':placeholder-shown');
+            const text = (field
+              ? (placeholder ? element.placeholder : element.value)
+              : [...element.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('')).trim();
             if (!text) continue;
-            const [r, g, b, a] = rgba(getComputedStyle(element).color);
+            const [r, g, b, a] = rgba(getComputedStyle(element, placeholder ? '::placeholder' : null).color);
             const ink = [r, g, b, a * opacity(element)];
             const grounds = { actual: layers(element, null).reduce(over, [255, 255, 255]) };
             if (!(fixed && element.closest(fixed))) {
               const inner = layers(element, root);
               for (const [name, ground] of Object.entries(placements)) grounds[name] = inner.reduce(over, ground);
             }
-            const label = element.getAttribute('class') || element.tagName.toLowerCase();
+            const label = (element.getAttribute('class') || element.tagName.toLowerCase()) + (placeholder ? '::placeholder' : '');
             const excused = Boolean(exempt && element.closest(exempt));
             for (const [on, ground] of Object.entries(grounds)) {
               const value = ratio(over(ground, ink), ground);
@@ -292,7 +300,9 @@ async function port() {
       // Every classic view is held to 8:1 on the ground its text sits on: the
       // page, a session card (#0d1019), an open session's event list
       // (#030712), the keyboard-active search result (#151a23), a hovered
-      // group header, and a selected facet pill's own fill. Failures collect
+      // group header, a selected facet pill's own fill, and the search
+      // combobox: its placeholder on the field (#111827), its suggestion list
+      // and co-term flyout (#1f2937) and their active rows (#374151). Failures collect
       // across the journey and fail once, so a regression names every element
       // at once. Each probe also proves it reached its ground: a probe that
       // measures nothing reports success. The pointer leaves the page first
@@ -412,8 +422,39 @@ async function port() {
         await legacy.locator('main > div:not(.hidden)').getByText(explorerSummaries[0], { exact: true }).waitFor();
         assert.equal(await legacy.getByText(controlSummary, { exact: true }).count(), 0);
         const searchInput = legacy.getByRole('combobox');
+        // An empty combobox shows its placeholder, read from the field's
+        // ::placeholder style and measured on the field's own fill.
+        await searchInput.fill('');
+        const field = await classic('header [role="combobox"]', 'search placeholder', { grounds: ['#111827'] });
+        assert.ok(field.some(entry => entry.element.endsWith('::placeholder') && entry.text === 'Search session history...'), `${phase}: the probe did not measure the search placeholder (measured ${JSON.stringify(field)})`);
         await searchInput.fill('auro');
         await legacy.getByRole('option', { name: 'aurora', exact: true }).waitFor();
+        // The suggestion list is painted gray-800 and its active option
+        // gray-700, and in each option the typed prefix is split from the
+        // completion. Measure the list with no option active, then with one
+        // active, then open the co-term flyout from the keyboard: its heading
+        // and inactive terms sit on gray-800, its active term on gray-700,
+        // and the option it belongs to is marked with a ›.
+        await classic('#search-suggestions', 'suggestions', { grounds: ['#1f2937'] });
+        await legacy.keyboard.press('ArrowDown');
+        await legacy.locator('#search-suggestions [aria-selected="true"]').waitFor();
+        await classic('#search-suggestions', 'active suggestion', { grounds: ['#374151'] });
+        // No second grey clears 8:1 on the active row, so the split is made
+        // with weight, and no contrast probe would fail if it were lost.
+        const split = await legacy.locator('#search-suggestions [aria-selected="true"] > span').evaluateAll(spans => spans.map(span => ({ text: span.textContent, weight: Number(getComputedStyle(span).fontWeight) })));
+        assert.ok(split[0]?.text === 'auro' && split[1]?.text === 'ra' && split[1].weight > split[0].weight, `${phase}: the completion must be set heavier than the typed prefix (got ${JSON.stringify(split)})`);
+        await legacy.keyboard.press('ArrowRight');
+        await legacy.locator('#search-coterms').waitFor();
+        const flyout = await classic('#search-coterms', 'co-term flyout', { grounds: ['#1f2937', '#374151'] });
+        assert.ok(flyout.some(entry => entry.text === 'with "aurora"'), `${phase}: the flyout probe measured no heading`);
+        assert.ok(flyout.some(entry => entry.text.startsWith('+ ') && entry.ground === '#1f2937'), `${phase}: the flyout probe measured no inactive co-term`);
+        const marked = await classic('#search-suggestions', 'flyout marker', { grounds: ['#374151'] });
+        assert.ok(marked.some(entry => entry.text === '›'), `${phase}: the probe measured no flyout marker`);
+        await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-suggestions.png`), clip: { x: 0, y: 0, width: 900, height: 360 } });
+        // Leave the flyout, then close it, so the option's name is bare again.
+        await legacy.keyboard.press('ArrowLeft');
+        await legacy.keyboard.press('ArrowLeft');
+        await legacy.locator('#search-coterms').waitFor({ state: 'detached' });
         const selectedSearch = legacy.waitForResponse(response => {
           const url = new URL(response.url());
           return url.pathname === '/api/search' && url.searchParams.get('q')?.trim() === 'aurora' && url.searchParams.get('project') === explorerProject;
@@ -967,7 +1008,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

@@ -39,6 +39,13 @@
  * views, and AgentBadge's colour for an unrecognised agent. LINK is the
  * `link` token, which replaced blue-400 (6.89:1 active).
  *
+ * The search combobox adds three grounds: the field (gray-900, #111827), its
+ * suggestion list and co-term flyout (gray-800, #1f2937), and their active
+ * rows (gray-700, #374151). `muted` is the placeholder colour (9.69:1) and the
+ * flyout heading's (8.01:1). gray-800 is the lightest Tailwind gray `muted`
+ * clears; on gray-700 it falls to 5.63:1, so the active rows are gray-100
+ * (9.37:1) and each completion is set in bold rather than a second grey.
+ *
  * These views never render on the Memory Desk's selected row (#153640).
  * Measured from computed styles on every ground above in
  * tests/browser/memory-entry.cjs.
