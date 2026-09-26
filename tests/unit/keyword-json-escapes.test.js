@@ -79,10 +79,6 @@ function cliEnv() {
     CARTOGRAPHER_DEV_DIR: dir,
     CARTOGRAPHER_TURBO: '0',
     CARTOGRAPHER_SEMANTIC: '0',
-    // The CLI does not read CARTOGRAPHER_SEMANTIC. Its semantic leg returns
-    // nothing when Qdrant is unreachable, so point it at a closed port, or a
-    // live Qdrant adds corpus rows to every query here.
-    CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1',
     CARTOGRAPHER_SERVED_LOG: join(dir, 'served-log.jsonl'),
     CARTOGRAPHER_ACCESS_LEDGER: join(dir, 'access-ledger.jsonl'),
   };

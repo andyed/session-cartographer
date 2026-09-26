@@ -118,14 +118,35 @@ run an explicit dependency advisory audit separately when authorized.
    Unset all four (`CARTOGRAPHER_SESSION_ID`, `CLAUDE_SESSION_ID`,
    `CLAUDE_CODE_SESSION_ID`, `CODEX_SESSION_ID`).
 
-2. **A live semantic leg.** `hybridSearch` reaches a real Qdrant, so a fixture
-   index leaks real corpus ids into assertions — the suite then passes wherever
-   the service is down and fails wherever it is up. Pin it off at the top of the
-   file, before any import, since ES imports are hoisted:
+2. **A live semantic leg.** Both engines reach a real Qdrant, so a fixture
+   corpus leaks real corpus ids into assertions — the suite then passes wherever
+   the service is down and fails wherever it is up. `CARTOGRAPHER_SEMANTIC=0`
+   pins the leg off in both; set it where each one reads it.
 
-   ```js
-   process.env.CARTOGRAPHER_SEMANTIC = '0';
-   ```
+   - **In-process `hybridSearch`:** at the top of the file, before any import,
+     since ES imports are hoisted:
+
+     ```js
+     process.env.CARTOGRAPHER_SEMANTIC = '0';
+     ```
+
+   - **A spawned `cartographer-search.sh`:** in the child's `env`, together with
+     `CARTOGRAPHER_TURBO: '0'` or `--no-turbo`. The CLI ignored the variable
+     until 2026-09-26, so tests that passed it still ran the leg against
+     whatever Qdrant answered: a flag-set query for `abandonware` returned 30
+     rows, all `source: semantic`, from the live corpus.
+     `cli-semantic-flag.test.js` now fails if the CLI sends Qdrant or the embed
+     server any request with the flag set. Tests that point
+     `CARTOGRAPHER_QDRANT_URL` at `http://127.0.0.1:1` predate the fix; the
+     dead port still works.
+
+   - **Turbo ignores the caller's flag.** A Turbo-served query runs
+     `hybridSearch` in the server process, and the recall request has no
+     semantic field, so the server's own environment decides. A server started
+     without the flag runs the leg for a caller that set it. A flag-set call
+     that auto-starts the managed server passes the flag into it, and that
+     server answers `semantic_status: "disabled"` for every caller until it
+     exits. Keep Turbo off in any test that pins the leg.
 
 3. **Telemetry writes.** A search run from a test or a shell pollutes the served
    and access logs, which then change ranking through promote-on-reuse. Send

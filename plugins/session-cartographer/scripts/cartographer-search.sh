@@ -16,6 +16,13 @@
 #   CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR  — default: ~/.codex/sessions
 #   CARTOGRAPHER_CODEX_ARCHIVED_DIR     — default: ~/.codex/archived_sessions
 #   CARTOGRAPHER_TRANSCRIPTS_DIR        — legacy Claude-only override
+#   CARTOGRAPHER_SEMANTIC        — 0 skips the semantic leg: no Qdrant or embed
+#                                  request is made. Any other value, or unset,
+#                                  leaves it on. Portable path only: a Turbo
+#                                  query runs in the server, which read its own
+#                                  environment at startup (including a flag set
+#                                  on the call that auto-started it). Pair with
+#                                  --no-turbo for a keyword-only answer.
 #   CARTOGRAPHER_QDRANT_URL      — default: http://localhost:6333
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
@@ -332,6 +339,12 @@ if [ -n "$INTENT" ]; then
       exit 2
       ;;
   esac
+  # --intent is semantic-only, so with the leg off it can only return nothing,
+  # and "No results found" would read as an answer.
+  if [ "${CARTOGRAPHER_SEMANTIC:-}" = "0" ]; then
+    echo "cartographer-search: --intent searches the semantic leg only, and CARTOGRAPHER_SEMANTIC=0 disables it." >&2
+    exit 2
+  fi
 fi
 
 # ─── Delta serving: per-session suppression of already-returned event_ids ───
@@ -745,6 +758,10 @@ epoch_to_rfc3339() {
 
 # ─── 1. Semantic search → TSV (for fusion with keyword results) ───
 semantic_search_to_tsv() {
+  # Same test as semanticEnabled() in explorer/server/search.js: only "0"
+  # disables. Checked before the first curl, so a test that sets it gets no
+  # corpus rows from a live Qdrant rather than whatever happens to be running.
+  [ "${CARTOGRAPHER_SEMANTIC:-}" = "0" ] && return 1
   $HAS_JQ || return 1
   curl -sf "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
   curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1

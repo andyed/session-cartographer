@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### fix(search): the CLI honours `CARTOGRAPHER_SEMANTIC=0`
+
+Only `explorer/server/search.js` read the variable. `cartographer-search.sh`
+ran its semantic leg whenever Qdrant and the embed server answered, so tests
+that spawned the CLI with the flag set were not pinned off. On 2026-09-25 a
+flag-set, Turbo-off query for `abandonware` returned 30 rows from the live
+corpus, all `source: semantic`. `semantic_search_to_tsv` now returns before
+its first request when the variable is `0`, the same test `semanticEnabled()`
+applies, and `--intent`, which searches only the semantic leg, exits 2 with
+the flag set instead of reporting no results. The variable is documented in
+the script header. Turbo is unchanged: the recall request carries no semantic
+field, so the server's own environment decides, and a flag-set call that
+auto-starts the managed server leaves it `disabled` for every caller until it
+exits. `tests/unit/cli-semantic-flag.test.js` points Qdrant and the embed URL
+at a local recorder: with the flag unset it records the leg's collection
+probe, with the flag set it must record nothing. The previous script fails
+the second assertion. `docs/TESTING.md` rule 2 now covers spawned CLIs and
+Turbo.
+
 ### fix(turbo): `status` can report a stale index
 
 `cartographer-turbo.js status` printed `index_freshness: "live"` whenever the
