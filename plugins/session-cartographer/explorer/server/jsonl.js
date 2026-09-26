@@ -84,18 +84,23 @@ export function isHighSignal(event) {
 // The canonical fields downstream code reads, each derived from the fields a
 // writer may have used instead.
 //
-// `type` comes from `milestone` before the log's name. The milestone hook
-// writes each event twice and types the changelog copy `milestone_<milestone>`;
-// a row only in the milestones log (/wrapup, hermes-source.js) gets the same
-// name, so census counts it with its kind. Typed by the log name, 1,921 such
-// rows shared one `milestones` bucket, and the Memory Desk's /wrapup/ test on
-// `type` never matched a wrapup.
+// `type` comes from `milestone`, then `event`, then the log's name. The
+// milestone hook writes each event twice and types the changelog copy
+// `milestone_<milestone>`; a row only in the milestones log (/wrapup,
+// hermes-source.js) gets the same name, so census counts it with its kind.
+// Typed by the log name, 1,921 such rows shared one `milestones` bucket, and
+// the Memory Desk's /wrapup/ test on `type` never matched a wrapup. `milestone`
+// outranks `event` because it is the finer name: a milestone row's `event` is
+// the hook that fired (`Stop`, `SubagentStop`), and `SubagentStop` does not
+// say which agent.
 const CANONICAL_FIELDS = [
   ['session_id', (event) => event.sessionId || event.session],
   ['summary', (event) => event.display],
-  ['type', (event) => (typeof event.milestone === 'string' && event.milestone
-    ? `milestone_${event.milestone}`
-    : event._source)],
+  ['type', (event) => {
+    if (typeof event.milestone === 'string' && event.milestone) return `milestone_${event.milestone}`;
+    if (typeof event.event === 'string' && event.event) return event.event;
+    return event._source;
+  }],
 ];
 
 // Per event, the canonical values normalizeEvent filled in rather than read.
@@ -119,13 +124,14 @@ function underive(event) {
 /**
  * Fill the canonical fields from their variants, in place: `session_id` from
  * `sessionId` or `session`, `summary` from `display`, `type` from `milestone`
- * (as `milestone_<milestone>`) or else `_source`.
+ * (as `milestone_<milestone>`), `event`, or else `_source`.
  *
- * The load and the watcher both apply this. The watcher once delivered raw
- * rows, so a row with no changelog copy to fill it in lacked `session_id` or
- * `type` until the next restart, and recall and census disagreed with a
- * freshly loaded service. Re-running it re-derives from the current fields,
- * which a fold may have changed.
+ * The load, the watcher, and the facts `delta` verb all apply this, so one
+ * event reads the same whether it came from the resident corpus or off a log
+ * tail. The watcher once delivered raw rows, so a row with no changelog copy to
+ * fill it in lacked `session_id` or `type` until the next restart, and recall
+ * and census disagreed with a freshly loaded service. Re-running it re-derives
+ * from the current fields, which a fold may have changed.
  */
 export function normalizeEvent(event) {
   underive(event);

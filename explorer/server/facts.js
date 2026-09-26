@@ -1,5 +1,5 @@
 import { performance } from 'node:perf_hooks';
-import { CORPUS_ROOT, LOG_FILES, logPositions, readAppended } from './jsonl.js';
+import { CORPUS_ROOT, LOG_FILES, logPositions, readAppended, normalizeEvent, mergeDuplicateEvent } from './jsonl.js';
 import { parseTimeArg } from './search.js';
 import { eventEpochMs, utcDay } from './event-time.js';
 import { projectMatcher, resolveProjectValues } from './project-filter.js';
@@ -444,16 +444,22 @@ export function delta(request, { corpusRoot = CORPUS_ROOT, logFiles = LOG_FILES 
   // resident corpus, but these rows come straight off the log tails, so without
   // the same collapse one arrival is reported as two — and a caller counting
   // "what happened since my last run" would double every hook-written event.
-  // Keep the domain source label over `changelog`, matching readAllEvents.
+  //
+  // Normalized and folded exactly as the watcher does, so a delta reports an
+  // event with the type and summary census counts it under. This once had its
+  // own collapse, which kept whichever copy readAppended's round-robin reached
+  // first: the same kind of milestone read `Stop` or `milestone_turn_stop` by
+  // queue position, and a domain copy's shorter summary replaced changelog's.
+  // Replayed over a seven-day tail of the live logs (2026-09-26), it disagreed
+  // with a load of the same files on 891 of 14,107 types and 536 summaries.
   const byId = new Map();
   const unidentified = [];
   for (const event of scoped) {
+    normalizeEvent(event);
     if (!isResolved(event.event_id)) { unidentified.push(event); continue; }
     const existing = byId.get(event.event_id);
-    if (!existing) { byId.set(event.event_id, event); continue; }
-    if (existing._source === 'changelog' && event._source !== 'changelog') {
-      byId.set(event.event_id, { ...existing, ...event });
-    }
+    if (existing) mergeDuplicateEvent(existing, event, event._source);
+    else byId.set(event.event_id, event);
   }
   const deduped = [...byId.values(), ...unidentified];
   const duplicatesCollapsed = scoped.length - deduped.length;

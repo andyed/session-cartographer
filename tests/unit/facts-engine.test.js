@@ -27,7 +27,7 @@ process.on('exit', () => { try { fs.rmSync(FIXTURE_DIR, { recursive: true, force
 
 const { census, tempo, delta, executeFacts } = await import('../../explorer/server/facts.js');
 const { normalizeFactsRequest, FactsContractError } = await import('../../explorer/server/facts-contract.js');
-const { logPositions } = await import('../../explorer/server/jsonl.js');
+const { logPositions, readAllEvents } = await import('../../explorer/server/jsonl.js');
 const { utcDay } = await import('../../explorer/server/event-time.js');
 
 function request(overrides = {}) {
@@ -627,6 +627,94 @@ test('delta collapses an event written to two logs into one arrival', () => {
   assert.equal(second.events[0].source, 'tool-use', 'the domain source label wins over changelog');
   const shared = bucket(second.summary.by_project, 'alpha');
   assert.equal(shared.count, 1, 'the summary counts the arrival once too');
+});
+
+test('delta reports each event as census counts it, whichever copy arrives first', () => {
+  // delta once folded a dual-logged pair by keeping whichever copy
+  // readAppended's round-robin reached first, and read types off raw rows. The
+  // resident corpus normalizes and folds with mergeDuplicateEvent, so the two
+  // verbs described one event differently: a turn-stop milestone read `Stop` or
+  // `milestone_turn_stop` by queue position, a research search read `search`
+  // against census's `research_search`, and a domain copy's shorter summary
+  // replaced changelog's.
+  //
+  // readAppended drains its sources round-robin in logFiles order, one line
+  // each per round, so a copy's arrival order is set by its line index. The
+  // rounds below put each kind of pair through both orders.
+  const dir = workspace();
+  const logFiles = {
+    changelog: path.join(dir, 'changelog.jsonl'),
+    research: path.join(dir, 'research-log.jsonl'),
+    milestones: path.join(dir, 'session-milestones.jsonl'),
+  };
+  for (const file of Object.values(logFiles)) fs.writeFileSync(file, row(`seed-${path.basename(file)}`, 'alpha'));
+  const options = { corpusRoot: FIXTURE_DIR, logFiles };
+  const first = delta(request({ verb: 'delta' }), options);
+
+  const at = '2026-09-02T12:00:00Z';
+  const line = (fields) => `${JSON.stringify({ timestamp: at, project: 'alpha', provider: 'claude', ...fields })}\n`;
+  // The milestone hook's two copies: changelog carries the type and git
+  // context; the milestones copy carries the hook event and the milestone.
+  const stopChangelog = (id) => line({ event_id: id, type: 'milestone_turn_stop', session_id: 's1', summary: `Turn stop ${id} on main, 2 files dirty` });
+  const stopMilestone = (id) => line({ event_id: id, event: 'Stop', milestone: 'turn_stop', session_id: 's1', summary: `Turn stop ${id}` });
+  // The research hook's two copies.
+  const searchChangelog = (id) => line({ event_id: id, type: 'research_search', session_id: 's1', summary: `Searched: ${id} query` });
+  const searchResearch = (id) => line({ event_id: id, type: 'search', session: 's1', query: `${id} query`, summary: `Searched: ${id}` });
+
+  fs.appendFileSync(logFiles.changelog, [
+    stopChangelog('stop-changelog-first'), // round 1, ahead of its twin in round 1
+    searchChangelog('search-research-first'), // round 2, behind its twin in round 1
+    stopChangelog('stop-milestone-first'), // round 3, behind its twin in round 2
+    searchChangelog('search-changelog-first'), // round 4, ahead of its twin in round 4
+    // Written by /investigate: `event`, no `type` and no `milestone`.
+    line({ event_id: 'hypothesis', event: 'investigation_hypothesis', session_id: 's1', summary: 'Hypothesis: watcher skips normalization' }),
+  ].join(''));
+  fs.appendFileSync(logFiles.research, [
+    searchResearch('search-research-first'),
+    line({ event_id: 'fetch-only', type: 'fetch', session: 's2', url: 'https://example.com', summary: 'Fetched: example' }),
+    line({ event_id: 'fetch-only-2', type: 'fetch', session: 's2', url: 'https://example.org', summary: 'Fetched: example org' }),
+    searchResearch('search-changelog-first'),
+  ].join(''));
+  fs.appendFileSync(logFiles.milestones, [
+    stopMilestone('stop-changelog-first'),
+    stopMilestone('stop-milestone-first'),
+    // /wrapup writes only the milestones copy.
+    line({ event_id: 'wrapup', event: 'Wrapup', milestone: 'session_wrapup', session_id: 's1', summary: 'Wrapup: landed the fix' }),
+  ].join(''));
+
+  const arrived = delta(request({ verb: 'delta', cursor: first.cursor }), options);
+  assert.equal(arrived.read, 12);
+  assert.equal(arrived.returned, 8, 'each dual-logged pair is one arrival');
+
+  const appended = new Set(arrived.events.map((e) => e.event_id));
+  const resident = readAllEvents(logFiles).filter((e) => appended.has(e.event_id));
+  assert.equal(resident.length, 8);
+  const asCensusSees = Object.fromEntries(resident.map((e) => [e.event_id, {
+    source: e._source, type: e.type, session_id: e.session_id, summary: e.summary,
+  }]));
+  const asDeltaReports = Object.fromEntries(arrived.events.map((e) => [e.event_id, {
+    source: e.source, type: e.type, session_id: e.session_id, summary: e.summary,
+  }]));
+  // Pinned first, so a load that regressed the same way cannot agree with delta.
+  assert.deepEqual(
+    Object.fromEntries(Object.entries(asCensusSees).map(([id, e]) => [id, e.type])),
+    {
+      'stop-changelog-first': 'milestone_turn_stop',
+      'stop-milestone-first': 'milestone_turn_stop',
+      'search-research-first': 'research_search',
+      'search-changelog-first': 'research_search',
+      hypothesis: 'investigation_hypothesis',
+      'fetch-only': 'fetch',
+      'fetch-only-2': 'fetch',
+      wrapup: 'milestone_session_wrapup',
+    },
+  );
+  assert.deepEqual(asDeltaReports, asCensusSees);
+
+  const counted = census(resident, request({ verb: 'census', sample: 0 }));
+  const pairs = (list) => list.map((b) => [b.name, b.count]).sort();
+  assert.deepEqual(pairs(arrived.summary.by_type), pairs(counted.by_type), 'delta and census bucket the same events alike');
+  assert.deepEqual(pairs(arrived.summary.by_source), pairs(counted.by_source));
 });
 
 test('an unresolvable project scope is distinguishable from a quiet one', () => {

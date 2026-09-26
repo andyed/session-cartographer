@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### fix(facts): report a delta event as census counts it
+
+`delta` read raw log rows and collapsed a dual-logged pair with its own rule:
+keep the first copy `readAppended`'s round-robin reached, or spread the domain
+copy over changelog's. The resident corpus normalizes each row and folds with
+`mergeDuplicateEvent`, so the two verbs described one event differently. A
+turn-stop milestone read `Stop` or `milestone_turn_stop` depending on queue
+position, a search read `search` against census's `research_search`, a wrapup
+read `Wrapup` against `milestone_session_wrapup`, and a domain copy's shorter
+summary replaced changelog's, which carries the git context.
+
+`delta` now passes its rows through `normalizeEvent` and folds them with
+`mergeDuplicateEvent`, as the watchers do. `readAppended` still returns raw
+rows; it is the cursor primitive, and the cursor and its positions are
+unchanged. Replayed over a seven-day tail of the live logs, the previous code
+disagreed with a load of the same files on 891 of 14,107 types and 536
+summaries, and the new code on none. `session_id` and `source` did not differ in
+either.
+
+The load's `type` chain gains `event` between `milestone` and the log's name, so
+the load and `delta` resolve every row alike. One live row changes: an
+`/investigate` hypothesis in changelog with `event: "investigation_hypothesis"`
+and no `type`, previously typed `changelog`. `milestone` stays ahead of `event`
+because a milestone row's `event` names only the hook that fired, and
+`SubagentStop` does not say which agent.
+
+A pair split across two calls, by the budget or by a copy landing after the
+first call, is still reported once per call, each as its copy reads.
+`docs/FACTS.md` had described delta rows as un-deduplicated and un-normalized,
+which was already half out of date; it now describes the current behavior.
+
+A new `facts-engine.test.js` case sends dual-logged milestone and research pairs
+through both arrival orders, plus a milestone-only wrapup, a research-only fetch
+and an `event`-only changelog row. It asserts that delta's per-event fields and
+type and source buckets equal a load's. It fails against the previous code,
+against the new `delta` without the load's `event` fallback, and against the
+new load with the old `delta`. Full unit suite (Node 26.8.2): 621 tests, 620
+pass, 0 fail, 1 skipped.
+
 ### fix(explorer): hold the classic views' text to 8:1
 
 The Timeline event feed, Sessions and Search drew secondary text in Tailwind's

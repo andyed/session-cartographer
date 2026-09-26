@@ -472,19 +472,29 @@ Resumed:
 `read` is present only on a resumed call. `stale` is `{source: "truncated" |
 "rewritten"}`; `pending` is `{source: count}` of parsed-but-unreturned events.
 
-**`delta` events are raw log rows.** They come from `readAppended`, which parses
-the appended bytes directly. They do **not** get the normalization
-`readAllEvents` applies to the resident corpus, so:
+**`delta` events read as `census` counts them.** They come from `readAppended`,
+which parses the appended bytes directly, and then pass through the
+`normalizeEvent` and `mergeDuplicateEvent` that the load and the watchers use:
 
-- no cross-log dedup by `event_id` — an event appended to both `changelog` and
-  its domain log appears twice in one delta;
-- no `sessionId → session_id` alias, so a row carrying only `sessionId` reports
-  `session_id: null`;
-- no `type ← _source` default, so a row with no type reports `type: null` where
-  `census` would show the source name.
+- an event appended to both `changelog` and its domain log is one arrival
+  (`duplicates_collapsed` counts the folds), with the longer of each text field
+  and the domain source label, whichever copy was read first;
+- `session_id` falls back to `sessionId`, then `session`;
+- `type` falls back to `milestone_<milestone>`, then `event`, then the log's
+  name.
 
-This is a property of reading the arrival log rather than the resident array. It
-is the same trade that makes the cursor trustworthy at all.
+The fold covers copies read in the same call. When a pair straddles two calls,
+because the budget bound or the second copy landed after the first call, each
+call reports the copy it read, as that copy reads.
+
+`readAppended` itself stays raw. It is the cursor primitive, and its job is the
+log's bytes; the projection belongs to the verb.
+
+`delta` once kept whichever copy `readAppended`'s round-robin reached first and
+typed raw rows, so the same kind of milestone read `Stop` or
+`milestone_turn_stop` depending on queue position. Replayed over a seven-day
+tail of the live logs (2026-09-26), it disagreed with a load of the same files
+on 891 of 14,107 types and 536 summaries; the current code disagrees on none.
 
 ### Running a scheduled delta
 
@@ -587,15 +597,14 @@ name: `changelog` and `tool-use` write `type`, milestones write `event` and
 breakdown while the totals still looked plausible — the documented
 fallback-chain invariant of this pipeline.
 
-`census` rarely reaches that chain, because it folds the resident corpus, and
-`normalizeEvent` in `jsonl.js` has already filled `type` for every
-resident event, at load and on watcher delivery. A milestone-only row gets
-`milestone_<milestone>`, the type the milestone hook gives the changelog copy of
-a dual-logged milestone, so `/wrapup` and Hermes rows count under their kind
-(`milestone_session_wrapup`, `milestone_hermes_cron_run`). A row with no
-`milestone` gets its log's name. `delta` reads raw log rows and does reach the
-chain, where `event` comes first: the same wrapup reads `Wrapup` in a delta and
-`milestone_session_wrapup` in a census.
+Neither `census` nor `delta` normally reaches that chain: `normalizeEvent` in
+`jsonl.js` fills `type` for every resident event, at load and on watcher
+delivery, and for every delta row. It prefers `milestone_<milestone>`, the type
+the milestone hook gives the changelog copy of a dual-logged milestone, so
+`/wrapup` and Hermes rows count under their kind (`milestone_session_wrapup`,
+`milestone_hermes_cron_run`); then `event`; then the log's name. `milestone`
+outranks `event` because a milestone row's `event` names only the hook that
+fired: `SubagentStop` does not say which agent.
 
 ## Tempo's partial-day rule
 
