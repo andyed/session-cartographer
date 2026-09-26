@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### fix(explorer): hold selected-row text and the agent badge to 8:1
+
+A selected Memory Desk row is painted `--fw-selected` (#153640), and its
+secondary text used `--fw-muted` (#bcc4d2) at 7.32:1: a task row's metadata
+and file count, a file row's path and task count. `--fw-muted` is now #d4dae3,
+the Recall view's meta colour: 14.05:1 on the page, 12.99:1 on
+`--fw-surface`, 9.14:1 on a selected row.
+
+No AgentBadge renders on #153640. In a selected task row the agent appears as
+plain text, and Recall rows never take the selected background. The badge does
+render on the classic Search view's keyboard-active result (bg-gray-800/50
+over the page, #151a23), a surface its docstring never listed. With the
+badge's 13%-alpha tint, all four palette entries measured 7.27–7.71:1 there.
+The badge is now outlined, never tinted, as the Recall markers already are:
+9.57–10.27:1 on the active result and at least 10.40:1 on the page, a session
+card, and an open session's event list. Untinted, the palette still measures
+7.02–7.54:1 on #153640, so it stays off that surface.
+
+In `tests/browser/memory-entry.cjs`, text is now measured from computed
+styles against the ground it is painted on, with every ancestor's background
+and the element's own fill composited. The new checks cover the selected task
+and file rows and every result made keyboard-active in classic Search, each
+guarded to prove the probe reached the surface in question; the Recall probe
+uses the same helper. Against the old colours the Search check failed at
+7.39:1 (the claude badge over its own tint on the active card) and both row
+checks at 7.32:1. The probe waits for CSS transitions to finish: the active
+card's background fades in, and read mid-fade it was still transparent, so
+the badge would have been measured on the bare page and passed.
+
 ### fix(watcher): normalize a delivered row as the load does
 
 `readAllEvents` fills the canonical fields after folding duplicates:

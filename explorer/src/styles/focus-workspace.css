@@ -1,4 +1,13 @@
-.focus-workspace,.focus-timeline-workspace{--fw-bg:#0a0a0f;--fw-surface:#11151e;--fw-ink:#edf0f5;--fw-muted:#bcc4d2;--fw-line:#3b4658;--fw-accent:#72e6ef;--fw-selected:#153640;color:var(--fw-ink);background:var(--fw-bg);font:500 16px/1.5 ui-sans-serif,system-ui,sans-serif;height:100%;min-height:0;overflow:auto;padding:20px clamp(12px,2vw,28px);color-scheme:dark}
+/* Text tokens clear 8:1 on every ground the workspace paints:
+                bg #0a0a0f   surface #11151e   selected #153640
+     ink    #edf0f5   17.29         15.99             11.25
+     muted  #d4dae3   14.05         12.99              9.14
+     accent #72e6ef   13.43         12.42              8.74
+   muted was #bcc4d2, 7.32:1 on a selected row's metadata. It now matches the
+   Recall view's meta colour. AgentBadge measures 7.02–7.54:1 on selected, so
+   in a selected row the agent appears as text, never as a badge. Selected
+   rows are measured from computed styles in tests/browser/memory-entry.cjs. */
+.focus-workspace,.focus-timeline-workspace{--fw-bg:#0a0a0f;--fw-surface:#11151e;--fw-ink:#edf0f5;--fw-muted:#d4dae3;--fw-line:#3b4658;--fw-accent:#72e6ef;--fw-selected:#153640;color:var(--fw-ink);background:var(--fw-bg);font:500 16px/1.5 ui-sans-serif,system-ui,sans-serif;height:100%;min-height:0;overflow:auto;padding:20px clamp(12px,2vw,28px);color-scheme:dark}
 .focus-workspace *,.focus-timeline-workspace *{box-sizing:border-box}
 .focus-workspace button,.focus-timeline-workspace button,.fw-inspector button,.fw-inspector a{font:inherit;min-height:44px;cursor:pointer}
 .focus-workspace button,.focus-timeline-workspace button{padding:8px 12px;border:1px solid transparent;border-radius:5px;background:transparent;color:var(--fw-ink)}

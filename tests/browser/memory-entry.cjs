@@ -195,6 +195,91 @@ async function port() {
           })};
       }));
     }
+    // WCAG contrast of every element that paints its own text under `scope`,
+    // measured from computed styles against the ground it is painted on: each
+    // ancestor's background composited from the canvas down, including a
+    // translucent fill of the element's own, such as a badge tint. Each
+    // colour's alpha is multiplied by the opacity above it. `placements` adds
+    // hypothetical grounds for text that must stay legible wherever its row is
+    // placed; layers inside the scope still composite over each one. `fixed`
+    // names elements measured only where they render, because the caller
+    // asserts they never move onto another ground. Every measurement comes
+    // back, so a caller can prove which ground it measured: a probe that finds
+    // no text reports success on nothing. Running colour transitions settle
+    // first: a classic card's selected background fades in, and a probe read
+    // mid-fade measures a frame nobody reads.
+    async function textContrast(targetPage, scope, { placements = {}, fixed = null, floor = 8 } = {}) {
+      await targetPage.evaluate(() => Promise.all(document.getAnimations()
+        .filter(animation => animation instanceof CSSTransition)
+        .map(animation => animation.finished.catch(() => {}))));
+      return targetPage.evaluate(({ scope, placements, fixed, floor }) => {
+        const channel = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+        const lum = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+        const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+        const rgba = value => {
+          if (!/^rgba?\(/.test(value)) throw new Error(`textContrast cannot measure the colour ${value}`);
+          const [r, g, b, a = 1] = value.match(/[\d.]+/g).map(Number);
+          return [r, g, b, a];
+        };
+        const opacities = new Map();
+        const opacity = node => {
+          if (!node) return 1;
+          if (!opacities.has(node)) opacities.set(node, Number(getComputedStyle(node).opacity) * opacity(node.parentElement));
+          return opacities.get(node);
+        };
+        const over = (ground, [r, g, b, a]) => [r, g, b].map((c, i) => c * a + ground[i] * (1 - a));
+        // Painted backgrounds below `stop`, down to and including `element`, outermost first.
+        const layers = (element, stop) => {
+          const out = [];
+          for (let node = element; node && node !== stop; node = node.parentElement) {
+            const [r, g, b, a] = rgba(getComputedStyle(node).backgroundColor);
+            if (a) out.unshift([r, g, b, a * opacity(node)]);
+          }
+          return out;
+        };
+        const hex = c => '#' + c.map(v => Math.round(v).toString(16).padStart(2, '0')).join('');
+        const measured = [], failures = [], seen = new Set(), done = new Set();
+        for (const root of document.querySelectorAll(scope)) {
+          for (const element of [root, ...root.querySelectorAll('*')]) {
+            if (done.has(element)) continue;
+            done.add(element);
+            if (!element.getClientRects().length || getComputedStyle(element).visibility === 'hidden') continue;
+            const text = [...element.childNodes].filter(node => node.nodeType === 3).map(node => node.textContent).join('').trim();
+            if (!text) continue;
+            const [r, g, b, a] = rgba(getComputedStyle(element).color);
+            const ink = [r, g, b, a * opacity(element)];
+            const grounds = { actual: layers(element, null).reduce(over, [255, 255, 255]) };
+            if (!(fixed && element.closest(fixed))) {
+              const inner = layers(element, root);
+              for (const [name, ground] of Object.entries(placements)) grounds[name] = inner.reduce(over, ground);
+            }
+            const label = element.getAttribute('class') || element.tagName.toLowerCase();
+            for (const [on, ground] of Object.entries(grounds)) {
+              const value = ratio(over(ground, ink), ground);
+              measured.push({ element: label, text: text.slice(0, 40), color: hex(ink.slice(0, 3)), ground: hex(ground), on, ratio: Math.round(value * 100) / 100 });
+              const key = `${label}|${hex(ink.slice(0, 3))}|${on}|${hex(ground)}`;
+              if (value < floor && !seen.has(key)) {
+                seen.add(key);
+                failures.push(`${label} "${text.slice(0, 24)}" ${hex(ink.slice(0, 3))} ${value.toFixed(2)}:1 on ${on} ${hex(ground)}`);
+              }
+            }
+          }
+        }
+        return { measured, failures };
+      }, { scope, placements, fixed, floor });
+    }
+    // The row open in the inspector is painted --fw-selected (#153640), where
+    // --fw-muted once measured 7.32:1. Measure every result row where it sits,
+    // with the pointer off the list: a hovered row button is painted
+    // --fw-surface over the selection, a ground nobody reads the row on.
+    async function assertResultRowContrast(targetPage, selected, name) {
+      await targetPage.mouse.move(1, 1);
+      await targetPage.locator(selected).waitFor();
+      const { measured, failures } = await textContrast(targetPage, '.fw-result-list');
+      const onSelected = measured.filter(entry => entry.ground === '#153640');
+      assert.ok(onSelected.length >= 3, `${name}: the probe must measure the selected row's text on #153640 (measured ${onSelected.length} of ${measured.length})`);
+      assert.deepEqual(failures, [], `${name}: result text under 8:1`);
+    }
     async function verifyExplorer(phase) {
       const legacy = await browser.newPage({ viewport: { width: 1200, height: 880 }, reducedMotion: 'reduce' });
       legacy.on('pageerror', e => errors.push(`${phase}: ${e.message}`));
@@ -296,6 +381,31 @@ async function port() {
         await legacy.getByRole('option', { name: 'aurora', exact: true }).click();
         assert.equal((await selectedSearch).status(), 200);
         await legacy.locator('main > div:not(.hidden)').getByText(explorerSummaries[0], { exact: true }).waitFor();
+        // The keyboard-active result is the classic views' selected surface
+        // (bg-gray-800/50 over the page, #151a23), and the one selected
+        // surface an AgentBadge renders on. Step through every result so each
+        // agent in the fixture is measured there. Only the badge is held to the
+        // floor: the rest of the classic card predates it.
+        const activeCard = 'main > div:not(.hidden) .result-list > [data-event-id] > .ring-1';
+        const resultCount = await legacy.locator('main > div:not(.hidden) .result-list > [data-event-id]').count();
+        assert.ok(resultCount >= 2, `${phase}: the active-result check needs several results (got ${resultCount})`);
+        await legacy.evaluate(() => document.activeElement?.blur());
+        const activeAgents = new Set();
+        let activeId = null;
+        for (let step = 0; step < resultCount; step++) {
+          await legacy.keyboard.press('ArrowDown');
+          await legacy.waitForFunction(({ selector, previous }) => {
+            const card = document.querySelector(selector);
+            return card && card.parentElement.dataset.eventId !== previous;
+          }, { selector: activeCard, previous: activeId });
+          activeId = await legacy.locator(activeCard).evaluate(card => card.parentElement.dataset.eventId);
+          const badges = await textContrast(legacy, `${activeCard} .agent-badge`);
+          assert.notEqual(await legacy.locator(activeCard).evaluate(card => getComputedStyle(card).backgroundColor), 'rgba(0, 0, 0, 0)', `${phase}: the active result painted no surface`);
+          assert.equal(badges.measured.length, 1, `${phase}: expected one AgentBadge on active result ${activeId}`);
+          assert.deepEqual(badges.failures, [], `${phase}: AgentBadge under 8:1 on the active search result`);
+          activeAgents.add(badges.measured[0].text);
+        }
+        assert.deepEqual([...activeAgents].sort(), ['claude', 'codex'], `${phase}: the active-result check must measure both agents in the fixture`);
         await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-search.png`) });
         await legacy.goto(origin + `/?project=${explorerProject}`);
         await legacy.locator('main > div:not(.hidden)').getByText(explorerSummaries[0], { exact: true }).waitFor();
@@ -453,6 +563,7 @@ async function port() {
     await deskPage.getByText('Review the handoff', { exact: true }).click();
     await deskPage.getByRole('complementary', { name: 'Evidence inspector' }).waitFor();
     assert.equal(await deskPage.getByRole('link', { name: 'Open in Codex ↗' }).getAttribute('href'), `codex://threads/${docSession}`);
+    await assertResultRowContrast(deskPage, '.fw-task-row[data-selected]', 'selected task row');
     await deskPage.getByRole('button', { name: 'Back to results' }).click();
 
     // Markdown remains inert while the source and actual session-bounded diff
@@ -460,6 +571,7 @@ async function port() {
     await deskPage.getByRole('button', { name: 'Files', exact: true }).click();
     await deskPage.getByText('handoff.md', { exact: true }).click();
     await deskPage.getByRole('region', { name: 'File review' }).waitFor();
+    await assertResultRowContrast(deskPage, '.fw-file-row[data-selected]', 'selected file row');
     await deskPage.getByRole('button', { name: 'Preview', exact: true }).waitFor();
     await deskPage.getByRole('heading', { name: 'Return briefing', exact: true }).waitFor();
     await deskPage.getByRole('cell', { name: 'Ready', exact: true }).waitFor();
@@ -618,31 +730,17 @@ async function port() {
     assert.equal(episodeUrl.searchParams.get('mode'), null, 'episode link is not fixed (fixed is the default and costs no parameter)');
     assert.equal(episodeUrl.searchParams.get('durationMs'), null);
     await recallView.locator('.rc-unplaced summary').getByText(/^1 used mark in this window names no call · 1 no session recorded/).waitFor();
-    // New text states at 8:1 on both the page and the selected row, measured
-    // from computed styles; and no recall row takes the selected background,
-    // where AgentBadge's palette falls under the floor.
-    const recallContrast = await recallPage.evaluate(() => {
-      const channel = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
-      const lum = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
-      const rgb = value => value.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
-      const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
-      const grounds = { base: [10, 10, 15], selected: [21, 54, 64] };
-      const failures = [], seen = new Set();
-      for (const element of document.querySelectorAll('.fw-recall [class*="rc-"], .fw-recall [class*="rc-"] *')) {
-        if (element.closest('[title^="Produced by"]') || !element.getClientRects().length) continue;
-        const own = [...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim());
-        if (!own) continue;
-        const color = getComputedStyle(element).color;
-        for (const [name, ground] of Object.entries(grounds)) {
-          const value = ratio(rgb(color), ground);
-          if (value < 8 && !seen.has(`${color}:${name}`)) { seen.add(`${color}:${name}`); failures.push(`${element.className || element.tagName} ${color} ${value.toFixed(2)} on ${name}`); }
-        }
-      }
-      const selectedRows = [...document.querySelectorAll('.rc-call, .rc-result')].filter(row => getComputedStyle(row).backgroundColor.replace(/\s/g, '') === 'rgb(21,54,64)').length;
-      return { failures, selectedRows };
+    // Recall text holds 8:1 on both the page and the selected row, measured
+    // from computed styles, so it stays legible wherever a row is placed. No
+    // recall row takes the selected background, where AgentBadge's palette
+    // falls under the floor, so the badge is measured only where it renders.
+    const recallContrast = await textContrast(recallPage, '.fw-recall [class*="rc-"]', {
+      placements: { base: [10, 10, 15], selected: [21, 54, 64] }, fixed: '.agent-badge',
     });
+    assert.ok(recallContrast.measured.some(entry => entry.element.includes('agent-badge')), 'the recall probe measured no AgentBadge');
     assert.deepEqual(recallContrast.failures, [], 'recall text under 8:1');
-    assert.equal(recallContrast.selectedRows, 0);
+    const selectedRecallRows = await recallPage.locator('.rc-call, .rc-result').evaluateAll(rows => rows.filter(row => getComputedStyle(row).backgroundColor.replace(/\s/g, '') === 'rgb(21,54,64)').length);
+    assert.equal(selectedRecallRows, 0);
     await recallPage.screenshot({ path: path.join(artifacts, 'carto-memory-recall.png'), fullPage: true });
     await usedRow.screenshot({ path: path.join(artifacts, 'carto-memory-recall-marker.png') });
     await recallCall.locator('.rc-result[data-event-id="evt-gone-404"]').screenshot({ path: path.join(artifacts, 'carto-memory-recall-unresolved.png') });
@@ -787,7 +885,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text on selected task/file rows and AgentBadge on the active search result, from computed styles; Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

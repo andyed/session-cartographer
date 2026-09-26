@@ -2,13 +2,14 @@
    Every text colour here clears 8:1 on both the page (#0a0a0f) and the
    selected row (#153640), so it stays legible wherever a row is placed:
      ink    #edf0f5  17.29 base · 11.25 selected
-     meta   #d4dae3  14.05 base ·  9.14 selected  (--fw-muted #bcc4d2 is 7.32 on selected)
+     meta   #d4dae3  14.05 base ·  9.14 selected  (the same value as --fw-muted)
      used   #b6f0c4  15.28 base ·  9.95 selected
      warn   #ffe2a8  15.70 base · 10.22 selected
      link   #72e6ef  13.43 base ·  8.74 selected
    Markers are outlined, never tinted: a 13% fill drops "used" to 7.04 on selected.
-   AgentBadge's palette is 7.0–7.5 on #153640, so no recall row takes the
-   selected background; the expanded call is marked with an accent rule. */
+   AgentBadge's palette is 7.0–7.5 on #153640 even unfilled, so no recall row
+   takes the selected background; the expanded call is marked with an accent
+   rule. */
 .fw-recall, .rc-session {
   --rc-ink: #edf0f5;
   --rc-meta: #d4dae3;
