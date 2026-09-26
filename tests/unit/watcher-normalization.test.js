@@ -1,10 +1,11 @@
 // readAllEvents normalizes every loaded event after folding duplicates:
 // `session_id` from `sessionId` or `session`, `summary` from `display`, and
-// `type` from `_source`. The watchers' rows skipped that step, in Turbo and in
-// the Explorer alike, so a row appended while a server ran kept its raw shape
-// until the next restart. Recall returns the stored event's fields and census
-// counts its `type`, so a live server and a restarted one gave different
-// answers about the same corpus.
+// `type` from `milestone` (as `milestone_<milestone>`, the name the milestone
+// hook gives the changelog copy) or else `_source`. The watchers' rows skipped
+// that step, in Turbo and in the Explorer alike, so a row appended while a
+// server ran kept its raw shape until the next restart. Recall returns the
+// stored event's fields and census counts its `type`, so a live server and a
+// restarted one gave different answers about the same corpus.
 //
 // The rows that reach this are the ones no changelog copy fills in. Measured on
 // the live corpus 2026-09-26: 1,921 milestone-only rows with no `type`
@@ -14,9 +15,9 @@
 // Normalizing on delivery must not change how a later copy folds in. The load
 // normalizes after every fold, so a value it derives never competes with a real
 // one. Derived on delivery and then kept by mergeDuplicateEvent's longer-wins
-// rule, `type: "milestones"` would shadow a twin's shorter real type, and a
-// changelog copy's `type: "changelog"` would survive the domain log claiming
-// the source. The fold cases pin both orders.
+// rule, `type: "milestone_session_wrapup"` would shadow a twin's shorter real
+// type, and a changelog copy's `type: "changelog"` would survive the domain log
+// claiming the source. The fold cases pin both orders.
 //
 // Hermetic: temp corpus, state dir, and config; the session-id chain is
 // cleared per CLAUDE.md; each case stops what it started.
@@ -110,7 +111,7 @@ const FOLDS = [
 // them and pass the comparison.
 const LOADED = {
   'evt-research-only': { _source: 'research', type: 'fetch', session_id: 's-research', summary: 'Fetched: wombatfern' },
-  'evt-milestone-only': { _source: 'milestones', type: 'milestones', session_id: 's-wrapup', summary: 'Wrapup: gravelpine' },
+  'evt-milestone-only': { _source: 'milestones', type: 'milestone_session_wrapup', session_id: 's-wrapup', summary: 'Wrapup: gravelpine' },
   'evt-prompt-legacy': { _source: 'prompts', type: 'prompt', session_id: 's-legacy', summary: 'Prompt: marshwren' },
   'evt-fold-domain-first': { _source: 'milestones', type: 'wrapup', session_id: 's-fold', summary: 'Wrapup: lanternfish' },
   'evt-fold-changelog-first': { _source: 'research', type: 'research', session_id: 's-fold', summary: 'Fetched: quillwort' },

@@ -528,3 +528,36 @@ test('desk preserves earlier outcomes when recent observations roll over, and ke
   assert.equal(session.provider, 'codex');
   assert.equal(session.cwd, fixtureRoot);
 });
+
+// The desk finds a wrapup by testing its `type` against /wrapup/, and the rows
+// /wrapup writes carry `milestone: "session_wrapup"` and no `type`. The load
+// used to type every such row by its log's name, `milestones`, so on the live
+// desk a session's wrapup never appeared among its outcomes and its note read
+// as plain activity. Fed through readAllEvents, as the servers load it, rather
+// than hand-typed like the fixtures above.
+test('desk counts a loaded /wrapup milestone among the session outcomes', async () => {
+  const { readAllEvents } = await import('../../explorer/server/jsonl.js');
+  const dir = workspace();
+  const iso = (offset) => new Date(now - offset).toISOString();
+  const logs = { changelog: path.join(dir, 'changelog.jsonl'), milestones: path.join(dir, 'session-milestones.jsonl') };
+  const line = (row) => `${JSON.stringify(row)}\n`;
+  fs.writeFileSync(logs.changelog,
+    line({ event_id: 'landed', timestamp: iso(3000), type: 'git_commit', session_id: 'session-w', project: 'alpha', summary: 'Commit abcdef1: the fix' })
+    // The milestone hook writes both copies; changelog's carries the type.
+    + line({ event_id: 'compacted', timestamp: iso(2000), type: 'milestone_compaction_auto', session_id: 'session-w', project: 'alpha', summary: 'Compacted' }));
+  fs.writeFileSync(logs.milestones,
+    line({ event_id: 'compacted', timestamp: iso(2000), event: 'PreCompact', milestone: 'compaction_auto', session_id: 'session-w', project: 'alpha', summary: 'Compacted' })
+    // Only in the milestones log, as the hooks wrote compactions before March.
+    + line({ event_id: 'compacted-old', timestamp: iso(1500), event: 'PreCompact', milestone: 'compaction_auto', session_id: 'session-w', project: 'alpha', summary: 'Compacted earlier' })
+    + line({ event_id: 'wrapped', timestamp: iso(1000), event: 'Wrapup', milestone: 'session_wrapup', session_id: 'session-w', project: 'alpha', summary: 'Wrapup: landed the fix' }));
+
+  const loaded = readAllEvents(logs);
+  const typeOf = (id) => loaded.find((row) => row.event_id === id).type;
+  assert.equal(typeOf('wrapped'), 'milestone_session_wrapup');
+  assert.equal(typeOf('compacted-old'), typeOf('compacted'),
+    'a milestone-only row must share the type the hook gives a dual-logged one of its kind');
+
+  const session = projectMemory(loaded, { now, corpusRoot: fixtureRoot }).sessions.find((s) => s.id === 'session-w');
+  assert.deepEqual(session.outcomes.map((note) => note.id), ['landed', 'wrapped']);
+  assert.match(session.notes.find((note) => note.id === 'wrapped').type, /wrapup/);
+});

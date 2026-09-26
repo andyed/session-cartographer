@@ -587,6 +587,16 @@ name: `changelog` and `tool-use` write `type`, milestones write `event` and
 breakdown while the totals still looked plausible — the documented
 fallback-chain invariant of this pipeline.
 
+`census` rarely reaches that chain, because it folds the resident corpus, and
+`normalizeEvent` in `jsonl.js` has already filled `type` for every
+resident event, at load and on watcher delivery. A milestone-only row gets
+`milestone_<milestone>`, the type the milestone hook gives the changelog copy of
+a dual-logged milestone, so `/wrapup` and Hermes rows count under their kind
+(`milestone_session_wrapup`, `milestone_hermes_cron_run`). A row with no
+`milestone` gets its log's name. `delta` reads raw log rows and does reach the
+chain, where `event` comes first: the same wrapup reads `Wrapup` in a delta and
+`milestone_session_wrapup` in a census.
+
 ## Tempo's partial-day rule
 
 Three rules, all of which exist because the naive version was measured and was

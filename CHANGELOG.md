@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+### fix(load): type a milestone-only row by its milestone, not its log
+
+The load fills a missing `type` for every resident event. It used the log's
+name, so each row that exists only in the milestones log was typed
+`milestones`, and the Memory Desk, census and the Explorer's type facet could
+not tell a `/wrapup` from a Hermes cron run. It now uses `milestone_<milestone>`,
+the type the milestone hook gives the changelog copy of a dual-logged
+milestone. A row with no `milestone` still gets its log's name.
+
+On the live corpus 1,923 events change `type` and no other field changes: 790
+`/wrapup` rows become `milestone_session_wrapup`, 322 Hermes rows become
+`milestone_hermes_*`, and 809 agent and compaction rows from March, written
+before the hooks dual-logged them, join the buckets their later siblings already
+use (`milestone_compaction_auto` 783 → 880, `milestone_agent_Explore` 376 → 841).
+The other two are one-off kinds (`session_rollback`, `session_wrapup_committed`).
+
+The Memory Desk finds a wrapup by testing `type` against /wrapup/, which
+`milestones` never matched. Measured on the running service before the change:
+a session's wrapup was counted in `wraps` but was missing from `outcomes`, and
+its note carried the type `milestones`. It now appears among the session's
+outcomes and its note reads as a wrapup.
+
+In the Explorer, `EventCard` labels a compaction row `compaction` whether or not
+it was dual-logged. Wrapup and Hermes rows keep the `milestones` label, which
+`EventCard` takes from `_source` for types it does not map. The type facet
+lists each kind instead of one `milestones` pill.
+
+The `delta` verb reads raw log rows and resolves `event` before `milestone`, so
+a delta reports the same wrapup as `Wrapup`. `docs/FACTS.md` now says so.
+
+A new `memory.test.js` case loads a wrapup, a dual-logged compaction and a
+milestone-only compaction through `readAllEvents` and asserts the types and the
+desk's outcomes. It fails against the previous load, as does the updated
+`watcher-normalization.test.js`.
+
 ### fix(search): return no results, not a 500, for queries with no terms
 
 `/api/search` threw "Cannot read properties of undefined (reading 'filter')"

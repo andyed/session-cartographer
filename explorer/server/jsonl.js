@@ -81,13 +81,21 @@ export function isHighSignal(event) {
   return true;
 }
 
-// The canonical fields downstream code reads, each with the fields a writer may
-// have used instead, in order of preference. `type` falls back to the log the
-// row came from.
+// The canonical fields downstream code reads, each derived from the fields a
+// writer may have used instead.
+//
+// `type` comes from `milestone` before the log's name. The milestone hook
+// writes each event twice and types the changelog copy `milestone_<milestone>`;
+// a row only in the milestones log (/wrapup, hermes-source.js) gets the same
+// name, so census counts it with its kind. Typed by the log name, 1,921 such
+// rows shared one `milestones` bucket, and the Memory Desk's /wrapup/ test on
+// `type` never matched a wrapup.
 const CANONICAL_FIELDS = [
-  ['session_id', ['sessionId', 'session']],
-  ['summary', ['display']],
-  ['type', ['_source']],
+  ['session_id', (event) => event.sessionId || event.session],
+  ['summary', (event) => event.display],
+  ['type', (event) => (typeof event.milestone === 'string' && event.milestone
+    ? `milestone_${event.milestone}`
+    : event._source)],
 ];
 
 // Per event, the canonical values normalizeEvent filled in rather than read.
@@ -110,7 +118,8 @@ function underive(event) {
 
 /**
  * Fill the canonical fields from their variants, in place: `session_id` from
- * `sessionId` or `session`, `summary` from `display`, `type` from `_source`.
+ * `sessionId` or `session`, `summary` from `display`, `type` from `milestone`
+ * (as `milestone_<milestone>`) or else `_source`.
  *
  * The load and the watcher both apply this. The watcher once delivered raw
  * rows, so a row with no changelog copy to fill it in lacked `session_id` or
@@ -121,10 +130,9 @@ function underive(event) {
 export function normalizeEvent(event) {
   underive(event);
   let derived = null;
-  for (const [field, variants] of CANONICAL_FIELDS) {
+  for (const [field, derive] of CANONICAL_FIELDS) {
     if (event[field]) continue;
-    let value;
-    for (const name of variants) if (event[name]) { value = event[name]; break; }
+    const value = derive(event);
     if (!value) continue;
     event[field] = value;
     (derived ||= {})[field] = value;
@@ -146,9 +154,10 @@ export function normalizeEvent(event) {
  * A derived value is a placeholder until a copy supplies the real one, so it
  * takes no part in the longer-wins comparison. The load normalizes after every
  * fold and never meets one. The watcher delivers normalized rows, so it would:
- * a derived `type: "milestones"` outlasts a twin's real `type: "wrapup"`, and a
- * `type` taken from changelog outlives a domain log claiming the source. Both
- * sides fold without their derived values, and the result is re-derived.
+ * a derived `type: "milestone_session_wrapup"` outlasts a twin's shorter real
+ * type, and a `type` taken from changelog outlives a domain log claiming the
+ * source. Both sides fold without their derived values, and the result is
+ * re-derived.
  */
 export function mergeDuplicateEvent(existing, event, source) {
   const wasDerived = underive(existing);
