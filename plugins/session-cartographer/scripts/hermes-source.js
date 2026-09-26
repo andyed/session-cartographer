@@ -238,13 +238,13 @@ export function oneLine(text) {
 }
 
 /**
- * A field the portable keyword engine reads. `bm25-search.awk` extracts a JSON
- * string by cutting at the first `"`, escaped or not, so a straight double
- * quote silently truncates everything after it: a title in quotes hid the
- * whole session, and a markdown note with a quotation in its first paragraph
- * was searchable only up to that point. The JS engine parses JSON and does not
- * care; the awk is zero-dependency by design (see CLAUDE.md), so the writer
- * adapts. Quotes become apostrophes, which tokenize identically.
+ * A field the portable keyword engine reads. Until 2026-09-25 `bm25-search.awk`
+ * extracted a JSON string by cutting at the first `"`, escaped or not, so a
+ * straight double quote silently truncated everything after it: a title in
+ * quotes hid the whole session, and a markdown note with a quotation in its
+ * first paragraph was searchable only up to that point. The awk now honors
+ * escapes, so this is no longer required; it stays because it is harmless.
+ * Quotes become apostrophes, which tokenize identically.
  */
 export function searchable(text) {
   return oneLine(text).replace(/"/g, "'");

@@ -387,7 +387,9 @@ describe('hermes-source --write', () => {
       env: { ...process.env, CARTOGRAPHER_DEV_DIR: fx.work, CARTOGRAPHER_TURBO: '0', CARTOGRAPHER_SEMANTIC: '0',
         CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', CARTOGRAPHER_SESSION_ID: '' },
     }).stdout;
-    // bm25-search.awk cuts a JSON string at its first quote, escaped or not.
+    // searchable() keeps quotes out of the row. bm25-search.awk cut a JSON string
+    // at its first quote, escaped or not, until 2026-09-25; the reader side is
+    // covered by keyword-json-escapes.test.js.
     assert.match(search('zebracorn'), /hermes-note-2026-09-25-/);
     assert.match(search('quillfeather'), /hermes-session-conv-1/);
   });

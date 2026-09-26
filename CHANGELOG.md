@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### fix(search): the CLI keyword engine reads JSON strings past an escaped quote
+
+`bm25-search.awk` cut every string field at its first double quote, escaped or
+not, so text after an embedded `\"` was invisible to `/remember` with Turbo off
+while the Explorer's JS engine, which parses the JSON, still matched it. On
+2026-09-25 that covered 37,711 of 135,315 changelog summaries, 37,074 of
+109,489 tool-use summaries (mostly bash commands with quoted arguments), 899
+prompts and 109 milestone descriptions. `extract()` now ends a value at the
+first unescaped quote and decodes it: `\n`, `\r` and `\t` become a space, and
+`\"`, `\\` and `\/` become the character. `\uXXXX` stays as written (51 rows).
+The result equals `JSON.parse` on all 276,315 summaries and descriptions
+checked. Decoding `\n` also changes tokens: `line\nterm` used to score as
+`nterm`. Rows without a backslash take an `index` fast path, which is cheaper
+than the old regex `sub`: the scorer run over all five logs in sequence went
+from 24.2 s to 23.7 s, and an end-to-end portable CLI query from 11.9 s to
+11.7 s. `tests/unit/keyword-json-escapes.test.js` runs the CLI on terms placed
+after escapes and asserts that the awk and JS engines return the same rows.
+`hermes-source.js` still swaps quotes for apostrophes when it writes; the
+workaround is no longer needed and does no harm.
+
 ### feat(hermes): Hermes Agent sessions and workspace notes enter the corpus
 
 `scripts/hermes-source.js` is a third source adapter, and the first whose

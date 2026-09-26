@@ -17,15 +17,47 @@ BEGIN {
     nresults = 0
 }
 
-# Fast custom JSON extractor for known keys
-function extract(json, field,    pat, val) {
+# Fast custom JSON extractor for known keys. Returns the string value with its
+# escapes decoded, ending at the first UNESCAPED quote. Cutting at the first
+# quote of any kind truncated every value holding \" and hid all text after it
+# from this engine while explorer/server/bm25.js, which parses the JSON, still
+# found it: 37,711 of 135,315 changelog summaries and 37,074 of 109,489
+# tool-use summaries on 2026-09-25.
+#
+# Decoding matches extract_values in codex-transcript-to-turns.awk: \n \r \t
+# (and \b \f) become a space and never a real control character, because the
+# output is TSV. \" \\ \/ become the character. \uXXXX is left as written; it
+# appears in 51 rows of the whole corpus.
+function extract(json, field,    pat, val, q, n, parts, i) {
     pat = "\"" field "\"[[:space:]]*:[[:space:]]*\""
-    if (match(json, pat)) {
-        val = substr(json, RSTART + RLENGTH)
-        sub(/".*/, "", val)
-        return val
-    }
-    return ""
+    if (!match(json, pat)) return ""
+    val = substr(json, RSTART + RLENGTH)
+
+    # Fast path, 70% of changelog summaries: no backslash before the first
+    # quote, so that quote closes the value and nothing needs decoding.
+    q = index(val, "\"")
+    if (q > 0) val = substr(val, 1, q - 1)
+    if (index(val, "\\") == 0) return val
+
+    # Slow path: re-take the value as the longest run of plain characters and
+    # escape pairs, so the scan runs inside awk's regex engine. Extracting every
+    # changelog summary costs 1.97 s user this way against 1.88 s for the old
+    # truncating cut; the per-character loop extract_values uses costs 3.84 s.
+    val = substr(json, RSTART + RLENGTH)
+    match(val, /^([^"\\]|\\.)*/)
+    val = substr(val, 1, RLENGTH)
+    # Park \\ first so its second backslash cannot pair with the next char.
+    gsub(/\\\\/, "\001", val)
+    gsub(/\\[nrtbf]/, " ", val)
+    gsub(/\\"/, "\"", val)
+    gsub(/\\\//, "/", val)
+    if (index(val, "\001") == 0) return val
+    # Restore through split, not gsub: a backslash in a gsub replacement is
+    # read differently by BWK awk, gawk and mawk.
+    n = split(val, parts, "\001")
+    val = parts[1]
+    for (i = 2; i <= n; i++) val = val "\\" parts[i]
+    return val
 }
 
 # Numeric extractor — for "salience": 0.7 (no quotes around the value)
@@ -261,12 +293,11 @@ NR == FNR {
             sal = extract_num(record, "salience")
             if (sal == "") sal = "0.5"
 
-            # Flatten JSON escape sequences before TSV emit — pre-fix events
-            # carry literal \n/\t from multi-line bash commands (same cleanup
-            # the transcript branch does above). The double-backslash form
-            # first: git_commit summaries hold \n as literal text (escaped to
-            # \\n in raw JSON), which would otherwise leave a stray backslash.
-            # Scoring already happened on the raw body; this is display-only.
+            # extract() has already decoded JSON escapes, so \n and \t left
+            # here are literal text: git_commit summaries hold \n as written
+            # in the message. Flatten them for display, the double-backslash
+            # form first so it leaves no stray backslash. Scoring already
+            # happened on the body; this is display-only.
             gsub(/\\\\n/, " ", body)
             gsub(/\\\\t/, " ", body)
             gsub(/\\n/, " ", body)
