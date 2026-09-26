@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### chore(explorer): remove two stylesheets nothing loads
+
+`explorer/src/styles/memory-desk.css` and `explorer/src/styles/memory.css.bak`
+were never part of the build. No module imports either file, and no script,
+test, build step, config or document names them; the plugin mirror carried
+identical copies. All four files are removed.
+
+Before removal, every class the two files define was checked against the
+source. Fourteen are still used, and each has a rule in a stylesheet that is
+imported: `.md-sr` and `.md-handoff` in `focus-workspace.css`, the `mw-*`
+weather classes and `memory-entry`, `memory-path` and `memory-review` in
+`memory.css`. The other 39 classes in `memory-desk.css` (`.memory-desk`,
+`.md-search`, `.md-filters`, `.md-scope`, `.md-page` and the rest) appear in no
+component. The one `memory-desk` token in the source is `MemoryDesk.jsx`
+importing the `./memory-desk` JS module, not a class name. No component lost
+its styling.
+
+`npm run build --prefix explorer` produces a byte-identical `dist/` before and
+after, with the same hashed asset names. The desk file's `.md-handoff` rules
+differ from the live ones (a 44px minimum link height and a focus outline), but
+they never reached the built CSS, so no rendered style changes.
+
 ### fix(explorer): hold the whole Transcript viewer to 8:1
 
 The Transcript viewer's toolbar was fixed in 129ec65; the rest of the viewer
