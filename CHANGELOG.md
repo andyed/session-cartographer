@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+### fix(turbo): record why a start failed in the log the error names
+
+On 2026-09-26, at load average 72 on 16 CPUs, `cartographer-turbo.js start`
+exited 1 with "Turbo service did not become ready; see .../server.log", and
+server.log had not been written since the previous start. The server printed
+its first line after its corpus load, so a child that died before then left no
+trace, whether the controller killed it at the 5 s deadline or something else
+did. `/remember` runs the same path when it auto-starts Turbo, and there the
+failure shows only as a drop to the portable CLI.
+
+The server now logs `[turbo] <time> pid N loading corpus from <root> (modules
+loaded after N ms)` before it loads, and its `loaded` line gives the load time.
+When `start` fails, the controller appends a `[turbo-control]` line to
+server.log. The same diagnosis is the first line of its error, which
+`cartographer-search.sh` already copies into its fallback detail. The line
+separates a child the controller killed at the deadline from one that exited
+first, with its signal or exit code, and records the load average and CPU
+count. `CARTOGRAPHER_TURBO_READY_TIMEOUT_MS` overrides the deadline.
+
+The deadline stays at 5 s. Load was the suspected cause, but the live corpus
+(158,261 events) loaded in 2,100 ms at load average 80 on the same machine, and
+the managed service's successful retry took 2,059 ms from spawn to ready. A
+load-scaled deadline would have rested on a guess. The original failure's cause
+is still open, and the next occurrence will record whether the child was killed
+or died first.
+
+`turbo-start-diagnostics.test.js` covers a kill at the deadline, a child killed
+from outside before ready, the pre-load line and the override. All four fail
+against the previous code.
+
 ### fix(facts): report a delta event as census counts it
 
 `delta` read raw log rows and collapsed a dual-logged pair with its own rule:

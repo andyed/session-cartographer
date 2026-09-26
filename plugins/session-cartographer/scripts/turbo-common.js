@@ -94,6 +94,24 @@ export function effectiveTurboSettings(env = process.env) {
   };
 }
 
+/**
+ * How long `start` waits for a spawned server's ready.json before killing it.
+ *
+ * Spawn-to-ready measured 2,059 ms at 158k events on 2026-09-26, and the
+ * corpus load took 2,100 ms at load average 80 on 16 CPUs, so load average
+ * alone does not stretch it toward the 5 s default. A `start` still failed
+ * that day at load 72 with no output from its child, cause unknown. The
+ * default stays until the controller's `[turbo-control]` line in server.log
+ * says whether a child was killed at the deadline or died first.
+ * `CARTOGRAPHER_TURBO_READY_TIMEOUT_MS` sets the budget outright.
+ */
+export function turboReadyTimeoutMs(settings, env = process.env) {
+  const raw = env.CARTOGRAPHER_TURBO_READY_TIMEOUT_MS;
+  const explicit = Number(raw);
+  if (raw && Number.isFinite(explicit) && explicit >= 500 && explicit <= 120000) return explicit;
+  return Math.max(5000, Number(settings?.timeoutMs) || 0);
+}
+
 export function updateTurboConfig(changes, env = process.env) {
   const current = readTurboConfig(env);
   const next = {

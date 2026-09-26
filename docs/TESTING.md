@@ -323,6 +323,7 @@ before any probe means anything.
 | Old material never surfaces | Recency weighting; scope with `--since` before assuming loss |
 | Work missing from a digest | Committed from a worktree — verify with `git log` |
 | Turbo misses rows that are in the logs | `cartographer-turbo.js status`: `index_freshness` and the per-log `watch` entries compare what each watcher consumed with the disk |
+| `start` says Turbo did not become ready | The last `[turbo-control]` line in `server.log`: killed at the deadline, or exited with a signal before it. A `loading corpus` line from the same pid means the load had begun; `loaded ... in N ms` lines from earlier starts give its usual cost |
 
 ## Ground rules
 

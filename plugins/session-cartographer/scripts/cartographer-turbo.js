@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +13,7 @@ import {
   readJson,
   readTurboConfig,
   turboPaths,
+  turboReadyTimeoutMs,
   updateTurboConfig,
   validateTurboUrl,
   writeJsonAtomic,
@@ -151,6 +153,11 @@ async function ensureRunning(env = process.env) {
   });
   child.unref();
   fs.closeSync(logFd);
+  const spawnedAt = Date.now();
+  // Captured so a child that died on its own (a crash, jetsam, an operator's
+  // kill) is not reported as one this controller killed at the deadline.
+  let childExit = null;
+  child.on('exit', (code, signal) => { childExit ??= { code, signal }; });
 
   writeJsonAtomic(current.paths.pid, {
     pid: child.pid,
@@ -161,8 +168,12 @@ async function ensureRunning(env = process.env) {
     instance_token: instanceToken,
   });
 
-  const ready = await waitForReady(child.pid, Math.max(5000, settings.timeoutMs), env);
+  const deadlineMs = turboReadyTimeoutMs(settings, env);
+  const ready = await waitForReady(child.pid, deadlineMs, env);
   if (!ready) {
+    // Read before reaping: afterwards the child is dead either way.
+    const diedFirst = childExit ?? (processIsAlive(child.pid) ? null : { code: null, signal: null });
+    const elapsed = Date.now() - spawnedAt;
     // Reap before reporting. This is the one moment ownership is certain — the
     // child object is ours — and the one moment `stop` cannot help: its
     // handshake needs the ready file the child has not written yet. Walking
@@ -172,9 +183,34 @@ async function ensureRunning(env = process.env) {
     // after a grace period, because a child that is blocked or stopped has
     // SIGTERM queued behind it and would otherwise survive again.
     await reapSpawn(child, current.paths);
-    throw new Error(`Turbo service did not become ready; see ${current.paths.log}`);
+    const what = diedFirst
+      ? `pid ${child.pid} exited (${describeExit(diedFirst)}) after ${elapsed} ms, before writing ready.json`
+      : `pid ${child.pid} was still starting at the ${deadlineMs} ms deadline and was killed`;
+    // Load was the first suspect on 2026-09-26, and it is the cheapest fact to
+    // have on hand the next time this fires.
+    const context = `load average ${os.loadavg()[0].toFixed(1)} on ${os.availableParallelism()} CPUs`;
+    appendControlLog(current.paths.log, `${what} (${context})`);
+    throw new Error(`Turbo service did not become ready: ${what} (${context}); see ${current.paths.log}`);
   }
   return { started: true, pid: child.pid, ready };
+}
+
+function describeExit({ code, signal }) {
+  if (signal) return `signal ${signal}`;
+  if (code !== null && code !== undefined) return `code ${code}`;
+  return 'status unknown';
+}
+
+// The server's first line used to come after its corpus load, so a child killed
+// mid-load left server.log exactly as the previous start had left it while the
+// error pointed there (2026-09-26, load average 72 on 16 CPUs). It now logs
+// before loading, but a child can still die during module import and write
+// nothing. Only the controller knows what became of the spawn, so it records
+// that in the log. A failure to write must not replace the error being reported.
+function appendControlLog(file, message) {
+  try {
+    fs.appendFileSync(file, `[turbo-control] ${new Date().toISOString()} ${message}\n`, { mode: 0o600 });
+  } catch {}
 }
 
 async function reapSpawn(child, paths) {

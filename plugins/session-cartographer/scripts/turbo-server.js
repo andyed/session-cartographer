@@ -32,6 +32,15 @@ let openResponses = 0;
 const touchActivity = () => { lastActivity = Date.now(); };
 
 fs.mkdirSync(paths.requests, { recursive: true, mode: 0o700 });
+// Written before the load so a spawn that never reaches ready leaves a trace.
+// The first line used to follow the load; a child the controller killed
+// mid-load left server.log unchanged (2026-09-26). Stdout here is the log file,
+// and file writes are synchronous, so the line lands even if SIGKILL follows.
+// The import time separates a slow module load from a slow corpus read.
+console.log(
+  `[turbo] ${new Date().toISOString()} pid ${process.pid} loading corpus from ${CORPUS_ROOT} `
+  + `(modules loaded after ${Math.round(process.uptime() * 1000)} ms)`,
+);
 // The orphan-reaping regression holds a child before its first ready publish.
 // This opt-in test seam makes that ordering independent of suite load.
 if (process.env.CARTOGRAPHER_TURBO_TEST_STARTUP_DELAY_MS) {
@@ -83,6 +92,7 @@ const stopWatching = watchFiles((newEvents) => {
     addToIndex(index, event);
   }
 }, reloadCorpus);
+const loadStarted = Date.now();
 events = readAllEvents();
 index = buildIndex(events);
 byEventId = indexEventsById(events);
@@ -309,7 +319,10 @@ function publishReady() {
 }
 
 publishReady();
-console.log(`[turbo] loaded ${events.length} events / ${index.docs.size} docs; file transport ready at ${paths.requests}`);
+console.log(
+  `[turbo] loaded ${events.length} events / ${index.docs.size} docs in ${Date.now() - loadStarted} ms; `
+  + `file transport ready at ${paths.requests}`,
+);
 const leaseInterval = setInterval(checkLease, LEASE_INTERVAL_MS);
 leaseInterval.unref();
 
