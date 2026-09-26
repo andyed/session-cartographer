@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { buildIndex, addToIndex } from '../explorer/server/bm25.js';
-import { CORPUS_ROOT, readAllEvents, watchFiles } from '../explorer/server/jsonl.js';
+import { CORPUS_ROOT, readAllEvents, watchFiles, mergeDuplicateEvent } from '../explorer/server/jsonl.js';
 import { executeRecall, recallHealth, recallIndexGeneration } from '../explorer/server/recall.js';
 import { RecallContractError } from '../explorer/server/recall-contract.js';
 import { executeFacts } from '../explorer/server/facts.js';
@@ -41,31 +41,51 @@ if (process.env.CARTOGRAPHER_TURBO_TEST_STARTUP_DELAY_MS) {
 
 let events;
 let index;
-let eventIds;
+// event_id → the stored event, so a second copy can be folded into it.
+let byEventId;
+function indexEventsById(list) {
+  const map = new Map();
+  for (const event of list) {
+    if (event.event_id && !map.has(event.event_id)) map.set(event.event_id, event);
+  }
+  return map;
+}
+
 // See jsonl.js: an in-place rewrite invalidates everything already indexed,
 // so appending cannot repair it. Reload.
 function reloadCorpus(source) {
   events = readAllEvents();
   index = buildIndex(events);
-  eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+  byEventId = indexEventsById(events);
   console.error(`turbo: reloaded corpus after in-place rewrite of ${source} (${events.length} events)`);
 }
 
 // Armed before the load (see watchFiles). The load takes about a second at
 // 157k events, and a watcher armed after it started past every event appended
-// in that second, while its offsets matched the disk and status read live. A
-// row the load also read arrives twice and is skipped by id.
+// in that second, while its offsets matched the disk and status read live.
+//
+// A second copy of an id is folded into the stored event, as readAllEvents does
+// at load, never skipped. The hooks write one event to its domain log and to
+// changelog, each copy with fields the other lacks, and a row the load read
+// arrives again from the watcher's first pass. Skipping kept only the
+// first-arriving copy's fields and `_source` until the next restart, so recall
+// and census disagreed with a freshly started service. The BM25 doc keeps a
+// reference to the stored event, so recall returns the merged fields.
 const stopWatching = watchFiles((newEvents) => {
   for (const event of newEvents) {
-    if (event.event_id && eventIds.has(event.event_id)) continue;
-    if (event.event_id) eventIds.add(event.event_id);
+    const id = event.event_id;
+    if (id && byEventId.has(id)) {
+      mergeDuplicateEvent(byEventId.get(id), event, event._source);
+      continue;
+    }
+    if (id) byEventId.set(id, event);
     events.unshift(event);
     addToIndex(index, event);
   }
 }, reloadCorpus);
 events = readAllEvents();
 index = buildIndex(events);
-eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+byEventId = indexEventsById(events);
 const handleMemory = createMemoryHandler({ getEvents: () => events });
 
 function errorPayload(error) {

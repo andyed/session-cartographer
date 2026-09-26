@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+### fix(turbo): fold a dual-logged event's second copy instead of dropping it
+
+The hooks write one event to its domain log and again to changelog, and each
+copy carries fields the other lacks: changelog has `session_id` and
+`related_ids`, tool-use has `tool` and `session`. The load folds the pair with
+`mergeDuplicateEvent` and labels it with the domain source, and the Explorer's
+watcher does the same. Turbo's watcher skipped any id it had already stored, so
+an event dual-logged while the service ran kept only the first-arriving copy
+until the next restart. Recall returns the stored event's fields and census
+counts its `_source`, so a live service and a freshly restarted one disagreed
+about the same rows.
+
+Reproduced against the real service before the fix. In the hooks' order
+(domain log first), recall returned the event without `session_id` or
+`related_ids`. In the reverse order, which a changelog debounce already in
+flight can produce, it returned `_source: "changelog"` with no `tool` or
+`session`. After a restart both events carried every field under `tool-use`.
+`turbo-server.js` now keeps a map from event_id to the stored event and folds a
+repeat into it, as `app.js` does, and the reload path rebuilds the map. A row
+the startup load read and the watcher's first pass re-delivers (13aa132) still
+folds to one event: folding an identical copy changes nothing.
+
+Facts, the Memory Desk and the Turbo client fall back from `session_id` to
+`session`, which hid the hooks'-order loss from them. `_source`, `tool` and
+`related_ids` have no fallback.
+
+`turbo-duplicate-events.test.js` drives the managed service through both
+orders, restarts it, and requires the live and restarted answers to match. It
+fails against the previous code. Full unit suite: 614 tests, 613 pass, 0 fail,
+1 skipped (Codex CLI not installed). The managed service, restarted, reads
+`live` with every log at `bytes_behind: 0`, and an event this session wrote
+after the restart recalls with `tool`, `session`, `session_id` and
+`related_ids`.
+
 ### feat(memory): browse /remember calls and the results agents marked used
 
 The Memory Desk carried no recall data. A **Recall** view beside Tasks, Files
