@@ -196,7 +196,44 @@ function boundaryHash(filePath, offset) {
   return createHash('sha1').update(buffer).digest('hex');
 }
 
+// Where the last complete line ends: the byte after the final newline at or
+// before `size`, or 0 if there is none. A write still in progress leaves a
+// fragment past it. A position inside that fragment makes the rest of the line
+// read as a second fragment that never parses, so the event is lost.
+const TAIL_CHUNK = 64 * 1024;
+
+function lastLineEnd(filePath, size) {
+  if (!size) return 0;
+  let fd;
+  try {
+    fd = openSync(filePath, 'r');
+    let end = size;
+    while (end > 0) {
+      const start = Math.max(0, end - TAIL_CHUNK);
+      const buffer = Buffer.alloc(end - start);
+      const read = readSync(fd, buffer, 0, buffer.length, start);
+      const newline = buffer.subarray(0, read).lastIndexOf(0x0a);
+      if (newline >= 0) return start + newline + 1;
+      end = start;
+    }
+    return 0;
+  } catch {
+    // Unreadable now; the next change event reads it again.
+    return size;
+  } finally {
+    if (fd !== undefined) { try { closeSync(fd); } catch {} }
+  }
+}
+
 /**
+ * Arm this before reading the corpus, not after. Each log is baselined at its
+ * last complete line when armed ("don't replay history"), so a watcher armed
+ * after the load never sees what was appended while the load ran: the read had
+ * already passed it. Armed first, with the load run synchronously after it,
+ * nothing is delivered until the load finishes; the first pass then reads
+ * everything appended since the arm. A row both loaded and delivered is the
+ * same event arriving twice, which the consumer folds by event_id.
+ *
  * @param onNewEvents  called with newly appended events
  * @param onRewrite    optional; called with the source name when history was
  *                     rewritten in place, or when the file at the path is no
@@ -279,8 +316,8 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
         if (stat.ino !== inodes[source]) {
           const armed = armFile(source);
           if (!armed) return;
-          offsets[source] = armed.size;
-          boundaries[source] = boundaryHash(filePath, armed.size);
+          offsets[source] = lastLineEnd(filePath, armed.size);
+          boundaries[source] = boundaryHash(filePath, offsets[source]);
           if (onRewrite) onRewrite(source);
           return;
         }
@@ -292,8 +329,8 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
           && boundaryHash(filePath, offsets[source]) !== boundaries[source];
 
         if (truncated || rewritten) {
-          offsets[source] = size;
-          boundaries[source] = boundaryHash(filePath, size);
+          offsets[source] = lastLineEnd(filePath, size);
+          boundaries[source] = boundaryHash(filePath, offsets[source]);
           if (onRewrite) onRewrite(source);
           return;
         }
@@ -313,12 +350,18 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
           return;
         }
 
-        offsets[source] = size;
-        boundaries[source] = boundaryHash(filePath, size);
+        // Consume through the last newline only. A trailing fragment is a write
+        // still in progress: parsing it fails, and counting its bytes as read
+        // anyway loses the event, since the rest of the line then arrives as a
+        // second fragment. Leave it for the next pass, as readAppended does.
+        const complete = buffer.lastIndexOf(0x0a) + 1;
+        if (complete === 0) return;
+        offsets[source] += complete;
+        boundaries[source] = boundaryHash(filePath, offsets[source]);
 
         // Parse new lines
         const newEvents = [];
-        for (const line of buffer.toString('utf-8').split('\n')) {
+        for (const line of buffer.toString('utf-8', 0, complete).split('\n')) {
           if (!line.trim()) continue;
           try {
             newEvents.push({ ...JSON.parse(line), _source: source });
@@ -334,10 +377,11 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
     };
   }
 
-  // Initialize offsets to current file sizes (don't replay history)
+  // Start at each log's last complete line: history is not replayed, and a line
+  // still being written is read whole once it is finished.
   for (const [source, filePath] of Object.entries(logFiles)) {
     const stat = armFile(source);
-    offsets[source] = stat ? stat.size : 0;
+    offsets[source] = stat ? lastLineEnd(filePath, stat.size) : 0;
     boundaries[source] = boundaryHash(filePath, offsets[source]);
   }
 
@@ -368,8 +412,21 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
     }
   }
 
+  // Check every log once the caller's synchronous work has finished. A file
+  // watch reaches the kernel only when the event loop next polls (kqueue on
+  // macOS), so an append in the same tick as the arm raises no event: 0 of 5
+  // trials reported one. The directory watch caught them in isolation, from
+  // its own thread, but missed under load. The caller loads the corpus in that
+  // tick, so without this pass whatever landed during the load waited for the
+  // log's next append. The debounce the pass starts cannot fire before a poll,
+  // so every append is either read by it or raises an event after it.
+  const firstPass = setImmediate(() => {
+    for (const source of Object.keys(logFiles)) handlers[source]();
+  });
+
   const stop = () => {
     closed = true;
+    clearImmediate(firstPass);
     for (const w of [...Object.values(fileWatchers), ...dirWatchers]) {
       try { w?.close(); } catch {}
     }

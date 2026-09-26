@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### fix(watcher): index rows appended during startup or written in two parts
+
+The resident index lost events in two ways while `status` read `live`. Both
+were found by reading the code after c29a684, and both were reproduced before
+the fix.
+
+(1) Startup. The headless service and the Explorer read the logs and built the
+index, and only then armed the watchers, each baselined at its log's size at
+that moment. A row appended during the load (about a second at 157k events)
+landed after the read and before the watcher, so it stayed unindexed until a
+restart while the watcher's offset matched the disk. With a preload that
+appends while the load runs, Turbo held 6 of 7 events, recall missed the row,
+and status read `live` with `bytes_behind: 0`. Both servers now arm the
+watchers first. That alone was not enough on macOS: a file watch is registered
+with kqueue only when the event loop next polls, so an append in the same tick
+raises no event (0 of 5 trials). The directory watch covered it in isolation
+and missed once under the full suite. `watchFiles` now checks every log once
+after the caller's synchronous load. A row both loaded and delivered is folded
+by `event_id`: skipped by the id set in Turbo, merged by `mergeDuplicateEvent`
+in the Explorer.
+
+(2) Mid-flush tail. The watcher read to the end of the file, skipped a trailing
+fragment as malformed, and counted its bytes as consumed. The rest of the line
+then arrived as a second fragment and failed the same way, so a row appended in
+two writes was never delivered and `watchLag` reported `bytes_behind: 0`. The
+watcher now consumes through the last newline only, as `readAppended` already
+did. Every baseline (arm, re-arm after a replace, rewrite) starts at the last
+complete line, so a service that starts while a row is being written reads that
+row once it is finished. A torn line left at the end of a log by a crashed
+writer now reads as `stale`, with `bytes_behind` equal to its length, where it
+read `live` before; none of the five live logs ends in one.
+
+Five tests, all failing against the previous code: two in
+`watcher-partial-line.test.js` (one splits a row inside a multi-byte
+character), `watcher-first-pass.test.js`, and two in
+`watcher-startup-window.test.js` (Turbo end to end, the Explorer in process).
+The first-pass test stubs `fs.watch` so no event can arrive, and it fails with
+only the first pass removed. With the dedup removed, the startup tests count 8
+of 7 events and show one row twice.
+
 ### fix(hooks): record commits past char 500 and after a leading `cat`
 
 `log-tool-use.sh` lost real commits in two more ways. Both reproduce with

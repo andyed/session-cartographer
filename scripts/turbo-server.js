@@ -39,10 +39,9 @@ if (process.env.CARTOGRAPHER_TURBO_TEST_STARTUP_DELAY_MS) {
   if (Number.isFinite(delay) && delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
 }
 
-let events = readAllEvents();
-let index = buildIndex(events);
-let eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
-const handleMemory = createMemoryHandler({ getEvents: () => events });
+let events;
+let index;
+let eventIds;
 // See jsonl.js: an in-place rewrite invalidates everything already indexed,
 // so appending cannot repair it. Reload.
 function reloadCorpus(source) {
@@ -52,6 +51,10 @@ function reloadCorpus(source) {
   console.error(`turbo: reloaded corpus after in-place rewrite of ${source} (${events.length} events)`);
 }
 
+// Armed before the load (see watchFiles). The load takes about a second at
+// 157k events, and a watcher armed after it started past every event appended
+// in that second, while its offsets matched the disk and status read live. A
+// row the load also read arrives twice and is skipped by id.
 const stopWatching = watchFiles((newEvents) => {
   for (const event of newEvents) {
     if (event.event_id && eventIds.has(event.event_id)) continue;
@@ -60,6 +63,10 @@ const stopWatching = watchFiles((newEvents) => {
     addToIndex(index, event);
   }
 }, reloadCorpus);
+events = readAllEvents();
+index = buildIndex(events);
+eventIds = new Set(events.map((event) => event.event_id).filter(Boolean));
+const handleMemory = createMemoryHandler({ getEvents: () => events });
 
 function errorPayload(error) {
   const contractual = error instanceof RecallContractError || error instanceof FactsContractError;

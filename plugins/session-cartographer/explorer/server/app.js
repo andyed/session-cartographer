@@ -34,15 +34,12 @@ export function createExplorerApp() {
   const app = express();
   app.use(express.json({ limit: '1mb' }));
 
-  // ─── Load events + build BM25 index ───
-  console.log('Loading events...');
-  let events = readAllEvents();
-  let index = buildIndex(events);
+  let events;
+  let index;
   // The live-append path needs the same identity check readAllEvents applies at
   // load. Each log has its own watcher, so an event written to both changelog
   // and a domain log is delivered once per file.
-  let byEventId = indexEventsById(events);
-  console.log(`Loaded ${events.length} events, ${index.docs.size} docs in BM25 corpus (avgdl: ${index.avgdl.toFixed(1)} tokens).`);
+  let byEventId;
 
   // ─── SSE clients ───
   const sseClients = new Set();
@@ -60,12 +57,15 @@ export function createExplorerApp() {
     console.log(`Reloaded corpus after in-place rewrite of ${source}: ${events.length} events`);
   }
 
+  // Armed before the load (see watchFiles): a watcher armed after it started
+  // past every event appended while the corpus loaded.
   const stopWatching = watchFiles((newEvents) => {
     if (closed) return;
 
-    // A second copy is the same event arriving from another log, not news:
-    // fold its fields in and drop it. Appending it again would leave the feed
-    // rendering one event twice and stream it twice to live clients.
+    // A second copy is the same event arriving from another log, or a row the
+    // load read and the watcher delivered as well, not news: fold its fields
+    // in and drop it. Appending it again would leave the feed rendering one
+    // event twice and stream it twice to live clients.
     const fresh = [];
     for (const event of newEvents) {
       const id = event.event_id;
@@ -91,6 +91,13 @@ export function createExplorerApp() {
       }
     }
   }, reloadCorpus);
+
+  // ─── Load events + build BM25 index ───
+  console.log('Loading events...');
+  events = readAllEvents();
+  index = buildIndex(events);
+  byEventId = indexEventsById(events);
+  console.log(`Loaded ${events.length} events, ${index.docs.size} docs in BM25 corpus (avgdl: ${index.avgdl.toFixed(1)} tokens).`);
 
   // ─── Endpoints ───
 
