@@ -23,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SEARCH = path.join(ROOT, 'scripts', 'cartographer-search.sh');
@@ -92,7 +93,7 @@ function servedRowsFor(envOverrides) {
       CARTOGRAPHER_SERVED_LOG: servedLog,
       CARTOGRAPHER_ACCESS_LEDGER: path.join(dir, 'access-ledger.jsonl'),
       CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'no-transcripts'),
-      CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1', // unreachable: keyword-only
+      ...OFFLINE_INDEX_ENV, // unreachable: keyword-only
       ...envOverrides,
     }),
   });

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const SCRIPT = fileURLToPath(new URL('../../scripts/backfill-git-history.sh', import.meta.url));
 const AUTHORS = ['Ada Lovelace', 'Ada Stranger', 'Other Lovelace', 'Grace Hopper', 'Claude'];
@@ -18,6 +19,9 @@ before(() => {
   // determine which authors the fixture admits or execute a commit hook.
   for (const key of Object.keys(env)) if (key.startsWith('GIT_')) delete env[key];
   Object.assign(env, {
+    // Every run here is --dry-run, which skips the indexer. A run without it
+    // would background index-event.sh per commit.
+    ...OFFLINE_INDEX_ENV,
     GIT_CONFIG_GLOBAL: path.join(fixture, 'gitconfig'),
     GIT_CONFIG_NOSYSTEM: '1',
     CARTOGRAPHER_DEV_DIR: fixture,

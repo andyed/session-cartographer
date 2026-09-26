@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SCRIPT = path.join(ROOT, 'scripts', 'record-investigation.sh');
@@ -24,7 +25,7 @@ function fixture({ indexerExit = 0 } = {}) {
   const run = (request) => {
     const res = spawnSync('bash', [SCRIPT], {
       input: JSON.stringify(request), encoding: 'utf-8',
-      env: { ...process.env, CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_INDEXER: indexer,
+      env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_INDEXER: indexer,
              CARTOGRAPHER_SESSION_ID: 'session-fixture', CARTOGRAPHER_PROVIDER: 'codex', HOME: dev },
     });
     return { status: res.status, receipt: JSON.parse(res.stdout.trim()) };

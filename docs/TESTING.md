@@ -110,7 +110,7 @@ installs Chromium with its Linux system dependencies. A browser or build failure
 blocks publication. The install commands disable npm's automatic advisory call;
 run an explicit dependency advisory audit separately when authorized.
 
-## Three things that make a test lie
+## Four things that make a test lie
 
 1. **A live session id.** Delta serving is real: a harness that inherits
    `CLAUDE_CODE_SESSION_ID` silently loses repeat results, so a passing test
@@ -155,6 +155,19 @@ run an explicit dependency advisory audit separately when authorized.
    ```bash
    CARTOGRAPHER_SERVED_LOG=/dev/null CARTOGRAPHER_ACCESS_LEDGER=/dev/null
    ```
+
+4. **Index writes.** A hook test writes to the live index unless both service
+   URLs are pinned. Every hook that logs an event backgrounds
+   `scripts/index-event.sh`, and so does `cartographer-search.sh` on a
+   zero-result query naming an unknown file or event id (through
+   `hooks/log-knowledge-gap.sh`). The indexer has no off switch, and because it
+   is detached, nothing fails. On 2026-09-26 the `session-cartographer`
+   collection held 15 points from three hook test files (`session: testsess`,
+   `sess-real-0001`) and 9 more from hooks run by hand in scratch directories.
+   Spread `OFFLINE_INDEX_ENV` from `tests/unit/helpers/offline-index.js` into
+   the child's `env`, and pin the same two variables for a hook you run from a
+   shell. `live-index-isolation.test.js` fails any test file that runs an
+   indexer-reaching script without them.
 
 ## Writing a test that can fail
 

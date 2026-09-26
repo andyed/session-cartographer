@@ -13,6 +13,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -29,6 +30,7 @@ function runSearch(searchScript, callLog, env = {}) {
         CARTOGRAPHER_SEARCH_CALL_LOG: callLog,
         CARTOGRAPHER_SERVED_LOG: '/dev/null',
         CARTOGRAPHER_ACCESS_LEDGER: '/dev/null',
+        ...OFFLINE_INDEX_ENV,
         ...env,
       },
       stdio: 'ignore',

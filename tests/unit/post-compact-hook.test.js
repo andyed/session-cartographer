@@ -5,6 +5,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const HOOK = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'log-compact-summary.sh');
@@ -29,6 +30,9 @@ function runHook(dev, overrides = {}) {
     input: JSON.stringify(payload),
     env: {
       ...process.env,
+      // The off switches below keep the indexer from running; the pins keep a
+      // run that loses one from reaching the live index.
+      ...OFFLINE_INDEX_ENV,
       CARTOGRAPHER_DEV_DIR: dev,
       CARTOGRAPHER_POSTCOMPACT_INDEX: '0',
       CARTOGRAPHER_POSTCOMPACT_CATCHUP: '0',
@@ -86,6 +90,7 @@ describe('PostCompact hook', () => {
       input: JSON.stringify(payload),
       env: {
         ...process.env,
+        ...OFFLINE_INDEX_ENV,
         CARTOGRAPHER_DEV_DIR: dev,
         CARTOGRAPHER_COMPACT_SUMMARY_MAX: '256',
         CARTOGRAPHER_POSTCOMPACT_INDEX: '0',

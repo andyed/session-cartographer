@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import {
   HermesSourceError, buildTurns, collect, loadConfig, makeRedactor, openReadOnly,
 } from '../../scripts/hermes-source.js';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const SCRIPT = path.join(ROOT, 'scripts', 'hermes-source.js');
@@ -336,7 +337,7 @@ describe('hermes-source --write', () => {
       fs.writeFileSync(indexer, `#!/usr/bin/env bash\ninput=$(cat)\nprintf '%s\\t%s\\n' "\${PE_GATE_REJECT:-default}" "$input" >> "${indexLog}"\n[ "\${FAIL_INDEX:-}" = 1 ] && exit 75\nexit 0\n`);
       fs.chmodSync(indexer, 0o755);
     }
-    const env = { ...process.env, CARTOGRAPHER_DEV_DIR: work, CARTOGRAPHER_INDEXER: indexer,
+    const env = { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: work, CARTOGRAPHER_INDEXER: indexer,
       CARTOGRAPHER_MILESTONES: path.join(work, 'session-milestones.jsonl'),
       CARTOGRAPHER_HERMES_STATE: path.join(work, 'state.json'), CARTOGRAPHER_HERMES_CONFIG: fx.configPath, ...extraEnv };
     for (const k of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete env[k];
@@ -384,7 +385,7 @@ describe('hermes-source --write', () => {
     assert.equal(r.status, 0, r.stderr);
     const search = (q) => spawnSync('bash', [path.join(ROOT, 'scripts', 'cartographer-search.sh'), q, '--limit', '5'], {
       encoding: 'utf8',
-      env: { ...process.env, CARTOGRAPHER_DEV_DIR: fx.work, CARTOGRAPHER_TURBO: '0', CARTOGRAPHER_SEMANTIC: '0',
+      env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: fx.work, CARTOGRAPHER_TURBO: '0', CARTOGRAPHER_SEMANTIC: '0',
         CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', CARTOGRAPHER_SESSION_ID: '' },
     }).stdout;
     // searchable() keeps quotes out of the row. bm25-search.awk cut a JSON string

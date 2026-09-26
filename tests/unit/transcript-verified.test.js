@@ -23,6 +23,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HOOK = path.join(ROOT, 'plugins/session-cartographer/hooks/log-session-milestones.sh');
@@ -46,9 +47,11 @@ function runHook({ transcriptPath, sessionId }) {
     transcript_path: transcriptPath,
     cwd: dev,
   };
+  // The hook backgrounds index-event.sh; unpinned, `sess-real-0001` landed in
+  // the live Qdrant.
   const res = spawnSync('bash', [HOOK], {
     input: JSON.stringify(payload),
-    env: { ...process.env, CARTOGRAPHER_DEV_DIR: dev, CLAUDE_SESSION_ID: sessionId },
+    env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: dev, CLAUDE_SESSION_ID: sessionId },
     encoding: 'utf8',
   });
   assert.equal(res.status, 0, `hook exited ${res.status}: ${res.stderr}`);
@@ -74,7 +77,7 @@ function runHookWithActivity({ transcriptPath, sessionId }) {
       hook_event_name: 'SessionEnd', reason: 'other',
       session_id: sessionId, transcript_path: transcriptPath, cwd: dev,
     }),
-    env: { ...process.env, CARTOGRAPHER_DEV_DIR: dev, CLAUDE_SESSION_ID: sessionId },
+    env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: dev, CLAUDE_SESSION_ID: sessionId },
     encoding: 'utf8',
   });
   assert.equal(res.status, 0, `hook exited ${res.status}: ${res.stderr}`);

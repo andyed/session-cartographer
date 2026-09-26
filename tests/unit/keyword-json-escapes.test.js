@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildIndex, scoreBM25, tokenize } from '../../explorer/server/bm25.js';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const SEARCH = join(ROOT, 'scripts', 'cartographer-search.sh');
@@ -76,6 +77,8 @@ function cliEnv() {
   }
   return {
     ...env,
+    // A zero-result query naming an unknown file indexes a knowledge gap.
+    ...OFFLINE_INDEX_ENV,
     CARTOGRAPHER_DEV_DIR: dir,
     CARTOGRAPHER_TURBO: '0',
     CARTOGRAPHER_SEMANTIC: '0',

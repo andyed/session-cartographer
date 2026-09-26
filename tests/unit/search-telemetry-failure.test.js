@@ -11,6 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SEARCH = path.join(ROOT, 'scripts', 'cartographer-search.sh');
@@ -46,7 +47,7 @@ test('an unwritable served log does not suppress valid search results', () => {
         CARTOGRAPHER_SEARCH_CALL_LOG: '/dev/null/search-calls.jsonl',
         CARTOGRAPHER_ACCESS_LEDGER: path.join(dir, 'access-ledger.jsonl'),
         CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'no-transcripts'),
-        CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1',
+        ...OFFLINE_INDEX_ENV,
       },
     });
 

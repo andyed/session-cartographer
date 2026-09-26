@@ -27,6 +27,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'log-tool-use.sh');
@@ -53,7 +54,9 @@ function fire(ws, command, toolResponse) {
     if (toolResponse) payload.tool_response = { stdout: toolResponse };
     spawnSync('bash', [HOOK], {
         input: JSON.stringify(payload),
-        env: { ...process.env, CARTOGRAPHER_LOG_TOOL_USE: 'true', CARTOGRAPHER_DEV_DIR: ws.dev }
+        // The hook backgrounds index-event.sh; unpinned, these `testsess`
+        // fixtures were embedded into the live Qdrant.
+        env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_LOG_TOOL_USE: 'true', CARTOGRAPHER_DEV_DIR: ws.dev }
     });
     const log = path.join(ws.dev, 'changelog.jsonl');
     if (!fs.existsSync(log)) return [];

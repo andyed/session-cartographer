@@ -19,6 +19,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+// No test passes --index today; pinned so one that does cannot reach the live index.
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SCRIPT = path.join(ROOT, 'scripts', 'backfill-investigations.js');
@@ -64,7 +66,7 @@ function runBackfill(extraArgs = []) {
     SCRIPT, '--events-dir', eventsDir, '--target', target, ...extraArgs,
   ], {
     encoding: 'utf8',
-    env: { ...process.env, CARTOGRAPHER_DEV_DIR: dir, CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'none') },
+    env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: dir, CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'none') },
   });
 
   const appended = fs.existsSync(target)
@@ -113,7 +115,7 @@ test('rerunning appends nothing', () => {
     SCRIPT, '--events-dir', eventsDir, '--target', target, '--write',
   ], {
     encoding: 'utf8',
-    env: { ...process.env, CARTOGRAPHER_DEV_DIR: dir, CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'none') },
+    env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: dir, CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'none') },
   });
   assert.equal(rerun.status, 0, rerun.stderr);
   assert.equal(fs.readFileSync(target, 'utf8'), before, 'second run must be a no-op');
