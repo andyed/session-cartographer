@@ -1,5 +1,5 @@
 import { readFileSync, statSync, watch, openSync, readSync, closeSync } from 'fs';
-import { join } from 'path';
+import { basename, dirname, join } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'node:crypto';
 
@@ -199,7 +199,10 @@ function boundaryHash(filePath, offset) {
 /**
  * @param onNewEvents  called with newly appended events
  * @param onRewrite    optional; called with the source name when history was
- *                     rewritten in place. Appending cannot repair that, so the
+ *                     rewritten in place, or when the file at the path is no
+ *                     longer the one being watched (replaced by rename,
+ *                     deleted and recreated, or absent at startup and since
+ *                     created). Appending cannot repair any of those, so the
  *                     consumer must reload from disk. Without a handler the
  *                     watcher re-baselines and keeps going, which is the old
  *                     behaviour: stale in memory, no signal.
@@ -207,31 +210,78 @@ function boundaryHash(filePath, offset) {
 export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
   const offsets = {};
   const boundaries = {};
-  const watchers = [];
+  const handlers = {};
+  // fs.watch on a file is bound to its inode, not its path. The repair
+  // scripts replace a log by writing a temp file beside it and renaming it
+  // over the original; the watcher fires once, for the unlink, and then sits
+  // on a file nothing will write again. Nothing errors, and the service keeps
+  // answering from a corpus that has stopped growing. So each source records
+  // the inode its watcher is bound to, and a mismatch re-arms it.
+  const inodes = {};
+  const fileWatchers = {};
+  const dirWatchers = [];
+  // A handler that runs after the cleanup function would re-arm a watcher
+  // nothing closes, which holds the process open.
+  let closed = false;
 
-  // Initialize offsets to current file sizes (don't replay history)
-  for (const [source, filePath] of Object.entries(logFiles)) {
+  function armFile(source) {
+    const filePath = logFiles[source];
+    try { fileWatchers[source]?.close(); } catch {}
+    fileWatchers[source] = null;
+    let stat;
     try {
-      offsets[source] = statSync(filePath).size;
+      stat = statSync(filePath);
     } catch {
-      offsets[source] = 0;
+      // Doesn't exist yet. The directory watch arms it when it appears.
+      inodes[source] = undefined;
+      return null;
     }
-    boundaries[source] = boundaryHash(filePath, offsets[source]);
+    // Stat before watching. If the file is swapped again in between, the
+    // recorded inode is the older one, so the next event reads as another
+    // replacement and reloads, rather than trusting a watcher on the wrong file.
+    inodes[source] = stat.ino;
+    try {
+      const w = watch(filePath, handlers[source]);
+      // A long-lived recall service must not crash if the host temporarily
+      // exhausts watcher handles. The current index remains usable; a restart
+      // re-reads the complete append-only logs.
+      w.on('error', () => {});
+      fileWatchers[source] = w;
+    } catch {
+      // Gone between stat and watch; the directory watch sees it come back.
+    }
+    return stat;
   }
 
   for (const [source, filePath] of Object.entries(logFiles)) {
     let debounceTimer = null;
 
-    const handleChange = () => {
-      // Debounce — fs.watch can fire multiple times per write
-      if (debounceTimer) return;
+    handlers[source] = () => {
+      // Debounce — fs.watch can fire multiple times per write, and the file
+      // and directory watches both report the same append.
+      if (debounceTimer || closed) return;
       debounceTimer = setTimeout(() => {
         debounceTimer = null;
+        if (closed) return;
 
-        let size;
+        let stat;
         try {
-          size = statSync(filePath).size;
+          stat = statSync(filePath);
         } catch {
+          return;
+        }
+        const size = stat.size;
+
+        // A different file now sits at the path. Its history need not extend
+        // the old one's, so this is a rewrite, not an append — even when the
+        // replacement happens to share the old bytes as a prefix. A log that
+        // was absent at startup lands here too; a reload reads it whole.
+        if (stat.ino !== inodes[source]) {
+          const armed = armFile(source);
+          if (!armed) return;
+          offsets[source] = armed.size;
+          boundaries[source] = boundaryHash(filePath, armed.size);
+          if (onRewrite) onRewrite(source);
           return;
         }
 
@@ -282,22 +332,46 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
         }
       }, 100);
     };
+  }
 
+  // Initialize offsets to current file sizes (don't replay history)
+  for (const [source, filePath] of Object.entries(logFiles)) {
+    const stat = armFile(source);
+    offsets[source] = stat ? stat.size : 0;
+    boundaries[source] = boundaryHash(filePath, offsets[source]);
+  }
+
+  // A file watch cannot report a replacement after its first event, or a log
+  // that did not exist when it was armed. The containing directory can: route
+  // any event naming a log's basename to that log's handler, which stats the
+  // path and decides. Measured on macOS, where this is FSEvents over the whole
+  // corpus root: 5 ms CPU in 30 s against 1 ms idle.
+  const byDir = new Map();
+  for (const [source, filePath] of Object.entries(logFiles)) {
+    const names = byDir.get(dirname(filePath)) || new Map();
+    const name = basename(filePath);
+    names.set(name, [...(names.get(name) || []), source]);
+    byDir.set(dirname(filePath), names);
+  }
+  for (const [dir, names] of byDir) {
     try {
-      const w = watch(filePath, handleChange);
-      // A long-lived recall service must not crash if the host temporarily
-      // exhausts watcher handles. The current index remains usable; a restart
-      // re-reads the complete append-only logs.
+      const w = watch(dir, (_event, filename) => {
+        // Some platforms omit the name; then any log in the directory may
+        // have changed, and a stat per log is cheap.
+        const sources = filename ? names.get(String(filename)) : [...names.values()].flat();
+        for (const source of sources || []) handlers[source]();
+      });
       w.on('error', () => {});
-      watchers.push(w);
+      dirWatchers.push(w);
     } catch {
-      // File doesn't exist yet — that's fine
+      // Directory missing; nothing under it can be watched either.
     }
   }
 
   return () => {
-    for (const w of watchers) {
-      try { w.close(); } catch {}
+    closed = true;
+    for (const w of [...Object.values(fileWatchers), ...dirWatchers]) {
+      try { w?.close(); } catch {}
     }
   };
 }
