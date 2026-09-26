@@ -114,7 +114,21 @@ async function port() {
   events.push({ event_id: 'large-document-edit', session_id: docSession, session_title: 'Review the handoff', project: 'writing', provider: 'codex', timestamp: now + 1400, type: 'tool_file_edit', file_path: largeFile, summary: `Modified: ${largeFile}`, cwd: corpus });
   fs.writeFileSync(log, events.map(e => JSON.stringify(e)).join('\n')+'\n');
   fs.appendFileSync(log, JSON.stringify({ event_id: 'archived-edit', session_id: 'archived-session', session_title: 'Earlier session', timestamp: now - 3 * 86400000, project: projects[0], type: 'tool_file_edit', file_path: target })+'\n');
-  fs.writeFileSync(path.join(corpus, 'served-log.jsonl'), JSON.stringify({ event_id: 'fixture-result', call_id: 'fixture-call', timestamp: now, purpose: 'remember', rank: 1, project: 'fixture', source: 'changelog' })+'\n');
+  // Recall telemetry: one call with no session (the majority case on
+  // 2026-09-26), and one attributed to session-0 whose only use mark sits at
+  // rank 12. Rows cover the corpus, a transcript turn known only by its id, and
+  // an id nothing resolves. A no_session mark names no call and must not be
+  // credited to fixture-call even though that call served its event.
+  const recallQuery = 'aurora calibration decision';
+  const recallIds = ['explorer-event-0', 'session-1-3', 'session-2-5', 'turn-session-3-7', 'evt-gone-404', 'session-4-1', 'session-6-2', 'session-7-4', 'session-1-8', 'session-2-9', 'session-6-11', 'session-5-9'];
+  fs.writeFileSync(path.join(corpus, 'served-log.jsonl'), [
+    { event_id: 'fixture-result', call_id: 'fixture-call', timestamp: now, purpose: 'remember', rank: 1, project: 'fixture', source: 'changelog' },
+    ...recallIds.map((event_id, i) => ({ event_id, call_id: 'recall-fixture-call', timestamp: new Date(now - 60000).toISOString(), purpose: 'remember', session_id: 'session-0', provider: 'claude', query: recallQuery, rank: i + 1, project: 'cartographer', source: i === 3 ? 'semantic' : 'changelog', backend: 'explorer' })),
+  ].map(JSON.stringify).join('\n')+'\n');
+  fs.writeFileSync(path.join(corpus, 'access-ledger.jsonl'), [
+    { event_id: 'session-5-9', call_id: 'recall-fixture-call', requested_call_id: 'recall-fixture-call', timestamp: new Date(now - 30000).toISOString(), timestamp_ms: now - 30000, session_id: 'session-0', provider: 'claude', purpose: 'remember', source: 'result_used', access_batch_id: 'touch-fixture', access_ordinal: 1, attribution_status: 'explicit' },
+    { event_id: 'fixture-result', timestamp: new Date(now - 20000).toISOString(), timestamp_ms: now - 20000, session_id: '', provider: 'unknown', purpose: 'remember', source: 'result_used', access_batch_id: 'touch-fixture-2', access_ordinal: 1, attribution_status: 'no_session' },
+  ].map(JSON.stringify).join('\n')+'\n');
   const vite = spawn(process.execPath, [path.join(root, 'explorer/node_modules/vite/bin/vite.js'), ...(preview ? ['preview'] : []), '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort'], { cwd: path.join(root, 'explorer'), env, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   vite.stdout.on('data', c => output += c);
@@ -303,7 +317,7 @@ async function port() {
     assert.equal(new URL(coldLink.url()).searchParams.get('session'), 'session-0');
     const coldInternals = await page.request.get(origin+'/api/internals');
     assert.equal(coldInternals.status(), 200);
-    assert.equal((await coldInternals.json()).utility.calls, 1);
+    assert.equal((await coldInternals.json()).utility.calls, 2);
     assert.equal(fs.existsSync(path.join(work, 'turbo')), false, 'Internals started Turbo');
     await verifyExplorer('cold');
     await page.screenshot({ path: path.join(artifacts, 'carto-memory-entry.png') });
@@ -530,13 +544,108 @@ async function port() {
     await deskPage.screenshot({ path: path.join(artifacts, 'carto-memory-mobile.png') });
     await deskPage.close();
 
+    // Recall lists every call in the window, keeps the unattributed one in its
+    // own group, marks the deep use with its served rank, lists the id nothing
+    // resolves, and links each result to its episode through a fixed window.
+    const recallPage = await browser.newPage({ viewport: { width: 1280, height: 920 }, reducedMotion: 'reduce' });
+    recallPage.on('pageerror', e => errors.push(`recall: ${e.message}`));
+    await recallPage.goto(origin + '/memory?surface=recall');
+    const recallView = recallPage.getByRole('region', { name: 'Recall searches' });
+    await recallView.getByText(recallQuery, { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(await recallPage.getByRole('navigation', { name: 'Memory view' }).getByRole('button', { name: 'Recall', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.match(await recallView.locator('.rc-totals').innerText(), /^2 calls · 1 attributed to 1 session · 1 unattributed · 13 results served · 1 marked used · 1 mark with no call/);
+    const unattributedGroup = recallView.getByRole('region', { name: 'Unattributed calls' });
+    assert.equal(await unattributedGroup.locator('[data-call="fixture-call"]').count(), 1, 'the no-session call was dropped from the window');
+    assert.match(await unattributedGroup.locator('[data-call="fixture-call"] .rc-call-counts').innerText(), /0 marked used/, 'a no_session mark was credited to a call it does not name');
+    const recallCall = recallView.locator('[data-call="recall-fixture-call"]');
+    assert.match(await recallCall.locator('.rc-call-counts').innerText(), /1 marked used · deepest rank 12/);
+    await recallCall.getByRole('button', { expanded: false }).click();
+    await recallPage.waitForURL(url => url.searchParams.get('call') === 'recall-fixture-call');
+    await recallCall.locator('.rc-result').nth(11).waitFor({ timeout: 15000 });
+    assert.equal(await recallCall.locator('.rc-result').count(), recallIds.length);
+    const usedRow = recallCall.locator('.rc-result[data-used]');
+    assert.equal(await usedRow.count(), 1);
+    assert.equal(await usedRow.getAttribute('data-event-id'), 'session-5-9');
+    assert.match(await usedRow.locator('.rc-used').innerText(), /marked used · rank 12/);
+    assert.equal(await recallView.getByText(/helpful/i).count(), 0, 'a use mark is not evidence of help');
+    await recallCall.locator('.rc-result[data-event-id="evt-gone-404"]').getByText(/^Unresolved:/).waitFor();
+    await recallCall.locator('.rc-result[data-event-id="turn-session-3-7"]').getByText(/^Transcript turn 7/).waitFor();
+    const episode = usedRow.getByRole('link', { name: 'Open episode ↗' });
+    const episodeUrl = new URL(await episode.getAttribute('href'), origin);
+    assert.equal(episodeUrl.searchParams.get('session'), 'session-5');
+    assert.ok(episodeUrl.searchParams.get('from') && episodeUrl.searchParams.get('through'), 'episode link carries no fixed window');
+    assert.equal(episodeUrl.searchParams.get('mode'), null, 'episode link is not fixed (fixed is the default and costs no parameter)');
+    assert.equal(episodeUrl.searchParams.get('durationMs'), null);
+    await recallView.locator('.rc-unplaced summary').getByText(/^1 used mark in this window names no call · 1 no session recorded/).waitFor();
+    // New text states at 8:1 on both the page and the selected row, measured
+    // from computed styles; and no recall row takes the selected background,
+    // where AgentBadge's palette falls under the floor.
+    const recallContrast = await recallPage.evaluate(() => {
+      const channel = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+      const lum = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+      const rgb = value => value.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+      const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+      const grounds = { base: [10, 10, 15], selected: [21, 54, 64] };
+      const failures = [], seen = new Set();
+      for (const element of document.querySelectorAll('.fw-recall [class*="rc-"], .fw-recall [class*="rc-"] *')) {
+        if (element.closest('[title^="Produced by"]') || !element.getClientRects().length) continue;
+        const own = [...element.childNodes].some(node => node.nodeType === 3 && node.textContent.trim());
+        if (!own) continue;
+        const color = getComputedStyle(element).color;
+        for (const [name, ground] of Object.entries(grounds)) {
+          const value = ratio(rgb(color), ground);
+          if (value < 8 && !seen.has(`${color}:${name}`)) { seen.add(`${color}:${name}`); failures.push(`${element.className || element.tagName} ${color} ${value.toFixed(2)} on ${name}`); }
+        }
+      }
+      const selectedRows = [...document.querySelectorAll('.rc-call, .rc-result')].filter(row => getComputedStyle(row).backgroundColor.replace(/\s/g, '') === 'rgb(21,54,64)').length;
+      return { failures, selectedRows };
+    });
+    assert.deepEqual(recallContrast.failures, [], 'recall text under 8:1');
+    assert.equal(recallContrast.selectedRows, 0);
+    await recallPage.screenshot({ path: path.join(artifacts, 'carto-memory-recall.png'), fullPage: true });
+    await usedRow.screenshot({ path: path.join(artifacts, 'carto-memory-recall-marker.png') });
+    await recallCall.locator('.rc-result[data-event-id="evt-gone-404"]').screenshot({ path: path.join(artifacts, 'carto-memory-recall-unresolved.png') });
+    await unattributedGroup.screenshot({ path: path.join(artifacts, 'carto-memory-recall-unattributed.png') });
+    // The expanded call is a link: reload restores it.
+    await recallPage.reload();
+    await recallView.locator('[data-call="recall-fixture-call"] .rc-result[data-used]').waitFor({ timeout: 15000 });
+    await recallView.locator('[data-call="recall-fixture-call"] .rc-result[data-used]').getByRole('link', { name: 'Open episode ↗' }).click();
+    await recallPage.waitForURL(url => url.searchParams.get('session') === 'session-5' && !url.searchParams.has('mode'));
+    await recallPage.getByRole('complementary', { name: 'Evidence inspector' }).getByRole('heading', { name: labels[5], exact: true }).waitFor();
+    // The searching task's own detail lists the call, and says where
+    // unattributed searches went when a session has none.
+    await recallPage.goto(origin + '/memory?session=session-0');
+    const taskRecall = recallPage.getByRole('complementary', { name: 'Evidence inspector' }).getByRole('region', { name: 'Recall' });
+    await taskRecall.getByText(recallQuery, { exact: true }).waitFor({ timeout: 15000 });
+    assert.match(await taskRecall.locator('.rc-call-counts').innerText(), /12 results.*1 marked used · deepest rank 12/s);
+    await taskRecall.screenshot({ path: path.join(artifacts, 'carto-memory-recall-task.png') });
+    await recallPage.goto(origin + '/memory?session=session-5');
+    await recallPage.getByRole('complementary', { name: 'Evidence inspector' }).getByRole('region', { name: 'Recall' }).getByText(/Searches recorded without a session appear under Recall → Unattributed/).waitFor({ timeout: 15000 });
+    await recallPage.goto(origin + '/memory?surface=recall');
+    await recallPage.setViewportSize({ width: 390, height: 844 });
+    await recallView.getByText(recallQuery, { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(await recallPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Recall view overflows on mobile');
+    await recallPage.screenshot({ path: path.join(artifacts, 'carto-memory-recall-390.png') });
+    // In a fixed window the request URL never changes, so Refresh must still
+    // re-read the logs. purpose=manual keeps Internals' remember count below.
+    await recallPage.setViewportSize({ width: 1280, height: 920 });
+    const fixedThrough = Date.now();
+    await recallPage.goto(origin + `/memory?surface=recall&from=${encodeURIComponent(new Date(fixedThrough - 86400000).toISOString())}&through=${encodeURIComponent(new Date(fixedThrough).toISOString())}`);
+    await recallView.getByText(recallQuery, { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(new URL(recallPage.url()).searchParams.get('mode'), null, 'the refresh check must run in a fixed window');
+    fs.appendFileSync(path.join(corpus, 'served-log.jsonl'), JSON.stringify({ event_id: 'session-6-1', call_id: 'recall-refresh-call', timestamp: new Date(fixedThrough - 1000).toISOString(), purpose: 'manual', session_id: 'session-6', provider: 'claude', query: 'refresh proof', rank: 1, project: 'lights', source: 'changelog' }) + '\n');
+    await recallView.getByRole('button', { name: 'Refresh', exact: true }).click();
+    await recallView.getByText('refresh proof', { exact: true }).waitFor({ timeout: 15000 });
+    await recallPage.close();
+
     // Internals remains adjacent to Memory, and managed Turbo can be stopped
     // and restarted without discarding the last successful workspace snapshot.
     await page.getByRole('button', { name: 'internals', exact: true }).click();
     await page.getByText('Current snapshot', { exact: true }).waitFor({ timeout: 15000 });
     assert.equal(await page.locator('.internals-error').count(), 0);
     const internals = await (await page.request.get(origin + '/api/internals?window=7d')).json();
-    assert.equal(internals.utility.calls, 1);
+    assert.equal(internals.utility.calls, 2);
+    assert.equal(internals.utility.explicitUse.usedRows, 1, 'Internals and the Recall view disagree on marked-used results');
     await page.getByRole('button', { name: 'memory', exact: true }).click();
     await page.getByRole('region', { name: 'Work results' }).waitFor();
     execFileSync(process.execPath, [path.join(root, 'scripts/cartographer-turbo.js'), 'stop'], { env });
@@ -629,7 +738,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout; Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

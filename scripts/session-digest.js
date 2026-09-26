@@ -22,11 +22,13 @@ import path from 'path';
 import { execFileSync } from 'child_process';
 import { isResolved, firstResolved } from './sentinels.js';
 import { editSummaryPaths } from './edit-paths.js';
+import { buildRecallIndex, parseJsonl, sessionRecallSummary } from './recall-join.js';
 
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME, 'Documents/dev');
 const CHANGELOG = process.env.CARTOGRAPHER_CHANGELOG || path.join(DEV, 'changelog.jsonl');
 const SERVED_LOG = process.env.CARTOGRAPHER_SERVED_LOG || path.join(DEV, 'served-log.jsonl');
 const ACCESS_LEDGER = process.env.CARTOGRAPHER_ACCESS_LEDGER || path.join(DEV, 'access-ledger.jsonl');
+const SEARCH_CALL_LOG = process.env.CARTOGRAPHER_SEARCH_CALL_LOG || path.join(DEV, '.carto', 'search-calls.jsonl');
 
 const args = process.argv.slice(2);
 const valueAfter = (flag, fallback) => {
@@ -68,14 +70,6 @@ function readSessionEvents(filePath, sessionId) {
     if (sid === sessionId) out.push(event);
   }
   return out.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
-}
-
-function readJsonl(filePath) {
-  if (!fs.existsSync(filePath)) return [];
-  return fs.readFileSync(filePath, 'utf8').split('\n')
-    .filter(Boolean)
-    .map((line) => { try { return JSON.parse(line); } catch { return null; } })
-    .filter(Boolean);
 }
 
 const events = readSessionEvents(CHANGELOG, SESSION);
@@ -240,12 +234,14 @@ for (const e of events) {
 const compactions = (counts.milestone_compaction_auto || 0) + (counts.milestone_compaction_manual || 0);
 
 // Recall telemetry: how much past context this session pulled in, and how much
-// of it was actually vouched for with --touch.
-const servedRows = readJsonl(SERVED_LOG).filter((r) => r.session_id === SESSION);
-const callIds = new Set(servedRows.map((r) => r.call_id).filter(Boolean));
-const usedRows = readJsonl(ACCESS_LEDGER)
-  .filter((r) => r.source === 'result_used' && callIds.has(r.call_id));
-const usedEventIds = [...new Set(usedRows.map((r) => r.event_id).filter(Boolean))];
+// of it the agent marked used with --touch. The join is the one the Memory
+// Desk's Recall view renders, so the two cannot disagree about a session.
+const recall = sessionRecallSummary(buildRecallIndex({
+  servedRows: parseJsonl(SERVED_LOG).rows,
+  accessRows: parseJsonl(ACCESS_LEDGER).rows,
+  searchCallRows: parseJsonl(SEARCH_CALL_LOG).rows,
+}), SESSION);
+const usedEventIds = recall.used_event_ids;
 
 // Live git state per repo the session touched. This is the part that is not in
 // any log — it is what the session is leaving behind right now.
@@ -384,11 +380,11 @@ if (hostRank.length) {
   row('research', truncate(hostRank.map(([h, n]) => `${h} (${n})`).join(' · '), WIDTH - LABEL - 2));
 }
 
-if (servedRows.length) {
+if (recall.calls) {
   blank();
-  const pct = ((usedEventIds.length / servedRows.length) * 100).toFixed(0);
-  const calls = `${callIds.size} call${callIds.size === 1 ? '' : 's'}`;
-  row('recall', `${calls} → ${servedRows.length} served · ${usedEventIds.length} used (${pct}%)`);
+  const pct = recall.served ? ` (${((usedEventIds.length / recall.served) * 100).toFixed(0)}%)` : '';
+  const calls = `${recall.calls} call${recall.calls === 1 ? '' : 's'}`;
+  row('recall', `${calls} → ${recall.served} served · ${usedEventIds.length} marked used${pct}`);
   if (usedEventIds.length) cont(truncate(usedEventIds.join(' '), WIDTH - LABEL - 2));
 }
 
@@ -427,12 +423,7 @@ if (AS_JSON) {
     searches,
     compactions,
     subagents,
-    recall: {
-      calls: callIds.size,
-      served: servedRows.length,
-      used: usedEventIds.length,
-      used_event_ids: usedEventIds,
-    },
+    recall,
     repos,
   }, null, 2));
 } else {

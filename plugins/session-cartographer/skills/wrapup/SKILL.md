@@ -235,7 +235,7 @@ What the digest looks like (Step 0 output — show it as-is):
   files     173 touched
             src/auth/refresh.ts                                                 ×41
 
-  recall    3 calls → 22 served · 2 used (9%)
+  recall    3 calls → 22 served · 2 marked used (9%)
             evt-7apd8osl9sud evt-wprsakq31ca5
 
   leaving   widget-sdk@feat/retry-budget        1 uncommitted

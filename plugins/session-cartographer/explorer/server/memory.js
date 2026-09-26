@@ -9,6 +9,7 @@ import { eventEpochMs } from './event-time.js';
 import { CORPUS_ROOT } from './jsonl.js';
 import { createTranscriptEnricher, missingTokens } from './memory-transcript.js';
 import { activityFromMemory, normalizeActivityScope, projectMemoryScope } from '../shared/activity-scope.js';
+import { createRecallSource, fetchIndexedEvents, listRecallCalls, recallCallDetail, resolveUnplacedMarks, RECALL_CALL_LIMIT, RECALL_DEFAULT_WINDOW_MS, RECALL_MAX_WINDOW_MS } from './memory-recall.js';
 
 const execFileAsync = promisify(execFile);
 const HOUR_MS = 60 * 60 * 1000;
@@ -524,7 +525,7 @@ async function reviewRange(filePath, content, bounds, nowMs, contentTruncated = 
 }
 
 /** Shared by Express and the zero-dependency Turbo HTTP server. */
-export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher() }) {
+export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher(), recallSource = createRecallSource(), lookupIndexed = fetchIndexedEvents }) {
   // Keep historical windows and session links isolated from the live cache.
   const cache = new Map();
   function readEnd(value) {
@@ -672,6 +673,33 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
       },
     };
   }
+  // Recall is fetched when a view asks for it, never with the polled state.
+  // A session's calls span its whole life, so a session request needs no window.
+  async function recallCalls(params) {
+    const session = params.get('session');
+    if (session !== null && !/^[\w-]{1,256}$/.test(session)) throw new MemoryError(400, 'Invalid session id.');
+    const purpose = params.get('purpose') || null;
+    if (purpose !== null && !/^(?:[\w-]{1,64}|\(none\))$/.test(purpose)) throw new MemoryError(400, 'Invalid recall purpose.');
+    const windowed = session === null || params.has('from') || params.has('through');
+    let from = null, through = null;
+    if (windowed) {
+      through = readActivityTime(params.get('through'), 'through timestamp', now());
+      from = readActivityTime(params.get('from'), 'from timestamp', through - RECALL_DEFAULT_WINDOW_MS);
+      if (from > through) throw new MemoryError(400, 'Recall from must not be later than through.');
+      if (through - from > RECALL_MAX_WINDOW_MS) throw new MemoryError(422, 'Recall ranges wider than 90 days are not supported.');
+    }
+    const rawLimit = params.get('limit');
+    const limit = rawLimit === null ? RECALL_CALL_LIMIT : /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
+    if (!Number.isInteger(limit) || limit < 1 || limit > RECALL_CALL_LIMIT) throw new MemoryError(400, `Recall limit must be an integer between 1 and ${RECALL_CALL_LIMIT}.`);
+    return resolveUnplacedMarks(listRecallCalls(recallSource(), { from, through, session, purpose, limit }), { events: getEvents(), lookupIndexed });
+  }
+  async function recallCall(params) {
+    const id = params.get('call');
+    if (!id || !/^[\w.:-]{1,128}$/.test(id)) throw new MemoryError(400, 'A valid recall call id is required.');
+    const detail = await recallCallDetail(recallSource(), id, { events: getEvents(), lookupIndexed });
+    if (!detail) throw new MemoryError(404, 'No recall call with this id is recorded.');
+    return detail;
+  }
   return async function handleMemory(req, res) {
     const url = new URL(req.url, 'http://127.0.0.1');
     if (!url.pathname.startsWith('/api/memory/') && url.pathname !== '/api/activity-scope') return false;
@@ -687,6 +715,8 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
         ? await scopedSnapshot(url.searchParams)
         : await snapshot(readEnd(url.searchParams.get('end')), null, readHours(url.searchParams.get('hours')));
       else if (url.pathname === '/api/memory/activity' || url.pathname === '/api/activity-scope') body = await activity(url.searchParams);
+      else if (url.pathname === '/api/memory/recall') body = await recallCalls(url.searchParams);
+      else if (url.pathname === '/api/memory/recall/call') body = await recallCall(url.searchParams);
       else if (url.pathname === '/api/memory/session') {
         const id = url.searchParams.get('session');
         if (!id) throw new MemoryError(400, 'A session id is required.');

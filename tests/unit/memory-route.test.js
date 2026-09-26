@@ -170,3 +170,16 @@ test('contributors use session-id validation and malformed times remain visible'
   assert.match(href, /through=2026-09-01T00%3A00%3A00\.000Z/);
   assert.equal(parseMemoryRoute(href.slice(href.indexOf('?'))).routeError.code, 'invalid-range');
 });
+
+test('the recall surface and an expanded call survive the round trip; a bad call id is dropped', () => {
+  const route = normalizeMemoryRoute({ surface: 'recall', call: 'call-20260926T134113-60435', from: Date.parse('2026-09-25T12:00:00Z'), through: Date.parse('2026-09-26T12:00:00Z') });
+  const href = memoryHref(route);
+  assert.match(href, /surface=recall/);
+  assert.match(href, /call=call-20260926T134113-60435/);
+  assert.deepEqual(parseMemoryRoute(href.slice(href.indexOf('?'))), route);
+  assert.equal(parseMemoryRoute('?surface=recall').surface, 'recall');
+  assert.equal(parseMemoryRoute('?surface=bogus').surface, 'results');
+  assert.equal(parseMemoryRoute('?call=a%20b').call, null);
+  assert.equal(parseMemoryRoute('?call=../../x').call, null);
+  assert.doesNotMatch(memoryHref({}), /call=/);
+});

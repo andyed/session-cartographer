@@ -4,6 +4,7 @@ import { containsTimestamp } from '../../shared/focus.js';
 import MemorySession from './MemorySession.jsx';
 import MemoryArtifact, { formatFileBytes } from './MemoryArtifact.jsx';
 import { SessionHandoff } from './MemoryDesk.jsx';
+import { SessionRecall } from './MemoryRecall.jsx';
 import { workspaceHref } from '../hooks/useFocusWorkspace.js';
 
 export default function MemoryInspector({ workspace, tab = 'memory', onClose, onCloseFile }) {
@@ -76,6 +77,8 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
         onBack={onClose} onReview={openReview} selectedPath={route.file}
         onSelectFile={file => openReview(session, file, /\.(md|markdown)$/i.test(file.path) ? 'file' : 'changes')}
         hrefForFile={(file, review = 'changes') => workspaceHref({ ...route, file: file.path, review, contributor: session.id }, tab)} compact />
+      {/* Episode links activate this workspace's window, so recall lives on the memory tab only. */}
+      {tab === 'memory' && <SessionRecall key={session.id} workspace={workspace} session={session} />}
     </>}
     {route.review && <section className="memory-review" aria-label="File review">
       <h2 ref={heading} tabIndex={-1}>{fileName}</h2>

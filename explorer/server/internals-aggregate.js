@@ -1,9 +1,22 @@
 import { createHash } from 'crypto';
-import { readFileSync, statSync } from 'fs';
+import { statSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { performance } from 'perf_hooks';
 import { isResolved } from '../../scripts/sentinels.js';
+import {
+  exactServedPairs,
+  indexExactAccesses,
+  normalizeSourceLabel,
+  pairKey,
+  parseJsonl,
+  positiveRank,
+  timestampMs,
+} from '../../scripts/recall-join.js';
+
+// The served/access join is shared with the session digest and the Memory
+// Desk's Recall view; see scripts/recall-join.js for the definition.
+export { normalizeSourceLabel };
 
 export const INTERNALS_SCHEMA_VERSION = 5;
 export const INTERNALS_WINDOWS = Object.freeze({
@@ -28,20 +41,6 @@ export function normalizeInternalsPurpose(value = 'remember') {
   const normalized = String(value || 'remember').trim().toLowerCase();
   if (!normalized || normalized.length > 64 || !/^[a-z0-9_-]+$/.test(normalized)) return null;
   return normalized;
-}
-
-/**
- * RRF can see the same event more than once in a source and historically
- * concatenated every occurrence. Preserve the useful source combination while
- * removing repeats and making equivalent combinations share one label.
- */
-export function normalizeSourceLabel(value) {
-  const parts = String(value || 'unknown')
-    .split('+')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return 'unknown';
-  return [...new Set(parts)].sort((a, b) => a.localeCompare(b)).join('+');
 }
 
 export function internalsSourcePaths(env = process.env) {
@@ -80,44 +79,6 @@ export function internalsSourceFingerprint(paths = internalsSourcePaths()) {
   return { value, totalBytes, files };
 }
 
-function parseJsonl(filePath) {
-  let content;
-  try {
-    content = readFileSync(filePath, 'utf8');
-  } catch {
-    return { rows: [], totalLines: 0, validRows: 0, malformedRows: 0 };
-  }
-
-  const rows = [];
-  let totalLines = 0;
-  let malformedRows = 0;
-  for (const rawLine of content.split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
-    totalLines++;
-    try {
-      const row = JSON.parse(line);
-      if (row && typeof row === 'object' && !Array.isArray(row)) rows.push(row);
-      else malformedRows++;
-    } catch {
-      malformedRows++;
-    }
-  }
-  return { rows, totalLines, validRows: rows.length, malformedRows };
-}
-
-function timestampMs(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return value < 2_000_000_000 ? value * 1000 : value;
-  }
-  if (typeof value === 'string' && /^\d+(\.\d+)?$/.test(value)) {
-    const number = Number(value);
-    return number < 2_000_000_000 ? number * 1000 : number;
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-}
-
 function utcDay(value) {
   const ms = timestampMs(value);
   return ms === null ? null : new Date(ms).toISOString().slice(0, 10);
@@ -127,11 +88,6 @@ function inWindow(row, cutoffMs) {
   if (cutoffMs === null) return true;
   const ms = timestampMs(row.timestamp);
   return ms !== null && ms >= cutoffMs;
-}
-
-function positiveRank(value) {
-  const rank = Number(value);
-  return Number.isFinite(rank) && rank > 0 ? rank : null;
 }
 
 function nonNegativeNumber(value) {
@@ -432,13 +388,7 @@ export function aggregateInternalsRecords({
     if (!inWindow(row, cutoffMs)) return false;
     return normalizedPurpose === 'all' || String(row.purpose || '').toLowerCase() === normalizedPurpose;
   });
-  const attributedServed = selectedServed.filter((row) => row.call_id && row.event_id);
-  const servedByPair = new Map();
-  for (const row of attributedServed) {
-    const key = `${row.call_id}\0${row.event_id}`;
-    if (!servedByPair.has(key)) servedByPair.set(key, row);
-  }
-  const exactServed = [...servedByPair.values()];
+  const { rows: exactServed, attributedRows: exactAttributedRows } = exactServedPairs(selectedServed);
   const selectedSearchCalls = searchCallRows.filter((row) => {
     if (!inWindow(row, cutoffMs)) return false;
     return normalizedPurpose === 'all' || String(row.purpose || '').toLowerCase() === normalizedPurpose;
@@ -449,18 +399,7 @@ export function aggregateInternalsRecords({
   }
   const selectedErrors = indexErrorRows.filter((row) => inWindow(row, cutoffMs));
 
-  const exactUseKeys = new Set();
-  const exactAccessByPair = new Map();
-  let exactAccessRows = 0;
-  for (let index = 0; index < accessRows.length; index++) {
-    const row = accessRows[index];
-    if (!row.call_id || !row.event_id) continue;
-    exactAccessRows++;
-    const key = `${row.call_id}\0${row.event_id}`;
-    exactUseKeys.add(key);
-    if (!exactAccessByPair.has(key)) exactAccessByPair.set(key, []);
-    exactAccessByPair.get(key).push(accessRecord(row, index));
-  }
+  const { byPair: exactAccessByPair, exactRows: exactAccessRows } = indexExactAccesses(accessRows);
 
   const calls = new Map();
   const purposeGroups = new Map();
@@ -471,7 +410,8 @@ export function aggregateInternalsRecords({
   let sessionAttributedRows = 0;
   for (const row of exactServed) {
     const callId = String(row.call_id);
-    const accesses = exactAccessByPair.get(`${row.call_id}\0${row.event_id}`) || [];
+    const accesses = (exactAccessByPair.get(pairKey(row.call_id, row.event_id)) || [])
+      .map(({ row: access, index }) => accessRecord(access, index));
     const used = accesses.length > 0;
     const rank = positiveRank(row.rank);
     const day = utcDay(row.timestamp) || 'unknown';
@@ -614,7 +554,6 @@ export function aggregateInternalsRecords({
     }
   }
 
-  const exactAttributedRows = attributedServed.length;
   return {
     window: {
       key: normalizedWindow,
@@ -629,7 +568,7 @@ export function aggregateInternalsRecords({
         selectedRows: selectedServed.length,
         exactAttributedRows,
         exactUniquePairs: exactServed.length,
-        duplicateExactPairs: attributedServed.length - exactServed.length,
+        duplicateExactPairs: exactAttributedRows - exactServed.length,
         exactAttributionRate: ratio(exactAttributedRows, selectedServed.length),
         missingCallIdRows: selectedServed.filter((row) => !row.call_id).length,
         missingEventIdRows: selectedServed.filter((row) => !row.event_id).length,
@@ -639,7 +578,7 @@ export function aggregateInternalsRecords({
       access: {
         totalRows: accessRows.length,
         exactRows: exactAccessRows,
-        exactUniquePairs: exactUseKeys.size,
+        exactUniquePairs: exactAccessByPair.size,
         exactAttributionRate: ratio(exactAccessRows, accessRows.length),
       },
       indexErrors: {

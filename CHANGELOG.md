@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### feat(memory): browse /remember calls and the results agents marked used
+
+The Memory Desk carried no recall data. A **Recall** view beside Tasks, Files
+and Activity now lists every call in the window, grouped by session, and each
+call expands to its ranked results. A task's detail lists that session's own
+searches. A result the agent marked with `--touch` carries a "marked used"
+marker with its served rank, so consumption deep in the list (rank 12) reads
+as a tuning signal. Each result links to the episode it came from through a
+fixed window, because a rolling session link breaks once the session leaves
+the window. The label is "marked used", not "helpful": a touch is evidence
+that the agent marked the result, not that the result improved the outcome.
+
+Calls with no session sit in an explicit **Unattributed** group. At
+2026-09-26T14:22Z the last 24 hours held 75 calls, 68 of them with no session,
+and 11 of the 12 use marks in the window named no call (`no_session`). A view
+that dropped either set would have read as "no recall happened". Marks that do
+not join are listed and never guessed onto a row. An `invalid_call` mark is
+shown on the call it names as a result that call never served. `no_session`
+and other callless marks are listed as unplaced.
+
+Recall loads on demand from `/api/memory/recall` and `/api/memory/recall/call`,
+never with the polled state. Result ids resolve against the warm corpus, then
+the semantic index by point id (transcript turns live only there), then the
+turn id's own session. An id none of them knows stays listed at its rank as
+unresolved. `scripts/recall-join.js` is now the one served/access join for
+Internals, the session digest and the desk, and the tests assert that all
+three count the same calls and used results. The digest now also counts
+zero-result calls, as Internals already did (17 → 20 calls on one real
+session).
+
+`memory-recall.test.js` has 12 tests, checked against two deliberate
+regressions: dropping unattributed calls fails 4 of them, and crediting a
+`no_session` mark by event id fails 3. In the browser harness, a fixture call
+must render with its rank-12 marker, the Unattributed group, an unresolved row
+and a fixed-window episode link; dropping the unattributed call fails the run.
+Every new text colour is measured from computed styles at 8:1 on #0a0a0f and
+#153640.
+
 ### fix(watcher): index rows appended during startup or written in two parts
 
 The resident index lost events in two ways while `status` read `live`. Both

@@ -222,6 +222,12 @@ export async function handleFetch(url) {
     throw new DemoError('File review is not included in the static demo.', 404);
   }
 
+  if (u.pathname === '/api/memory/recall' || u.pathname === '/api/memory/recall/call') {
+    // The fixture carries no served log or access ledger. The views skip these
+    // requests in demo mode; an empty {} here would read as "no recall happened".
+    throw new DemoError('Recall telemetry is not included in the static demo.', 404);
+  }
+
   return {};
 }
 

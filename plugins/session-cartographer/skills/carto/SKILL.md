@@ -120,6 +120,8 @@ machine running the Explorer).
 | `brush` | comma list of session ids, ≤ 100 | Highlighted sessions in the field. |
 | `cam` | `x,y,scale`, scale 0.4–8 | Field camera. Identity is omitted. |
 | `offset`, `sort` | integers | Thread-list paging. |
+| `surface` | `activity`, `recall` | Results (Tasks/Files) is the default. `recall` lists every /remember call in the window, grouped by session, with calls that recorded no session under **Unattributed**. |
+| `call` | call id, `[\w.:-]{1,128}` | Expands that call's ranked results: each row's served rank, a **marked used** marker when a `--touch` joined it exactly, and a fixed-window link to the episode it came from. With `session`, the task's own Recall section expands it too. |
 
 Recipes:
 
@@ -135,6 +137,8 @@ echo "$BASE?session=$SID&file=$FILE&review=changes"
 echo "$BASE?view=compare&x=activeMs&y=commit&session=$SID"
 # A 6-hour window ending at a moment, replayed rather than live
 echo "$BASE?hours=6&at=2026-09-13T22:00:00Z"
+# The day's recall searches, one call's results expanded
+echo "$BASE?surface=recall&call=call-20260926T134113-60435"
 ```
 
 Before handing a link to the operator, confirm the host is up

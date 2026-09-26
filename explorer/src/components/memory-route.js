@@ -124,6 +124,8 @@ export function normalizeMemoryRoute(value = {}) {
   const session = typeof value.session === 'string' && /^[\w-]{1,256}$/.test(value.session) ? value.session : null;
   const file = session && typeof value.file === 'string' && value.file.startsWith('/') && value.file.length <= 4096 && !/[\x00-\x1f]/.test(value.file) ? value.file : null;
   const contributor = typeof value.contributor === 'string' && /^[\w-]{1,256}$/.test(value.contributor) ? value.contributor : null;
+  // An expanded recall call, so a ranked result list can be shared as a link.
+  const call = typeof value.call === 'string' && /^[\w.:-]{1,128}$/.test(value.call) ? value.call : null;
   return {
     hours,
     q: typeof value.q === 'string' ? value.q.replace(/[\x00-\x1f]/g, '').slice(0, 500) : '',
@@ -131,7 +133,8 @@ export function normalizeMemoryRoute(value = {}) {
     providers: list(value.providers ?? value.provider),
     evidence,
     result,
-    surface: value.surface === 'activity' || (value.surface == null && legacyActivity) ? 'activity' : 'results',
+    surface: value.surface === 'activity' || (value.surface == null && legacyActivity) ? 'activity' : value.surface === 'recall' ? 'recall' : 'results',
+    call,
     doc: value.doc === 'source' ? 'source' : 'preview',
     contributor,
     ...times,
@@ -179,6 +182,7 @@ export function memoryHref(value, pathname = '/memory') {
   if (route.surface !== 'results') params.set('surface', route.surface);
   if (route.doc !== 'preview') params.set('doc', route.doc);
   if (route.contributor) params.set('contributor', route.contributor);
+  if (route.call) params.set('call', route.call);
   if (route.hours !== 24) params.set('hours', route.hours);
   if (route.q) params.set('q', route.q);
   if (route.filter !== 'all') params.set('filter', route.filter);

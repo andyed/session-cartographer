@@ -1,0 +1,67 @@
+/* Recall views in the Memory Desk.
+   Every text colour here clears 8:1 on both the page (#0a0a0f) and the
+   selected row (#153640), so it stays legible wherever a row is placed:
+     ink    #edf0f5  17.29 base · 11.25 selected
+     meta   #d4dae3  14.05 base ·  9.14 selected  (--fw-muted #bcc4d2 is 7.32 on selected)
+     used   #b6f0c4  15.28 base ·  9.95 selected
+     warn   #ffe2a8  15.70 base · 10.22 selected
+     link   #72e6ef  13.43 base ·  8.74 selected
+   Markers are outlined, never tinted: a 13% fill drops "used" to 7.04 on selected.
+   AgentBadge's palette is 7.0–7.5 on #153640, so no recall row takes the
+   selected background; the expanded call is marked with an accent rule. */
+.fw-recall, .rc-session {
+  --rc-ink: #edf0f5;
+  --rc-meta: #d4dae3;
+  --rc-used: #b6f0c4;
+  --rc-warn: #ffe2a8;
+  --rc-link: #72e6ef;
+  --rc-line: #3b4658;
+}
+.fw-recall { min-width: 0; }
+.fw-recall .rc-refresh { margin-left: auto; }
+.fw-recall .fw-empty p, .fw-recall .fw-notice { color: var(--rc-meta); }
+.rc-quiet, .rc-meta { color: var(--rc-meta); }
+.rc-totals { color: var(--rc-ink); margin: 12px 0; font-variant-numeric: tabular-nums; }
+.rc-totals strong { font-weight: 600; }
+.rc-group { margin: 20px 0 8px; }
+.rc-group-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border-bottom: 1px solid var(--rc-line); padding-bottom: 6px; }
+.rc-group-head h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--rc-ink); overflow-wrap: anywhere; }
+.rc-group-head h3 a, .rc-episode { color: var(--rc-link); text-decoration: underline; text-underline-offset: 4px; }
+.rc-group > p { margin: 8px 0; }
+.rc-calls, .rc-results ol, .rc-stray ul, .rc-unplaced ul { list-style: none; margin: 0; padding: 0; }
+.rc-call { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; border-bottom: 1px solid var(--rc-line); border-left: 3px solid transparent; }
+.rc-call[data-expanded] { border-left-color: var(--rc-link); }
+.rc-call > div { grid-column: 1 / -1; padding: 0 12px 14px; }
+/* Two classes deep so the workspace's generic button surface does not apply. */
+.rc-calls .rc-call-toggle { display: flex !important; flex-direction: column; align-items: flex-start; gap: 4px; width: 100%; text-align: left; padding: 12px !important; background: transparent; border: 0; border-radius: 0; color: var(--rc-ink); }
+.rc-calls .rc-call-toggle:hover .rc-call-query { text-decoration: underline; text-underline-offset: 4px; }
+.rc-call-query { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
+.rc-call-agent { align-self: start; padding: 14px 12px 0 0; }
+.rc-meta, .rc-call-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 15px; align-items: center; }
+.rc-call-counts { color: var(--rc-meta); font-variant-numeric: tabular-nums; }
+.rc-used-count { color: var(--rc-used); }
+.rc-warn-text { color: var(--rc-warn); }
+.rc-results ol { counter-reset: none; }
+.rc-result { display: grid; grid-template-columns: 2.5em minmax(0, 1fr); gap: 8px; padding: 10px 0; border-top: 1px solid var(--rc-line); }
+.rc-rank { color: var(--rc-meta); font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
+.rc-result[data-used] .rc-rank { color: var(--rc-used); }
+.rc-result-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rc-summary { color: var(--rc-ink); overflow-wrap: anywhere; }
+.rc-summary.rc-quiet { color: var(--rc-meta); }
+.rc-summary code, .rc-quiet code { font-size: 14px; overflow-wrap: anywhere; }
+.rc-markers { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.rc-marker { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 0 6px; font-size: 15px; line-height: 1.6; }
+.rc-used { color: var(--rc-used); font-weight: 600; }
+.rc-marker-note { font-weight: 500; }
+.rc-fetched { color: var(--rc-meta); }
+.rc-warn { color: var(--rc-warn); }
+.rc-stray, .rc-unplaced { margin: 12px 0; }
+.rc-stray h4 { margin: 8px 0; font-size: 16px; color: var(--rc-warn); font-weight: 600; }
+.rc-stray li, .rc-unplaced li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--rc-line); }
+.rc-unplaced summary { cursor: pointer; color: var(--rc-warn); min-height: 44px; display: flex; align-items: center; }
+.rc-session { margin-top: 24px; }
+.rc-session-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--rc-line); padding-bottom: 6px; margin-bottom: 8px; }
+.rc-session-head h2 { margin: 0; font-size: 18px; font-weight: 600; color: var(--rc-ink); }
+.rc-session-head span { color: var(--rc-meta); font-variant-numeric: tabular-nums; }
+.rc-session .rc-calls .rc-call-toggle { padding: 10px 8px !important; }
+.rc-session .rc-call > div { padding: 0 4px 12px; }
