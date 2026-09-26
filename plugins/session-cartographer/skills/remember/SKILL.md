@@ -298,6 +298,15 @@ For a Codex transcript, retained user and assistant messages are currently in
 jq -c 'select((.type == "event_msg" and .payload.type == "user_message") or (.type == "response_item" and .payload.type == "message")) | {type, timestamp, payload}' <transcript_path> | grep -A5 -B5 "<keyword>"
 ```
 
+A Hermes result (`provider:hermes`) has no transcript file: Hermes keeps its
+history in SQLite. Read the session through the adapter, which applies the same
+redaction policy the index did. A Hermes workspace artifact row instead carries
+its markdown file as `transcript:`; read that file directly.
+
+```bash
+node "$ROOT/scripts/hermes-source.js" --show <session-id> | grep -A5 -B5 "<keyword>"
+```
+
 Or jump to a specific message by UUID:
 ```bash
 jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>

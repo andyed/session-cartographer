@@ -175,6 +175,44 @@ project names or an appropriate substring there. Format and worked examples:
 wrapper around it with your own project allowlist, and document in the wrapper
 what it deliberately excludes and why.
 
+### Hermes Agent history — off until you write a policy
+
+`scripts/hermes-source.js` ingests [Hermes Agent](https://github.com/NousResearch/hermes-agent)
+sessions (SQLite, opened read-only) and any workspace markdown you name. It does
+nothing until a policy file exists: `node scripts/hermes-source.js --print-config-path`
+says where it looks (`hermes.json` beside your registry). Start from
+[examples/hermes.example.json](examples/hermes.example.json), run the dry run,
+and read the counts before adding `--write`:
+
+```bash
+node scripts/hermes-source.js            # counts only; writes nothing
+node scripts/hermes-source.js --write    # append rows, index, checkpoint
+```
+
+Once the file exists, the SessionStart catch-up runs the adapter too.
+
+| Field | Effect |
+|---|---|
+| `sources` | Which Hermes session sources count. `cli` is off in the example: in practice it is mostly programs calling the model through Hermes, one prompt per session |
+| `exclude_projects` | A session or artifact whose project, cwd or path contains one of these is dropped whole, and the name itself is redacted wherever else it appears |
+| `redact_patterns` | Case-insensitive regexes. A matching **line** becomes `[excluded]` before anything is written or embedded |
+| `path_projects`, `cron_projects`, `default_project` | Attribution for sessions with no cwd inside `CARTOGRAPHER_DEV_DIR`. Hermes cron runs have none |
+| `artifacts` | Directories of markdown to ingest, with a filename regex, depth and salience |
+
+Two things are easy to get wrong:
+
+- **Redaction is by line, not by record, and that is deliberate.** An agent
+  that is told to stay away from a topic tends to restate the rule in every run
+  report. A filter that drops any record *mentioning* a term then drops nearly
+  everything, and it looks like a conservative choice while doing it. Put names
+  whose *work* must stay out in `exclude_projects`; put terms that must not
+  appear in `redact_patterns`. Every run reports how many lines it redacted and
+  how many sessions it excluded.
+- **A pulse can show an agent its own history.** Hermes rows attributed to a
+  repository on a pulse allowlist enter that repository's pulse. If the same
+  agent reads the pulse, keep its own default project off the allowlist, or it
+  will read back its own summaries as outside evidence.
+
 ### Corpus root — and the 409 that catches you getting it wrong
 
 Everything reads from one directory:

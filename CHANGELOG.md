@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### feat(hermes): Hermes Agent sessions and workspace notes enter the corpus
+
+`scripts/hermes-source.js` is a third source adapter, and the first whose
+units are database rows. It reads every Hermes profile's `state.db` read-only
+and emits the shared turn document, grouped from one user prompt to the next.
+Cron runs contribute their final reply and never their prompt, which can embed
+this corpus's own pulse. Configured workspace markdown becomes one row per
+content version, with section-level semantic documents. Rows land in
+`session-milestones.jsonl` with `provider: "hermes"`, so search, facts, the
+pulse, `/standup` and the Explorer (new `hermes` badge, 8.98:1 / 8.36:1) all
+see them. Nothing happens without a user policy file. Exclusion drops whole
+sessions by project or path and redacts matching lines, reporting both counts.
+The SessionStart catch-up runs the adapter when a policy exists.
+`--show <session>` is the drill-down, since Hermes has no transcript file.
+
 ### fix(ownership): other people's commits no longer count as the owner's session work
 
 Commits imported from cloned repositories were given the owner's session ids by

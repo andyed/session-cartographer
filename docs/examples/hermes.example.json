@@ -1,0 +1,14 @@
+{
+  "hermes_home": "~/.hermes",
+  "sources": ["desktop", "acp", "subagent", "cron"],
+  "min_user_prompts": 2,
+  "default_project": "hermes",
+  "path_projects": {
+    "~/.hermes": "hermes"
+  },
+  "cron_projects": {},
+  "cron_skip_turns": [],
+  "exclude_projects": [],
+  "redact_patterns": [],
+  "artifacts": []
+}

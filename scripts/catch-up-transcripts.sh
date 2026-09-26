@@ -40,6 +40,24 @@ status=$?
 end_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 summary=$(printf '%s\n' "$output" | tail -1)
 
+# Hermes is a database, not a transcript store, so it has its own adapter.
+# It runs only when the user has written a policy file: the adapter refuses to
+# ingest without one, and a missing file here means "not a Hermes user", which
+# is not a failure. Its status is logged separately so a Hermes fault cannot
+# masquerade as a transcript fault, or the reverse.
+HERMES_CONFIG=$(node "$SCRIPT_DIR/hermes-source.js" --print-config-path 2>/dev/null)
+if [ -n "$HERMES_CONFIG" ] && [ -f "$HERMES_CONFIG" ]; then
+  h_start=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  h_output=$(TURN_BODY_MAX="${TURN_BODY_MAX:-1200}" node "$SCRIPT_DIR/hermes-source.js" --write 2>&1)
+  h_status=$?
+  h_end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  h_summary=$(printf '%s\n' "$h_output" | tail -1)
+  jq -n -c --arg start "$h_start" --arg end "$h_end" \
+    --arg summary "$h_summary" --argjson status "$h_status" \
+    '{started_at:$start,finished_at:$end,provider:"hermes",status:$status,summary:$summary}' \
+    >> "$LOG_FILE" 2>/dev/null || true
+fi
+
 jq -n -c --arg start "$start_ts" --arg end "$end_ts" --arg provider "$PROVIDER" \
   --arg summary "$summary" --argjson status "$status" \
   '{started_at:$start,finished_at:$end,provider:$provider,status:$status,summary:$summary}' \

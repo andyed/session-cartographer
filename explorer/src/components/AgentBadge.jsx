@@ -13,6 +13,7 @@
  *
  *   claude  #f0b48a   8.71:1 on page,  8.22:1 on card
  *   codex   #8fd3c7   9.16:1 on page,  8.61:1 on card
+ *   hermes  #cdb9ff   8.98:1 on page,  8.36:1 on card
  *   (other) #b9c0cb   8.66:1 on page,  8.13:1 on card
  *
  * Colour is never the only carrier — the badge always prints the agent's name,
@@ -22,6 +23,7 @@
 const AGENTS = {
   claude: { label: 'claude', color: '#f0b48a' },
   codex: { label: 'codex', color: '#8fd3c7' },
+  hermes: { label: 'hermes', color: '#cdb9ff' },
 };
 
 const UNKNOWN_AGENT = { label: '', color: '#b9c0cb' };
