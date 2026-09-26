@@ -319,7 +319,13 @@ async function port() {
     // keyboard, and :focus-visible is asserted before the outline is read:
     // without it a present ring would read as missing.
     async function assertHandoffTargets(targetPage, name) {
-      const controls = targetPage.getByRole('complementary', { name: 'Evidence inspector' }).locator('.md-handoff').locator('a, button');
+      const inspector = targetPage.getByRole('complementary', { name: 'Evidence inspector' });
+      // The inspector and its "Review in Memory" button draw before the task
+      // arrives; until then it reads "Reading this task…" and has no hand-off
+      // row. count() does not wait, so a slow runner counted 0 (CI, v0.8.0).
+      // The task heading draws with the row, so wait for it first.
+      await inspector.locator('.fw-inspector-identity h2').waitFor();
+      const controls = inspector.locator('.md-handoff').locator('a, button');
       const count = await controls.count();
       assert.ok(count >= 2, `${name}: the fixture must render at least two hand-off controls (rendered ${count})`);
       const probes = [];

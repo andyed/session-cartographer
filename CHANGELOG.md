@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### test(explorer): wait for the task before counting its hand-off controls
+
+The v0.8.0 release run stopped at `memory-entry.cjs`: "Timeline inspector: the
+fixture must render at least two hand-off controls (rendered 0)", on the tag and
+on main, while the same test passed on the maintainer's machine. The inspector
+and its "Review in Memory" button draw as soon as a session is routed; the task
+itself arrives from the memory API afterwards, and until then the inspector
+reads "Reading this task…" and has no hand-off row. The test waited for the
+button, then called `locator.count()`, which does not wait. A 1.5 s delay on
+`/api/memory/*` for the Timeline page reproduced the CI failure locally.
+`assertHandoffTargets` now waits for the inspector's task heading, which draws
+with the row, before counting; with the delay in place it passes. The product
+is unchanged.
+
 ## 0.8.0 — 2026-09-26
 
 ### test(explorer): measure the inspector's hand-off row
