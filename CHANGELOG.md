@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.0 — 2026-09-26
 
 ### test(explorer): measure the inspector's hand-off row
 
