@@ -407,6 +407,33 @@ and a fixed-window episode link; dropping the unattributed call fails the run.
 Every new text colour is measured from computed styles at 8:1 on #0a0a0f and
 #153640.
 
+### fix(telemetry): name the caller on every served, call and access row
+
+Over 24 hours on 2026-09-26, 26 of 30 served calls carried `session_id: ""` and
+`provider: "unknown"`, and 11 of 17 access rows had neither a session nor a
+`call_id`. Each call was traced to its caller through the hook logs, Hermes'
+`state.db` and transcripts. Eleven calls and all eleven access rows were Hermes
+FrakBot, whose terminal tool binds `HERMES_SESSION_ID` but exports none of the
+session chain. The other fifteen were a Claude session that unset the chain on
+purpose while replaying FrakBot's queries. Turbo was not dropping ids: the
+client writes the session it sends.
+
+Served and search-call rows, from both the awk writer and
+`turbo-search-client.js`, now carry `attribution_status` (`session` or
+`no_session`) and `session_source`, the chain variable the session came from.
+Access rows carry `session_source`. The chain takes the first resolved value,
+so `CARTOGRAPHER_SESSION_ID=unknown` can no longer shadow a real id and become
+both the rows' session and a delta-serving list shared by every caller that set
+it. `HERMES_SESSION_ID` infers `provider: "hermes"` and is never read as a
+session, because that would switch on delta serving for gateway sessions open
+for weeks; Hermes wrappers opt in with `CARTOGRAPHER_SESSION_ID`
+(docs/SETUP.md). After FrakBot's wrapper opted in, 3 of 3 calls, 60 of 60
+served rows and 3 of 3 access rows named its session.
+
+`telemetry-attribution.test.js` drives the portable CLI and a fake Turbo with
+the variables each caller has. Eight of its nine cases fail against the
+previous scripts.
+
 ### fix(watcher): index rows appended during startup or written in two parts
 
 The resident index lost events in two ways while `status` read `live`. Both
