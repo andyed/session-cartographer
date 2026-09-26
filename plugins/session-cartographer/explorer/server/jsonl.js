@@ -81,6 +81,58 @@ export function isHighSignal(event) {
   return true;
 }
 
+// The canonical fields downstream code reads, each with the fields a writer may
+// have used instead, in order of preference. `type` falls back to the log the
+// row came from.
+const CANONICAL_FIELDS = [
+  ['session_id', ['sessionId', 'session']],
+  ['summary', ['display']],
+  ['type', ['_source']],
+];
+
+// Per event, the canonical values normalizeEvent filled in rather than read.
+// On the live corpus about 3,500 loaded events carry an entry: milestone-only
+// rows with no `type` and research-only rows with no `session_id`. Most rows
+// get the field from their changelog copy.
+const derivedValues = new WeakMap();
+
+// Remove the values normalizeEvent filled in, returning the event to the fields
+// its copies supplied. A value something else has since replaced is kept.
+function underive(event) {
+  const derived = derivedValues.get(event);
+  if (!derived) return false;
+  for (const [field, value] of Object.entries(derived)) {
+    if (event[field] === value) delete event[field];
+  }
+  derivedValues.delete(event);
+  return true;
+}
+
+/**
+ * Fill the canonical fields from their variants, in place: `session_id` from
+ * `sessionId` or `session`, `summary` from `display`, `type` from `_source`.
+ *
+ * The load and the watcher both apply this. The watcher once delivered raw
+ * rows, so a row with no changelog copy to fill it in lacked `session_id` or
+ * `type` until the next restart, and recall and census disagreed with a
+ * freshly loaded service. Re-running it re-derives from the current fields,
+ * which a fold may have changed.
+ */
+export function normalizeEvent(event) {
+  underive(event);
+  let derived = null;
+  for (const [field, variants] of CANONICAL_FIELDS) {
+    if (event[field]) continue;
+    let value;
+    for (const name of variants) if (event[name]) { value = event[name]; break; }
+    if (!value) continue;
+    event[field] = value;
+    (derived ||= {})[field] = value;
+  }
+  if (derived) derivedValues.set(event, derived);
+  return event;
+}
+
 /**
  * Fold a repeated event into the copy already stored. The corpus intentionally
  * overlaps across changelog and the domain logs, so one event_id arrives from
@@ -90,16 +142,26 @@ export function isHighSignal(event) {
  * Startup and the live watcher both need this rule. Startup applied it inline
  * while the watcher appended blind, so any event written to two logs was pushed
  * onto the feed twice while the process ran.
+ *
+ * A derived value is a placeholder until a copy supplies the real one, so it
+ * takes no part in the longer-wins comparison. The load normalizes after every
+ * fold and never meets one. The watcher delivers normalized rows, so it would:
+ * a derived `type: "milestones"` outlasts a twin's real `type: "wrapup"`, and a
+ * `type` taken from changelog outlives a domain log claiming the source. Both
+ * sides fold without their derived values, and the result is re-derived.
  */
 export function mergeDuplicateEvent(existing, event, source) {
+  const wasDerived = underive(existing);
+  const incomingDerived = derivedValues.get(event);
   for (const [k, v] of Object.entries(event)) {
-    if (k === '_source') continue;
+    if (k === '_source' || (incomingDerived && Object.hasOwn(incomingDerived, k))) continue;
     if (v && (!existing[k] || (typeof v === 'string' && v.length > (existing[k]?.length || 0)))) {
       existing[k] = v;
     }
   }
   // Prefer domain source label
   if (source !== 'changelog') existing._source = source;
+  if (wasDerived) normalizeEvent(existing);
   return existing;
 }
 
@@ -140,15 +202,10 @@ export function readAllEvents(logFiles = LOG_FILES) {
     return new Date(ts).getTime() || 0;
   }
 
-  // Normalize field variants so downstream code can use canonical names
+  // Normalize field variants so downstream code can use canonical names. After
+  // the folds, so a derived value never competes with a copy's real one.
   for (const e of all) {
-    // sessionId → session_id
-    if (!e.session_id && e.sessionId) e.session_id = e.sessionId;
-    if (!e.session_id && e.session) e.session_id = e.session;
-    // display → summary fallback
-    if (!e.summary && e.display) e.summary = e.display;
-    // type fallback to source
-    if (!e.type && e._source) e.type = e._source;
+    normalizeEvent(e);
     // NOTE: a transcript_path derivation used to live here, guessing
     // ~/.claude/projects/<project-with-slashes-dashed>/<session_id>.jsonl. It
     // only ever resolved for claude-history rows, whose `project` is a full cwd
@@ -359,12 +416,14 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
         offsets[source] += complete;
         boundaries[source] = boundaryHash(filePath, offsets[source]);
 
-        // Parse new lines
+        // Parse new lines, normalized as readAllEvents normalizes a load. A
+        // consumer folding a copy into its stored event does so with
+        // mergeDuplicateEvent, which re-derives.
         const newEvents = [];
         for (const line of buffer.toString('utf-8', 0, complete).split('\n')) {
           if (!line.trim()) continue;
           try {
-            newEvents.push({ ...JSON.parse(line), _source: source });
+            newEvents.push(normalizeEvent({ ...JSON.parse(line), _source: source }));
           } catch {
             // Mid-flush write — skip
           }

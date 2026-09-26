@@ -2,6 +2,43 @@
 
 ## Unreleased
 
+### fix(watcher): normalize a delivered row as the load does
+
+`readAllEvents` fills the canonical fields after folding duplicates:
+`session_id` from `sessionId` or `session`, `summary` from `display`, and
+`type` from `_source`. Rows delivered by `watchFiles` skipped that step, in
+Turbo and in the Explorer, so a row with no changelog copy to supply the field
+kept its raw shape until the next restart. On the live corpus that covers 1,921
+milestone-only rows with no `type` (`session_wrapup`, `hermes_*`, `agent_*`),
+which are still being written, and 1,628 research-only rows with `session` and
+no `session_id`, the newest from March.
+
+Reproduced against both servers before the fix. While running, recall returned
+those rows without `session_id` or `type`. Census typed a milestone-only row by
+its `milestone` value (`session_wrapup`) where a load types it `milestones`. A
+legacy row carrying only `sessionId` and `display` came back with no
+`session_id` or `summary` and counted as unattributed (3 resolved sessions
+against a load's 4), since `eventSession` does not read `sessionId`. No live row
+has that shape today; the test keeps it because the normalization covers it.
+
+`normalizeEvent` in `jsonl.js` is now the one implementation: the load applies
+it after folding, and `watchFiles` applies it to every row it delivers.
+Normalizing before a fold needs one more rule. `mergeDuplicateEvent` keeps the
+longer of two values, so a derived `type: "milestones"` would outlast a twin's
+shorter real type, and a `type: "changelog"` derived from the first copy would
+outlive a domain log claiming the source. Derived values are now recorded per
+event, ignored on both sides of a fold, and re-derived after it. The load
+normalizes after every fold and never sees one: `readAllEvents` output is
+identical to the previous code across 157,636 live events, 3,551 of which carry
+a derived value, and load time is unchanged within noise (median 907 ms against
+892 ms over six alternating runs).
+
+`watcher-normalization.test.js` drives the managed Turbo service and the
+Explorer app through domain-only rows and both fold orders, then compares each
+with a fresh load. It fails against the previous code, and against a variant
+that normalizes on delivery without the fold rule. Every real changelog twin's
+type is longer than any source name, so the fold cases use synthetic types.
+
 ### fix(memory): keep the field readout below its header and off its point
 
 In the full-size Activity view, the readout under the Field header (thread
