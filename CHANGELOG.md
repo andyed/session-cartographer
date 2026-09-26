@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### fix(search): return no results, not a 500, for queries with no terms
+
+`/api/search` threw "Cannot read properties of undefined (reading 'filter')"
+for any query that tokenizes to nothing (punctuation only, CJK) and for any
+search over an empty index. Since 4925dca `scoreBM25` has returned
+`{ items, total }`, but its two early exits still returned a bare `[]`, and
+`hybridSearch` reads `.items`. On the Vite host the thrown error appears as an
+overlay on every open Explorer page, not only the page that sent the query.
+Both exits now return `{ items: [], total: 0 }`. `search-empty-query.test.js`
+fails 2 of 3 against the previous code; its control still finds a match.
+
 ### fix(explorer): hold selected-row text and the agent badge to 8:1
 
 A selected Memory Desk row is painted `--fw-selected` (#153640), and its

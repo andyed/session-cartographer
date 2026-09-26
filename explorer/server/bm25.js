@@ -149,10 +149,14 @@ export function scoreBM25(index, query, { project, limit = 15, sinceMs = null, b
   const queryTokens = hasWildcard
     ? expandWildcards(query, index.df)
     : tokenize(query);
-  if (queryTokens.length === 0) return [];
+  // Same shape as a scored result. A bare [] here (left over from before the
+  // return became { items, total }) crashed /api/search on any query with no
+  // letters or digits — punctuation, CJK — and on an empty index.
+  const none = { items: [], total: 0 };
+  if (queryTokens.length === 0) return none;
 
   const N = index.docs.size;
-  if (N === 0) return [];
+  if (N === 0) return none;
 
   const results = [];
   // Shared with the facts path. A census and a recall over the same --project
