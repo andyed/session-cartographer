@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+### fix(explorer): hold the transcript toolbar and the find placeholder to 8:1
+
+The Transcript viewer's search field drew its placeholder in gray-500 on its
+gray-900 fill (3.67:1), the defect 7289e7a fixed in the search combobox. The
+rest of the viewer's toolbar sits on the page (#0a0a0f): the back button, the
+match count and the system and noise toggles' labels were gray-500 (4.09:1),
+the message count gray-600 (2.61:1). All of them are now `muted`: 9.69:1 as the
+placeholder, 10.78:1 on the page. The two toggle labels share one class,
+`TOGGLE_LABEL`. The noise toggle renders only for a transcript that holds
+noise, and the fixture holds none, so the system label's measurement stands
+for both. The checkboxes carry no text.
+
+The find field in the Timeline and Working memory views (FocusToolbar) had no
+placeholder rule and fell to Tailwind's preflight gray-400 (#9ca3af), 7.19:1 on
+the field's fill, `--fw-surface` (#11151e). `focus-workspace.css` now colours
+every placeholder in either workspace `--fw-muted` (12.99:1).
+
+The Memory Desk's `.md-search input::placeholder` (#b4bbc7) is dead CSS: no
+module imports `memory-desk.css`, and the built stylesheet has no `md-search`
+rule. There was nothing to measure.
+
+`memory-entry.cjs` measures the transcript search field while empty, on
+#111827; the toolbar with a term entered, asserting that the probe reached the
+back button, the system label and both counts on the page; the Timeline's find
+field while empty; and the Working memory find field before the find test fills
+it. Against the old colours the cold phase failed with six entries, the lowest
+the message count at 2.61:1. With `.focus-workspace` removed from the new rule,
+the Working memory probe failed at 7.19:1. After the fix all 1,532 classic
+measurements pass, 1,510 of them non-exempt. The lowest is unchanged: the
+co-term flyout heading at 8.01:1.
+
+The rest of the viewer still draws text under 8:1. A one-off probe over the
+whole viewer on this fixture found seven more entries: the role label (`user`,
+blue-400, 7.32:1), a message's relative time and the summary card's `turns`
+label (gray-600, 2.46–2.47:1), and the token attribution sidebar's heading,
+collapse glyph, category label and percentage (2.66–4.16:1). No probe measures
+them, and they are unchanged here.
+
 ### fix(explorer): hold the search combobox's text to 8:1
 
 The search combobox, inside the header, was left out of bf1044e. Its

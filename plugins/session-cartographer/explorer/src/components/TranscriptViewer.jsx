@@ -486,6 +486,13 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
 
 // ─── Main TranscriptViewer ────────────────────────────────────────────────────
 
+// The toolbar's text sits on the page (#0a0a0f), where gray-500 read 4.09:1
+// and gray-600 2.61:1; `muted` reads 10.78:1 there and 9.69:1 as the search
+// field's placeholder on gray-900. The system and noise toggles share one
+// label class because only the system toggle renders for a transcript with
+// no noise, so the browser harness measures the noise label through it.
+const TOGGLE_LABEL = 'flex items-center gap-1 text-xs text-muted cursor-pointer';
+
 export default function TranscriptViewer({ transcriptPath, targetUuid, initialHighlight = '', onClose }) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -652,10 +659,10 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-800 flex-shrink-0">
+      <div id="transcript-toolbar" className="flex items-center gap-2 px-4 py-2 border-b border-gray-800 flex-shrink-0">
         <button
           onClick={onClose}
-          className="text-xs text-gray-500 hover:text-gray-300 mr-2"
+          className="text-xs text-muted hover:text-gray-300 mr-2"
         >
           back
         </button>
@@ -665,16 +672,16 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search in transcript..."
-          className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-gray-500 focus:outline-none focus:border-gray-500"
+          className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-muted focus:outline-none focus:border-gray-500"
         />
 
         {searchTerms.length > 0 && (
-          <span className="text-xs text-gray-500 font-mono">
+          <span className="text-xs text-muted font-mono">
             {matchCount} match{matchCount !== 1 ? 'es' : ''}
           </span>
         )}
 
-        <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+        <label className={TOGGLE_LABEL}>
           <input
             type="checkbox"
             checked={showAllTypes}
@@ -685,7 +692,7 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
         </label>
 
         {noiseCount > 0 && (
-          <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer" title={`${noiseCount} system machinery messages (skills, commands, notifications)`}>
+          <label className={TOGGLE_LABEL} title={`${noiseCount} system machinery messages (skills, commands, notifications)`}>
             <input
               type="checkbox"
               checked={!hideNoise}
@@ -696,7 +703,7 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
           </label>
         )}
 
-        <span className="text-xs text-gray-600 font-mono">
+        <span className="text-xs text-muted font-mono">
           {filtered.length} messages
         </span>
       </div>

@@ -302,7 +302,10 @@ async function port() {
       // (#030712), the keyboard-active search result (#151a23), a hovered
       // group header, a selected facet pill's own fill, and the search
       // combobox: its placeholder on the field (#111827), its suggestion list
-      // and co-term flyout (#1f2937) and their active rows (#374151). Failures collect
+      // and co-term flyout (#1f2937) and their active rows (#374151). The
+      // timeline's find field is measured empty on its own fill (#11151e), and
+      // the Transcript viewer's search field empty on gray-900 (#111827), then
+      // its toolbar with a term entered, on the page. Failures collect
       // across the journey and fail once, so a regression names every element
       // at once. Each probe also proves it reached its ground: a probe that
       // measures nothing reports success. The pointer leaves the page first
@@ -374,6 +377,10 @@ async function port() {
         await legacy.getByRole('button', { name: 'Event Feed', exact: true }).click();
         await legacy.getByRole('region', { name: 'Activity timeline' }).getByText(explorerSummaries[0], { exact: true }).waitFor();
         await classic('.timeline-focus-list', 'event feed', { grounds: ['#0a0a0f'] });
+        // The find field is empty here, so it paints its placeholder, which
+        // no rule coloured: it fell to Tailwind's preflight gray-400.
+        const timelineFind = await classic('.focus-timeline-workspace .fw-find input', 'timeline find placeholder', { grounds: ['#11151e'] });
+        assert.ok(timelineFind.some(entry => entry.element.endsWith('::placeholder') && entry.text === 'Find tasks, files, or recorded notes…'), `${phase}: the probe did not measure the timeline find placeholder (measured ${JSON.stringify(timelineFind)})`);
         // A group header paints a surface under the pointer; measure it there,
         // then open the group and measure the cards inside it.
         const groupHeader = legacy.locator('.timeline-focus-list .event-group > button').first();
@@ -403,10 +410,24 @@ async function port() {
         await explorerCard.getByTitle('Open transcript', { exact: true }).first().waitFor();
         await classic('.timeline-session-result', 'open session', { grounds: ['#0d1019', '#030712'] });
         await explorerCard.getByTitle('Open transcript', { exact: true }).first().click();
-        await legacy.getByPlaceholder('Search in transcript...').waitFor();
+        const transcriptSearch = legacy.getByPlaceholder('Search in transcript...');
+        await transcriptSearch.waitFor();
         await legacy.getByText(explorerAnswer, { exact: true }).waitFor();
         assert.ok(new URL(legacy.url()).pathname.startsWith('/session/'));
         await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-transcript.png`) });
+        // The empty search field shows its placeholder, read from the field's
+        // ::placeholder style and measured on the field's own fill.
+        const transcriptField = await classic('#transcript-toolbar input[type="text"]', 'transcript search placeholder', { grounds: ['#111827'] });
+        assert.ok(transcriptField.some(entry => entry.element.endsWith('::placeholder') && entry.text === 'Search in transcript...'), `${phase}: the probe did not measure the transcript search placeholder (measured ${JSON.stringify(transcriptField)})`);
+        // A term adds the match count. The rest of the toolbar (back, the
+        // system toggle's label, the message count) sits on the page; the
+        // noise toggle shares the system toggle's class but renders only for
+        // a transcript holding noise, which this fixture does not.
+        await transcriptSearch.fill('aurora');
+        await legacy.locator('#transcript-toolbar').getByText(/^\d+ match(es)?$/).waitFor();
+        const toolbar = await classic('#transcript-toolbar', 'transcript toolbar', { grounds: ['#0a0a0f', '#111827'] });
+        for (const text of [/^back$/, /^system$/, /^\d+ messages?$/, /^\d+ match(es)?$/]) assert.ok(toolbar.some(entry => text.test(entry.text) && entry.ground === '#0a0a0f'), `${phase}: the transcript toolbar probe measured nothing matching ${text} on the page (measured ${JSON.stringify(toolbar)})`);
+        await transcriptSearch.fill('');
 
         await legacy.goto(origin + '/?view=concurrent');
         await legacy.getByText(/\d+ tasks · \d+ records in focus · \d+ context tasks/).waitFor();
@@ -578,6 +599,11 @@ async function port() {
     await deskPage.keyboard.press('/');
     const deskFind = deskPage.getByRole('searchbox', { name: 'Find in this window' });
     assert.equal(await deskFind.evaluate(element => document.activeElement === element), true);
+    // The desk's find field is the timeline's, in the other workspace: the
+    // same placeholder on the same fill, measured while it is still empty.
+    const deskField = await textContrast(deskPage, '.focus-workspace .fw-find input');
+    assert.ok(deskField.measured.some(entry => entry.element.endsWith('::placeholder') && entry.text === 'Find tasks, files, or recorded notes…' && entry.ground === '#11151e'), `memory workspace: the probe did not measure the find placeholder (measured ${JSON.stringify(deskField.measured)})`);
+    assert.deepEqual(deskField.failures, [], 'memory workspace: find placeholder under 8:1');
     await deskFind.fill('Turbo facts');
     await deskPage.getByText('Turbo facts', { exact: true }).waitFor();
     await deskPage.getByRole('button', { name: 'Clear find' }).click();
@@ -1008,7 +1034,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the transcript search placeholder and toolbar); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

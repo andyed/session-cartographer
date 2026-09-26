@@ -6,7 +6,9 @@
    muted was #bcc4d2, 7.32:1 on a selected row's metadata. It now matches the
    Recall view's meta colour. AgentBadge measures 7.02–7.54:1 on selected, so
    in a selected row the agent appears as text, never as a badge. Selected
-   rows are measured from computed styles in tests/browser/memory-entry.cjs. */
+   rows are measured from computed styles in tests/browser/memory-entry.cjs.
+   A placeholder is muted: with no rule it fell to Tailwind's preflight
+   gray-400 (#9ca3af), 7.19:1 on the surface a field is filled with. */
 .focus-workspace,.focus-timeline-workspace{--fw-bg:#0a0a0f;--fw-surface:#11151e;--fw-ink:#edf0f5;--fw-muted:#d4dae3;--fw-line:#3b4658;--fw-accent:#72e6ef;--fw-selected:#153640;color:var(--fw-ink);background:var(--fw-bg);font:500 16px/1.5 ui-sans-serif,system-ui,sans-serif;height:100%;min-height:0;overflow:auto;padding:20px clamp(12px,2vw,28px);color-scheme:dark}
 .focus-workspace *,.focus-timeline-workspace *{box-sizing:border-box}
 .focus-workspace button,.focus-timeline-workspace button,.fw-inspector button,.fw-inspector a{font:inherit;min-height:44px;cursor:pointer}
@@ -15,6 +17,7 @@
 .focus-workspace button:disabled,.focus-timeline-workspace button:disabled{color:#a0a9b8;cursor:default}
 .focus-workspace :focus-visible,.focus-timeline-workspace :focus-visible{outline:2px solid var(--fw-accent);outline-offset:3px}
 .focus-workspace input,.focus-workspace select,.focus-timeline-workspace input,.focus-timeline-workspace select{font:inherit;color:var(--fw-ink);background:var(--fw-surface);border:1px solid var(--fw-line);border-radius:5px;min-height:44px;padding:8px 10px;max-width:100%;min-width:0}
+.focus-workspace ::placeholder,.focus-timeline-workspace ::placeholder{color:var(--fw-muted);opacity:1}
 .focus-workspace h1,.focus-timeline-workspace h1{font-size:30px;line-height:1.2;font-weight:600;letter-spacing:-.035em;margin:0 0 7px}
 .fw-page-heading{display:flex;gap:24px;align-items:center;justify-content:space-between;margin-bottom:20px}
 .fw-page-heading p{color:var(--fw-muted);margin:0}
