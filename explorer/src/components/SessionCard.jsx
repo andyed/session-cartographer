@@ -122,7 +122,7 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick,
                 ? session.session_id
                 : `Session ${session.session_id.substring(0, 8)}`}
             </span>
-            <span className="text-gray-500 text-xs">{events.length} events • {durationMins}m</span>
+            <span className="text-muted text-xs">{events.length} events • {durationMins}m</span>
             <ContextGauge summary={summary} compactionEvents={compactionEvents} />
           </div>
           <div className="flex gap-2 items-center">
@@ -137,7 +137,7 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick,
           </div>
         </div>
 
-        <div className="text-xs text-gray-400 mb-2">
+        <div className="text-xs text-muted mb-2">
           {dateObj.toLocaleDateString()} • {startTime} - {endTime}
         </div>
         {previewSummary && !expanded && (
@@ -148,7 +148,7 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick,
 
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors mt-2 font-medium"
+          className="text-xs text-link hover:text-blue-200 transition-colors mt-2 font-medium"
         >
           {expanded ? '▲ Hide Events' : '▼ View Session Events'}
         </button>

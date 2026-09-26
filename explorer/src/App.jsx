@@ -137,12 +137,12 @@ export default function App() {
           <a href="https://github.com/andyed/session-cartographer" className="underline hover:text-white" target="_blank" rel="noopener">GitHub</a>
           {demoQueries.length > 0 && (
             <>
-              <span className="text-indigo-500 ml-2">Try:</span>
+              <span className="text-indigo-200 ml-2">Try:</span>
               {demoQueries.map(q => (
                 <button
                   key={q.id}
                   onClick={() => { handleSearchInput(q.query); }}
-                  className="px-2 py-0.5 rounded bg-indigo-800/60 hover:bg-indigo-700 text-indigo-100"
+                  className="px-2 py-0.5 rounded bg-indigo-800/60 hover:bg-indigo-800 text-indigo-100 hover:text-white"
                 >
                   {q.query}
                 </button>
@@ -179,12 +179,12 @@ export default function App() {
                 </span>
               )}
             </div>
-            <span className="text-xs text-gray-600 font-mono">SC</span>
+            <span className="text-xs text-gray-600 font-mono" data-contrast-exempt="monogram">SC</span>
           </div>
         </div>
         {isDemoMode && !searchQuery && tab !== 'transcript' && tab !== 'memory' && (
           <div className="flex items-center gap-2 px-4 pb-2 flex-wrap">
-            <span className="text-[10px] text-gray-600 uppercase tracking-wider">Try:</span>
+            <span className="text-[10px] text-muted uppercase tracking-wider">Try:</span>
             {[
               'diff shape',
               'facets',
@@ -194,7 +194,7 @@ export default function App() {
               <button
                 key={q}
                 onClick={() => handleSearchInput(q)}
-                className="px-2 py-0.5 text-[11px] rounded bg-gray-800/80 border border-gray-700/50 text-gray-400 hover:text-gray-200 hover:bg-gray-700 transition-colors"
+                className="px-2 py-0.5 text-[11px] rounded bg-gray-800/80 border border-gray-700/50 text-gray-300 hover:text-gray-200 hover:bg-gray-700 transition-colors"
               >
                 {q}
               </button>

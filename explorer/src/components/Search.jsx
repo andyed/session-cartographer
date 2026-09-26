@@ -179,7 +179,7 @@ export default function Search({ query = '', onOpenTranscript, isActive = true }
 
       {/* Scrollable results */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4">
-        {loading && <div className="text-gray-500 text-sm py-2">Searching...</div>}
+        {loading && <div className="text-muted text-sm py-2">Searching...</div>}
 
         {results && !loading && (
           <>
@@ -196,7 +196,7 @@ export default function Search({ query = '', onOpenTranscript, isActive = true }
             </div>
 
             {displayItems.length === 0 ? (
-              <div className="text-gray-500 text-center py-8">
+              <div className="text-muted text-center py-8">
                 {results.meta?.demo_miss
                   ? 'This query isn\'t cached in the demo. Try one of the queries in the banner above.'
                   : 'No results found.'}
@@ -214,7 +214,7 @@ export default function Search({ query = '', onOpenTranscript, isActive = true }
                 {hasMore && (
                   <button
                     onClick={loadMore}
-                    className="w-full py-2 mb-4 text-xs text-gray-400 hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded-lg transition-colors"
+                    className="w-full py-2 mb-4 text-xs text-muted hover:text-gray-200 border border-gray-700 hover:border-gray-500 rounded-lg transition-colors"
                   >
                     show more ({filteredResults.length - displayLimit} remaining)
                   </button>
@@ -279,7 +279,7 @@ function DupeIndicator({ count }) {
     <div className="ml-4 mb-2">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="text-xs text-gray-500 hover:text-gray-300"
+        className="text-xs text-muted hover:text-gray-300"
       >
         +{count} similar {expanded ? '▾' : '▸'}
       </button>

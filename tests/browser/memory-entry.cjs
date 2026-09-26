@@ -82,6 +82,8 @@ async function port() {
     timestamp: new Date(now - 300000 + i * 60000).toISOString(),
     type: ['git_commit', 'research_search', 'milestone_session_end'][i],
     summary, transcript_path: explorerTranscript, cwd: corpus, provider: 'claude',
+    // The commit's hash renders in a card's detail, a colour of its own.
+    ...(i === 0 ? { commit_hash: 'a1b2c3d4e5f60718' } : {}),
   }));
   // A second agent in the same window: the Explorer rendered a half-Codex
   // corpus as if it were one agent, so the fixture has to contain both or the
@@ -203,16 +205,19 @@ async function port() {
     // hypothetical grounds for text that must stay legible wherever its row is
     // placed; layers inside the scope still composite over each one. `fixed`
     // names elements measured only where they render, because the caller
-    // asserts they never move onto another ground. Every measurement comes
+    // asserts they never move onto another ground. `exempt` names elements
+    // measured and reported but never failed: a logotype or a decorative
+    // glyph, which the page declares with data-contrast-exempt="<reason>" so
+    // the exemption is visible in source review. Every measurement comes
     // back, so a caller can prove which ground it measured: a probe that finds
     // no text reports success on nothing. Running colour transitions settle
     // first: a classic card's selected background fades in, and a probe read
     // mid-fade measures a frame nobody reads.
-    async function textContrast(targetPage, scope, { placements = {}, fixed = null, floor = 8 } = {}) {
+    async function textContrast(targetPage, scope, { placements = {}, fixed = null, exempt = null, floor = 8 } = {}) {
       await targetPage.evaluate(() => Promise.all(document.getAnimations()
         .filter(animation => animation instanceof CSSTransition)
         .map(animation => animation.finished.catch(() => {}))));
-      return targetPage.evaluate(({ scope, placements, fixed, floor }) => {
+      return targetPage.evaluate(({ scope, placements, fixed, exempt, floor }) => {
         const channel = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
         const lum = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
         const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
@@ -254,11 +259,12 @@ async function port() {
               for (const [name, ground] of Object.entries(placements)) grounds[name] = inner.reduce(over, ground);
             }
             const label = element.getAttribute('class') || element.tagName.toLowerCase();
+            const excused = Boolean(exempt && element.closest(exempt));
             for (const [on, ground] of Object.entries(grounds)) {
               const value = ratio(over(ground, ink), ground);
-              measured.push({ element: label, text: text.slice(0, 40), color: hex(ink.slice(0, 3)), ground: hex(ground), on, ratio: Math.round(value * 100) / 100 });
+              measured.push({ element: label, text: text.slice(0, 40), color: hex(ink.slice(0, 3)), ground: hex(ground), on, ratio: Math.round(value * 100) / 100, ...(excused ? { exempt: element.closest(exempt).dataset.contrastExempt || 'selector' } : {}) });
               const key = `${label}|${hex(ink.slice(0, 3))}|${on}|${hex(ground)}`;
-              if (value < floor && !seen.has(key)) {
+              if (value < floor && !excused && !seen.has(key)) {
                 seen.add(key);
                 failures.push(`${label} "${text.slice(0, 24)}" ${hex(ink.slice(0, 3))} ${value.toFixed(2)}:1 on ${on} ${hex(ground)}`);
               }
@@ -266,7 +272,7 @@ async function port() {
           }
         }
         return { measured, failures };
-      }, { scope, placements, fixed, floor });
+      }, { scope, placements, fixed, exempt, floor });
     }
     // The row open in the inspector is painted --fw-selected (#153640), where
     // --fw-muted once measured 7.32:1. Measure every result row where it sits,
@@ -283,6 +289,28 @@ async function port() {
     async function verifyExplorer(phase) {
       const legacy = await browser.newPage({ viewport: { width: 1200, height: 880 }, reducedMotion: 'reduce' });
       legacy.on('pageerror', e => errors.push(`${phase}: ${e.message}`));
+      // Every classic view is held to 8:1 on the ground its text sits on: the
+      // page, a session card (#0d1019), an open session's event list
+      // (#030712), the keyboard-active search result (#151a23), a hovered
+      // group header, and a selected facet pill's own fill. Failures collect
+      // across the journey and fail once, so a regression names every element
+      // at once. Each probe also proves it reached its ground: a probe that
+      // measures nothing reports success. The pointer leaves the page first
+      // unless the probe is measuring a hover. Exempt, and still reported:
+      // what the page marks data-contrast-exempt, and the timeline pager's
+      // disabled button (#a0a9b8 at 45% opacity, 2.53:1), an inactive control
+      // WCAG 1.4.3 exempts. The pager is shared with no classic component and
+      // its disabled style is the workspace's; that exemption is a flagged
+      // decision, not a measured pass.
+      const classicFailures = new Set(), classicMeasured = [];
+      const classic = async (scope, view, { grounds = [], hover = false } = {}) => {
+        if (!hover) await legacy.mouse.move(1, 1);
+        const { measured, failures } = await textContrast(legacy, scope, { exempt: '[data-contrast-exempt], .timeline-focus-pages button:disabled' });
+        for (const ground of grounds) assert.ok(measured.some(entry => entry.ground === ground && !entry.exempt), `${phase} ${view}: the probe measured no text on ${ground} (measured ${measured.length})`);
+        failures.forEach(failure => classicFailures.add(`${view}: ${failure}`));
+        classicMeasured.push(...measured.map(entry => ({ phase, view, ...entry })));
+        return measured;
+      };
       try {
         await legacy.goto(origin + '/memory');
         await legacy.getByRole('button', { name: phase === 'cold' ? 'Enable Turbo' : 'Edit time range', exact: true }).waitFor();
@@ -335,6 +363,15 @@ async function port() {
         await legacy.getByRole('button', { name: 'timeline', exact: true }).click();
         await legacy.getByRole('button', { name: 'Event Feed', exact: true }).click();
         await legacy.getByRole('region', { name: 'Activity timeline' }).getByText(explorerSummaries[0], { exact: true }).waitFor();
+        await classic('.timeline-focus-list', 'event feed', { grounds: ['#0a0a0f'] });
+        // A group header paints a surface under the pointer; measure it there,
+        // then open the group and measure the cards inside it.
+        const groupHeader = legacy.locator('.timeline-focus-list .event-group > button').first();
+        await groupHeader.hover();
+        const hoveredGroup = await classic('.timeline-focus-list .event-group > button:hover', 'hovered group header', { hover: true });
+        assert.ok(hoveredGroup.length >= 2 && hoveredGroup.every(entry => entry.ground !== '#0a0a0f'), `${phase}: the hovered group header painted no surface under its text`);
+        await groupHeader.click();
+        await classic('.timeline-focus-list .event-group', 'open event group', { grounds: ['#0a0a0f'] });
         const streamResponse = await streaming;
         assert.match(streamResponse.headers()['content-type'], /^text\/event-stream/);
         const streamedSummary = `Explorer ${phase} stream arrived without a reload`;
@@ -349,9 +386,12 @@ async function port() {
         await legacy.getByRole('button', { name: 'Sessions', exact: true }).click();
         const explorerCard = legacy.getByTitle(explorerSession, { exact: true }).locator('xpath=ancestor::div[contains(@class,"border")][1]');
         await explorerCard.waitFor();
+        await classic('.timeline-session-result', 'session cards', { grounds: ['#0d1019'] });
         // Select the fixture by session identity; newly streamed sessions can
         // legitimately sort ahead of it without changing transcript ownership.
         await explorerCard.getByRole('button', { name: '▼ View Session Events', exact: true }).click();
+        await explorerCard.getByTitle('Open transcript', { exact: true }).first().waitFor();
+        await classic('.timeline-session-result', 'open session', { grounds: ['#0d1019', '#030712'] });
         await explorerCard.getByTitle('Open transcript', { exact: true }).first().click();
         await legacy.getByPlaceholder('Search in transcript...').waitFor();
         await legacy.getByText(explorerAnswer, { exact: true }).waitFor();
@@ -381,15 +421,18 @@ async function port() {
         await legacy.getByRole('option', { name: 'aurora', exact: true }).click();
         assert.equal((await selectedSearch).status(), 200);
         await legacy.locator('main > div:not(.hidden)').getByText(explorerSummaries[0], { exact: true }).waitFor();
+        await legacy.evaluate(() => document.activeElement?.blur());
+        await legacy.getByRole('listbox').waitFor({ state: 'hidden' });
+        await classic('main > div:not(.hidden)', 'search results', { grounds: ['#0a0a0f'] });
+        await classic('header', 'header', { grounds: ['#0a0a0f', '#374151'] });
         // The keyboard-active result is the classic views' selected surface
         // (bg-gray-800/50 over the page, #151a23), and the one selected
         // surface an AgentBadge renders on. Step through every result so each
-        // agent in the fixture is measured there. Only the badge is held to the
-        // floor: the rest of the classic card predates it.
+        // agent in the fixture is measured there, and hold the whole card to
+        // the floor, not only its badge.
         const activeCard = 'main > div:not(.hidden) .result-list > [data-event-id] > .ring-1';
         const resultCount = await legacy.locator('main > div:not(.hidden) .result-list > [data-event-id]').count();
         assert.ok(resultCount >= 2, `${phase}: the active-result check needs several results (got ${resultCount})`);
-        await legacy.evaluate(() => document.activeElement?.blur());
         const activeAgents = new Set();
         let activeId = null;
         for (let step = 0; step < resultCount; step++) {
@@ -399,14 +442,51 @@ async function port() {
             return card && card.parentElement.dataset.eventId !== previous;
           }, { selector: activeCard, previous: activeId });
           activeId = await legacy.locator(activeCard).evaluate(card => card.parentElement.dataset.eventId);
-          const badges = await textContrast(legacy, `${activeCard} .agent-badge`);
+          const card = await classic(activeCard, `active result ${activeId}`, { grounds: ['#151a23'] });
           assert.notEqual(await legacy.locator(activeCard).evaluate(card => getComputedStyle(card).backgroundColor), 'rgba(0, 0, 0, 0)', `${phase}: the active result painted no surface`);
-          assert.equal(badges.measured.length, 1, `${phase}: expected one AgentBadge on active result ${activeId}`);
-          assert.deepEqual(badges.failures, [], `${phase}: AgentBadge under 8:1 on the active search result`);
-          activeAgents.add(badges.measured[0].text);
+          const badges = card.filter(entry => entry.element.includes('agent-badge'));
+          assert.equal(badges.length, 1, `${phase}: expected one AgentBadge on active result ${activeId}`);
+          assert.ok(card.length > badges.length + 2, `${phase}: the active-result probe measured only ${card.length} elements on ${activeId}`);
+          activeAgents.add(badges[0].text);
         }
         assert.deepEqual([...activeAgents].sort(), ['claude', 'codex'], `${phase}: the active-result check must measure both agents in the fixture`);
         await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-search.png`) });
+        // A selected facet pill is painted in its own hue; measure its text on
+        // that fill. Then open a commit card's detail, which carries the hash.
+        const facetBar = 'main > div:not(.hidden) .facet-bar';
+        await legacy.locator(facetBar).getByRole('button', { name: new RegExp(`^${explorerProject}`) }).click();
+        await legacy.locator(`${facetBar} [aria-pressed="true"]`).waitFor();
+        const facets = await classic(facetBar, 'facet bar', { grounds: ['#0a0a0f'] });
+        assert.ok(facets.some(entry => entry.text.startsWith(explorerProject) && entry.ground !== '#0a0a0f'), `${phase}: the selected facet pill was not measured on its own fill`);
+        assert.ok(facets.some(entry => entry.text === 'clear'), `${phase}: the facet probe measured no clear control`);
+        const commitCard = legacy.locator('main > div:not(.hidden) .result-list > [data-event-id="explorer-event-0"]');
+        await commitCard.getByRole('button', { name: 'more', exact: true }).click();
+        await commitCard.getByText('a1b2c3d', { exact: true }).waitFor();
+        const detail = await classic('main > div:not(.hidden) .result-list', 'card detail', { grounds: ['#0a0a0f'] });
+        assert.ok(detail.some(entry => entry.text === 'a1b2c3d'), `${phase}: the detail probe measured no commit hash`);
+        // Repeated summaries collapse under "+N similar", and a long result set
+        // ends in "show more": session-0's 38 identical "Modified: field.js"
+        // rows produce both. ("working" is in over half the corpus, so BM25
+        // scores it zero and returns nothing.)
+        const searchView = legacy.locator('main > div:not(.hidden)');
+        await legacy.goto(origin + '/?q=modified');
+        await searchView.getByRole('button', { name: /^show more/ }).waitFor();
+        const repeated = await classic('main > div:not(.hidden)', 'repeated results', { grounds: ['#0a0a0f'] });
+        assert.ok(repeated.some(entry => /^\+\d+ similar/.test(entry.text)), `${phase}: the probe measured no duplicate toggle`);
+        assert.ok(repeated.some(entry => entry.text.startsWith('show more')), `${phase}: the probe measured no load-more button`);
+        await legacy.goto(origin + '/?q=zzqxunmatched');
+        await searchView.getByText('No results found.', { exact: true }).waitFor();
+        await classic('main > div:not(.hidden)', 'empty search', { grounds: ['#0a0a0f'] });
+        // Hold one search in flight to measure its loading line.
+        let releaseSearch;
+        const held = new Promise(resolve => { releaseSearch = resolve; });
+        const holdSearch = url => url.pathname === '/api/search';
+        await legacy.route(holdSearch, async route => { await held; await route.continue(); });
+        await legacy.goto(origin + '/?q=aurora');
+        await searchView.getByText('Searching...', { exact: true }).waitFor();
+        await classic('main > div:not(.hidden)', 'search loading', { grounds: ['#0a0a0f'] });
+        releaseSearch();
+        await legacy.unroute(holdSearch);
         await legacy.goto(origin + `/?project=${explorerProject}`);
         await legacy.locator('main > div:not(.hidden)').getByText(explorerSummaries[0], { exact: true }).waitFor();
         assert.equal(await legacy.getByText(controlSummary, { exact: true }).count(), 0);
@@ -414,6 +494,8 @@ async function port() {
           assert.equal(fs.existsSync(path.join(work, 'turbo')), false, 'Legacy Explorer browsing started Turbo');
           assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).turbo.enabled, false, 'Legacy Explorer browsing enabled Turbo');
         }
+        fs.writeFileSync(path.join(artifacts, `carto-classic-contrast-${phase}.json`), JSON.stringify(classicMeasured, null, 1) + '\n');
+        assert.deepEqual([...classicFailures], [], `${phase}: classic Explorer text under 8:1`);
       } finally {
         await legacy.close();
       }
@@ -885,7 +967,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text on selected task/file rows and AgentBadge on the active search result, from computed styles; Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

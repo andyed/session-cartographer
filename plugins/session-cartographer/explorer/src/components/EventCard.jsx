@@ -2,16 +2,11 @@ import { useState } from 'react';
 import ProjectBadge from './ProjectBadge';
 import AgentBadge from './AgentBadge';
 import SourceBadge from './SourceBadge';
+import { HUE, NEUTRAL, QUADRANT_HUES } from '../lib/palette.js';
 
 // 2×2 grid icon: active quadrant highlighted, others dim.
 // Layout:  [bootstrap | construct ]
 //          [surgical  | rework    ]
-const QUAD_COLORS = {
-  bootstrap: '#56b6c2',
-  construct: '#c678dd',
-  surgical: '#98c379',
-  rework: '#d19a66',
-};
 const QUAD_POS = {
   bootstrap: { x: 0, y: 0 },
   construct: { x: 7, y: 0 },
@@ -20,7 +15,7 @@ const QUAD_POS = {
 };
 
 function QuadrantIcon({ quadrant, shape }) {
-  const color = QUAD_COLORS[quadrant] || '#5c6370';
+  const color = QUADRANT_HUES[quadrant] || NEUTRAL;
   const title = `${quadrant} · +${shape.lines_added} −${shape.lines_removed} · ${shape.files_new} new, ${shape.files_modified} mod, ${shape.files_deleted} del${shape.commit_type ? ` · ${shape.commit_type}` : ''}`;
 
   return (
@@ -53,25 +48,25 @@ function relativeTime(ts) {
   return new Date(ts).toLocaleDateString();
 }
 
-// Event type → visual category
+// Event type → visual category. Hues and their measured ratios: lib/palette.js.
 function eventCategory(event) {
   const type = event.type || event.milestone || '';
-  if (type === 'fetch' || type === 'research_fetch') return { label: 'fetch', color: '#61afef' };
-  if (type === 'search' || type === 'research_search') return { label: 'search', color: '#e5c07b' };
-  if (type === 'search_result') return { label: 'result', color: '#d19a66' };
-  if (type.includes('compaction')) return { label: 'compaction', color: '#e06c75' };
-  if (type.includes('session_end')) return { label: 'session end', color: '#e06c75' };
-  if (type.includes('bridge_query')) return { label: 'bridge query', color: '#c678dd' };
-  if (type === 'tool_file_edit') return { label: 'edit', color: '#98c379' };
-  if (type === 'tool_bash') return { label: 'bash', color: '#56b6c2' };
-  if (type === 'git_commit') return { label: 'commit', color: '#ff9e64' };
-  if (type === 'git_push') return { label: 'push', color: '#ff6b6b' };
-  if (type === 'memory_feedback') return { label: 'memory', color: '#e5c07b' };
-  if (type === 'memory_project') return { label: 'memory', color: '#c678dd' };
-  if (type === 'memory_user') return { label: 'memory', color: '#56b6c2' };
-  if (type === 'memory_reference') return { label: 'memory', color: '#61afef' };
-  if (type.startsWith('memory_')) return { label: 'memory', color: '#d19a66' };
-  return { label: event._source || type || '?', color: '#5c6370' };
+  if (type === 'fetch' || type === 'research_fetch') return { label: 'fetch', color: HUE.blue };
+  if (type === 'search' || type === 'research_search') return { label: 'search', color: HUE.yellow };
+  if (type === 'search_result') return { label: 'result', color: HUE.orange };
+  if (type.includes('compaction')) return { label: 'compaction', color: HUE.red };
+  if (type.includes('session_end')) return { label: 'session end', color: HUE.red };
+  if (type.includes('bridge_query')) return { label: 'bridge query', color: HUE.purple };
+  if (type === 'tool_file_edit') return { label: 'edit', color: HUE.green };
+  if (type === 'tool_bash') return { label: 'bash', color: HUE.cyan };
+  if (type === 'git_commit') return { label: 'commit', color: HUE.commit };
+  if (type === 'git_push') return { label: 'push', color: HUE.push };
+  if (type === 'memory_feedback') return { label: 'memory', color: HUE.yellow };
+  if (type === 'memory_project') return { label: 'memory', color: HUE.purple };
+  if (type === 'memory_user') return { label: 'memory', color: HUE.cyan };
+  if (type === 'memory_reference') return { label: 'memory', color: HUE.blue };
+  if (type.startsWith('memory_')) return { label: 'memory', color: HUE.orange };
+  return { label: event._source || type || '?', color: NEUTRAL };
 }
 
 export default function EventCard({ event, showScore, showSource, onOpenTranscript, onProjectClick, onProviderClick, active }) {
@@ -140,16 +135,16 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
     >
       <div className="flex items-center gap-2 flex-wrap mb-1">
         <span
-          className="text-xs text-gray-500 font-mono cursor-help"
+          className="text-xs text-muted font-mono cursor-help"
           title={event.timestamp}
         >
           {relativeTime(event.timestamp)}
         </span>
 
-        {/* Event type badge */}
+        {/* Event type badge: outlined, never tinted (lib/palette.js) */}
         <span
           className="inline-block text-xs px-1.5 py-0.5 rounded font-mono"
-          style={{ backgroundColor: cat.color + '22', color: cat.color, border: `1px solid ${cat.color}44` }}
+          style={{ color: cat.color, border: `1px solid ${cat.color}44` }}
         >
           {cat.label}
         </span>
@@ -198,23 +193,23 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
 
       {/* Fetch context — show the prompt that triggered this fetch */}
       {event.prompt && event.prompt !== summary && (
-        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed italic">
+        <p className="text-xs text-muted mt-0.5 leading-relaxed italic">
           {event.prompt.length > 150 ? event.prompt.slice(0, 150) + '...' : event.prompt}
         </p>
       )}
 
       {/* Search query context */}
       {event.query && event.query !== summary && (
-        <p className="text-xs text-gray-500 mt-0.5 leading-relaxed italic">
+        <p className="text-xs text-muted mt-0.5 leading-relaxed italic">
           query: {event.query.length > 150 ? event.query.slice(0, 150) + '...' : event.query}
         </p>
       )}
 
       {/* Files changed for commits — show inline without expanding */}
       {event.files_changed && (
-        <div className="mt-1 text-xs text-gray-500 font-mono">
+        <div className="mt-1 text-xs text-muted font-mono">
           {event.files_changed.split(',').map((f, i) => (
-            <span key={i} className="inline-block mr-2 text-gray-400">{f.trim()}</span>
+            <span key={i} className="inline-block mr-2">{f.trim()}</span>
           ))}
         </div>
       )}
@@ -222,27 +217,27 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
       {(event.event_id || event.deeplink || event.session_id || event.commit_hash) && (
         <button
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-          className="text-xs text-gray-500 hover:text-gray-300 mt-1"
+          className="text-xs text-muted hover:text-gray-300 mt-1"
         >
           {expanded ? 'less' : 'more'}
         </button>
       )}
 
       {expanded && (
-        <div className="mt-2 text-xs text-gray-500 font-mono space-y-0.5">
+        <div className="mt-2 text-xs text-muted font-mono space-y-0.5">
           {event.event_id && <div>id: {event.event_id}</div>}
           {event.commit_hash && (
             <div>
-              commit: <span className="text-orange-400">{event.commit_hash.slice(0, 7)}</span>
+              commit: <span style={{ color: HUE.commit }}>{event.commit_hash.slice(0, 7)}</span>
               {event.url && (
-                <> — <a href={event.url} target="_blank" rel="noopener" className="text-blue-400 hover:underline">view on GitHub</a></>
+                <> — <a href={event.url} target="_blank" rel="noopener" className="text-link hover:underline">view on GitHub</a></>
               )}
             </div>
           )}
           {event.author && <div>author: {event.author}</div>}
           {!event.commit_hash && event.url && (
             <div>
-              url: <a href={event.url} target="_blank" rel="noopener" className="text-blue-400 hover:underline">{event.url}</a>
+              url: <a href={event.url} target="_blank" rel="noopener" className="text-link hover:underline">{event.url}</a>
             </div>
           )}
           {event.deeplink && <div>deeplink: {event.deeplink}</div>}

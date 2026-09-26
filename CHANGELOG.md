@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+### fix(explorer): hold the classic views' text to 8:1
+
+The Timeline event feed, Sessions and Search drew secondary text in Tailwind's
+gray-500 and gray-400. Across the grounds that text sits on (the page
+#0a0a0f, a session card #0d1019, an open session's event list #030712, the
+keyboard-active search result #151a23, and a hovered group header, which the
+timeline workspace paints #11151e rather than the bg-gray-800/50 its class
+names) gray-500 measured 3.62–4.16:1 and gray-400 6.90–7.93:1. Links used
+blue-400 (6.89:1 on the active result), a group header's domain blue-400 at 60%
+(3.31:1), and a commit hash orange-400 (7.74:1). Event-type and project badges
+were One Dark hues on a 13% tint of themselves, 4.62–7.98:1 on the active
+result; the grey that the project hash hands one project in ten (#5c6370) sat
+at 2.6:1. Facet-pill counts were faded to 50% opacity (1.5–3.5:1), and a
+selected pill, white on a 33% fill of its hue, left its count at 5.4–8.4:1 and
+its × at 4.5–6.5:1.
+
+`explorer/src/lib/palette.js` now holds the categorical hues. Each keeps its
+OKLCH hue angle with lightness raised to clear 9:1 on every classic ground
+(9.04–10.14:1 on the active result), and it adds `NEUTRAL` (#b9c0cb, also
+AgentBadge's colour for an unrecognised agent) and `LINK` (#93c5fd).
+ProjectBadge and FacetBar share its project hash, which they each carried a
+copy of, so every project keeps the hue it always hashed to. Badges and pills
+are outlined, never tinted. A pill's count is `muted` rather than faded, and a
+selected pill is filled with its hue and lettered in the page colour, at least
+10.19:1.
+
+Tailwind's `muted` token is now `NEUTRAL` (it was #abb1bb, 8.13:1 on the active
+result), and a `link` token joins it; `tailwind.config.js` imports both from
+palette.js. In these views gray-400 and gray-500 text is `muted` and blue-400
+is `link`. EventGroup's count label ("2 tool_file_edit events") moves to
+gray-300, the header's main label now that the time beside it is `muted`.
+`muted` is also the Transcript viewer's and the route-error panel's secondary
+text, which lightens from 9.16:1 to 10.78:1 on the page. The demo banner's
+"Try:" labels and chips were 2.6–6.4:1 and now compute at 8.65–10.75:1,
+including hover; the harness strips demo mode, so those are computed, not
+measured in the browser.
+
+`tests/browser/memory-entry.cjs` measures every text element, from computed
+styles, in the event feed, a hovered group header, an opened group, session
+cards closed and open, the header, the whole keyboard-active search card (the
+check previously held only its AgentBadge to the floor), the facet bar with a
+selected pill, a commit card's detail, and repeated-result, empty and loading
+searches. Each probe is guarded to prove it reached its ground, and failures
+collect across the journey and fail once. Against the old colours 12 of the 13
+probes failed, 93 entries, the lowest a facet count at 2.34:1. After the fix
+all 1,488 measurements pass, the lowest the unchanged active tab (gray-200 on
+gray-700) at 8.33:1. Each phase writes its measurements to
+`carto-classic-contrast-<phase>.json` in the artifacts directory.
+
+`textContrast` gains `exempt`. An element the page marks
+`data-contrast-exempt="<reason>"` is measured and reported but never fails.
+Two are marked: the header's `SC` monogram (2.61:1) and the facet bar's `·`
+group separator (1.92:1). The classic probes also exempt the timeline pager's
+disabled button, #a0a9b8 at 45% opacity (2.53:1). WCAG 1.4.3 exempts inactive
+controls, but the exemption is flagged for review, not measured as a pass.
+
 ### fix(load): type a milestone-only row by its milestone, not its log
 
 The load fills a missing `type` for every resident event. It used the log's

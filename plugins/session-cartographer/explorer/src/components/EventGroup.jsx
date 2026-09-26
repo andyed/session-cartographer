@@ -74,22 +74,22 @@ export default function EventGroup({ group, onOpenTranscript, onProjectClick }) 
   const typeLabel = type === 'fetch' ? 'fetches' : type === 'search' ? 'searches' : `${type} events`;
 
   return (
-    <div className="border border-gray-800 rounded-lg mb-2 overflow-hidden">
+    <div className="event-group border border-gray-800 rounded-lg mb-2 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800/50 transition-colors text-left"
       >
-        <span className="text-xs text-gray-500 font-mono" title={first.timestamp}>
+        <span className="text-xs text-muted font-mono" title={first.timestamp}>
           {relativeTime(first.timestamp)}
         </span>
-        <span className="text-xs text-gray-400">
+        <span className="text-xs text-gray-300">
           {events.length} {typeLabel}
         </span>
         {domain && (
-          <span className="text-xs text-blue-400/60 font-mono">{domain}</span>
+          <span className="text-xs text-link font-mono">{domain}</span>
         )}
         <ProjectBadge project={first.project} onClick={onProjectClick} />
-        <span className="text-xs text-gray-600 ml-auto">
+        <span className="text-xs text-muted ml-auto">
           {expanded ? '▾' : '▸'}
         </span>
       </button>

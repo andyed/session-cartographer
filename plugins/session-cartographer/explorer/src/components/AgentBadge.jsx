@@ -33,13 +33,15 @@
  * so it reads the same for anyone who cannot separate the two hues.
  */
 
+import { NEUTRAL } from '../lib/palette.js';
+
 const AGENTS = {
   claude: { label: 'claude', color: '#f0b48a' },
   codex: { label: 'codex', color: '#8fd3c7' },
   hermes: { label: 'hermes', color: '#cdb9ff' },
 };
 
-const UNKNOWN_AGENT = { label: '', color: '#b9c0cb' };
+const UNKNOWN_AGENT = { label: '', color: NEUTRAL };
 
 /** Palette for facet pills, so the bar and the badges agree. */
 export function agentColor(name) {

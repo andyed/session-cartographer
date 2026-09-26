@@ -5,49 +5,29 @@
  */
 import { useRef, useState, useEffect, useMemo } from 'react';
 import { agentColor } from './AgentBadge';
+import { HUE, NEUTRAL, INK_ON_HUE, projectColor, QUADRANT_HUES } from '../lib/palette.js';
 
-const COLORS = [
-  '#e06c75', '#c678dd', '#e5c07b', '#56b6c2', '#61afef',
-  '#d19a66', '#98c379', '#ff6b9d', '#c3a6ff', '#5c6370',
-];
-
-function hashColor(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return COLORS[Math.abs(hash) % COLORS.length];
-}
-
+// Hues and their measured ratios: lib/palette.js.
 const TYPE_COLORS = {
-  fetch: '#61afef', research_fetch: '#61afef',
-  search: '#e5c07b', research_search: '#e5c07b',
-  git_commit: '#ff9e64', git_push: '#ff6b6b',
-  tool_file_edit: '#98c379', tool_bash: '#56b6c2',
+  fetch: HUE.blue, research_fetch: HUE.blue,
+  search: HUE.yellow, research_search: HUE.yellow,
+  git_commit: HUE.commit, git_push: HUE.push,
+  tool_file_edit: HUE.green, tool_bash: HUE.cyan,
 };
 
 function typeColor(name) {
   if (TYPE_COLORS[name]) return TYPE_COLORS[name];
-  if (name.includes('compaction') || name.includes('session_end')) return '#e06c75';
-  if (name.includes('bridge')) return '#c678dd';
-  if (name.startsWith('memory_')) return '#d19a66';
-  if (name.startsWith('agent_') || name.startsWith('milestone_agent_')) return '#c3a6ff';
-  return '#5c6370';
+  if (name.includes('compaction') || name.includes('session_end')) return HUE.red;
+  if (name.includes('bridge')) return HUE.purple;
+  if (name.startsWith('memory_')) return HUE.orange;
+  if (name.startsWith('agent_') || name.startsWith('milestone_agent_')) return HUE.lavender;
+  return NEUTRAL;
 }
 
 const SOURCE_COLORS = {
-  keyword: '#98c379', semantic: '#61afef', browse: '#5c6370',
-  changelog: '#e5c07b', research: '#61afef', milestones: '#e06c75',
-  'tool-use': '#56b6c2', transcript: '#c678dd',
-};
-
-// Diff shape quadrant colors (Tier 3 — COGNITIVE_ARCHITECTURE.md)
-const QUADRANT_COLORS = {
-  bootstrap: '#56b6c2',     // cyan — scaffolding, new + small
-  construct: '#c678dd',     // purple — new + big, design decisions
-  surgical: '#98c379',      // green — small fixes, convergence
-  rework: '#d19a66',        // amber — big changes to existing files
+  keyword: HUE.green, semantic: HUE.blue, browse: NEUTRAL,
+  changelog: HUE.yellow, research: HUE.blue, milestones: HUE.red,
+  'tool-use': HUE.cyan, transcript: HUE.purple,
 };
 
 // Font size range
@@ -99,6 +79,10 @@ function computeSizes(items, containerWidth) {
   });
 }
 
+// A pill is outlined, never tinted, and its count is never dimmed with
+// opacity: on an 8% fill at 50% opacity the counts measured 1.5–3.5:1. A
+// selected pill is filled with its hue and lettered INK_ON_HUE (at least
+// 10.19:1); white on a 33% fill left its count at 5.4–8.4:1.
 function Pill({ label, count, color, active, onClick, fontSize, dimension, onHover }) {
   const py = fontSize > 13 ? '2px' : '1px';
 
@@ -112,19 +96,19 @@ function Pill({ label, count, color, active, onClick, fontSize, dimension, onHov
       <button
         onClick={onClick}
         {...hoverProps}
+        aria-pressed="true"
         className="inline-flex items-center gap-1 rounded font-mono transition-all outline-none ring-1 ring-offset-1 ring-offset-gray-900"
         style={{
           fontSize: `${fontSize}px`,
           lineHeight: 1.3,
           padding: `${py} ${Math.round(fontSize * 0.5)}px`,
-          backgroundColor: color + '55',
-          color: '#fff',
+          backgroundColor: color,
+          color: INK_ON_HUE,
           border: `1px solid ${color}`,
-          ringColor: color,
         }}
       >
-        {label}<span style={{ opacity: 0.7 }}>{count}</span>
-        <span className="opacity-60 hover:opacity-100" style={{ fontSize: `${fontSize - 2}px` }}>×</span>
+        {label}<span>{count}</span>
+        <span style={{ fontSize: `${fontSize - 2}px` }}>×</span>
       </button>
     );
   }
@@ -133,17 +117,17 @@ function Pill({ label, count, color, active, onClick, fontSize, dimension, onHov
     <button
       onClick={onClick}
       {...hoverProps}
+      aria-pressed="false"
       className="inline-flex items-center gap-0.5 rounded font-mono transition-all outline-none hover:brightness-125"
       style={{
         fontSize: `${fontSize}px`,
         lineHeight: 1.3,
         padding: `${py} ${Math.round(fontSize * 0.4)}px`,
-        backgroundColor: count > 0 ? color + '15' : 'transparent',
-        color: count > 0 ? color : '#4b5563',
-        border: `1px solid ${count > 0 ? color + '30' : '#374151'}`,
+        color: count > 0 ? color : NEUTRAL,
+        border: `1px solid ${count > 0 ? color + '44' : '#374151'}`,
       }}
     >
-      {label}<span style={{ opacity: 0.5 }}>{count}</span>
+      {label}<span className="text-muted">{count}</span>
     </button>
   );
 }
@@ -265,7 +249,7 @@ function TimeSparkline({ results, oldest, newest, visibleIds, onDotClick }) {
         {ticks.map(({ pct, label }, i) => (
           <span
             key={i}
-            className="absolute text-[10px] text-gray-400 font-mono -translate-x-1/2"
+            className="absolute text-[10px] text-muted font-mono -translate-x-1/2"
             style={{ left: `${Math.max(3, Math.min(97, pct))}%`, top: 0 }}
           >
             {label}
@@ -303,10 +287,10 @@ export default function FacetBar({ facets, activeFacets, onToggle, onClear, resu
         items.push({ label: name, count, dimension, color: colorFn(name), separator: false });
       }
     };
-    addGroup(facets.projects, 'projects', hashColor);
+    addGroup(facets.projects, 'projects', projectColor);
     addGroup(facets.types, 'types', typeColor);
-    addGroup(facets.quadrants, 'quadrants', (n) => QUADRANT_COLORS[n] || '#5c6370');
-    addGroup(facets.sources, 'sources', (n) => SOURCE_COLORS[n] || '#5c6370');
+    addGroup(facets.quadrants, 'quadrants', (n) => QUADRANT_HUES[n] || NEUTRAL);
+    addGroup(facets.sources, 'sources', (n) => SOURCE_COLORS[n] || NEUTRAL);
     // Which agent produced it — the corpus is roughly half Codex, so this is a
     // first-class cut, not a curiosity.
     addGroup(facets.providers, 'providers', agentColor);
@@ -319,7 +303,7 @@ export default function FacetBar({ facets, activeFacets, onToggle, onClear, resu
   );
 
   return (
-    <div className="flex flex-col gap-1 px-4 py-2 border-b border-gray-800/50 flex-shrink-0">
+    <div className="facet-bar flex flex-col gap-1 px-4 py-2 border-b border-gray-800/50 flex-shrink-0">
       {/* Facet pills — space-filling proportional layout */}
       <div ref={containerRef} className="flex flex-wrap items-center gap-1">
         {allItems.map((item, i) => (
@@ -334,11 +318,11 @@ export default function FacetBar({ facets, activeFacets, onToggle, onClear, resu
               dimension={item.dimension}
               onHover={onBrush}
             />
-            {item.separator && <span className="text-gray-700 mx-0.5">·</span>}
+            {item.separator && <span className="text-gray-700 mx-0.5" aria-hidden="true" data-contrast-exempt="separator">·</span>}
           </span>
         ))}
         {hasActive && (
-          <button onClick={onClear} className="text-xs text-gray-500 hover:text-gray-300 underline ml-1">clear</button>
+          <button onClick={onClear} className="text-xs text-muted hover:text-gray-300 underline ml-1">clear</button>
         )}
       </div>
 
