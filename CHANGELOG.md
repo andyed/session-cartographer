@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### test(explorer): measure the inspector's hand-off row
+
+The removed `memory-desk.css` gave the hand-off row (Open in Codex, Read
+conversation, Copy resume command) a 44px minimum height and a focus outline.
+The row already had both from general rules in `focus-workspace.css`:
+`.fw-inspector a` and `.fw-inspector button` set the 44px, and the
+`.focus-workspace` and `.focus-timeline-workspace` `:focus-visible` rule draws
+a 2px `--fw-accent` ring. Measured in the inspector, both controls are 44px
+tall with a solid 2px `rgb(114, 230, 239)` ring, in Working memory and in the
+Timeline. The desk's rules are not restored: the height would duplicate the
+`.fw-inspector` rule, and its `#55d9e6` inset outline would replace the
+workspace ring.
+
+`memory-entry.cjs` now reaches each hand-off control with Tab and asserts that
+`:focus-visible` matched before it reads the height and the outline, in the
+Working memory inspector and, on a separate page, the Timeline's. The fixture
+renders a link and a button. With `.fw-inspector a` taken out of the 44px rule
+and the workspace ring set to `outline: none`, the probe failed with the link
+at 40px and neither control drawing a ring.
+
 ### chore(explorer): remove two stylesheets nothing loads
 
 `explorer/src/styles/memory-desk.css` and `explorer/src/styles/memory.css.bak`
@@ -21,8 +41,8 @@ its styling.
 
 `npm run build --prefix explorer` produces a byte-identical `dist/` before and
 after, with the same hashed asset names. The desk file's `.md-handoff` rules
-differ from the live ones (a 44px minimum link height and a focus outline), but
-they never reached the built CSS, so no rendered style changes.
+asked for a 44px minimum link height and a focus outline; the row gets both
+from the inspector's and the workspace's general rules (see the entry above).
 
 ### fix(explorer): hold the whole Transcript viewer to 8:1
 

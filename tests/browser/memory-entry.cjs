@@ -313,6 +313,33 @@ async function port() {
       assert.ok(onSelected.length >= 3, `${name}: the probe must measure the selected row's text on #153640 (measured ${onSelected.length} of ${measured.length})`);
       assert.deepEqual(failures, [], `${name}: result text under 8:1`);
     }
+    // The inspector's hand-off row (Open in Codex, Read conversation, Copy
+    // resume command) holds 44px targets drawn with a focus ring. Each control
+    // is left with Shift+Tab and re-entered with Tab so focus arrives from the
+    // keyboard, and :focus-visible is asserted before the outline is read:
+    // without it a present ring would read as missing.
+    async function assertHandoffTargets(targetPage, name) {
+      const controls = targetPage.getByRole('complementary', { name: 'Evidence inspector' }).locator('.md-handoff').locator('a, button');
+      const count = await controls.count();
+      assert.ok(count >= 2, `${name}: the fixture must render at least two hand-off controls (rendered ${count})`);
+      const probes = [];
+      for (let i = 0; i < count; i++) {
+        const control = controls.nth(i);
+        await control.focus();
+        await targetPage.keyboard.press('Shift+Tab');
+        await targetPage.keyboard.press('Tab');
+        probes.push(await control.evaluate(el => {
+          const style = getComputedStyle(el);
+          return { label: el.textContent.trim(), focused: document.activeElement === el, visible: el.matches(':focus-visible'), height: el.getBoundingClientRect().height, outline: `${style.outlineStyle} ${style.outlineWidth} ${style.outlineColor}` };
+        }));
+      }
+      assert.ok(probes.every(p => p.focused && p.visible), `${name}: Tab must reach every hand-off control with :focus-visible (${JSON.stringify(probes)})`);
+      const failures = probes.flatMap(p => [
+        ...(p.height < 44 ? [`${p.label}: ${p.height}px tall`] : []),
+        ...(/^solid ([2-9]|\d{2,})(\.\d+)?px /.test(p.outline) ? [] : [`${p.label}: focus ring ${p.outline}`]),
+      ]);
+      assert.deepEqual(failures, [], `${name}: hand-off controls under 44px tall or without a 2px focus ring`);
+    }
     async function verifyExplorer(phase) {
       const legacy = await browser.newPage({ viewport: { width: 1200, height: 880 }, reducedMotion: 'reduce' });
       legacy.on('pageerror', e => errors.push(`${phase}: ${e.message}`));
@@ -797,6 +824,17 @@ async function port() {
     await deskPage.getByText('Review the handoff', { exact: true }).click();
     await deskPage.getByRole('complementary', { name: 'Evidence inspector' }).waitFor();
     assert.equal(await deskPage.getByRole('link', { name: 'Open in Codex ↗' }).getAttribute('href'), `codex://threads/${docSession}`);
+    await assertHandoffTargets(deskPage, 'Working memory inspector');
+    // The same inspector opens in the Timeline under its own workspace root,
+    // so its hand-off row is measured there too, on a separate page.
+    const timelineInspector = await browser.newPage({ viewport: { width: 1280, height: 920 }, reducedMotion: 'reduce' });
+    timelineInspector.on('pageerror', e => errors.push(`timeline inspector: ${e.message}`));
+    await timelineInspector.goto(deskPage.url());
+    await timelineInspector.getByRole('complementary', { name: 'Evidence inspector' }).waitFor();
+    await timelineInspector.getByRole('button', { name: 'Timeline ↗', exact: true }).click();
+    await timelineInspector.getByRole('button', { name: 'Review in Memory ↗', exact: true }).waitFor();
+    await assertHandoffTargets(timelineInspector, 'Timeline inspector');
+    await timelineInspector.close();
     await assertResultRowContrast(deskPage, '.fw-task-row[data-selected]', 'selected task row');
     await deskPage.getByRole('button', { name: 'Back to results' }).click();
 
@@ -1129,7 +1167,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; the inspector hand-off row at 44px with a keyboard focus ring in Working memory and the Timeline; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;
