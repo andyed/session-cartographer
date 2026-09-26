@@ -25,14 +25,21 @@ const STATUS_LABELS = {
   no_compatible_serve: 'no matching call',
 };
 const statusLabel = status => status ? STATUS_LABELS[status] || status : 'status not recorded';
+const isCallList = body => Array.isArray(body?.calls) && Boolean(body.totals) && Boolean(body.unplaced);
+const isCallDetail = body => Array.isArray(body?.rows) && Boolean(body.resolution);
 
-function useRecall(url, key) {
+// A backend started before these endpoints existed answers with the SPA's
+// HTML, which apiRequest reads as {}. Say so instead of rendering nothing.
+const STALE_BACKEND = 'The running Explorer backend does not serve recall telemetry yet. Restart Turbo and the Explorer UI to load it.';
+
+function useRecall(url, key, isShape) {
   const [state, setState] = useState({ loading: true });
   useEffect(() => {
     if (!url) return undefined;
     const controller = new AbortController();
     setState(current => ({ ...current, loading: true, error: null }));
     apiRequest(url, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) })
+      .then(body => { if (!isShape(body)) throw new Error(STALE_BACKEND); return body; })
       .then(body => { if (!controller.signal.aborted) setState({ loading: false, body }); })
       .catch(error => { if (!controller.signal.aborted) setState({ loading: false, error: error.message }); });
     return () => controller.abort();
@@ -122,7 +129,7 @@ function StrayMarks({ marks, workspace }) {
 }
 
 function CallResults({ call, workspace }) {
-  const detail = useRecall(`/api/memory/recall/call?${new URLSearchParams({ call: call.call_id })}`, call.call_id);
+  const detail = useRecall(`/api/memory/recall/call?${new URLSearchParams({ call: call.call_id })}`, call.call_id, isCallDetail);
   if (detail.loading && !detail.body) return <p className="rc-quiet" role="status">Reading ranked results…</p>;
   if (detail.error) return <p role="alert">{detail.error}</p>;
   const { rows, stray_marks: stray, resolution } = detail.body;
@@ -182,7 +189,7 @@ function useExpanded(workspace) {
 export function SessionRecall({ workspace, session }) {
   const [refresh, setRefresh] = useState(0);
   const [expanded, toggle] = useExpanded(workspace);
-  const recall = useRecall(isDemoMode ? null : `/api/memory/recall?${new URLSearchParams({ session: session.id })}`, `${session.id}:${refresh}`);
+  const recall = useRecall(isDemoMode ? null : `/api/memory/recall?${new URLSearchParams({ session: session.id })}`, `${session.id}:${refresh}`, isCallList);
   if (isDemoMode) return null;
   const body = recall.body;
   return <section className="rc-session" aria-label="Recall">
@@ -216,7 +223,7 @@ export default function MemoryRecall({ workspace, onSession, hrefForSession, vie
     return `/api/memory/recall?${params}`;
   }, [windowKey, purpose, refresh]);
   // Keyed on the counter too: in a fixed window, Refresh leaves the URL unchanged.
-  const recall = useRecall(url, `${url}|${refresh}`);
+  const recall = useRecall(url, `${url}|${refresh}`, isCallList);
   const titles = useMemo(() => new Map((data?.sessions || []).map(session => [session.id, session])), [data]);
   const body = recall.body;
   const groups = useMemo(() => {

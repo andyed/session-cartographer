@@ -637,6 +637,14 @@ async function port() {
     await recallView.getByRole('button', { name: 'Refresh', exact: true }).click();
     await recallView.getByText('refresh proof', { exact: true }).waitFor({ timeout: 15000 });
     await recallPage.close();
+    // A backend started before these endpoints existed answers with the SPA's
+    // HTML; the view must say so rather than crash or render an empty window.
+    const staleRecall = await browser.newPage({ viewport: { width: 1280, height: 920 }, reducedMotion: 'reduce' });
+    staleRecall.on('pageerror', e => errors.push(`stale recall: ${e.message}`));
+    await staleRecall.route(/\/api\/memory\/recall(\?|$)/, route => route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><div id="root"></div>' }));
+    await staleRecall.goto(origin + '/memory?surface=recall');
+    await staleRecall.getByRole('region', { name: 'Recall searches' }).getByRole('alert').getByText(/does not serve recall telemetry yet/).waitFor({ timeout: 15000 });
+    await staleRecall.close();
 
     // Internals remains adjacent to Memory, and managed Turbo can be stopped
     // and restarted without discarding the last successful workspace snapshot.
