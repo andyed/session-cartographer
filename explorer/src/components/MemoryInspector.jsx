@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../api.js';
 import { containsTimestamp } from '../../shared/focus.js';
 import MemorySession from './MemorySession.jsx';
@@ -38,14 +38,17 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
       .catch(error => { if (!controller.signal.aborted) setReview({ key: requestKey, error: error.message }); });
     return () => controller.abort();
   }, [route.session, route.contributor, route.file, Boolean(route.review), requestKey]);
-  useEffect(() => {
+  // A layout effect, so focus moves in the commit that removed the focused
+  // review control. Deferring it a frame left focus on BODY in between, and a
+  // second Escape arriving before a late frame never reached this panel.
+  useLayoutEffect(() => {
     const returnPath = previousReview.current;
     previousReview.current = route.review ? route.file : null;
     if (returnPath && !route.review) {
-      requestAnimationFrame(() => {
-        const target = panel.current?.querySelector(`[data-file-path="${CSS.escape(returnPath)}"]`);
-        (target || heading.current)?.focus({ preventScroll: true });
-      });
+      // A row past the first eight renders on MemorySession's follow-up pass,
+      // so it is absent here and the heading takes focus.
+      const target = panel.current?.querySelector(`[data-file-path="${CSS.escape(returnPath)}"]`);
+      (target || heading.current)?.focus({ preventScroll: true });
     } else {
       heading.current?.focus({ preventScroll: true });
       if (window.matchMedia('(max-width: 1000px)').matches) panel.current?.scrollIntoView({ block: 'start' });

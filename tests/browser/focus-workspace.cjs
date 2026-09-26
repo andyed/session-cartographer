@@ -52,6 +52,25 @@ async function ensureWorkspace(page, { results = true } = {}) {
   if (results) await page.getByRole('region', { name: 'Work results' }).waitFor({ timeout: 60_000 });
 }
 
+// Withholds the page's animation-frame callbacks until the returned release
+// runs, as a loaded CI runner does when the next frame is late. A step checked
+// under it cannot pass by finishing before a deferred focus call runs.
+async function holdAnimationFrames(page) {
+  await page.evaluate(() => {
+    const request = window.requestAnimationFrame, cancel = window.cancelAnimationFrame;
+    const held = new Map();
+    let next = -1;
+    window.requestAnimationFrame = callback => { held.set(next, callback); return next--; };
+    window.cancelAnimationFrame = id => { if (!held.delete(id)) cancel.call(window, id); };
+    window.__releaseAnimationFrames = () => {
+      window.requestAnimationFrame = request; window.cancelAnimationFrame = cancel;
+      for (const callback of held.values()) request.call(window, callback);
+      held.clear();
+    };
+  });
+  return () => page.evaluate(() => window.__releaseAnimationFrames());
+}
+
 async function noHorizontalOverflow(page, label) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const layout = await page.evaluate(() => {
@@ -428,9 +447,20 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     await page.getByText(/Alpha updates shared brief/).waitFor();
     await page.getByRole('button', { name: 'Current file', exact: true }).click();
     await page.getByLabel('File source').getByText('Current workspace state only.', { exact: false }).waitFor();
+    // Closing the file removes the focused review control. Focus must be back
+    // inside the inspector before any frame runs, or a quick second Escape
+    // lands on BODY and never closes the task (release run 36275746146).
+    const releaseFrames = await holdAnimationFrames(page);
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Back to results' }).waitFor();
+    const focusAfterFileClose = await page.evaluate(() => {
+      const active = document.activeElement;
+      return { inInspector: Boolean(active?.closest('[aria-label="Evidence inspector"]')), label: active?.getAttribute('aria-label') || active?.tagName };
+    });
+    assert.ok(focusAfterFileClose.inInspector,
+      `closing the file left focus outside the inspector until the next frame: ${focusAfterFileClose.label}`);
     await page.keyboard.press('Escape');
+    await releaseFrames();
     await page.waitForFunction(() => !new URL(location.href).searchParams.has('session'));
 
     // Appends preserve fixed scope. The matching project gains one named task;

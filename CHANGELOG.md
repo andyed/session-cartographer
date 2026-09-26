@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### fix(explorer): keep focus in the inspector when a file review closes
+
+The first v0.8.0 release run (36275746146) failed `focus-workspace.cjs
+--preview` at line 434: the second of two Escape presses never closed the
+task, while CI on the same commit passed. When a file review closes, the
+control holding focus leaves the page, and focus was moved back inside the
+inspector one animation frame later. Until that frame ran, focus sat on BODY,
+out of reach of the inspector's Escape handler, so an Escape pressed before a
+late frame was lost. The failure was reproduced locally by delaying the page's animation-frame
+callbacks by 20 ms during that step: the second Escape landed on BODY. CPU
+throttling at 8× did not reproduce it. Focus is now moved in a layout effect,
+in the same commit that removes the control; under the same delay the second
+Escape lands on the file row and closes the task.
+
+The harness withholds animation frames across the close and asserts that focus
+is inside the inspector before the second Escape. Against the previous code it
+fails on every run (3 of 3), with focus on BODY. Returning to a file past the
+eighth row still lands on the task heading, as it did before: that row renders
+on `MemorySession`'s follow-up pass, after both the old frame and the new
+commit.
+
 ## 0.8.0 — 2026-09-26
 
 ### test(explorer): wait for the task before counting its hand-off controls
