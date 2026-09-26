@@ -67,9 +67,28 @@ async function port() {
   const explorerTranscript = path.join(transcriptRoot, `${explorerSession}.jsonl`);
   const explorerPrompt = 'Explain the Aurora calibration decision.';
   const explorerAnswer = 'Aurora calibration preserves the measured signal.';
+  // Past 500 characters a message truncates to "..." and an expand button;
+  // the Markdown before the cut renders a heading, emphasis, a bullet, a
+  // numbered item and a code block, each with a colour of its own.
+  const explorerNotes = '## Calibration notes\nThe *measured* signal held across both runs.\n- Drift stayed inside the tolerance band.\n1. Re-run the sweep after the firmware update.\n```\ncalibrate --sweep\n```\n' + 'The sweep log is kept verbatim so the next run can be compared line by line. '.repeat(6);
+  assert.ok(explorerNotes.length > 500, 'the notes must be long enough to truncate');
+  const explorerTurn = (type, uuid, seconds, fields) => ({ type, uuid, sessionId: explorerSession, timestamp: new Date(now - seconds * 1000).toISOString(), ...fields });
+  const explorerReply = (uuid, seconds, id, usage, content, fields = {}) => explorerTurn('assistant', uuid, seconds, { ...fields, message: { id, role: 'assistant', model: 'fixture-model', ...(usage ? { usage } : {}), content } });
+  // Beyond the prompt and answer, one of everything the viewer draws in its
+  // own colour: a slash command and a compaction summary, which collapse to
+  // noise bars; the compaction banner, which needs input tokens before and
+  // after the summary (1,200 then 300, so 1k → 300, −75%); three turns with
+  // input tokens for the cache sparkline; a tool call for the summary card; a
+  // sidechain agent's badge; and a progress row, shown under the system toggle.
   fs.writeFileSync(explorerTranscript, [
-    { type: 'user', uuid: 'explorer-user-1', sessionId: explorerSession, timestamp: new Date(now - 300000).toISOString(), message: { role: 'user', content: explorerPrompt } },
-    { type: 'assistant', uuid: 'explorer-assistant-1', sessionId: explorerSession, timestamp: new Date(now - 240000).toISOString(), message: { id: 'explorer-response-1', role: 'assistant', model: 'fixture-model', usage: { input_tokens: 240, cache_read_input_tokens: 40, output_tokens: 32 }, content: [{ type: 'text', text: explorerAnswer }] } },
+    explorerTurn('user', 'explorer-user-1', 300, { message: { role: 'user', content: explorerPrompt } }),
+    explorerReply('explorer-assistant-1', 240, 'explorer-response-1', { input_tokens: 240, cache_read_input_tokens: 40, output_tokens: 32 }, [{ type: 'text', text: explorerAnswer }]),
+    explorerTurn('user', 'explorer-command-1', 230, { message: { role: 'user', content: '<command-name>/calibrate</command-name>' } }),
+    explorerReply('explorer-assistant-2', 220, 'explorer-response-2', { input_tokens: 300, cache_read_input_tokens: 900, output_tokens: 40 }, [{ type: 'text', text: explorerNotes }, { type: 'tool_use', id: 'toolu-fixture-1', name: 'Read', input: { file_path: 'calibration.md' } }]),
+    explorerTurn('user', 'explorer-compact-1', 200, { isCompactSummary: true, message: { role: 'user', content: 'This session is being continued from a previous conversation that ran out of context.' } }),
+    explorerReply('explorer-assistant-3', 180, 'explorer-response-3', { input_tokens: 150, cache_read_input_tokens: 150, output_tokens: 20 }, [{ type: 'text', text: 'Calibration resumed from the summary.' }]),
+    explorerReply('explorer-agent-1', 170, 'explorer-agent-response-1', null, [{ type: 'text', text: 'The subagent checked the calibration table.' }], { isSidechain: true, agentId: 'fixture-agent' }),
+    explorerTurn('progress', 'explorer-progress-1', 160, { data: { type: 'hook_progress' } }),
   ].map(JSON.stringify).join('\n') + '\n');
   const explorerSummaries = [
     'Aurora calibration approved for release',
@@ -303,9 +322,14 @@ async function port() {
       // group header, a selected facet pill's own fill, and the search
       // combobox: its placeholder on the field (#111827), its suggestion list
       // and co-term flyout (#1f2937) and their active rows (#374151). The
-      // timeline's find field is measured empty on its own fill (#11151e), and
-      // the Transcript viewer's search field empty on gray-900 (#111827), then
-      // its toolbar with a term entered, on the page. Failures collect
+      // timeline's find field is measured empty on its own fill (#11151e). The
+      // Transcript viewer is measured loading, then whole: its search field
+      // empty on gray-900 (#111827), messages on the page and in the user's
+      // bubble (#12161f), the summary card (#0e121d), the sidebar and
+      // compaction banner (#030712) and a code block (#1f2937); then with the
+      // system row shown and a message expanded, a sidebar category selected
+      // (#1f2937), the sidebar collapsed, and a term entered, which tints a
+      // matching message (#15120f) and marks each match. Failures collect
       // across the journey and fail once, so a regression names every element
       // at once. Each probe also proves it reached its ground: a probe that
       // measures nothing reports success. The pointer leaves the page first
@@ -366,11 +390,16 @@ async function port() {
         assert.deepEqual(agentFacets.map(f => f.name).sort(), ['claude', 'codex'], 'Search facets omitted the agent dimension');
         const transcriptQuery = `?path=${encodeURIComponent(explorerTranscript)}`;
         const recorded = await apiJSON('/api/transcript' + transcriptQuery);
-        assert.equal(recorded.total, 2);
-        assert.deepEqual(recorded.messages.map(message => message.content), [explorerPrompt, explorerAnswer]);
+        assert.equal(recorded.total, 8);
+        assert.deepEqual(recorded.messages.slice(0, 2).map(message => message.content), [explorerPrompt, explorerAnswer]);
+        assert.deepEqual(recorded.messages.filter(message => message.noise).map(message => message.noise), ['slash-command', 'compaction-summary']);
         const analysis = await apiJSON('/api/transcript/analysis' + transcriptQuery);
         assert.ok(analysis.summary?.totalTurns > 0, 'Transcript analysis fell back to missing enrichment');
         assert.ok(analysis.summary.totalTokens > 0, 'Transcript analysis omitted recorded token usage');
+        // The viewer draws a banner and a sparkline only from these.
+        assert.deepEqual(analysis.compactionEvents, [{ uuid: 'explorer-compact-1', preTokens: 1200, postTokens: 300 }]);
+        assert.equal(analysis.cacheTimeline.length, 3);
+        assert.equal(analysis.isOngoing, false);
 
         const streaming = legacy.waitForResponse(response => new URL(response.url()).pathname === '/api/stream' && response.status() === 200, { timeout: 15000 });
         await legacy.getByRole('button', { name: 'timeline', exact: true }).click();
@@ -409,24 +438,80 @@ async function port() {
         await explorerCard.getByRole('button', { name: '▼ View Session Events', exact: true }).click();
         await explorerCard.getByTitle('Open transcript', { exact: true }).first().waitFor();
         await classic('.timeline-session-result', 'open session', { grounds: ['#0d1019', '#030712'] });
+        // Hold the transcript in flight to measure its loading line. The dev
+        // host mounts the viewer twice and aborts the first request, whose
+        // route is then already handled when it is released.
+        let releaseTranscript;
+        const heldTranscript = new Promise(resolve => { releaseTranscript = resolve; });
+        const holdTranscript = url => url.pathname === '/api/transcript';
+        await legacy.route(holdTranscript, async route => { await heldTranscript; await route.continue().catch(() => {}); });
         await explorerCard.getByTitle('Open transcript', { exact: true }).first().click();
+        await legacy.getByText('Loading transcript...', { exact: true }).waitFor();
+        await classic('#transcript-viewer', 'transcript loading', { grounds: ['#0a0a0f'] });
+        releaseTranscript();
+        await legacy.unroute(holdTranscript);
         const transcriptSearch = legacy.getByPlaceholder('Search in transcript...');
         await transcriptSearch.waitFor();
         await legacy.getByText(explorerAnswer, { exact: true }).waitFor();
         assert.ok(new URL(legacy.url()).pathname.startsWith('/session/'));
+        // The summary card and the sidebar wait on the analysis.
+        const attribution = legacy.locator('#transcript-attribution');
+        await attribution.getByText('Token attribution', { exact: true }).waitFor();
         await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-transcript.png`) });
         // The empty search field shows its placeholder, read from the field's
         // ::placeholder style and measured on the field's own fill.
         const transcriptField = await classic('#transcript-toolbar input[type="text"]', 'transcript search placeholder', { grounds: ['#111827'] });
         assert.ok(transcriptField.some(entry => entry.element.endsWith('::placeholder') && entry.text === 'Search in transcript...'), `${phase}: the probe did not measure the transcript search placeholder (measured ${JSON.stringify(transcriptField)})`);
+        // The whole viewer: messages on the page and in the user's bubble
+        // (#12161f), the summary card (#0e121d), the sidebar and the
+        // compaction banner (#030712), and a code block (#1f2937). Each entry
+        // below is text the fixture renders in a colour of its own; the probe
+        // must reach it on the ground it is read on.
+        const reached = (entries, view, expected) => {
+          for (const [text, ground] of expected) assert.ok(entries.some(entry => text.test(entry.text) && entry.ground === ground), `${phase} ${view}: the probe measured nothing matching ${text} on ${ground} (measured ${JSON.stringify(entries.map(entry => [entry.text, entry.ground]))})`);
+        };
+        const viewer = await classic('#transcript-viewer', 'transcript viewer', { grounds: ['#0a0a0f', '#12161f', '#0e121d', '#030712', '#1f2937'] });
+        reached(viewer, 'transcript viewer', [
+          [/^user$/, '#12161f'], [/^\d+m ago$/, '#12161f'], [/^fixture-model$/, '#0a0a0f'], [/^\d+m ago$/, '#0a0a0f'],
+          [/^fixture-agent$/, '#0a0a0f'], [/^\/calibrate$/, '#0a0a0f'], [/^session continuation summary$/, '#0a0a0f'],
+          [/^measured$/, '#0a0a0f'], [/^·$/, '#0a0a0f'], [/^1\.$/, '#0a0a0f'], [/^calibrate --sweep$/, '#1f2937'],
+          [/^\.\.\.$/, '#0a0a0f'], [/^expand \(\d+ chars\)$/, '#0a0a0f'],
+          [/^turns$/, '#0e121d'], [/^compactions$/, '#0e121d'], [/^cache$/, '#0e121d'], [/^\d+%$/, '#0e121d'],
+          [/^⚡ compaction$/, '#030712'], [/^1k/, '#030712'], [/^→$/, '#030712'], [/^−75%$/, '#030712'],
+          [/^▸$/, '#030712'], [/^Token attribution$/, '#030712'], [/^Thinking \/ text$/, '#030712'], [/^\d+%$/, '#030712'],
+        ]);
+        // The system toggle adds the progress row, labelled `system`, and an
+        // expanded message relabels its button `collapse`.
+        await legacy.locator('#transcript-toolbar').getByRole('checkbox', { name: 'system', exact: true }).check();
+        await legacy.locator('#explorer-progress-1').waitFor();
+        await legacy.locator('#explorer-assistant-2').getByRole('button', { name: /^expand/ }).click();
+        const shown = await classic('#explorer-progress-1, #explorer-assistant-2', 'transcript system row and expanded message', { grounds: ['#0a0a0f'] });
+        reached(shown, 'transcript system row and expanded message', [[/^system$/, '#0a0a0f'], [/^collapse$/, '#0a0a0f']]);
+        await legacy.locator('#explorer-assistant-2').getByRole('button', { name: 'collapse', exact: true }).click();
+        await legacy.locator('#transcript-toolbar').getByRole('checkbox', { name: 'system', exact: true }).uncheck();
+        // A selected category is painted gray-800 and offers `clear filter`;
+        // collapsed, the sidebar shows only its expand glyph.
+        await attribution.getByRole('button', { name: /^Thinking \/ text/ }).click();
+        await attribution.getByRole('button', { name: 'clear filter', exact: true }).waitFor();
+        const selectedCategory = await classic('#transcript-attribution', 'selected attribution category', { grounds: ['#1f2937'] });
+        reached(selectedCategory, 'selected attribution category', [[/^Thinking \/ text$/, '#1f2937'], [/^\d+%$/, '#1f2937'], [/^clear filter$/, '#030712']]);
+        await attribution.getByRole('button', { name: 'clear filter', exact: true }).click();
+        await attribution.getByTitle('Collapse', { exact: true }).click();
+        await attribution.getByTitle('Expand token attribution', { exact: true }).waitFor();
+        const collapsed = await classic('#transcript-attribution', 'collapsed attribution', { grounds: ['#030712'] });
+        reached(collapsed, 'collapsed attribution', [[/^◂$/, '#030712']]);
+        await attribution.getByTitle('Expand token attribution', { exact: true }).click();
         // A term adds the match count. The rest of the toolbar (back, the
-        // system toggle's label, the message count) sits on the page; the
-        // noise toggle shares the system toggle's class but renders only for
-        // a transcript holding noise, which this fixture does not.
+        // system and noise toggles' labels, the message count) sits on the
+        // page.
         await transcriptSearch.fill('aurora');
         await legacy.locator('#transcript-toolbar').getByText(/^\d+ match(es)?$/).waitFor();
         const toolbar = await classic('#transcript-toolbar', 'transcript toolbar', { grounds: ['#0a0a0f', '#111827'] });
-        for (const text of [/^back$/, /^system$/, /^\d+ messages?$/, /^\d+ match(es)?$/]) assert.ok(toolbar.some(entry => text.test(entry.text) && entry.ground === '#0a0a0f'), `${phase}: the transcript toolbar probe measured nothing matching ${text} on the page (measured ${JSON.stringify(toolbar)})`);
+        for (const text of [/^back$/, /^system$/, /^noise$/, /^\d+ messages?$/, /^\d+ match(es)?$/]) assert.ok(toolbar.some(entry => text.test(entry.text) && entry.ground === '#0a0a0f'), `${phase}: the transcript toolbar probe measured nothing matching ${text} on the page (measured ${JSON.stringify(toolbar)})`);
+        // A matching message is tinted yellow-500/5 (#15120f), and each match
+        // is marked on yellow-500/30 over its row.
+        const matched = await classic('#transcript-viewer', 'transcript matches', { grounds: ['#15120f'] });
+        assert.ok(matched.some(entry => entry.element.startsWith('bg-yellow-500/30') && /^aurora$/i.test(entry.text)), `${phase}: the probe measured no marked match`);
         await transcriptSearch.fill('');
 
         await legacy.goto(origin + '/?view=concurrent');
@@ -976,12 +1061,22 @@ async function port() {
     assert.equal((await failedAnalysisResponse).status(),503);
     await transcriptFallback.getByText(explorerAnswer,{exact:true}).waitFor();
     await transcriptFallback.getByText('Basic view · analysis unavailable',{exact:true}).waitFor();
+    // The basic view and the unavailable panel below are the viewer's two
+    // failure states; both are held to the same floor as the full view.
+    await transcriptFallback.mouse.move(1,1);
+    const basicView = await textContrast(transcriptFallback, '#transcript-viewer');
+    assert.ok(basicView.measured.some(entry => entry.text === 'Basic view · analysis unavailable' && entry.ground === '#0a0a0f'), 'transcript fallback: the probe did not measure the analysis notice');
+    assert.deepEqual(basicView.failures, [], 'transcript fallback: basic view text under 8:1');
     const expiredTranscript = path.join(transcriptRoot,'expired-session.jsonl');
     const missingTranscriptResponse = await transcriptFallback.request.get(origin+`/api/transcript?path=${encodeURIComponent(expiredTranscript)}`);
     assert.equal(missingTranscriptResponse.status(),404);
     assert.equal((await missingTranscriptResponse.json()).code,'TRANSCRIPT_NOT_FOUND');
     await transcriptFallback.goto(origin+`/session/${encodeURIComponent(expiredTranscript)}`);
     await transcriptFallback.getByRole('heading',{name:'Transcript unavailable',exact:true}).waitFor();
+    await transcriptFallback.mouse.move(1,1);
+    const unavailable = await textContrast(transcriptFallback, '#transcript-viewer');
+    assert.ok(unavailable.measured.some(entry => entry.text === 'Transcript unavailable' && entry.ground !== '#0a0a0f'), 'transcript fallback: the probe did not measure the unavailable panel on its own fill');
+    assert.deepEqual(unavailable.failures, [], 'transcript fallback: unavailable panel text under 8:1');
     const retryResponse = transcriptFallback.waitForResponse(response => new URL(response.url()).pathname === '/api/transcript');
     await transcriptFallback.getByRole('button',{name:'Retry transcript',exact:true}).click();
     assert.equal((await retryResponse).status(),404);
@@ -1034,7 +1129,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the transcript search placeholder and toolbar); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

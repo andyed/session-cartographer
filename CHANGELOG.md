@@ -2,6 +2,50 @@
 
 ## Unreleased
 
+### fix(explorer): hold the whole Transcript viewer to 8:1
+
+The Transcript viewer's toolbar was fixed in 129ec65; the rest of the viewer
+was not measured. Its secondary text was gray-500, gray-600 and gray-700, at
+1.92–4.16:1 on the viewer's grounds: a message's relative time, the summary
+card's labels, the cache sparkline's label and average, the sidebar's heading,
+collapse glyph, category labels, percentages and `clear filter`, the noise
+bars and their icons, the compaction banner's token counts and arrow, list
+markers, a truncated message's `...` and its expand button, the `system` role
+label, and the loading line. Emphasis was gray-400 (7.78:1). The `user` label
+was blue-400, 7.10:1 in the user's bubble (#12161f) and 7.32:1 on a message
+matching the search (#15120f); a sidechain agent's label was violet-400
+(7.26:1), and its badge violet-400 on a 15% violet tint (6.35:1). The
+compaction banner's orange-400 was faded to 80% and 60% (5.89:1, 3.68:1).
+
+Secondary text is now `muted`, from 9.85:1 in the user's bubble to 10.99:1 on
+the sidebar. The role labels, the sidechain badge and the compaction accents
+are drawn in `palette.js` hues (blue, green, lavender, orange), at least
+9.31:1 on the bubble, a match and the summary card; those three grounds are
+added to the table there. The assistant's label passed in green-400 (11.33:1)
+and was moved to the palette's green anyway, so all three roles come from one
+measured set. The sidechain badge is outlined, not tinted, as the classic
+badges are. A sidebar percentage is drawn in its row's colour: `muted` would
+read 8.01:1 on a selected row's gray-800, where gray-200 reads 11.86:1.
+
+The harness fixture's transcript grew from two messages to eight so each of
+these paths renders: a slash command and a compaction summary, which collapse
+to noise bars; the compaction banner (1k → 300, −75%); three turns with input
+tokens for the cache sparkline; a tool call; a sidechain agent; a progress
+row; and a message long enough to truncate, with a heading, emphasis, a
+bullet, a numbered item and a code block. `memory-entry.cjs` measures the
+viewer loading; whole, with each of those elements asserted on the ground it
+is read on; with the system row shown and a message expanded; with a sidebar
+category selected; with the sidebar collapsed; and with a term entered, on the
+matching messages and their marks. On the fallback page the basic view's
+analysis notice and the unavailable panel are measured too. With noise in the
+fixture, the noise toggle's label is now measured directly.
+
+Against the old colours the cold phase failed with 58 entries, 30 distinct,
+the lowest the noise bar's icon at 1.92:1. After the fix all 1,828 classic
+measurements pass, 1,806 of them non-exempt. The lowest is unchanged: the
+co-term flyout heading at 8.01:1. The viewer's lowest is a search match's mark,
+yellow-200 on its yellow-500/30 fill at 8.25:1, a colour not changed here.
+
 ### fix(turbo): fall back once when a recall outruns its budget
 
 Every Turbo recall fallback in the 30 days to 2026-09-26, 6 of 260

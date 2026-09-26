@@ -46,6 +46,21 @@
  * clears; on gray-700 it falls to 5.63:1, so the active rows are gray-100
  * (9.37:1) and each completion is set in bold rather than a second grey.
  *
+ * The Transcript viewer takes its role labels, its sidechain badge and its
+ * compaction accents from these hues, and its secondary text is `muted`. Its
+ * sidebar and compaction banner sit on the list ground (#030712); it adds
+ * three more: the user's bubble (bg-gray-800/40 over the page), a message
+ * matching the viewer's search (bg-yellow-500/5) and the summary card
+ * (bg-gray-900/60):
+ *
+ *                     bubble   match    summary
+ *                     #12161f  #15120f  #0e121d
+ *   blue      #77c1ff   9.33     9.62     9.64    user
+ *   green     #9cc77d   9.35     9.64     9.66    assistant
+ *   lavender  #c7adfe   9.31     9.60     9.62    sidechain agent
+ *   orange    #e8af7b   9.32     9.61     9.63    compaction
+ *   NEUTRAL   #b9c0cb   9.85    10.16    10.18
+ *
  * These views never render on the Memory Desk's selected row (#153640).
  * Measured from computed styles on every ground above in
  * tests/browser/memory-entry.cjs.

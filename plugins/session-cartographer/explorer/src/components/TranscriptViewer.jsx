@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { fetchTranscript, fetchTranscriptAnalysis } from '../api';
 import { transcriptAnalysisNotice, transcriptFailure } from './transcript-state';
+import { HUE, NEUTRAL } from '../lib/palette.js';
 
 /**
  * Lightweight markdown renderer — no dependencies.
@@ -53,7 +54,7 @@ function RenderMarkdown({ text, highlights = [] }) {
     if (/^\s*[-*]\s+/.test(line)) {
       elements.push(
         <div key={elements.length} className="flex gap-2 ml-2">
-          <span className="text-gray-500">·</span>
+          <span className="text-muted">·</span>
           <span>{inlineMarkdown(line.replace(/^\s*[-*]\s+/, ''), highlights)}</span>
         </div>
       );
@@ -66,7 +67,7 @@ function RenderMarkdown({ text, highlights = [] }) {
       const num = line.match(/^\s*(\d+)\./)[1];
       elements.push(
         <div key={elements.length} className="flex gap-2 ml-2">
-          <span className="text-gray-500 font-mono text-xs w-4 text-right">{num}.</span>
+          <span className="text-muted font-mono text-xs w-4 text-right">{num}.</span>
           <span>{inlineMarkdown(line.replace(/^\s*\d+\.\s+/, ''), highlights)}</span>
         </div>
       );
@@ -119,7 +120,7 @@ function inlineMarkdown(text, highlights = []) {
     match = remaining.match(/^(.*?)\*(.+?)\*/);
     if (match) {
       if (match[1]) parts.push(...applyHighlights(match[1], highlights, key)); key++;
-      parts.push(<em key={key++} className="text-gray-400">{match[2]}</em>);
+      parts.push(<em key={key++} className="text-muted">{match[2]}</em>);
       remaining = remaining.slice(match[0].length);
       continue;
     }
@@ -186,6 +187,13 @@ function highlightMatches(text, searchTerms) {
   );
 }
 
+// A role label is read on the page, in the user's bubble (#12161f) and on a
+// message matching the search (#15120f). blue-400 read 7.10:1 in the bubble,
+// violet-400 7.26:1 on the page and gray-500 4.09:1; the palette's hues read
+// at least 9.31:1 on all three (measured in lib/palette.js). The sidechain
+// badge is outlined in its hue, never tinted, as the classic badges are.
+const ROLE_HUES = { user: HUE.blue, assistant: HUE.green, sidechain: HUE.lavender };
+
 function MessageBlock({ msg, searchTerms, defaultExpanded }) {
   const isLong = msg.content.length > 500;
   const [expanded, setExpanded] = useState(defaultExpanded || !isLong);
@@ -223,19 +231,14 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
     >
       <div className="flex items-center gap-2 mb-1">
         {isSc && (
-          <span className="text-xs px-1 py-0.5 rounded font-mono bg-violet-500/15 text-violet-400 border border-violet-500/30">
+          <span className="text-xs px-1 py-0.5 rounded font-mono" style={{ color: ROLE_HUES.sidechain, border: `1px solid ${ROLE_HUES.sidechain}44` }}>
             {msg.agentId || 'agent'}
           </span>
         )}
-        <span className={`text-xs font-mono ${
-          isSc ? 'text-violet-400' :
-          msg.role === 'user' ? 'text-blue-400' :
-          msg.role === 'assistant' ? 'text-green-400' :
-          'text-gray-500'
-        }`}>
+        <span className="text-xs font-mono" style={{ color: isSc ? ROLE_HUES.sidechain : ROLE_HUES[msg.role] || NEUTRAL }}>
           {roleLabels[msg.role]}
         </span>
-        <span className="text-xs text-gray-600 font-mono" title={msg.timestamp}>
+        <span className="text-xs text-muted font-mono" title={msg.timestamp}>
           {relativeTime(msg.timestamp)}
         </span>
       </div>
@@ -243,14 +246,14 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
       <div className="text-sm text-gray-300 break-words font-sans leading-relaxed prose-transcript">
         <RenderMarkdown text={displayContent} highlights={searchTerms} />
         {!expanded && isLong && (
-          <span className="text-gray-500">...</span>
+          <span className="text-muted">...</span>
         )}
       </div>
 
       {isLong && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="text-xs text-gray-500 hover:text-gray-300 mt-1"
+          className="text-xs text-muted hover:text-gray-300 mt-1"
         >
           {expanded ? 'collapse' : `expand (${msg.content.length} chars)`}
         </button>
@@ -288,10 +291,12 @@ const NOISE_ICONS = {
   'compaction-summary': '⚡',
 };
 
+// Noise is quiet by position and size, not by colour: gray-600 read 2.61:1
+// on the page and the icon's gray-700 1.92:1. Both are `muted` (10.78:1).
 function NoiseBar({ summary, type }) {
   return (
-    <div className="flex items-center gap-2 py-0.5 mb-0.5 text-xs text-gray-600 font-mono select-none">
-      <span className="text-gray-700">{NOISE_ICONS[type] || '·'}</span>
+    <div className="flex items-center gap-2 py-0.5 mb-0.5 text-xs text-muted font-mono select-none">
+      <span>{NOISE_ICONS[type] || '·'}</span>
       <span className="truncate">{summary || type}</span>
     </div>
   );
@@ -322,12 +327,12 @@ function CacheSparkline({ timeline }) {
 
   return (
     <div className="flex items-center gap-2" title={`Cache hit ratio over ${n} turns (avg ${(avg * 100).toFixed(0)}%)`}>
-      <span className="text-xs text-gray-600 whitespace-nowrap">cache</span>
+      <span className="text-xs text-muted whitespace-nowrap">cache</span>
       <svg width={W} height={H} className="flex-shrink-0">
         <polygon points={polygon} fill="rgb(34,197,94)" fillOpacity="0.15" />
         <polyline points={polyline} fill="none" stroke="rgb(34,197,94)" strokeWidth="1.5" strokeOpacity="0.6" strokeLinejoin="round" />
       </svg>
-      <span className="text-xs font-mono text-gray-500">{(avg * 100).toFixed(0)}%</span>
+      <span className="text-xs font-mono text-muted">{(avg * 100).toFixed(0)}%</span>
     </div>
   );
 }
@@ -360,12 +365,12 @@ function SessionSummaryCard({ summary, isOngoing, cacheTimeline }) {
         {stats.map(({ label, value, accent, live }) => (
           <div key={label} className="flex flex-col">
             <span className={`text-xs font-mono font-medium flex items-center gap-1.5 ${
-              live ? 'text-green-400' : accent ? 'text-orange-400' : 'text-gray-200'
-            }`}>
+              live ? 'text-green-400' : accent ? '' : 'text-gray-200'
+            }`} style={accent ? { color: HUE.orange } : undefined}>
               {live && <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" /><span className="relative inline-flex rounded-full h-2 w-2 bg-green-400" /></span>}
               {value}
             </span>
-            <span className="text-xs text-gray-600">{label}</span>
+            <span className="text-xs text-muted">{label}</span>
           </div>
         ))}
       </div>
@@ -376,6 +381,9 @@ function SessionSummaryCard({ summary, isOngoing, cacheTimeline }) {
 
 // ─── 1b. Compaction Event Banner ─────────────────────────────────────────────
 
+// orange-400 at 80% and 60% read 5.89:1 and 3.68:1 on the banner's gray-950.
+// The palette's orange reads 10.40:1 there at full strength, and 9.63:1 as
+// the summary card's compaction count.
 function CompactionBanner({ preTokens, postTokens }) {
   const compressionPct = postTokens > 0 ? Math.round((1 - postTokens / preTokens) * 100) : null;
 
@@ -383,14 +391,14 @@ function CompactionBanner({ preTokens, postTokens }) {
     <div className="relative my-3 flex items-center gap-3 select-none" title="Context compaction — prior conversation was compressed">
       <div className="flex-1 h-px bg-gradient-to-r from-transparent to-orange-500/50" />
       <div className="flex-shrink-0 flex items-center gap-2 bg-gray-950 border border-orange-500/25 rounded px-2.5 py-1 text-xs font-mono">
-        <span className="text-orange-400/80">⚡ compaction</span>
+        <span style={{ color: HUE.orange }}>⚡ compaction</span>
         {preTokens > 0 && (
-          <span className="text-gray-600">
+          <span className="text-muted">
             {fmtTokens(preTokens)}
-            <span className="mx-1 text-gray-700">→</span>
+            <span className="mx-1">→</span>
             {postTokens > 0 ? fmtTokens(postTokens) : '?'}
             {compressionPct !== null && (
-              <span className="text-orange-400/60 ml-1.5">−{compressionPct}%</span>
+              <span className="ml-1.5" style={{ color: HUE.orange }}>−{compressionPct}%</span>
             )}
           </span>
         )}
@@ -415,11 +423,11 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
   const total = Object.values(attribution).reduce((a, b) => a + b, 0);
 
   return (
-    <div className={`border-l border-gray-800 bg-gray-950 flex-shrink-0 flex flex-col transition-[width] duration-200 ${collapsed ? 'w-8' : 'w-52'}`}>
+    <div id="transcript-attribution" className={`border-l border-gray-800 bg-gray-950 flex-shrink-0 flex flex-col transition-[width] duration-200 ${collapsed ? 'w-8' : 'w-52'}`}>
       {/* Toggle button */}
       <button
         onClick={onToggle}
-        className="flex-shrink-0 w-full h-8 flex items-center justify-center text-gray-600 hover:text-gray-400 border-b border-gray-800/60 text-xs"
+        className="flex-shrink-0 w-full h-8 flex items-center justify-center text-muted hover:text-gray-300 border-b border-gray-800/60 text-xs"
         title={collapsed ? 'Expand token attribution' : 'Collapse'}
       >
         {collapsed ? '◂' : '▸'}
@@ -427,7 +435,7 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
 
       {!collapsed && (
         <div className="flex-1 overflow-y-auto p-3">
-          <div className="text-xs text-gray-600 mb-3 font-medium uppercase tracking-wide">
+          <div className="text-xs text-muted mb-3 font-medium uppercase tracking-wide">
             Token attribution
           </div>
 
@@ -448,7 +456,8 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
             })}
           </div>
 
-          {/* Legend rows */}
+          {/* Legend rows. The percentage takes its row's colour: `muted`
+              reads 8.01:1 on a selected row's gray-800, gray-200 11.86:1. */}
           {ATTRIBUTION_CATEGORIES.map(cat => {
             const pct = total > 0 ? (attribution[cat.key] / total) * 100 : 0;
             if (pct < 0.5) return null;
@@ -460,12 +469,12 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
                 className={`w-full flex items-center gap-2 py-1 px-1.5 rounded text-left transition-colors ${
                   isActive
                     ? 'bg-gray-800 text-gray-200'
-                    : 'text-gray-500 hover:bg-gray-900 hover:text-gray-300'
+                    : 'text-muted hover:bg-gray-900 hover:text-gray-300'
                 }`}
               >
                 <div className={`w-2 h-2 rounded-sm flex-shrink-0 ${cat.dot} ${isActive ? 'opacity-100' : 'opacity-60'}`} />
                 <span className="text-xs flex-1 leading-tight">{cat.label}</span>
-                <span className="text-xs font-mono text-gray-600">{pct.toFixed(0)}%</span>
+                <span className="text-xs font-mono">{pct.toFixed(0)}%</span>
               </button>
             );
           })}
@@ -473,7 +482,7 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
           {activeCategory && (
             <button
               onClick={() => onCategoryClick(null)}
-              className="w-full mt-2 text-xs text-gray-600 hover:text-gray-400 text-center py-1"
+              className="w-full mt-2 text-xs text-muted hover:text-gray-300 text-center py-1"
             >
               clear filter
             </button>
@@ -489,8 +498,7 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
 // The toolbar's text sits on the page (#0a0a0f), where gray-500 read 4.09:1
 // and gray-600 2.61:1; `muted` reads 10.78:1 there and 9.69:1 as the search
 // field's placeholder on gray-900. The system and noise toggles share one
-// label class because only the system toggle renders for a transcript with
-// no noise, so the browser harness measures the noise label through it.
+// label class.
 const TOGGLE_LABEL = 'flex items-center gap-1 text-xs text-muted cursor-pointer';
 
 export default function TranscriptViewer({ transcriptPath, targetUuid, initialHighlight = '', onClose }) {
@@ -623,12 +631,12 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   }
 
   if (loading) {
-    return <div className="p-8 text-gray-500">Loading transcript...</div>;
+    return <div id="transcript-viewer" className="p-8 text-muted">Loading transcript...</div>;
   }
 
   if (error) {
     return (
-      <section className="h-full grid place-content-center px-6" role="alert">
+      <section id="transcript-viewer" className="h-full grid place-content-center px-6" role="alert">
         <div className="max-w-xl border border-amber-700/50 bg-amber-950/20 rounded-lg p-6">
           <p className="text-xs font-mono uppercase tracking-wider text-amber-400 mb-2">Transcript interrupted</p>
           <h1 className="text-lg text-gray-100 mb-2">{error.title}</h1>
@@ -657,7 +665,7 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div id="transcript-viewer" className="flex flex-col h-full">
       {/* Header */}
       <div id="transcript-toolbar" className="flex items-center gap-2 px-4 py-2 border-b border-gray-800 flex-shrink-0">
         <button
