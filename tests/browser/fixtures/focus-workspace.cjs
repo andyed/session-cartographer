@@ -99,11 +99,24 @@ function createFocusWorkspaceFixture(work) {
     session_id: 'other-project-task', session_title: 'Other project control',
     project: 'beta', provider: 'claude', summary: 'This beta-only task must stay outside alpha scope',
   });
+  // More edited files than the task view's first eight rows. Files sort newest
+  // edit first, so the earliest-edited ones render only after "More files".
+  const wide = [];
+  for (let index = 0; index < 10; index++) {
+    const file = path.join(corpus, 'wide', `wide-${String(index + 1).padStart(2, '0')}.txt`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `Wide task file ${index + 1}.\n`);
+    wide.push(file);
+    event(`wide-edit-${index + 1}`, 40 * MINUTE + index * MINUTE, {
+      session_id: 'wide-task', session_title: 'Wide edit task',
+      type: 'tool_file_edit', file_path: file, summary: `Modified: ${file}`,
+    });
+  }
 
   const log = path.join(corpus, 'changelog.jsonl');
   fs.writeFileSync(log, events.map(row => JSON.stringify(row)).join('\n') + '\n');
   return {
-    corpus, log, shared, unavailable, missing, from, through,
+    corpus, log, shared, unavailable, missing, wide, from, through,
     isoFrom: new Date(from).toISOString(), isoThrough: new Date(through).toISOString(),
     append(rows) {
       fs.appendFileSync(log, rows.map(row => JSON.stringify(row)).join('\n') + '\n');

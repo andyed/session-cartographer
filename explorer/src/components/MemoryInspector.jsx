@@ -45,8 +45,8 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
     const returnPath = previousReview.current;
     previousReview.current = route.review ? route.file : null;
     if (returnPath && !route.review) {
-      // A row past the first eight renders on MemorySession's follow-up pass,
-      // so it is absent here and the heading takes focus.
+      // MemorySession renders the selected file's row on its first pass, even
+      // past the first eight. The heading is for a file with no row here.
       const target = panel.current?.querySelector(`[data-file-path="${CSS.escape(returnPath)}"]`);
       (target || heading.current)?.focus({ preventScroll: true });
     } else {

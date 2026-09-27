@@ -313,7 +313,7 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     assert.ok(!ids.has('alpha-after'));
     assert.ok(!ids.has('mixed-project'));
     assert.deepEqual(contract.focused.sessions.map(session => session.id).sort(),
-      ['alpha-task', 'beta-task', 'missing-task', 'solo-task', 'unavailable-task']);
+      ['alpha-task', 'beta-task', 'missing-task', 'solo-task', 'unavailable-task', 'wide-task']);
     const sharedFile = contract.focused.fileIndex.find(file => file.path === fixture.shared);
     assert.deepEqual(sharedFile.contributors, ['alpha-task', 'beta-task']);
     assert.equal(sharedFile.contributorCount, 2);
@@ -325,7 +325,7 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
 
     await page.getByText('Alpha focus boundary task', { exact: true }).waitFor();
     await page.getByText('Other project control', { exact: true }).waitFor({ state: 'hidden' });
-    await page.getByText('5 tasks', { exact: true }).waitFor();
+    await page.getByText('6 tasks', { exact: true }).waitFor();
     await page.screenshot({ path: path.join(artifacts, 'focus-memory-1440.png'), fullPage: true });
     await noHorizontalOverflow(page, 'memory 1440');
 
@@ -463,6 +463,42 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     await releaseFrames();
     await page.waitForFunction(() => !new URL(location.href).searchParams.has('session'));
 
+    // Closing a file review returns focus to that file's row, including a row
+    // past the task view's first eight. The inspector places focus in the
+    // commit that closes the review, so the row has to exist on the task
+    // view's first pass rather than after an effect widens the list.
+    await page.getByRole('button', { name: 'Tasks', exact: true }).click();
+    await page.locator('[data-entry="wide-task"] .fw-result-open').click();
+    const inspector = page.locator('aside[aria-label="Evidence inspector"]');
+    const fileRows = inspector.locator('a.ms-file');
+    const deepFile = fixture.wide[0];
+    const deepRow = inspector.locator(`a.ms-file[data-file-path="${deepFile}"]`);
+    await fileRows.first().waitFor();
+    // Without these, the focus checks below pass against a row the first
+    // eight already include.
+    assert.equal(await fileRows.count(), 8, 'the wide task should open showing its first eight file rows');
+    assert.equal(await deepRow.count(), 0, 'the earliest-edited file should start beyond the first eight rows');
+    await inspector.getByRole('button', { name: /^More files/ }).click();
+    await deepRow.waitFor();
+    const focusedFileRow = () => page.evaluate(() => {
+      const active = document.activeElement;
+      return active?.matches('a.ms-file') ? active.dataset.filePath : `${active?.tagName} ${active?.textContent.trim().slice(0, 60)}`;
+    });
+    for (const close of ['Escape', 'Back to task']) {
+      await deepRow.click();
+      await page.getByRole('region', { name: 'File review' }).waitFor();
+      const releaseCloseFrames = await holdAnimationFrames(page);
+      if (close === 'Escape') await page.keyboard.press('Escape');
+      else await page.getByRole('button', { name: 'Back to task', exact: true }).click();
+      await page.getByRole('button', { name: 'Back to results' }).waitFor();
+      assert.equal(await focusedFileRow(), deepFile, `closing the review with ${close} did not focus the file's row`);
+      await releaseCloseFrames();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await focusedFileRow(), deepFile, `focus left the file's row after closing the review with ${close}`);
+    }
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('session'));
+
     // Appends preserve fixed scope. The matching project gains one named task;
     // an unrelated project arrival never appears in the scoped results.
     await page.getByRole('button', { name: 'Tasks', exact: true }).click();
@@ -471,7 +507,7 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     await page.locator('.fw-coverage > summary').click();
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
     await page.getByText('New alpha task in fixed focus', { exact: true }).waitFor({ timeout: 15_000 });
-    await page.getByText('6 tasks', { exact: true }).waitFor();
+    await page.getByText('7 tasks', { exact: true }).waitFor();
     assert.equal(await page.getByText('Unrelated beta arrival', { exact: true }).count(), 0);
     assert.equal(new URL(page.url()).searchParams.get('from'), fixture.isoFrom);
     assert.equal(new URL(page.url()).searchParams.get('through'), fixture.isoThrough);

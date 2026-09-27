@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+### fix(explorer): return focus to a file row past the first eight
+
+Closing a file review, with Escape or "← Task", should put focus back on that
+file's row in the task view. For a file past the eighth row it went to the task
+heading. `MemorySession` began every mount with eight rows and widened the list
+to include the selected file in a later effect, so the row did not exist yet
+when `MemoryInspector` placed focus. With the row limit forced to 0 in a build,
+both the frame-deferred focus and the layout-effect focus described below left
+focus on the H2 heading while the row existed a second later.
+
+The row limit now starts at the selected file's position, never below eight,
+and the reset on a session change keeps the selected row, so the row is in the
+commit that places focus. The effect that widens the list for a later selection
+is unchanged. `MemoryInspector` is the only caller of `MemorySession`.
+
+The focus-workspace fixture gains a task with ten edited files, which moves the
+journey's task counts from 5 and 6 to 6 and 7. The journey expands "More
+files", opens the review of the tenth row, and closes it once with Escape and
+once with "← Task" while animation frames are withheld. Focus must be on that
+row immediately and still there two frames later. Against the previous build it
+fails with focus on "H2 Wide edit task".
+
 ### fix(explorer): keep focus in the inspector when a file review closes
 
 The first v0.8.0 release run (36275746146) failed `focus-workspace.cjs
@@ -19,9 +41,7 @@ Escape lands on the file row and closes the task.
 The harness withholds animation frames across the close and asserts that focus
 is inside the inspector before the second Escape. Against the previous code it
 fails on every run (3 of 3), with focus on BODY. Returning to a file past the
-eighth row still lands on the task heading, as it did before: that row renders
-on `MemorySession`'s follow-up pass, after both the old frame and the new
-commit.
+eighth row still landed on the task heading; the entry above fixes that.
 
 ## 0.8.0 — 2026-09-26
 
