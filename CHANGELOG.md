@@ -2,6 +2,65 @@
 
 ## Unreleased
 
+### fix(hooks): log every commit a Bash call made, read from the reflog
+
+The commit hook read HEAD once per Bash call, so it logged at most one
+commit per call. A fix and its audit doc committed together lost the fix. A
+`cd` into a second repo to commit there lost the commits made in the
+starting directory. `git merge` and `git cherry-pick` were never detected.
+On 2026-09-26/27 these accounted for 23 of the 46 commits the day digest
+listed as git-only, and 251 Claude calls in the 30 days before ran `git
+commit` twice or more.
+
+When the payload carries `duration_ms`, which Claude Code sends, the hook
+now reads the reflog of every repo the command's commit, merge,
+cherry-pick, revert, am or pull invocations name. It writes one row per
+commit made inside the call, oldest first, each with its own files, diff
+shape and a new `commit_action` field (`commit`, `amend`, `merge`,
+`cherry-pick`, `revert`, `am`).
+
+A reflog entry counts only when HEAD moved during the call *and* the commit
+was committed during it. A concurrent session's commit in the same repo
+stays out: an entry needs its subject in the command, or, failing that, a
+repo gives up no more commits or merges than the command asked of it. The
+cwd the call started in comes from the transcript line that issued it,
+since Claude reports the cwd after the command.
+
+`git -C "$W"` is still never evaluated. An invocation the text cannot
+resolve adds the cwd's repo and the sibling worktrees of the resolved repos,
+where an entry counts only on a subject match. For a cherry-pick, the
+subject of the sha it names is used.
+
+`PostToolUseFailure` is now registered for Bash, so a commit in a call that
+exited non-zero (`git commit … && npm test` with a failing test) is logged.
+Nothing else from a failed call is. Codex, and any payload without
+`duration_ms`, keeps the HEAD path, because without the call's start time a
+window would be a guess.
+
+Replayed through the working-tree hook, the 38 calls behind the 46 git-only
+commits now log all 46, and no row names a commit the call did not make.
+See docs/git-only-commits-2026-09-27.md.
+
+### fix(hooks): `git commit` inside quotes or a comment is data, not a commit
+
+The commit and push detectors matched `git commit` anywhere in a command.
+A grep pattern, a jq filter or a probe's `for s in 'git commit' …` list
+entered the commit branch, and a git-shaped line in its output then named
+a commit that never happened. evt-q8ybf3m6r3jq (2026-09-27) was still
+produced after 41022db's stdout fix. `git_invocation()` and the `cd`-hop
+walk now match against `code_only()`: a copy of the command with quoted
+strings and comments blanked. Every byte keeps its position, so a quoted
+`-C` path is cut back out of the original intact. A `$( … )` inside double
+quotes stays code.
+
+The hook was replayed at HEAD and in the working tree, without the reflog
+change above, on the 2,914 commands in 30 days of Claude and Codex
+transcripts that name `git` with `commit` or `push`. Both versions
+detected 1,508 commits and 174 pushes the same way. The 28 commands that
+lost a detection all named git as data. No Codex command changed. Nine
+phantom rows were repaired in the live logs (see
+`.carto/repairs/2026-09-27-phantom-commits/` in the dev directory).
+
 ### fix(hooks): list files and diff shape for a repository's first commit
 
 `git diff-tree` prints nothing for a commit with no parent unless given

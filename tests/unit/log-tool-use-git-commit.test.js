@@ -49,6 +49,19 @@
  *    diff-shape.sh exited under pipefail before its root-commit fallback ran.
  *    Found 2026-09-26 while writing the tests for 6.
  *
+ * 8. `git commit` inside a quoted string or a comment counted as a commit, and
+ *    a git-shaped line anywhere in stdout then named one. evt-q8ybf3m6r3jq
+ *    (session fd2c1dac, 2026-09-27) came from a regex probe whose `for s in
+ *    'cd /a && git commit -q' …` list and printed sample `[main (root-commit)
+ *    1a2b3c4] x y` passed both checks after the fix for 6.
+ *
+ * 9. One Bash call that made several commits logged one: the hook read HEAD
+ *    once. A fix and its audit doc committed together, a `cd` into a second
+ *    repo to commit there, a `git merge`, a `git cherry-pick`: 23 of the 46
+ *    git-only commits of 2026-09-26/27. The tests at the bottom read the
+ *    reflog for the call's own window (duration_ms) and hold out a concurrent
+ *    session's commit.
+ *
  * Run with: node --test tests/unit/log-tool-use-git-commit.test.js
  */
 import test from 'node:test';
@@ -73,10 +86,10 @@ function makeWorkspace() {
   return { dir, repo, dev };
 }
 
-function fire(ws, command, stdout, { cwd = ws.repo, env = {} } = {}) {
+function fire(ws, command, stdout, { cwd = ws.repo, env = {}, payload: extra = {} } = {}) {
   const payload = {
     tool_name: 'Bash', session_id: 'testsess', cwd,
-    transcript_path: '/tmp/t.jsonl', tool_input: { command },
+    transcript_path: '/tmp/t.jsonl', tool_input: { command }, ...extra,
   };
   if (stdout !== undefined) payload.tool_response = { stdout };
   spawnSync('bash', [HOOK], {
@@ -739,5 +752,283 @@ test('a quiet root commit lists its files and carries a diff shape', () => {
     assert.equal(shape.files_new, 1, 'a root commit adds every file it holds');
     assert.equal(shape.lines_added, 1);
     assert.equal(shape.quadrant, 'bootstrap');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+// ── git named inside a quoted string or a comment ─────────────────────────────
+// A quoted string is data to the shell, the way a heredoc body is: a grep
+// pattern, a jq filter, a list a probe loops over. So is a comment. Replayed
+// over 30 days of transcripts to 2026-09-27 (59,183 Claude and Codex commands),
+// 27 named `git commit` only inside quotes, all of them data, and none was a
+// real commit hidden in `bash -c '…'`.
+
+test('git named inside a quoted string or a comment is data, not a commit or a push', () => {
+  const ws = makeWorkspace();
+  try {
+    // HEAD is fresh and unlogged, so the freshness guard would accept it from a
+    // repo cwd, and each stdout carries a git-shaped line a non-repo cwd would
+    // take as the commit: only the matcher stands between these and a phantom.
+    commit(ws, 'qa.js', 'feat: fresh and unlogged', ['-q']);
+    const cases = [
+      // evt-q8ybf3m6r3jq, as the probe ran it.
+      [`for s in 'cd /a && git commit -q' 'git commit'; do printf '%s\\n' "$s" | grep -c commit; done; `
+        + `printf '%s\\n' '[main (root-commit) 1a2b3c4] x y' | grep -oE '\\[[^]]+\\] .*'`,
+        '1\n1\n[main (root-commit) 1a2b3c4] x y'],
+      // evt-axccd0sqxsmx: a sed replacement carrying JS source that names a commit.
+      [`sed -i '' "s|const cases = \\[|const cases = [ ['c', (m) => \\\`git add a.js \\&\\& git commit -F \\\${m}\\\`],|" replay.mjs && node replay.mjs`,
+        'cat heredoc (short) to scratchpad path, then commit [main 9f8e7d6] rows  2  git_commit 0'],
+      [`grep -rn 'git commit -F' hooks/ | head`, '[main 5a4b3c2] hooks/log.sh:12'],
+      [`jq -r 'select(.summary|test("git commit"))|.summary' changelog.jsonl | tail -3`,
+        '[fix 047c839] Commit 047c839: fix: via -C'],
+      [`# git commit once the suite passes\nnode --test tests/unit/x.test.js`, '[main 7c6b5a4] ok 1'],
+    ];
+    for (const [cmd, out] of cases) {
+      for (const cwd of [ws.repo, ws.dev]) {
+        const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+        const recs = fire({ ...ws, dev }, cmd, out, { cwd });
+        assert.equal(commits(recs).length, 0, `phantom git_commit (cwd ${path.basename(cwd)}): ${cmd}`);
+      }
+    }
+    // A quoted push is data too, and without the push an echo is noise.
+    const push = fire(ws, `echo "never git push between 10 and 3"`, '', { cwd: ws.repo });
+    assert.equal(push.filter((r) => r.type === 'git_push').length, 0, 'a quoted push logged as git_push');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a real commit beside a quoted mention is found, with its own hop and -C', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'qb.js', 'fix: the real one', ['-q']);
+    const cases = [
+      // The quoted mention comes first, so the first textual match is data.
+      [`echo 'git commit' && git commit -q -m 'fix: the real one'`, ws.repo],
+      // The hop and -C must come from the real invocation, not the quoted one.
+      [`echo 'cd /nowhere && git commit'; cd ${ws.repo} && git commit -q -m 'fix: the real one'`, ws.dev],
+      [`echo 'git -C /nowhere commit' && git -C ${ws.repo} commit -q -m 'fix: the real one'`, ws.dev],
+      // An apostrophe in a comment or inside double quotes opens no quote.
+      [`# don't forget the files\ncd ${ws.repo} && git commit -q -m 'fix: the real one'`, ws.dev],
+      [`echo "it's staged" && cd ${ws.repo} && git commit -q -m 'fix: the real one'`, ws.dev],
+      // A command substitution inside double quotes is code.
+      [`OUT="$(git -C ${ws.repo} commit -q -m 'fix: the real one')" && echo "$OUT"`, ws.dev],
+    ];
+    for (const [cmd, cwd] of cases) {
+      const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+      // Quiet, so stdout names nothing: the repo has to come from the command.
+      const recs = fire({ ...ws, dev }, cmd, '', { cwd });
+      assert.equal(commits(recs).length, 1, `no git_commit row for: ${JSON.stringify(cmd)}`);
+      assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}: fix: the real one`), cmd);
+      assert.equal(last(recs).project, 'repo', cmd);
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+// ── Every commit a call made, from the reflog ─────────────────────────────────
+// Reading HEAD once logged one commit per Bash call. The reflog records every
+// move of HEAD with its time and action, and duration_ms says when the call
+// began, so the hook reads exactly the call's own entries. Each test first
+// fires without duration_ms, which is the HEAD path 0.8.0 ran, to show the
+// fixture is one that path gets wrong.
+
+/** A call that has been running long enough to cover the fixture's commits. */
+const CALL = { duration_ms: 30000 };
+
+const shaAt = (repo, rev) =>
+  spawnSync('git', ['rev-parse', rev], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+const shaIn = (rec) => (rec.summary.match(/Commit ([0-9a-f]{7,40}):/) || [])[1];
+const freshDev = (ws) => ({ ...ws, dev: fs.mkdtempSync(path.join(ws.dir, 'dev-')) });
+const gitIn = (repo, args, env = {}) => spawnSync('git', [...AUTHOR, ...args],
+  { cwd: repo, encoding: 'utf8', env: { ...process.env, ...env } });
+
+test('two commits in one call are both recorded, oldest first, each with its own files', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'mix.js', 'fix(mix): the code change', ['-q']);
+    commit(ws, 'audit.md', 'docs(audits): the doc that records it', ['-q']);
+    const cmd = `git add mix.js && git commit -q -m 'fix(mix): the code change'\n`
+      + `git add audit.md && git commit -q -F - <<'EOF'\ndocs(audits): the doc that records it\nEOF`;
+    assert.equal(commits(fire(freshDev(ws), cmd, '')).length, 1,
+      'fixture: reading HEAD must find only the last of the two');
+
+    const recs = commits(fire(ws, cmd, '', { payload: CALL }));
+    assert.deepEqual(recs.map(shaIn), [shaAt(ws.repo, 'HEAD~1'), headOf(ws.repo)]);
+    assert.match(recs[0].summary, /the code change \| files: mix\.js$/);
+    assert.match(recs[1].summary, /records it \| files: audit\.md$/);
+    assert.deepEqual(recs.map((r) => r.commit_action), ['commit', 'commit']);
+    assert.deepEqual(toolRows(ws).map((r) => r.commit_action), ['commit', 'commit']);
+    assert.equal(recs[1].parent_event_id, recs[0].event_id, 'the second row threads onto the first');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a commit made before the call is not this call\'s, fresh or not', () => {
+  const ws = makeWorkspace();
+  try {
+    // Another session's commit a minute ago, never logged: HEAD's freshness
+    // (120 s) accepts it; the call, which started 5 s ago, did not make it.
+    const before = Math.floor(Date.now() / 1000) - 60;
+    const earlier = gitIn(ws.repo, ['commit', '-q', '--allow-empty', '-m', 'feat: another session'],
+      { GIT_COMMITTER_DATE: `@${before} +0000`, GIT_AUTHOR_DATE: `@${before} +0000` });
+    assert.equal(earlier.status, 0);
+    const reflogAt = Number(gitIn(ws.repo, ['log', '-g', '-1', '--date=unix', '--format=%gd'])
+      .stdout.replace(/\D/g, ''));
+    assert.ok(Math.abs(reflogAt - before) <= 2, `fixture: the reflog must date the move ${before}, not now (${reflogAt})`);
+    const failed = gitIn(ws.repo, ['commit', '-m', 'fix: nothing staged']);
+    assert.notEqual(failed.status, 0, 'fixture: the call\'s commit must fail');
+    const cmd = `git commit -m 'fix: nothing staged'`;
+    assert.equal(commits(fire(freshDev(ws), cmd, failed.stdout)).length, 1,
+      'fixture: reading HEAD must take the earlier commit as this call\'s');
+
+    assert.equal(commits(fire(ws, cmd, failed.stdout, { payload: { duration_ms: 5000 } })).length, 0);
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a concurrent session\'s commit in the same repo stays out', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'theirs.js', 'feat: their work, committed mid-call', ['-q']);
+    commit(ws, 'ours.js', 'fix: our work', ['-q']);
+    // The subject is in the command: only that entry matches.
+    const byMessage = commits(fire(freshDev(ws), `git commit -q -m 'fix: our work'`, '', { payload: CALL }));
+    assert.deepEqual(byMessage.map(shaIn), [headOf(ws.repo)]);
+    // The message came from a file: one `git commit`, so one entry, the newest.
+    const byFile = commits(fire(freshDev(ws), `git commit -q -F /tmp/msg.txt`, '', { payload: CALL }));
+    assert.deepEqual(byFile.map(shaIn), [headOf(ws.repo)]);
+    // The command made no merge, so a merge in the window is not its either.
+    gitIn(ws.repo, ['checkout', '-q', '-b', 'side']);
+    commit(ws, 'side.js', 'feat: side', ['-q']);
+    gitIn(ws.repo, ['checkout', '-q', '-']);
+    assert.equal(gitIn(ws.repo, ['merge', '-q', '--no-ff', '--no-edit', 'side']).status, 0);
+    const noMerge = commits(fire(freshDev(ws), `git commit -q -F /tmp/msg.txt`, '', { payload: CALL }));
+    assert.ok(noMerge.every((r) => !/Merge branch/.test(r.summary)), 'a merge the command never ran was taken');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a cd into a second repo keeps the commit made where the call started', () => {
+  const ws = makeWorkspace();
+  try {
+    const repoB = makeRepo(ws, 'repo-b');
+    commit(ws, 'a.js', 'feat: in the starting repo', ['-q']);
+    commitIn(repoB, 'b.js', 'feat: after the hop', ['-q']);
+    const cmd = `git add a.js && git commit -q -m 'feat: in the starting repo' && cd ${repoB} `
+      + `&& git add b.js && git commit -q -m 'feat: after the hop'`;
+    // Claude reports the cwd the shell kept, repo-b; only the transcript line
+    // that issued the call says it began in repo.
+    const transcript = path.join(ws.dir, 'session.jsonl');
+    fs.writeFileSync(transcript, `${JSON.stringify({ type: 'user', cwd: ws.dev })}\n${JSON.stringify({
+      type: 'assistant', cwd: ws.repo,
+      message: { content: [{ type: 'tool_use', id: 'toolu_hop1', name: 'Bash', input: { command: cmd } }] },
+    })}\n`);
+    const blind = commits(fire(freshDev(ws), cmd, '', { cwd: repoB, payload: CALL }));
+    assert.deepEqual(blind.map((r) => r.project), ['repo-b'],
+      'fixture: without the starting cwd only the second repo is read');
+
+    const recs = commits(fire(ws, cmd, '', { cwd: repoB,
+      payload: { ...CALL, tool_use_id: 'toolu_hop1', transcript_path: transcript } }));
+    assert.deepEqual(recs.map((r) => [r.project, shaIn(r)]),
+      [['repo', headOf(ws.repo)], ['repo-b', headOf(repoB)]]);
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a merge commit is recorded; a fast-forward is not', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'base.js', 'chore: base', ['-q']);
+    const main = gitIn(ws.repo, ['symbolic-ref', '--short', 'HEAD']).stdout.trim();
+    gitIn(ws.repo, ['checkout', '-q', '-b', 'feature']);
+    commit(ws, 'f.js', 'feat: on the branch', ['-q']);
+    gitIn(ws.repo, ['checkout', '-q', main]);
+    commit(ws, 'm.js', 'fix: meanwhile on main', ['-q']);
+    const merged = gitIn(ws.repo, ['merge', '--no-edit', 'feature']);
+    assert.equal(merged.status, 0);
+    const cmd = `git merge --no-edit feature 2>&1 | tail -3`;
+    assert.equal(commits(fire(freshDev(ws), cmd, merged.stdout)).length, 0,
+      'fixture: a merge was never a detected commit');
+
+    const recs = commits(fire(ws, cmd, merged.stdout, { payload: CALL }));
+    assert.equal(recs.length, 1, 'only the merge: the branch commits were not made by `git merge`');
+    assert.equal(shaIn(recs[0]), headOf(ws.repo));
+    assert.match(recs[0].summary, /Merge branch 'feature'/);
+    assert.equal(last(toolRows(ws)).commit_action, 'merge');
+
+    gitIn(ws.repo, ['checkout', '-q', '-b', 'ahead']);
+    commit(ws, 'g.js', 'feat: ahead', ['-q']);
+    gitIn(ws.repo, ['checkout', '-q', main]);
+    assert.match(gitIn(ws.repo, ['merge', 'ahead']).stdout, /Fast-forward/);
+    const ff = commits(fire(freshDev(ws), `git merge ahead`, '', { payload: CALL }));
+    assert.ok(ff.every((r) => !/feat: ahead/.test(r.summary)), 'a fast-forward made no commit');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a worktree commit behind git -C $W and its cherry-pick are both recorded', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'seed.js', 'chore: seed', ['-q']);
+    const wt = path.join(ws.dir, 'wt');
+    const other = path.join(ws.dir, 'wt-other');
+    gitIn(ws.repo, ['worktree', 'add', '-q', '-b', 'wt', wt]);
+    gitIn(ws.repo, ['worktree', 'add', '-q', '-b', 'wt-other', other]);
+    // A sibling worktree's commit in the same window, whose subject the
+    // command never names: another session's, and it must stay out.
+    commitIn(other, 'o.js', 'feat: another agent in a sibling worktree', ['-q']);
+    commitIn(wt, 'audit.md', 'docs(audits): made in the worktree', ['-q']);
+    // Main moves on first: picked onto its old HEAD, within the same second,
+    // the copy would be the same object as the original.
+    commit(ws, 'main.js', 'fix: main moved on', ['-q']);
+    const picked = gitIn(ws.repo, ['cherry-pick', headOf(wt)]);
+    assert.equal(picked.status, 0);
+    const cmd = `W=${wt} && git -C $W add audit.md && git -C $W commit -q -F - <<'EOF'\n`
+      + `docs(audits): made in the worktree\nEOF\n`
+      + `SHA=$(git -C $W rev-parse HEAD) && git -C ${ws.repo} cherry-pick $SHA 2>&1 | tail -1`;
+    assert.equal(commits(fire(freshDev(ws), cmd, '')).length, 0,
+      'fixture: $W is unreadable and -q prints nothing, so HEAD finds neither');
+
+    const recs = commits(fire(ws, cmd, '', { payload: CALL }));
+    assert.notEqual(headOf(wt), headOf(ws.repo), 'fixture: the copy must be its own commit');
+    assert.deepEqual(recs.map(shaIn).sort(), [headOf(wt), headOf(ws.repo)].sort());
+    assert.ok(recs.every((r) => r.project === 'repo'), 'a worktree files under its repo');
+    assert.ok(recs.every((r) => !/another agent/.test(r.summary)), 'a sibling worktree\'s commit was taken');
+    assert.deepEqual(toolRows(ws).map((r) => r.commit_action).sort(), ['cherry-pick', 'commit']);
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a call that failed after committing still records the commit, and nothing else', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'x.js', 'fix: committed before the tests failed', ['-q']);
+    const failure = { hook_event_name: 'PostToolUseFailure', error: 'Exit code 1', ...CALL };
+    const recs = fire(ws, `git commit -q -m 'fix: committed before the tests failed' && npm test`,
+      undefined, { payload: failure });
+    assert.equal(recs.length, 1);
+    assert.equal(commits(recs).length, 1);
+    assert.equal(shaIn(recs[0]), headOf(ws.repo));
+
+    const quiet = freshDev(ws);
+    assert.equal(fire(quiet, `npm test`, undefined, { payload: failure }).length, 0,
+      'a failed call that made no commit writes nothing');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a cherry-pick behind git -C $M is matched by the commit it names', () => {
+  const ws = makeWorkspace();
+  try {
+    // 03a01ff (session 7dcb7bba, 2026-09-26): from a worktree session,
+    // `M=<main checkout> && git -C $M cherry-pick c59c766b`. $M is unreadable,
+    // and a cherry-pick puts no subject in the command, only a sha.
+    const before = Math.floor(Date.now() / 1000) - 3600;
+    const old = { GIT_COMMITTER_DATE: `@${before} +0000`, GIT_AUTHOR_DATE: `@${before} +0000` };
+    commit(ws, 'seed.js', 'chore: seed', ['-q']);
+    const wt = path.join(ws.dir, 'wt');
+    gitIn(ws.repo, ['worktree', 'add', '-q', '-b', 'wt', wt]);
+    fs.writeFileSync(path.join(wt, 'p.js'), '// fix\n');
+    gitIn(wt, ['add', 'p.js']);
+    assert.equal(gitIn(wt, ['commit', '-q', '-m', 'fix(params): the fix, made an hour ago'], old).status, 0);
+    const original = headOf(wt);
+    assert.equal(gitIn(ws.repo, ['cherry-pick', original]).status, 0);
+    const cmd = `M=${ws.repo} && git -C $M cherry-pick ${original.slice(0, 8)} 2>&1 | tail -3 && git -C $M log --oneline -3`;
+    assert.equal(commits(fire(freshDev(ws), cmd, '', { cwd: wt })).length, 0,
+      'fixture: HEAD finds no commit behind an unreadable -C');
+
+    const recs = commits(fire(ws, cmd, '', { cwd: wt, payload: CALL }));
+    assert.deepEqual(recs.map(shaIn), [headOf(ws.repo)], 'the copy, and not the hour-old original');
+    assert.equal(last(toolRows(ws)).commit_action, 'cherry-pick');
   } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
 });

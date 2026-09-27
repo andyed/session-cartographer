@@ -154,10 +154,14 @@ File edits and bash commands. Opt-in via `CARTOGRAPHER_LOG_TOOL_USE=true`.
 | `summary` | string | `Modified: /path/to/file` or `[feature] Commit abc1234: ...` |
 | `commit_type` | string | Git commits only: `feature`, `fix`, `refactor`, `enhancement`, `docs`, `test`, `chore`, `perf`, `ci`, `style`, `revert`, `other` |
 | `commit_url` | string | Git commits only: GitHub commit URL |
+| `commit_action` | string | Git commits read from the reflog only: `commit`, `amend`, `merge`, `cherry-pick`, `revert`, `am`. Also on the changelog.jsonl row. Absent when the hook read HEAD (Codex, or a payload without `duration_ms`) |
 | `project` | string | |
 | `cwd` | string | |
 | `session` | string | |
 | `transcript_path` | string | |
+
+A Bash call that made several commits writes one `git_commit` row per commit,
+oldest first, each threaded to the one before through `parent_event_id`.
 
 ## ~/.claude/history.jsonl
 

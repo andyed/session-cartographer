@@ -310,6 +310,17 @@ before any probe means anything.
   session cwd's project, with no `| files:`, diff shape or URL. 37 of the 42
   `dev` commit rows from 2026-09-01 to 2026-09-26 are this. The transcript's
   `CommandExecution` item names the real `cwd`.
+- **Codex still logs one commit per call.** The hook reads every commit a
+  call made from the reflog only when the payload carries `duration_ms`,
+  which Claude Code sends and Codex, as far as is known, does not. Without
+  the call's start, a reflog window would pick up a concurrent session's
+  commits. Codex keeps the HEAD path, which logs only the last commit of a
+  call. That was one call in the 30 days to 2026-09-27.
+- **A commit made after a Claude call returns is not logged.** The hook
+  fires when the call returns, and a `run_in_background` command that
+  commits later is outside the call's window. Codex's yielded commands still
+  take the HEAD path, where the poll that collects the output can catch the
+  commit: `1f977e3` (session `01a0df72`, 2026-09-26) was logged that way.
 - **The digest's file list contains fragments** — `value.trim`, `console.log`
   and similar leak out of heredocs via the path extractor. Not files.
 - **Archival recall is buried by recency.** A near-exact match on an old record
