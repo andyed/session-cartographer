@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.1 — 2026-09-27
 
 ### fix(codex): Codex loads its own hook file, without Claude-only events
 
