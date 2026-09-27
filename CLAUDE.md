@@ -45,6 +45,8 @@ scripts/
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
   session-digest.js             — Compact per-session panel (tempo, commits, files, recall, dirty repos); used by /wrapup
+  day-digest.js                 — One local day across all sessions, by project, commits checked against git (landed/moved/rewritten/missing, git-only); `session-digest.js --day`, --md receipt, --json contract
+  digest-parts.js               — Commit parsing, edit-path resolution, repo state shared by both digests
   cartographer-standup.js       — Concurrent-session roster + CONTENTION (files two sessions both edit) + --commit attribution; used by /standup
   non-projects.js               — isNonProject(): workspace-root and worktree directory names that are not projects (filters project labels, never file paths)
   trust-digest.js               — Derives infrastructure actually touched (orgs, LAN hosts, buckets, CLIs) for auto mode's autoMode.environment; used by /trustmap
@@ -82,6 +84,7 @@ explorer/
     event-time.js               — One definition of "when did this happen" (shared by ranking and facts)
     project-filter.js           — One definition of "is this event in scope" (matches bm25.js substring behaviour)
     memory-recall.js            — Recall calls for the Memory Desk (/api/memory/recall, /recall/call): on demand, read-only, unjoined marks listed not guessed
+    memory-day.js               — /api/memory/day: runs scripts/session-digest.js --day as a child and returns its JSON or Markdown verbatim, so the Day view cannot disagree with the CLI or the pulse
   src/                          — React 19 + Vite + Tailwind UI (:2527)
 docs/
   FACTS.md                      — /api/facts spec: census/tempo/delta, why folds not indexes, delta cursor rules

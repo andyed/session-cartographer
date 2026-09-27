@@ -1,0 +1,79 @@
+/* The Day view in the Memory Desk.
+   Text uses the recall palette, each value measured on the page (#0a0a0f):
+     ink    #edf0f5  17.29
+     meta   #d4dae3  14.05  (--fw-muted)
+     warn   #ffe2a8  15.70
+     link   #72e6ef  13.43
+   The hour bars are the accent hue as a mark, never as text; axis labels are
+   meta. No Day row takes the selected background. */
+.fw-day {
+  --rc-ink: #edf0f5;
+  --rc-meta: #d4dae3;
+  --rc-warn: #ffe2a8;
+  --rc-link: #72e6ef;
+  --rc-line: #3b4658;
+  min-width: 0;
+  color: var(--rc-ink);
+}
+.fw-day .fw-empty p, .fw-day .fw-notice { color: var(--rc-meta); }
+.dd-picker, .dd-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dd-actions { margin-left: auto; }
+.dd-picker input[type=date] { min-height: 44px; }
+.dd-picker button[aria-pressed=true] { color: var(--rc-link); box-shadow: inset 0 -2px var(--rc-link); }
+.dd-receipt { display: block; width: 100%; min-height: 200px; margin: 8px 0; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.dd-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin: 16px 0 8px; }
+.dd-head h2 { margin: 0; font-size: 22px; font-weight: 600; color: var(--rc-ink); }
+.dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 12px 0; }
+.dd-stats > div { border: 1px solid var(--rc-line); border-radius: 5px; padding: 10px 12px; }
+.dd-stats dt { color: var(--rc-meta); font-size: 14px; }
+.dd-stats dd { margin: 2px 0 0; font-size: 24px; font-weight: 600; color: var(--rc-ink); }
+.dd-agents { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 8px 0; color: var(--rc-ink); }
+.dd-agents > span { display: inline-flex; gap: 6px; align-items: center; }
+.dd-hours { margin: 12px 0; max-width: 640px; }
+.dd-hours figcaption { color: var(--rc-meta); font-size: 14px; margin-bottom: 4px; }
+.dd-hours svg { display: block; width: 100%; height: auto; }
+.dd-hours .dd-bar path { fill: var(--rc-link); }
+.dd-hours .dd-hit { fill: transparent; }
+.dd-hours .dd-bar:hover path { fill: var(--rc-ink); }
+.dd-hours .dd-axis { stroke: var(--rc-line); stroke-width: 1; }
+.dd-hours .dd-grid { stroke: var(--rc-line); stroke-width: 1; }
+/* Painted with currentColor so a contrast probe reading `color` measures the paint. */
+.dd-hours .dd-tick { color: var(--rc-meta); fill: currentColor; font-size: 12px; font-variant-numeric: tabular-nums; }
+.dd-git { color: var(--rc-ink); font-variant-numeric: tabular-nums; }
+.dd-project { margin: 24px 0 8px; }
+.dd-project-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; border-bottom: 1px solid var(--rc-line); padding-bottom: 6px; margin-bottom: 6px; }
+.dd-project-head h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--rc-ink); overflow-wrap: anywhere; }
+.dd-project-head .rc-quiet { font-variant-numeric: tabular-nums; }
+.dd-commits, .dd-files ul, .dd-sessions { list-style: none; margin: 0; padding: 0; }
+.dd-commit { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--rc-line); }
+.dd-commit time, .dd-commit code { color: var(--rc-meta); font-variant-numeric: tabular-nums; }
+.dd-commit code { font-size: 14px; }
+.dd-subject { color: var(--rc-ink); overflow-wrap: anywhere; min-width: 0; }
+.dd-subject a, .dd-sessions a { color: var(--rc-link); text-decoration: underline; text-underline-offset: 4px; }
+.dd-commit-tail { display: flex; gap: 8px; align-items: baseline; justify-content: flex-end; flex-wrap: wrap; }
+.dd-churn { color: var(--rc-meta); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fw-day .rc-marker { display: inline-block; border: 1px solid currentColor; border-radius: 4px; padding: 0 6px; font-size: 14px; line-height: 1.6; white-space: nowrap; }
+.fw-day .rc-fetched { color: var(--rc-meta); }
+.fw-day .rc-warn { color: var(--rc-warn); }
+.fw-day .rc-quiet { color: var(--rc-meta); }
+.fw-day .dd-more { margin: 8px 0; min-height: 44px; }
+.dd-line { margin: 8px 0; color: var(--rc-ink); overflow-wrap: anywhere; }
+.dd-files { margin: 10px 0; }
+.dd-files p { margin: 0 0 4px; }
+.dd-files li { display: flex; gap: 12px; justify-content: space-between; padding: 2px 0; }
+.dd-path { color: var(--rc-ink); overflow-wrap: anywhere; min-width: 0; font-size: 15px; }
+.dd-sessions { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
+.dd-sessions li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; min-height: 32px; }
+.dd-minor, .dd-foot { margin: 16px 0; }
+@media (max-width: 600px) {
+  /* Four rows of controls would pin a third of a phone screen; let them scroll. */
+  .fw-day .fw-results-head { position: static; }
+  .dd-actions { margin-left: 0; }
+  /* SVG text scales with the chart; at phone width 12 units render near 7px. */
+  .dd-hours .dd-tick { font-size: 20px; }
+  .dd-commit { grid-template-columns: auto minmax(0, 1fr); }
+  .dd-commit code { grid-column: 2; grid-row: 1; justify-self: start; }
+  .dd-commit time { grid-row: 1; }
+  .dd-subject, .dd-commit-tail { grid-column: 1 / -1; }
+  .dd-commit-tail { justify-content: flex-start; }
+}

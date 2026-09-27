@@ -7,6 +7,7 @@ import MemoryDesk from './MemoryDesk.jsx';
 import MemoryInspector from './MemoryInspector.jsx';
 import MemoryActivity from './MemoryActivity.jsx';
 import MemoryRecall from './MemoryRecall.jsx';
+import MemoryDay from './MemoryDay.jsx';
 import '../styles/memory.css';
 import '../styles/focus-workspace.css';
 
@@ -41,9 +42,9 @@ export default function WorkingMemory({ isActive }) {
   const closeFile = () => up({ review: null });
   const hrefForSession = session => workspaceHref({ ...route, session: session.id, file: null, review: null }, 'memory');
   const action = { enable: 'Enable Turbo', start: 'Start Turbo', refresh: 'Refresh Turbo' }[workspace.status?.action];
-  // Tasks and Files are two result modes of one surface; Activity and Recall are their own.
-  const VIEWS = [['tasks', 'Tasks'], ['files', 'Files'], ['activity', 'Activity'], ['recall', 'Recall']];
-  const surfaceOf = view => view === 'activity' || view === 'recall' ? view : 'results';
+  // Tasks and Files are two result modes of one surface; Activity, Recall and Day are their own.
+  const VIEWS = [['tasks', 'Tasks'], ['files', 'Files'], ['activity', 'Activity'], ['recall', 'Recall'], ['day', 'Day']];
+  const surfaceOf = view => view === 'activity' || view === 'recall' || view === 'day' ? view : 'results';
   const viewNavigation = <nav className="fw-tabs fw-view-nav" aria-label="Memory view">
     {VIEWS.map(([view, label]) => <button key={view} aria-pressed={surfaceOf(view) === 'results' ? route.surface === 'results' && route.result === view : route.surface === view} onClick={() => navigate({ surface: surfaceOf(view), ...(surfaceOf(view) === 'results' ? { result: view } : {}), offset: 0 })}>{label}</button>)}
   </nav>;
@@ -57,7 +58,7 @@ export default function WorkingMemory({ isActive }) {
         <div className="fw-focus-strip"><FocusTimeline interval={interval} bounds={bounds} savedInterval={focus.saved} events={context?.sessions.flatMap(s => s.events) || []} onPreview={workspace.preview} onCommit={workspace.commitRange} /></div>
         <div className="fw-workbench" data-inspecting={Boolean(route.session)}>
           <div className="fw-primary" aria-hidden={undefined}>
-            {route.surface === 'activity' ? <MemoryActivity workspace={workspace} onSession={openSession} hrefForSession={hrefForSession} viewNavigation={viewNavigation} /> : route.surface === 'recall' ? <MemoryRecall workspace={workspace} onSession={openSession} hrefForSession={hrefForSession} viewNavigation={viewNavigation} /> : scoped && <MemoryDesk data={scoped} route={route} interval={interval} onSession={openSession} onReview={openReview} hrefForSession={hrefForSession} onFilter={patch => navigate({ offset: 0, ...patch })} viewNavigation={viewNavigation} />}
+            {route.surface === 'activity' ? <MemoryActivity workspace={workspace} onSession={openSession} hrefForSession={hrefForSession} viewNavigation={viewNavigation} /> : route.surface === 'recall' ? <MemoryRecall workspace={workspace} onSession={openSession} hrefForSession={hrefForSession} viewNavigation={viewNavigation} /> : route.surface === 'day' ? <MemoryDay workspace={workspace} viewNavigation={viewNavigation} /> : scoped && <MemoryDesk data={scoped} route={route} interval={interval} onSession={openSession} onReview={openReview} hrefForSession={hrefForSession} onFilter={patch => navigate({ offset: 0, ...patch })} viewNavigation={viewNavigation} />}
           </div>
           {route.session && <MemoryInspector workspace={workspace} onClose={closeSession} onCloseFile={closeFile} />}
         </div>

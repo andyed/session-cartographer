@@ -61,6 +61,55 @@ lost a detection all named git as data. No Codex command changed. Nine
 phantom rows were repaired in the live logs (see
 `.carto/repairs/2026-09-27-phantom-commits/` in the dev directory).
 
+### feat(digest): a day digest, checked against git
+
+`session-digest.js --day [today|yesterday|YYYY-MM-DD]` folds one local
+calendar day across every session, grouped by project: commits, sessions,
+wall-clock active time (five-minute bins with any event, sessions merged),
+diagnoses, hottest files, and each repository's live state. `--md` renders a
+paste-ready receipt for a standup or timesheet; `--json` is a versioned
+contract (`carto.day-digest/1`) for scheduled agents. `--projects` scopes it
+the way the pulse does, and out-of-scope work is reported as a count, never
+by name.
+
+Every logged commit is checked against the repository rather than quoted
+from the log: landed (reachable from a branch, remote, or tag), moved (landed
+under a new sha — an amend, rebase, or cherry-pick, paired on author date and
+subject), rewritten, missing, or unchecked. Your commits inside the day that
+no session logged are listed as git-only. On 2026-09-26 that check found 43
+of 125 landed commits absent from the log, 5 logged commits that landed under
+a new sha, and 2 hook rows parsed from test output. The receipt lists only
+what git has; the panel shows the rest for audit. Its 125 matches an
+independent `git log` count, repository by repository.
+
+`cartographer-pulse.sh --day-digest DAY` nests the receipt in the pulse,
+between the tempo table and the relevance sample, scoped by the same
+allowlist and with its headings demoted one level. It is off unless asked for.
+A digest that fails renders as **UNAVAILABLE**, never as an empty day. A
+scheduled job at 04:00 over `--since 24h` sees parts of two days; the day
+digest gives it the whole previous one.
+
+The Memory Desk has a **Day** view beside Recall: a date picker, Today and
+Yesterday, stat tiles, events per local hour, each project's commits with
+their git status (commits link to their session in the inspector), diagnoses,
+edited files, sessions, and live repository state, plus **Copy receipt** for
+the Markdown. It reads `GET /api/memory/day`, which runs the same script as a
+child process and returns what it printed, so the view's counts are the
+command line's; a unit test compares the two byte for byte and the browser
+harness compares the rendered tiles against the script. Picking a day moves
+the desk's window onto its local midnights. A backend older than the endpoint
+answers 404, and the view says so and names the command that works today.
+Digest git calls run with `GIT_OPTIONAL_LOCKS=0`, so a refresh never takes
+`index.lock` from a session committing in the same repository, and rows
+stamped with epoch numbers, which carry no date string, are no longer skipped
+by the day's prefilter.
+
+Commit parsing, edit-path resolution, and repo state moved from
+`session-digest.js` into `scripts/digest-parts.js` so both digests read events
+one way. The session panel is byte-identical except that paths under `$HOME`
+print as `~/…` and an agent worktree's `.claude/worktrees/<name>/` prefix
+folds into the repository path, so one file edited in both reads as one.
+
 ### fix(hooks): list files and diff shape for a repository's first commit
 
 `git diff-tree` prints nothing for a commit with no parent unless given

@@ -8,7 +8,7 @@ import { effectiveTurboSettings } from '../../scripts/turbo-common.js';
 const exec = promisify(execFile);
 const controllerPath = fileURLToPath(new URL('../../scripts/cartographer-turbo.js', import.meta.url));
 const ACTIONS = new Set(['enable', 'start', 'refresh']);
-const MEMORY_PATHS = new Set(['/api/memory/health', '/api/memory/activity', '/api/memory/state', '/api/memory/session', '/api/memory/file', '/api/memory/recall', '/api/memory/recall/call']);
+const MEMORY_PATHS = new Set(['/api/memory/health', '/api/memory/activity', '/api/memory/state', '/api/memory/session', '/api/memory/file', '/api/memory/recall', '/api/memory/recall/call', '/api/memory/day']);
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 function reply(res, status, body) {
@@ -195,6 +195,8 @@ export function createTurboEntryMiddleware({
       const span = Date.parse(target.searchParams.get('through')) - Date.parse(target.searchParams.get('from'));
       const wide = (Number.isInteger(hours) && hours > 24 && hours <= 2160) || (span > 86400000 && span <= 90 * 86400000);
       const download = pathname === '/api/memory/file' && target.searchParams.get('download') === '1';
+      // The day digest asks git about every commit in a day; its own budget is 30 s.
+      const dayDigest = pathname === '/api/memory/day';
       // Wide snapshots contain the complete selected corpus, including per-task
       // evidence. Keep bounded transport without imposing the old 24h limits.
       const controller = new AbortController();
@@ -202,7 +204,7 @@ export function createTurboEntryMiddleware({
       res.once?.('close', abort);
       try {
         const response = await fetchImpl(target, {
-          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(wide || download ? 60000 : 10000)]),
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(wide || download || dayDigest ? 60000 : 10000)]),
           redirect: 'error', headers: { Accept: download ? 'application/octet-stream' : 'application/json' },
         });
         if (download && response.ok && response.headers.get('content-type') === 'application/octet-stream') {

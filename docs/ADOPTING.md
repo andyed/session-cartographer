@@ -175,6 +175,13 @@ project names or an appropriate substring there. Format and worked examples:
 wrapper around it with your own project allowlist, and document in the wrapper
 what it deliberately excludes and why.
 
+A wrapper for a daily job should also pass `--day-digest yesterday`. The pulse's
+`--since` window is rolling, so a 04:00 run over `24h` sees parts of two days;
+the day digest adds the whole previous local calendar day, by project, with
+every commit checked against git ([the day digest](../README.md#the-day-digest)).
+It uses the same allowlist, reports out-of-scope work only as a count, and
+renders as an outage rather than an empty day if it fails.
+
 ### Hermes Agent history — off until you write a policy
 
 `scripts/hermes-source.js` ingests [Hermes Agent](https://github.com/NousResearch/hermes-agent)

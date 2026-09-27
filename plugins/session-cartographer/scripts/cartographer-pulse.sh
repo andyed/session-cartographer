@@ -33,6 +33,7 @@ FEED="$ROOT/scripts/cartographer-feed.sh"
 # without the client; when this file is present it wins, because it is the one
 # place that speaks the spool envelope and validates the response contract.
 FACTS_CLIENT="$ROOT/scripts/cartographer-facts.js"
+DIGEST="$ROOT/scripts/session-digest.js"
 # shellcheck source=./project-registry.sh
 . "$ROOT/scripts/project-registry.sh"
 
@@ -54,6 +55,12 @@ TOP=50
 SAMPLE=3
 FACTS_URL="${CARTOGRAPHER_TURBO_URL:-http://127.0.0.1:2526}"
 FACTS_TIMEOUT_MS=5000
+# Off unless asked for. When set, the pulse adds one local calendar day, by
+# project, with every commit checked against git (scripts/day-digest.js). A
+# scheduled run at 04:00 over `--since 24h` sees the last four hours of one day
+# and twenty of the one before; the calendar day is the unit a morning summary
+# is actually about.
+DAY_DIGEST=""
 
 usage() {
   printf 'Usage: %s --projects NAME[,NAME...] [options]\n' "$0"
@@ -70,6 +77,7 @@ usage() {
   printf '  --sample N                audit event_ids per bucket, default: 3\n'
   printf '  --facts-url URL           loopback facts service, default: %s\n' "$FACTS_URL"
   printf '  --facts-timeout-ms N      per-call budget, default: 5000\n'
+  printf '  --day-digest DAY          add a git-checked day digest: today, yesterday, or YYYY-MM-DD (default: off)\n'
 }
 
 while [ $# -gt 0 ]; do
@@ -88,6 +96,7 @@ while [ $# -gt 0 ]; do
     --sample)            SAMPLE="$2"; shift 2 ;;
     --facts-url)         FACTS_URL="$2"; shift 2 ;;
     --facts-timeout-ms)  FACTS_TIMEOUT_MS="$2"; shift 2 ;;
+    --day-digest)        DAY_DIGEST="$2"; shift 2 ;;
     -h|--help)           usage; exit 0 ;;
     *)
       printf 'cartographer-pulse: unknown argument: %s\n' "$1" >&2
@@ -119,6 +128,11 @@ if ! [[ "$LIMIT_PER_PROJECT" =~ ^[1-9][0-9]*$ ]] || \
    ! [[ "$MIN_SALIENCE" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
    ! awk -v value="$MIN_SALIENCE" 'BEGIN { exit !(value >= 0 && value <= 1) }'; then
   printf 'cartographer-pulse: limits must be positive integers and salience must be in [0,1]\n' >&2
+  exit 2
+fi
+
+if [ -n "$DAY_DIGEST" ] && ! [[ "$DAY_DIGEST" =~ ^(today|yesterday|[0-9]{4}-[0-9]{2}-[0-9]{2})$ ]]; then
+  printf 'cartographer-pulse: --day-digest takes today, yesterday, or YYYY-MM-DD\n' >&2
   exit 2
 fi
 
@@ -236,6 +250,9 @@ if [ "$FACTS_STATUS" = "ok" ]; then
 else
   printf -- '- Composition: search section only; the counted section is UNAVAILABLE this run\n'
 fi
+if [ -n "$DAY_DIGEST" ]; then
+  printf -- '- Day digest: local calendar day `%s`, every commit checked against git (its window is the calendar day, not the census window)\n' "$DAY_DIGEST"
+fi
 printf -- '- Provenance: Claude Code/Codex Cartographer records; session evidence, not live-world evidence\n'
 printf -- '- Privacy: summaries only; no raw transcript content is included\n\n'
 
@@ -351,6 +368,40 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# Day digest
+# ---------------------------------------------------------------------------
+
+if [ -n "$DAY_DIGEST" ]; then
+  printf '## The day, by project (checked against git)\n\n'
+  printf 'One local calendar day across every session in scope. Its window is the calendar day, so its totals will not match the census above, which covers `%s`. Every commit listed is reachable in git, including commits no session logged; logged rows that git does not have are counted and left out. Headings are demoted one level so it nests here.\n\n' "$SINCE"
+  DAY_OUT="$WORK/day.md"
+  DAY_ERR="$WORK/day.err"
+  day_status=0
+  if command -v node >/dev/null 2>&1 && [ -f "$DIGEST" ]; then
+    # The raw allowlist, not the expanded one: the digest expands aliases
+    # through scripts/project-registry.js, which reads the same registry file
+    # one level deep, exactly as cartographer_expand_alias does above. Passing
+    # the expanded names would expand any member that is itself an alias a
+    # second time and widen the scope past the census's.
+    node "$DIGEST" --day "$DAY_DIGEST" --md --projects "$PROJECTS" --deny-regex "$DENY_REGEX" \
+      > "$DAY_OUT" 2> "$DAY_ERR" || day_status=$?
+  else
+    printf 'node or %s is unavailable\n' "$DIGEST" > "$DAY_ERR"
+    day_status=127
+  fi
+  if [ "$day_status" -ne 0 ]; then
+    # Same rule as the census: an empty section here would read as a day with
+    # no work in it.
+    printf '**UNAVAILABLE this run.** The day digest exited %d: %s\n\n' "$day_status" \
+      "$(LC_ALL=C tr '\n' ' ' < "$DAY_ERR" | LC_ALL=C sed 's/[[:space:]]\{1,\}/ /g')"
+    printf 'This is an outage, not a quiet day. Do not infer the day'"'"'s commits from its absence.\n\n'
+  else
+    LC_ALL=C awk '/^#+ / { sub(/^#/, "##") } { print }' "$DAY_OUT"
+    printf '\n'
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------
 
@@ -393,6 +444,9 @@ printf -- '- **The counted section is exhaustive.** Every event in the stated wi
 printf -- '- **Every number is checkable.** Each bucket cites up to %d event_ids. Verify any count by exact-fetching them: `%s/scripts/cartographer-search.sh verify --get EVENT_ID[,EVENT_ID...]` (the positional query is a required placeholder and is ignored under `--get`). A deterministic answer that is silently wrong is worse than a slow one, so check rather than trust when a number drives a decision.\n' \
   "$SAMPLE" "$ROOT"
 printf -- '- **Commits are the highest-confidence facts here.** They are recorded, not inferred from prose. They are also what relevance ranking is worst at surfacing, since a commit summary shares no vocabulary with a question like "what happened yesterday".\n'
+if [ -n "$DAY_DIGEST" ]; then
+  printf -- '- **The day digest is checked against git, and its window differs.** It covers the local calendar day `%s`, not the census window. A commit listed there is reachable in git. It can list more commits than the Commits section, because it includes commits the hooks never logged, and fewer, because it drops logged rows git does not have.\n' "$DAY_DIGEST"
+fi
 printf -- '- **The search section is NOT exhaustive.** It is a ranked sample of at most %d rows above a salience floor of %s. Absence from it means "did not rank", never "did not happen". Never quote it as a count.\n' \
   "$MAX_RESULTS" "$MIN_SALIENCE"
 printf -- '- **Unattributed rows are reported, never folded in.** The "Cannot attribute" line counts rows whose project, session, or type could not be resolved. They are stated beside the totals, never merged into a bucket: `"unknown"` is truthy and equal to itself, so grouping on it manufactures one phantom entity that reads as a real and very busy project.\n'

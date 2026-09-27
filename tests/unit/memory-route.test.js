@@ -183,3 +183,15 @@ test('the recall surface and an expanded call survive the round trip; a bad call
   assert.equal(parseMemoryRoute('?call=../../x').call, null);
   assert.doesNotMatch(memoryHref({}), /call=/);
 });
+
+test('the day surface and its date survive the round trip; the date is dropped where nothing reads it', () => {
+  const route = normalizeMemoryRoute({ surface: 'day', day: '2026-09-26', from: Date.parse('2026-09-26T07:00:00Z'), through: Date.parse('2026-09-27T07:00:00Z') });
+  const href = memoryHref(route);
+  assert.match(href, /surface=day/);
+  assert.match(href, /day=2026-09-26/);
+  assert.deepEqual(parseMemoryRoute(href.slice(href.indexOf('?'))), route);
+  assert.equal(parseMemoryRoute('?day=2026-9-26&surface=day').day, null);
+  assert.equal(parseMemoryRoute('?day=today&surface=day').day, null);
+  // Only the Day view reads `day`; on Tasks it would be a parameter that does nothing.
+  assert.doesNotMatch(memoryHref({ ...route, surface: 'results' }), /day=/);
+});

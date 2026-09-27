@@ -172,7 +172,7 @@ test('action payloads are fixed and bounded', async (t) => {
 
 test('only fixed memory read routes proxy to the configured Turbo origin', async (t) => {
   const { get, state } = await fixture(t);
-  for (const pathname of ['/api/memory/state?hours=24', '/api/memory/health', '/api/memory/file?session=one&path=%2Ftmp%2Fa.js']) {
+  for (const pathname of ['/api/memory/state?hours=24', '/api/memory/health', '/api/memory/file?session=one&path=%2Ftmp%2Fa.js', '/api/memory/day?day=2026-09-26']) {
     const response = await get(pathname);
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { result: 'current memory' });

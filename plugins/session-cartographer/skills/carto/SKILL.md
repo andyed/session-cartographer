@@ -120,7 +120,8 @@ machine running the Explorer).
 | `brush` | comma list of session ids, ≤ 100 | Highlighted sessions in the field. |
 | `cam` | `x,y,scale`, scale 0.4–8 | Field camera. Identity is omitted. |
 | `offset`, `sort` | integers | Thread-list paging. |
-| `surface` | `activity`, `recall` | Results (Tasks/Files) is the default. `recall` lists every /remember call in the window, grouped by session, with calls that recorded no session under **Unattributed**. |
+| `surface` | `activity`, `recall`, `day` | Results (Tasks/Files) is the default. `recall` lists every /remember call in the window, grouped by session, with calls that recorded no session under **Unattributed**. `day` is the day digest (`session-digest.js --day`): one local calendar day by project, every commit checked against git. |
+| `day` | `YYYY-MM-DD` | With `surface=day`. The reader's local date; omitted, the view shows the day the window ends in. Picking a day also sets `from`/`through` to its local midnights, so a shared day link carries both. |
 | `call` | call id, `[\w.:-]{1,128}` | Expands that call's ranked results: each row's served rank, a **marked used** marker when a `--touch` joined it exactly, and a fixed-window link to the episode it came from. With `session`, the task's own Recall section expands it too. |
 
 Recipes:
@@ -139,6 +140,8 @@ echo "$BASE?view=compare&x=activeMs&y=commit&session=$SID"
 echo "$BASE?hours=6&at=2026-09-13T22:00:00Z"
 # The day's recall searches, one call's results expanded
 echo "$BASE?surface=recall&call=call-20260926T134113-60435"
+# One calendar day by project, commits checked against git (PDT midnights shown)
+echo "$BASE?surface=day&day=2026-09-26&from=2026-09-26T07:00:00Z&through=2026-09-27T07:00:00Z"
 ```
 
 Before handing a link to the operator, confirm the host is up

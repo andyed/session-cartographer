@@ -9,6 +9,7 @@ import { eventEpochMs } from './event-time.js';
 import { CORPUS_ROOT } from './jsonl.js';
 import { createTranscriptEnricher, missingTokens } from './memory-transcript.js';
 import { activityFromMemory, normalizeActivityScope, projectMemoryScope } from '../shared/activity-scope.js';
+import { createDayDigestSource, readDayParams } from './memory-day.js';
 import { createRecallSource, fetchIndexedEvents, listRecallCalls, recallCallDetail, resolveUnplacedMarks, RECALL_CALL_LIMIT, RECALL_DEFAULT_WINDOW_MS, RECALL_MAX_WINDOW_MS } from './memory-recall.js';
 
 const execFileAsync = promisify(execFile);
@@ -525,7 +526,7 @@ async function reviewRange(filePath, content, bounds, nowMs, contentTruncated = 
 }
 
 /** Shared by Express and the zero-dependency Turbo HTTP server. */
-export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher(), recallSource = createRecallSource(), lookupIndexed = fetchIndexedEvents }) {
+export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher(), recallSource = createRecallSource(), lookupIndexed = fetchIndexedEvents, dayDigest = createDayDigestSource({ corpusRoot }) }) {
   // Keep historical windows and session links isolated from the live cache.
   const cache = new Map();
   function readEnd(value) {
@@ -717,6 +718,7 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
       else if (url.pathname === '/api/memory/activity' || url.pathname === '/api/activity-scope') body = await activity(url.searchParams);
       else if (url.pathname === '/api/memory/recall') body = await recallCalls(url.searchParams);
       else if (url.pathname === '/api/memory/recall/call') body = await recallCall(url.searchParams);
+      else if (url.pathname === '/api/memory/day') body = await dayDigest(readDayParams(url.searchParams));
       else if (url.pathname === '/api/memory/session') {
         const id = url.searchParams.get('session');
         if (!id) throw new MemoryError(400, 'A session id is required.');

@@ -16,13 +16,16 @@
  *   node scripts/session-digest.js --session <session-id>
  *   node scripts/session-digest.js --json
  *   node scripts/session-digest.js --no-git --commits 10
+ *   node scripts/session-digest.js --day [today|yesterday|YYYY-MM-DD]   (see day-digest.js)
  */
 import fs from 'fs';
 import path from 'path';
-import { execFileSync } from 'child_process';
 import { isResolved, firstResolved } from './sentinels.js';
 import { editSummaryPaths } from './edit-paths.js';
 import { buildRecallIndex, parseJsonl, sessionRecallSummary } from './recall-join.js';
+import {
+  abbrev, commitParts, createEditResolver, fmtDuration, relativize, repoState, sparkline, truncate,
+} from './digest-parts.js';
 
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME, 'Documents/dev');
 const CHANGELOG = process.env.CARTOGRAPHER_CHANGELOG || path.join(DEV, 'changelog.jsonl');
@@ -35,6 +38,17 @@ const valueAfter = (flag, fallback) => {
   const idx = args.indexOf(flag);
   return idx >= 0 && args[idx + 1] ? args[idx + 1] : fallback;
 };
+// A calendar day across every session is a different question with a different
+// fold, so it lives in its own module; the flag is here so there is one command.
+// The write callback fires once stdout has taken the text, so exiting after it
+// cannot truncate a piped panel.
+if (args.includes('--day')) {
+  const { dayDigest } = await import('./day-digest.js');
+  const { text, code } = dayDigest(args);
+  if (text) await new Promise((resolve) => process.stdout.write(`${text}\n`, resolve));
+  process.exit(code);
+}
+
 const AS_JSON = args.includes('--json');
 const WITH_GIT = !args.includes('--no-git');
 const WIDTH = Math.max(60, Number.parseInt(valueAfter('--width', '84'), 10) || 84);
@@ -88,13 +102,6 @@ const times = events.map((e) => Date.parse(e.timestamp)).filter(Number.isFinite)
 const startMs = Math.min(...times);
 const endMs = Math.max(...times);
 
-function fmtDuration(ms) {
-  const mins = Math.round(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  return `${h}h${String(mins % 60).padStart(2, '0')}m`;
-}
-
 const iso = (ms) => new Date(ms).toISOString();
 const clock = (ms) => iso(ms).slice(11, 16);
 const day = (ms) => iso(ms).slice(0, 10);
@@ -105,7 +112,6 @@ const stamp = (ms) => (MULTI_DAY ? `${iso(ms).slice(5, 10)} ${clock(ms)}` : cloc
 
 // Tempo: bucket every event across the span. Shows where the work actually was,
 // which a start/end timestamp pair hides.
-const SPARK = '▁▂▃▄▅▆▇█';
 function tempo(buckets) {
   const span = endMs - startMs;
   if (span <= 0) return { bar: '█', bucketMs: 0 };
@@ -114,12 +120,7 @@ function tempo(buckets) {
     const idx = Math.min(buckets - 1, Math.floor(((t - startMs) / span) * buckets));
     bins[idx] += 1;
   }
-  const peak = Math.max(...bins);
-  const bar = bins.map((n) => {
-    if (n === 0) return '·'; // an empty bucket is a gap, not a low bar
-    return SPARK[Math.min(SPARK.length - 1, Math.floor((n / peak) * SPARK.length))];
-  }).join('');
-  return { bar, bucketMs: span / buckets };
+  return { bar: sparkline(bins), bucketMs: span / buckets };
 }
 
 const projects = {};
@@ -129,26 +130,12 @@ for (const e of events) {
 }
 const projectRank = Object.entries(projects).sort((a, b) => b[1] - a[1]);
 
-// Commit summaries carry escaped newlines and a trailing `| files:` tail from
-// the hook's flattening pass. Recover just the subject line.
-function commitParts(summary) {
-  const text = String(summary || '');
-  const m = text.match(/Commit ([0-9a-f]{6,40}):\s*([\s\S]*)$/);
-  if (!m) return null;
-  const subject = m[2]
-    .split(/\\n|\n/)[0]
-    .split(' | files:')[0]
-    .replace(/["',]\s*$/, '')
-    .trim();
-  const typeMatch = text.match(/^\[([a-z]+)\]/);
-  return { hash: m[1].slice(0, 7), subject, type: typeMatch ? typeMatch[1] : 'other' };
-}
-
 const commits = [];
 for (const e of events) {
   if (e.type !== 'git_commit') continue;
-  const parts = commitParts(e.summary);
-  if (!parts) continue;
+  const parsed = commitParts(e.summary);
+  if (!parsed) continue;
+  const { sha: _sha, ...parts } = parsed;
   const shape = e.diff_shape || {};
   commits.push({
     ...parts,
@@ -168,39 +155,7 @@ for (const c of commits) {
   if (c.quadrant) commitShapes[c.quadrant] = (commitShapes[c.quadrant] || 0) + 1;
 }
 
-// Relativize against the project segment, not cwd: the same file edited from
-// the repo root and from a subdirectory must collapse to one entry.
-function relativize(abs, project) {
-  if (isResolved(project)) {
-    const marker = `/${project}/`;
-    const at = abs.lastIndexOf(marker);
-    if (at >= 0) return abs.slice(at + marker.length);
-  }
-  return abs.startsWith(`${DEV}/`) ? abs.slice(DEV.length + 1) : abs;
-}
-
-// The hook's bash-path detector reads shell source text, so it emits JS
-// property access (`errors.push`, `console.log`) alongside real files —
-// 58% of its candidates, corpus-wide. Existence on disk is the filter, and it
-// is the same question the panel's "touched" already implies. Unlike the
-// Explorer's resolver this does not confine itself to the indexed corpus: the
-// digest only names a file rather than serving it, and edits to ~/.claude
-// memory files are real session work.
-const resolvedEdits = new Map();
-function resolveEditedFile(candidate, cwd) {
-  if (typeof candidate !== 'string') return null;
-  let value = candidate.trim();
-  if (/^(["'`]).*\1$/.test(value)) value = value.slice(1, -1);
-  if (!value || value.includes('\0')) return null;
-  if (!path.isAbsolute(value) && !(typeof cwd === 'string' && path.isAbsolute(cwd))) return null;
-  const absolute = path.isAbsolute(value) ? value : path.resolve(cwd, value);
-  if (!resolvedEdits.has(absolute)) {
-    let hit = null;
-    try { hit = fs.statSync(absolute).isFile() ? absolute : null; } catch { hit = null; }
-    resolvedEdits.set(absolute, hit);
-  }
-  return resolvedEdits.get(absolute);
-}
+const resolveEditedFile = createEditResolver();
 
 const fileHits = {};
 // Reported, never silently dropped: a candidate can miss because it was never a
@@ -211,7 +166,7 @@ for (const e of events) {
   for (const candidate of editSummaryPaths(e.summary, (value) => resolveEditedFile(value, e.cwd))) {
     const absolute = resolveEditedFile(candidate, e.cwd);
     if (!absolute) { unresolvedEdits++; continue; }
-    const rel = relativize(absolute, e.project);
+    const rel = relativize(absolute, e.project, DEV);
     fileHits[rel] = (fileHits[rel] || 0) + 1;
   }
 }
@@ -243,26 +198,8 @@ const recall = sessionRecallSummary(buildRecallIndex({
 }), SESSION);
 const usedEventIds = recall.used_event_ids;
 
-// Live git state per repo the session touched. This is the part that is not in
-// any log — it is what the session is leaving behind right now.
-function repoState(dir) {
-  const git = (argv) => execFileSync('git', ['-C', dir, ...argv], {
-    encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
-  }).trim();
-  try {
-    const root = git(['rev-parse', '--show-toplevel']);
-    const branch = git(['branch', '--show-current']) || 'detached';
-    const dirty = git(['status', '--porcelain']).split('\n').filter(Boolean).length;
-    let unpushed = null;
-    try {
-      unpushed = git(['rev-list', '--count', '@{u}..HEAD']);
-    } catch { unpushed = null; } // no upstream configured
-    return { root, name: path.basename(root), branch, dirty, unpushed };
-  } catch {
-    return null;
-  }
-}
-
+// Live git state per repo the session touched — what the session is leaving
+// behind right now, which no log records.
 const repos = [];
 if (WITH_GIT) {
   const seen = new Set();
@@ -290,8 +227,6 @@ const fit = (value) => truncate(String(value).trimEnd(), WIDTH - LABEL - 2);
 const row = (label, value) => lines.push(`  ${String(label).padEnd(LABEL)}${fit(value)}`);
 const cont = (value) => lines.push(`  ${' '.repeat(LABEL)}${fit(value)}`);
 const blank = () => lines.push('');
-const truncate = (text, max) => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
-const abbrev = (n) => (n >= 10000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 const { bar, bucketMs } = tempo(Math.min(32, Math.max(12, WIDTH - LABEL - 22)));
 const topProject = projectRank[0][0];

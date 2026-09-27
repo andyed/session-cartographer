@@ -1063,6 +1063,53 @@ async function port() {
     await staleRecall.getByRole('region', { name: 'Recall searches' }).getByRole('alert').getByText(/does not serve recall telemetry yet/).waitFor({ timeout: 15000 });
     await staleRecall.close();
 
+    // The Day view shows the digest the command line prints for the same day,
+    // through /api/memory/day, and holds 8:1 like the rest of the desk. The
+    // counts are compared against the script itself, so a view that re-derived
+    // any of them would disagree here first.
+    const dayPage = await browser.newPage({ viewport: { width: 1280, height: 920 }, reducedMotion: 'reduce' });
+    dayPage.on('pageerror', e => errors.push(`day: ${e.message}`));
+    await dayPage.goto(origin + '/memory?surface=day');
+    const dayView = dayPage.getByRole('region', { name: 'Day digest' });
+    await dayView.locator('.dd-stats').waitFor({ timeout: 30000 });
+    assert.equal(await dayPage.getByRole('navigation', { name: 'Memory view' }).getByRole('button', { name: 'Day', exact: true }).getAttribute('aria-pressed'), 'true');
+    assert.equal(await dayView.getByRole('button', { name: 'Today', exact: true }).getAttribute('aria-pressed'), 'true');
+    const shownDay = await dayView.getByLabel('Day', { exact: true }).inputValue();
+    const cliDay = JSON.parse(execFileSync(process.execPath, [path.join(root, 'scripts/session-digest.js'), '--day', shownDay, '--json'], { env, encoding: 'utf8' }));
+    assert.ok(cliDay.totals.events > 0, 'the fixture day holds no events, so the comparison would pass on nothing');
+    const tiles = Object.fromEntries(await dayView.locator('.dd-stats > div').evaluateAll(cells => cells.map(cell => [cell.querySelector('dt').textContent, Number(cell.querySelector('dd').textContent.replace(/\D/g, ''))])));
+    assert.equal(tiles.Events, cliDay.totals.events, 'Day view and command line disagree on events');
+    assert.equal(tiles.Sessions, cliDay.totals.sessions, 'Day view and command line disagree on sessions');
+    assert.equal(tiles.Commits, cliDay.totals.commits_landed + cliDay.totals.commits_git_only, 'Day view and command line disagree on commits');
+    assert.equal(await dayView.locator('.dd-project').count(), cliDay.projects.filter(p => p.commits.length || p.git_only_commits.length || p.investigations.length || p.investigation_outcomes.length || Object.keys(p.files).length || p.repo).length);
+    const dayContrast = await textContrast(dayPage, '.fw-day', { fixed: '.agent-badge' });
+    assert.ok(dayContrast.measured.some(entry => entry.element.includes('dd-tick')), 'the day probe measured no chart label');
+    assert.ok(dayContrast.measured.some(entry => entry.element.includes('agent-badge')), 'the day probe measured no AgentBadge');
+    assert.deepEqual(dayContrast.failures, [], 'day text under 8:1');
+    await dayPage.screenshot({ path: path.join(artifacts, 'carto-memory-day.png'), fullPage: true });
+    // Yesterday moves the desk's window onto local midnight to local midnight.
+    await dayView.getByRole('button', { name: 'Yesterday', exact: true }).click();
+    await dayPage.waitForURL(url => url.searchParams.get('day') && url.searchParams.get('day') !== shownDay);
+    const movedTo = new URL(dayPage.url());
+    const [dy, dm, dd] = movedTo.searchParams.get('day').split('-').map(Number);
+    assert.equal(Date.parse(movedTo.searchParams.get('from')), new Date(dy, dm - 1, dd).getTime(), 'the window does not start at local midnight');
+    assert.equal(Date.parse(movedTo.searchParams.get('through')), new Date(dy, dm - 1, dd + 1).getTime(), 'the window does not end at the next local midnight');
+    await dayView.getByRole('heading', { level: 2 }).first().waitFor();
+    await dayPage.setViewportSize({ width: 390, height: 844 });
+    await dayPage.goto(origin + '/memory?surface=day');
+    await dayView.locator('.dd-stats').waitFor({ timeout: 30000 });
+    assert.equal(await dayPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Day view overflows on mobile');
+    await dayPage.screenshot({ path: path.join(artifacts, 'carto-memory-day-390.png') });
+    await dayPage.close();
+    // An installed backend older than the endpoint answers 404; the view says
+    // what is missing and where the same digest runs today.
+    const staleDay = await browser.newPage({ viewport: { width: 1280, height: 920 }, reducedMotion: 'reduce' });
+    staleDay.on('pageerror', e => errors.push(`stale day: ${e.message}`));
+    await staleDay.route(/\/api\/memory\/day(\?|$)/, route => route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Memory endpoint not found.' }) }));
+    await staleDay.goto(origin + '/memory?surface=day');
+    await staleDay.getByRole('region', { name: 'Day digest' }).getByRole('alert').getByText(/does not serve the day digest yet/).waitFor({ timeout: 15000 });
+    await staleDay.close();
+
     // Internals remains adjacent to Memory, and managed Turbo can be stopped
     // and restarted without discarding the last successful workspace snapshot.
     await page.getByRole('button', { name: 'internals', exact: true }).click();
@@ -1173,7 +1220,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links; the inspector hand-off row at 44px with a keyboard focus ring in Working memory and the Timeline; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links, the Day view matching the command line's event, session and commit counts with its local-midnight window, 8:1 text and stale-backend notice; the inspector hand-off row at 44px with a keyboard focus ring in Working memory and the Timeline; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

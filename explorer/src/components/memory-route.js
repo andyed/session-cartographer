@@ -133,8 +133,10 @@ export function normalizeMemoryRoute(value = {}) {
     providers: list(value.providers ?? value.provider),
     evidence,
     result,
-    surface: value.surface === 'activity' || (value.surface == null && legacyActivity) ? 'activity' : value.surface === 'recall' ? 'recall' : 'results',
+    surface: value.surface === 'activity' || (value.surface == null && legacyActivity) ? 'activity' : value.surface === 'recall' ? 'recall' : value.surface === 'day' ? 'day' : 'results',
     call,
+    // The Day view's calendar date, in the reader's own time zone.
+    day: typeof value.day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.day) ? value.day : null,
     doc: value.doc === 'source' ? 'source' : 'preview',
     contributor,
     ...times,
@@ -183,6 +185,8 @@ export function memoryHref(value, pathname = '/memory') {
   if (route.doc !== 'preview') params.set('doc', route.doc);
   if (route.contributor) params.set('contributor', route.contributor);
   if (route.call) params.set('call', route.call);
+  // Only the Day view reads it; elsewhere it would be a parameter that does nothing.
+  if (route.day && route.surface === 'day') params.set('day', route.day);
   if (route.hours !== 24) params.set('hours', route.hours);
   if (route.q) params.set('q', route.q);
   if (route.filter !== 'all') params.set('filter', route.filter);

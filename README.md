@@ -30,7 +30,7 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 **Browse**
 
 - **`/carto`** — Open the Explorer: timeline, faceted search, and transcript viewer. Click a facet pill to narrow by project or event type; click a timeline dot to jump to that result.
-- **Memory Desk (alpha)** — A visual workspace in the Explorer for live and replayed sessions, token and activity comparisons, and per-session file review. Early and changing. [Details →](#memory-desk-alpha)
+- **Memory Desk (alpha)** — A visual workspace in the Explorer for live and replayed sessions, token and activity comparisons, per-session file review, and a Day view of any calendar day checked against git. Early and changing. [Details →](#memory-desk-alpha)
 
 **Record judgment**
 
@@ -45,6 +45,7 @@ warm so recall returns in about 0.3 s instead of about 12 s on a
 **From scripts and other agents**
 
 - **`cartographer-search.sh --get evt-a,evt-b`** — Fetch complete records (`transcript_path`, `files_changed`, `diff_shape`) for a shortlist before opening a 100 MB transcript. Missing ids are reported, not dropped.
+- **`session-digest.js --day yesterday --md`** — One calendar day across every session, by project, with each commit checked against git. [Details →](#the-day-digest)
 - **`scripts/cartographer-feed.sh`** — A compact, summary-only Markdown pulse for an explicit project allowlist and time window, for another local agent or a scheduled job. See [Project Registry & Briefings](docs/BRIEFINGS.md#bounded-machine-feeds).
 - **`.carto/profile.md`** — A standing summary of the whole corpus (active projects, preferences, durable decisions, work shape, cadence). Read it first when the question is about the shape of the work rather than one moment. Rebuild with `node scripts/build-profile.js`; do not hand-edit.
 
@@ -115,6 +116,53 @@ its own memory of it. Run it directly on any session:
 ```bash
 node scripts/session-digest.js --session <id>     # or --json for the raw numbers
 ```
+
+### The day digest
+
+The same discipline over a calendar day instead of a session: every session,
+grouped by project, in local time. It is the standup, the timesheet, and the
+input to a scheduled agent's morning summary.
+
+```
+━━ day digest · Sat 2026-09-26 · PDT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  day       1,795 events · 30 sessions · 1 project · 36 commits · 6 pushes
+  active    7h05m wall clock · 5-min bins with any event
+  hours     ·····▂█▇▅▆▄·▂▃▂▂▁▁▂▁▁···  00→23
+  agents    claude 24 · codex 6
+  git       33 landed · 2 missing ✗ · 3 git-only +
+
+━━ session-cartographer · 36 commits · 30 sessions · 7h05m ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  commits   16:16   3c236d4  fix(explorer): keep focus in the inspector w…    +62 −6
+            17:58   3917fb9  fix(explorer): return focus to a file row pa…   +87 −12
+            18:20   41022db  fix(hooks): read a commit's repo from the co…   +411 −9
+            18:57   ea691b7  fix(hooks): list files and diff shape for a …  +117 −18
+            … 34 earlier
+  diagnosed confirmed · Turbo-requested recall intermittently falls back to the por…
+  leaving   main · 6 uncommitted · 4 unpushed
+```
+
+The **git** line is why the digest exists. A log quoted back as a receipt lists
+commits that were amended away and misses commits made in a plain terminal,
+so every logged commit is checked against the repository: landed, moved
+(landed under a new sha after an amend, rebase, or cherry-pick), rewritten,
+missing, or unchecked. Commits of yours inside the day that no session logged
+are listed as git-only. **Active** is wall clock: three sessions working the
+same hour count as one hour, and time with no tool call is not counted.
+
+```bash
+node scripts/session-digest.js --day                    # today so far
+node scripts/session-digest.js --day yesterday --md     # paste-ready receipt
+node scripts/session-digest.js --day 2026-09-26 --json  # carto.day-digest/1
+node scripts/session-digest.js --day yesterday --md --projects a,b   # scoped
+```
+
+`--md` lists only commits git confirms, eight per project, features and fixes
+first. `--json` carries all of it, with event ids. A scheduled agent should
+pass `--projects`: work outside the scope is reported as a count of events and
+projects, never by name. `cartographer-pulse.sh --day-digest yesterday` nests
+the `--md` receipt in the pulse, scoped by the pulse's own allowlist.
 
 ### Wrapup coverage
 
@@ -223,6 +271,13 @@ Current changes can include other sessions. The control bridge also works with
 `npm run preview`; the static public demo has no local service controls.
 Internals reads the same local telemetry through the UI host, so it remains
 available with headless Turbo or while Turbo is stopped.
+
+**Day** is [the day digest](#the-day-digest) as a view: pick a date, or Today
+or Yesterday, and the desk's window moves onto that day's local midnights. It
+shows the day's totals, events per hour, and each project's commits with their
+git status; a commit links to the session that made it. **Copy receipt** copies
+the Markdown. The view reads `/api/memory/day`, which runs the same script as
+the command line, so their counts cannot differ.
 
 Memory URLs preserve the current exploration. Session points and file entries
 are ordinary links, and **Copy link** copies the current view. Reload and
