@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### fix(codex): Codex loads its own hook file, without Claude-only events
+
+1b5a1a0 registered `PostToolUseFailure` in `hooks/hooks.json`, which both
+agents load. Codex has no such event: the codex-cli 0.158 binary does not
+contain the name. Until that commit every event in the shared file was one
+Codex knows, so nothing showed that Codex tolerates an unknown one, and a
+rejected file would switch off every Codex hook (about half of this corpus)
+with no error in Claude's sessions. Codex's manifest now names
+`hooks/codex-hooks.json`: `hooks.json` minus the Claude-only events, today
+identical to the file Codex loaded in 0.8.0. A unit test fails if the two
+files drift, or if the Codex file names an event outside the list read from
+the Codex binary.
+
 ### fix(hooks): log every commit a Bash call made, read from the reflog
 
 The commit hook read HEAD once per Bash call, so it logged at most one

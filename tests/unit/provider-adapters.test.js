@@ -12,6 +12,13 @@ const CODEX_ADAPTER = join(ROOT, 'scripts', 'codex-transcript-to-turns.awk');
 const CODEX_PROJECT_INFERER = join(ROOT, 'scripts', 'infer-codex-project.js');
 const COMMON_HOOKS = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'common.sh');
 const HOOK_CONFIG = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'hooks.json');
+const CODEX_HOOK_CONFIG = join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'codex-hooks.json');
+const CODEX_MANIFEST = join(ROOT, 'plugins', 'session-cartographer', '.codex-plugin', 'plugin.json');
+// Events Claude Code fires that Codex does not know. They live in hooks.json only.
+const CLAUDE_ONLY_EVENTS = ['PostToolUseFailure'];
+// Hook event names in the codex-cli 0.158.0-alpha.2.1 binary, read from its
+// strings on 2026-09-27. Widen this only against a newer binary, never by guess.
+const CODEX_EVENTS = new Set(['SessionStart', 'SessionEnd', 'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PreCompact', 'PostCompact', 'Stop', 'SubagentStop']);
 const SEARCH_SCRIPT = join(ROOT, 'scripts', 'cartographer-search.sh');
 
 function tempJsonl(lines) {
@@ -105,6 +112,21 @@ describe('shared hook configuration', () => {
     assert.match(JSON.stringify(config.hooks.SessionStart), /surface-turbo-on-start\.sh/);
     assert.match(JSON.stringify(config.hooks.PostCompact), /log-compact-summary\.sh/);
     assert.doesNotMatch(JSON.stringify(config), /"async"/);
+  });
+
+  // Claude Code loads hooks/hooks.json by convention; Codex loads the file its
+  // manifest names. Until 1b5a1a0 every event in the shared file was one Codex
+  // knows, so nothing showed Codex tolerates an unknown one, and a rejected file
+  // would switch off every Codex hook with no error in Claude's sessions.
+  test('the Codex hook file is the shared one minus Claude-only events, and names only events Codex knows', () => {
+    const claude = JSON.parse(readFileSync(HOOK_CONFIG, 'utf8'));
+    const codex = JSON.parse(readFileSync(CODEX_HOOK_CONFIG, 'utf8'));
+    assert.equal(JSON.parse(readFileSync(CODEX_MANIFEST, 'utf8')).hooks, './hooks/codex-hooks.json');
+    for (const event of CLAUDE_ONLY_EVENTS) assert.ok(claude.hooks[event], `${event} is listed as Claude-only but hooks.json does not register it`);
+    const expected = structuredClone(claude);
+    for (const event of CLAUDE_ONLY_EVENTS) delete expected.hooks[event];
+    assert.deepEqual(codex, expected, "codex-hooks.json drifted from hooks.json; regenerate: jq 'del(.hooks.PostToolUseFailure)' hooks.json > codex-hooks.json");
+    for (const event of Object.keys(codex.hooks)) assert.ok(CODEX_EVENTS.has(event), `${event} is not a Codex hook event`);
   });
 });
 

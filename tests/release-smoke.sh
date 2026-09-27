@@ -24,6 +24,7 @@ for required in \
   "$PLUGIN/.codex-plugin/plugin.json" \
   "$PLUGIN/.claude-plugin/plugin.json" \
   "$PLUGIN/hooks/hooks.json" \
+  "$PLUGIN/hooks/codex-hooks.json" \
   "$PLUGIN/hooks/log-compact-summary.sh" \
   "$PLUGIN/hooks/surface-turbo-on-start.sh" \
   "$PLUGIN/skills/setup/SKILL.md" \

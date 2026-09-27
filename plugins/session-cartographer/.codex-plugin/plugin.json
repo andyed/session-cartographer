@@ -17,7 +17,7 @@
     "hooks"
   ],
   "skills": "./skills/",
-  "hooks": "./hooks/hooks.json",
+  "hooks": "./hooks/codex-hooks.json",
   "interface": {
     "displayName": "Session Cartographer",
     "shortDescription": "Recall agent history, warm in 0.3 s",
