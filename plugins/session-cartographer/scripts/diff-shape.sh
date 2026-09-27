@@ -20,19 +20,24 @@ REPO="${2:-.}"
 cd "$REPO" 2>/dev/null || exit 1
 
 # Use --name-status for reliable file classification (handles merges too)
-# For merge commits, diff against first parent
-NAME_STATUS=$(git diff-tree --no-commit-id --name-status -r --first-parent "$HASH" 2>/dev/null)
+# For merge commits, diff against first parent. --root because a repo's first
+# commit has no parent, and diff-tree prints nothing for one without it.
+NAME_STATUS=$(git diff-tree --root --no-commit-id --name-status -r --first-parent "$HASH" 2>/dev/null)
 
 FILES_NEW=$(echo "$NAME_STATUS" | grep -c '^A' || true)
 FILES_MOD=$(echo "$NAME_STATUS" | grep -c '^M' || true)
 FILES_DEL=$(echo "$NAME_STATUS" | grep -c '^D' || true)
 
-# Line counts: --first-parent ensures merge commits diff against parent 1
-STAT_LINE=$(git diff --stat "${HASH}^..${HASH}" 2>/dev/null | tail -1)
-# Handle root commit (no parent)
-if [ -z "$STAT_LINE" ]; then
-  STAT_LINE=$(git diff --stat "$(git hash-object -t tree /dev/null)..${HASH}" 2>/dev/null | tail -1)
+# Line counts: HASH^ is the first parent, so a merge diffs against parent 1.
+# A root commit has no parent and diffs against the empty tree. Ask for the
+# parent before diffing: under pipefail a failed `HASH^..HASH` stat exits the
+# script, so a fallback written after it never runs.
+if git rev-parse -q --verify "${HASH}^" >/dev/null 2>&1; then
+  BASE="${HASH}^"
+else
+  BASE=$(git hash-object -t tree /dev/null)
 fi
+STAT_LINE=$(git diff --stat "${BASE}..${HASH}" 2>/dev/null | tail -1)
 
 LINES_ADD=$(echo "$STAT_LINE" | grep -oE '[0-9]+ insertion' | grep -oE '[0-9]+' || echo 0)
 LINES_DEL=$(echo "$STAT_LINE" | grep -oE '[0-9]+ deletion' | grep -oE '[0-9]+' || echo 0)

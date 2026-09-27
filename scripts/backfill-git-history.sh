@@ -153,7 +153,7 @@ process_repo() {
     # Get changed files
     local files=""
     if $INCLUDE_FILES; then
-      files=$(git diff-tree --no-commit-id --name-only -r "$hash" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
+      files=$(git diff-tree --root --no-commit-id --name-only -r "$hash" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
     fi
 
     # Diff shape metadata (Tier 3)

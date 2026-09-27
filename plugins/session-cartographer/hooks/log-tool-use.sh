@@ -485,7 +485,7 @@ case "$TOOL_NAME" in
       # Get changed files from the commit if we can
       CHANGED_FILES=""
       if [ -n "$COMMIT_HASH" ] && [ -n "$GIT_REPO" ]; then
-        CHANGED_FILES=$(cd "$GIT_REPO" && git diff-tree --no-commit-id --name-only -r "$COMMIT_HASH" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
+        CHANGED_FILES=$(cd "$GIT_REPO" && git diff-tree --root --no-commit-id --name-only -r "$COMMIT_HASH" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
       fi
 
       # Extract diff shape metadata (Tier 3)

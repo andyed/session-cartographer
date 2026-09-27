@@ -149,3 +149,41 @@ test('a commit already logged by the hook is not re-imported under a second id',
     fs.rmSync(changelog, { force: true });
   }
 });
+
+/**
+ * A repository's first commit has no parent, and `git diff-tree` prints
+ * nothing for one without --root, so every backfilled repo's initial commit
+ * was imported with no files. diff-shape.sh exited under pipefail on the same
+ * commit, before its empty-tree fallback, and the row's diff shape was null.
+ */
+test("a repository's first commit is imported with its files and diff shape", () => {
+  // Inside the fixture, so the backgrounded indexer's error record lands in a
+  // directory after() removes, and outside its root, where run() asserts that
+  // no changelog exists.
+  const dev = fs.mkdtempSync(path.join(fixture, 'root-'));
+  const repo = path.join(dev, 'fresh');
+  const git = (args) => spawnSync('git', args, { cwd: dev, env, encoding: 'utf8' });
+  assert.equal(git(['-c', 'init.templateDir=', 'init', '-q', repo]).status, 0);
+  fs.writeFileSync(path.join(repo, 'first.txt'), 'one\ntwo\n');
+  assert.equal(git(['-C', repo, 'add', 'first.txt']).status, 0);
+  const made = git(['-C', repo, '-c', 'core.hooksPath=/dev/null', 'commit', '--quiet',
+    '--no-gpg-sign', '-m', 'feat: first']);
+  assert.equal(made.status, 0, made.stderr);
+  assert.notEqual(git(['-C', repo, 'rev-parse', '-q', '--verify', 'HEAD^']).status, 0,
+    'the fixture commit must be a root commit');
+
+  // Not a dry run: the dry-run line prints no diff shape. `env` carries
+  // OFFLINE_INDEX_ENV, which keeps the backgrounded indexer off the live index.
+  const result = spawnSync('bash', [SCRIPT, '--project', 'fresh'],
+    { cwd: dev, env: { ...env, CARTOGRAPHER_DEV_DIR: dev }, encoding: 'utf8', timeout: 15_000 });
+  assert.equal(result.status, 0, result.stderr);
+  const rows = fs.readFileSync(path.join(dev, 'changelog.jsonl'), 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].files_changed, 'first.txt');
+  assert.match(rows[0].summary, /: feat: first \| files: first\.txt$/);
+  assert.ok(rows[0].diff_shape, 'a root commit was imported with a null diff shape');
+  assert.equal(rows[0].diff_shape.files_new, 1);
+  assert.equal(rows[0].diff_shape.lines_added, 2);
+  assert.equal(rows[0].diff_shape.quadrant, 'bootstrap');
+});

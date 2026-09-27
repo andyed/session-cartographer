@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### fix(hooks): list files and diff shape for a repository's first commit
+
+`git diff-tree` prints nothing for a commit with no parent unless given
+`--root`. Neither the tool-use hook nor `backfill-git-history.sh` passed it,
+so every repository's first commit was logged with no `| files:` list.
+`diff-shape.sh` had the same gap and a worse one: under `set -o pipefail` the
+script exited at its `HASH^..HASH` stat on a root commit, before the
+empty-tree fallback beneath it could run, so the row's `diff_shape` was null
+as well. On 2026-09-26 the corpus held 38 `git_commit` rows naming the root
+commit of one of 37 repositories. None listed files and all 38 had a null
+diff shape; 33 came from the backfill and 5 from the hook.
+
+`--root` is now passed at all three `diff-tree` sites, and `diff-shape.sh`
+checks for a parent before choosing its base, using the empty tree when there
+is none. Over this repository's last 150 commits and its merges, the new
+script's output is byte-identical to the old one's. Rows already in the log
+are not rewritten, and a backfill re-run skips them as already present.
+
 ### fix(hooks): read a commit's repo from the command's own `cd` hops
 
 A commit made as `cd <repo> && git commit` took its repo from the hook

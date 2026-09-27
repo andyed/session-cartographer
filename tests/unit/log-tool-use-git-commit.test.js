@@ -44,6 +44,11 @@
  *    "feedback", a session-id prefix, a worktree name, a sha256, and two
  *    shas out of printed JSON.
  *
+ * 7. A repository's first commit logged no files and no diff shape. `git
+ *    diff-tree` prints nothing for a parentless commit without --root, and
+ *    diff-shape.sh exited under pipefail before its root-commit fallback ran.
+ *    Found 2026-09-26 while writing the tests for 6.
+ *
  * Run with: node --test tests/unit/log-tool-use-git-commit.test.js
  */
 import test from 'node:test';
@@ -513,7 +518,8 @@ function ageHead(repo) {
 test('cd <repo> && git commit -q from a non-repo cwd is recorded against that repo', () => {
   const ws = makeWorkspace();
   try {
-    // Not the root commit: diff-tree lists no files for one without --root.
+    // Not the root commit, so this case fails only on the hop. A root commit
+    // has its own test at the bottom of the file.
     commit(ws, 'seed.js', 'chore: seed', ['-q']);
     commit(ws, 's.js', 'fix(hooks): read the cd hop', ['-q']);
     assert.ok(!isRepo(ws.dev), 'the hook cwd must not be a repo');
@@ -706,5 +712,32 @@ test('a fresh HEAD in the wrong repo does not stand in for the commit git printe
     assert.match(last(recs).summary, new RegExp(`Commit ${sha.slice(0, 7)}: fix: the real one$`));
     assert.doesNotMatch(last(recs).summary, /bystander/);
     assert.doesNotMatch(last(recs).summary, new RegExp(headOf(bystander).slice(0, 7)));
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+// ── A repository's first commit ──────────────────────────────────────────────
+// diff-tree compares a commit with its parents, so without --root it prints
+// nothing for the one commit in every repo that has none. diff-shape.sh had
+// the same gap, and a second: under pipefail its `HASH^..HASH` stat exited the
+// script before the empty-tree fallback beneath it, so the row carried a null
+// diff shape as well as no files.
+
+test('a quiet root commit lists its files and carries a diff shape', () => {
+  const ws = makeWorkspace();
+  try {
+    commit(ws, 'first.js', 'feat: first commit', ['-q']);
+    // Without this, a repo with any history passes against the unfixed hook.
+    const parent = spawnSync('git', ['rev-parse', '-q', '--verify', 'HEAD^'], { cwd: ws.repo });
+    assert.notEqual(parent.status, 0, 'the fixture commit must be a root commit');
+    // Quiet, so stdout names nothing: the files have to come from the repo.
+    const recs = fire(ws, `git commit -q -m 'feat: first commit'`, '');
+    assert.equal(commits(recs).length, 1, 'a root commit produced no git_commit row');
+    assert.match(last(recs).summary,
+      new RegExp(`Commit ${headOf(ws.repo)}: feat: first commit \\| files: first\\.js$`));
+    const shape = last(recs).diff_shape;
+    assert.ok(shape, 'a root commit carried no diff shape');
+    assert.equal(shape.files_new, 1, 'a root commit adds every file it holds');
+    assert.equal(shape.lines_added, 1);
+    assert.equal(shape.quadrant, 'bootstrap');
   } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
 });
