@@ -10,6 +10,8 @@ const KINDS = [
   { id: 'commit', label: 'commits', color: '#98c379' },
   { id: 'lifecycle', label: 'session events', color: '#e5c07b' },
 ];
+// Rows through the selected file, and never fewer than the first eight.
+const rowsThrough = (files, path) => Math.max(8, files.findIndex((file) => file.path === path) + 1);
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 const stamp = (t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -96,12 +98,14 @@ function ActivityTrace({ metrics, tokens, tokenSeries }) {
 
 export default function MemorySession({ session, files = [], at, onBack, onReview, selectedPath, onSelectFile, hrefForFile, compact = false }) {
   const heading = useRef(null);
-  const [fileLimit, setFileLimit] = useState(8);
-  const [noteLimit, setNoteLimit] = useState(8);
   const metrics = useMemo(() => sessionMetricsAt(session, at, files), [session, at, files]);
   const tokenSeries = useMemo(() => (session.tokenSeries || []).filter((sample) => sample.t <= at), [session.tokenSeries, at]);
   const visibleFiles = useMemo(() => files.map((file) => ({ ...file, edits: (file.edits || []).filter((edit) => edit.t <= at) }))
     .filter((file) => file.edits.length).sort((a, b) => b.edits.at(-1).t - a.edits.at(-1).t), [files, at]);
+  // The selected row renders on the first pass: MemoryInspector returns focus
+  // to it in the same commit that closes a file review, before any effect runs.
+  const [fileLimit, setFileLimit] = useState(() => rowsThrough(visibleFiles, selectedPath));
+  const [noteLimit, setNoteLimit] = useState(8);
   const notes = useMemo(() => {
     const distinct = new Map();
     for (const note of (session.notes || []).filter((item) => item.t <= at && typeof item.text === 'string' && item.text.trim()).slice().sort((a, b) => b.t - a.t)) {
@@ -121,7 +125,9 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
   const fullTitle = session.fullTitle?.trim();
 
   useEffect(() => {
-    setFileLimit(8);
+    // Keeps the selected row, so this mount-time reset cannot remove the row
+    // that just took focus.
+    setFileLimit(rowsThrough(visibleFiles, selectedPath));
     setNoteLimit(8);
     if (!compact) heading.current?.focus({ preventScroll: true });
   }, [session.id, compact]);
