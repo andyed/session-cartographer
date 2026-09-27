@@ -2,6 +2,45 @@
 
 ## Unreleased
 
+### fix(hooks): read a commit's repo from the command's own `cd` hops
+
+A commit made as `cd <repo> && git commit` took its repo from the hook
+payload's cwd plus the invocation's own `-C`. Claude Code reports the cwd its
+shell keeps after the command, which is right for a hop inside the project
+and wrong for the rest: a hop that leaves the project is reset, and a command
+that hops again after committing reports the last directory, not the one git
+ran in. Codex reports the session's cwd whatever the command did. Replaying
+the 674 Claude commit and push commands logged since 2026-09-01 through both
+rules, 16 resolve differently. In the 13 whose command matched its row within
+165 s, git ran in the `cd` target while the row names the session's own repo:
+a commit into muriel filed as clipwall, dist-demo deploys filed as clipwall,
+a commit into mindbendingpixels-www logged as pointbreak's fresh HEAD.
+
+The hook now walks the literal `cd` hops ahead of the git invocation and
+resolves `-C` against the last one, as git does. A hop inside a subshell stays
+there. A hop to `"$VAR"`, `cd -` or `popd` is left unresolved rather than
+evaluated. A hop to a directory that does not exist falls back to the payload
+cwd, since `cd sub` read against a cwd that is already `sub` names `sub/sub`.
+`git push` takes the same base.
+
+The stdout fallback took the first run of seven or more hex characters
+anywhere in the output, and six phantom commits in the log came of it:
+`feedbac` out of "feedback", a session-id prefix, a worktree name, a sha256,
+and two shas from JSON that a hook replay printed (`evt-73n3wvkhriho`, and
+`evt-kbbn0dhc7j5i`, a duplicate of 68cf1db's real row). It now takes only
+git's own `[branch sha] subject` line. When the resolved repo does not hold
+the sha git printed, files, diff shape and the commit URL are no longer read
+from it, and its fresh HEAD no longer stands in for the commit. Five
+session-cartographer commits from a Codex session rooted in histospire were
+filed with URLs into histospire's remote.
+
+This does not recover the 42 rows since 2026-09-01 filed under `dev` with no
+files. 37 are Codex commits run with `exec_command`'s `workdir` set to the
+repo; Codex sends the hook only `{command}` as `tool_input`
+(`codex-rs/core/src/tools/context.rs`) and the session's cwd at the top
+level, so no hop exists to read. Three are real commits behind `cd "$W"`, and
+two are the phantoms above. Existing rows are unchanged.
+
 ### fix(explorer): return focus to a file row past the first eight
 
 Closing a file review, with Escape or "← Task", should put focus back on that

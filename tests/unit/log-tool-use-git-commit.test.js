@@ -36,6 +36,14 @@
  *    979b81b0, 2026-09-26) was lost to `cat > <scratchpad>/commit-msg.txt
  *    <<EOF … EOF` followed by `git commit -F`.
  *
+ * 6. The repo came from the payload cwd plus the invocation's own -C, never
+ *    from a `cd` hop in the same command, and a commit the repo could not
+ *    confirm fell back to the first hex run anywhere in stdout. Measured
+ *    2026-09-26: 42 git_commit rows since 2026-09-01 filed under `dev` with no
+ *    files, and six phantoms scraped from stdout: `feedbac` out of
+ *    "feedback", a session-id prefix, a worktree name, a sha256, and two
+ *    shas out of printed JSON.
+ *
  * Run with: node --test tests/unit/log-tool-use-git-commit.test.js
  */
 import test from 'node:test';
@@ -472,5 +480,231 @@ test('plain reads, and scratch or stdout heredocs, are still noise', () => {
     ]) {
       assert.equal(fire(ws, cmd).length, 0, `expected no event for: ${JSON.stringify(cmd)}`);
     }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+// ── cd hops ahead of the invocation, and what stdout may claim ───────────────
+// The repo came from the payload cwd plus the invocation's own -C. Claude
+// Code's payload cwd follows a `cd` the shell keeps, until one leaves the
+// project and the harness resets it; Codex always reports the session's cwd.
+// Either way `cd <repo> && git commit -q` from a non-repo resolved no repo,
+// and with -q there was nothing to scrape, so the commit left no row.
+
+const toolRows = (ws) => {
+  const log = path.join(ws.dev, 'tool-use-log.jsonl');
+  if (!fs.existsSync(log)) return [];
+  return fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+};
+
+/** A repo with an origin, so a commit URL built from the wrong repo shows. */
+function makeRemoteRepo(ws, name) {
+  const repo = makeRepo(ws, name);
+  spawnSync('git', ['remote', 'add', 'origin', `git@github.com:x/${name}.git`], { cwd: repo });
+  return repo;
+}
+
+/** Age HEAD past the freshness window, so only stdout can name a commit. */
+function ageHead(repo) {
+  const aged = spawnSync('git', [...AUTHOR, 'commit', '--amend', '--no-edit', '-q'],
+    { cwd: repo, env: { ...process.env, GIT_COMMITTER_DATE: '2020-01-01T00:00:00' } });
+  assert.equal(aged.status, 0, 'fixture must actually age HEAD');
+}
+
+test('cd <repo> && git commit -q from a non-repo cwd is recorded against that repo', () => {
+  const ws = makeWorkspace();
+  try {
+    // Not the root commit: diff-tree lists no files for one without --root.
+    commit(ws, 'seed.js', 'chore: seed', ['-q']);
+    commit(ws, 's.js', 'fix(hooks): read the cd hop', ['-q']);
+    assert.ok(!isRepo(ws.dev), 'the hook cwd must not be a repo');
+    const cases = [
+      `cd ${ws.repo} && git commit -q -m 'fix(hooks): read the cd hop'`,
+      `cd ${ws.repo} && git commit -q -F - <<'EOF'\nfix(hooks): read the cd hop\nEOF`,
+      `cd ${ws.repo}\ngit add s.js; git commit -q -m 'fix(hooks): read the cd hop'`,
+    ];
+    for (const cmd of cases) {
+      const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+      // Quiet, so stdout names nothing: only the hop can supply the repo.
+      const recs = fire({ ...ws, dev }, cmd, '', { cwd: dev });
+      assert.equal(commits(recs).length, 1, `no git_commit row for: ${JSON.stringify(cmd)}`);
+      assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}: fix\\(hooks\\)`), cmd);
+      assert.equal(last(recs).project, 'repo', cmd);
+      assert.match(last(recs).summary, /\| files: s\.js$/, cmd);
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a -C after a cd hop still names the repo, relative to the hop', () => {
+  const ws = makeWorkspace();
+  try {
+    // repoA's HEAD is fresh and unlogged, so reading the hop's repo instead of
+    // the one -C names would be accepted by the freshness guard.
+    const repoA = makeRepo(ws, 'repo-a');
+    commitIn(repoA, 'a.js', 'feat: bystander', ['-q']);
+    commit(ws, 't.js', 'docs: named by -C', ['-q']);
+    for (const cmd of [
+      `cd ${repoA} && git -C ${ws.repo} commit -q -m 'docs: named by -C'`,
+      `cd ${ws.dir} && git -C repo commit -q -m 'docs: named by -C'`,
+    ]) {
+      const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+      const recs = fire({ ...ws, dev }, cmd, '', { cwd: dev });
+      assert.equal(commits(recs).length, 1, cmd);
+      assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}:`), cmd);
+      assert.equal(last(recs).project, 'repo', cmd);
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('the last literal hop wins, and a relative hop reads from the one before', () => {
+  const ws = makeWorkspace();
+  try {
+    const repoA = makeRepo(ws, 'repo-a');
+    commitIn(repoA, 'a.js', 'feat: bystander', ['-q']);
+    commit(ws, 'u.js', 'chore: last hop', ['-q']);
+    const recs = fire(ws, `cd ${repoA} && cd ${ws.dir}; cd repo && git commit -q -m 'chore: last hop'`,
+      '', { cwd: ws.dev });
+    assert.equal(commits(recs).length, 1);
+    assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}:`));
+    assert.equal(last(recs).project, 'repo');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a relative hop the payload cwd already reflects does not double up', () => {
+  const ws = makeWorkspace();
+  try {
+    // Claude Code reports the cwd AFTER the command, so `cd repo` arrives with
+    // cwd already `…/repo`; read against it, the hop names `…/repo/repo`.
+    commit(ws, 'v.js', 'fix: relative hop', ['-q']);
+    assert.ok(!fs.existsSync(path.join(ws.repo, 'repo')), 'the doubled path must not exist');
+    const recs = fire(ws, `cd repo && git commit -q -m 'fix: relative hop'`, '', { cwd: ws.repo });
+    assert.equal(commits(recs).length, 1);
+    assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}:`));
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a hop inside a subshell does not move the commit', () => {
+  const ws = makeWorkspace();
+  try {
+    const repoA = makeRepo(ws, 'repo-a');
+    commitIn(repoA, 'a.js', 'feat: bystander', ['-q']);
+    commit(ws, 'w.js', 'refactor: scoped hop', ['-q']);
+    for (const [cmd, cwd] of [
+      [`(cd ${repoA} && git status --short) && git commit -q -m 'refactor: scoped hop'`, ws.repo],
+      [`R=$(cd ${repoA} && pwd); git commit -q -m 'refactor: scoped hop'`, ws.repo],
+      // The other direction: a hop in the commit's own subshell does apply,
+      // so a walker that never reads `(cd` as a hop cannot pass the cases above
+      // by not seeing them.
+      [`(cd ${ws.repo} && git commit -q -m 'refactor: scoped hop')`, ws.dev],
+    ]) {
+      const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+      const recs = fire({ ...ws, dev }, cmd, '', { cwd });
+      assert.equal(commits(recs).length, 1, cmd);
+      assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}:`), cmd);
+      assert.equal(last(recs).project, 'repo', cmd);
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a hop to a variable path is left unresolved, not guessed', () => {
+  const ws = makeWorkspace();
+  try {
+    // The variable names a repo with a fresh, unlogged HEAD, so evaluating it
+    // would pass the freshness guard. The text never runs.
+    commit(ws, 'x.js', 'feat: behind a variable', ['-q']);
+    const cmd = `W=${ws.repo}; cd "$W" && git commit -q -m 'feat: behind a variable'`;
+    const quiet = fire(ws, cmd, '', { cwd: ws.dev });
+    assert.equal(commits(quiet).length, 0, 'a variable hop was evaluated');
+
+    const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+    const out = `[main ${headOf(ws.repo).slice(0, 7)}] feat: behind a variable\n 1 file changed`;
+    const recs = fire({ ...ws, dev }, cmd, out, { cwd: dev });
+    assert.equal(commits(recs).length, 1, "git's own line must still record the commit");
+    assert.equal(last(recs).project, path.basename(dev), 'project must stay cwd-derived');
+    assert.doesNotMatch(last(recs).summary, /\| files:/);
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('cd <repo> && git push from a non-repo cwd is attributed to that repo', () => {
+  const ws = makeWorkspace();
+  try {
+    const recs = fire(ws, `cd ${ws.repo} && git push -u origin main`, '', { cwd: ws.dev });
+    assert.equal(recs.length, 1);
+    assert.equal(last(recs).type, 'git_push');
+    assert.equal(last(recs).project, 'repo');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('only git\'s own summary line counts as a commit in stdout', () => {
+  const ws = makeWorkspace();
+  try {
+    // A replay whose stdout printed the hook's own rows (evt-73n3wvkhriho),
+    // prose with a hex run in it (`feedbac`), a session id, a worktree name.
+    const cmd = `S=/scratch; cd "$S/repo" && git commit -q -m 'fix: via -C'`;
+    for (const out of [
+      '{"summary":"[fix] Commit 047c8396f15ac5262e191b9a4ae878443a973cfc: fix: via -C"}',
+      'wrote feedback to the log',
+      'rows 2 for session 979b81b0 git_commit 0',
+      'HEAD is now in .claude/worktrees/agent-a4743f118b236c7e0',
+    ]) {
+      const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+      const recs = fire({ ...ws, dev }, cmd, out, { cwd: dev });
+      assert.equal(commits(recs).length, 0, `phantom git_commit from stdout: ${out}`);
+      assert.equal(last(recs).type, 'tool_bash', out);
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('git\'s own line still records a commit made where the hook cannot see', () => {
+  const ws = makeWorkspace();
+  try {
+    // Codex runs a bare `git commit` with the repo as the command's workdir and
+    // sends only {command} as tool_input: stdout is all there is.
+    for (const [line, sha, subject] of [
+      ['[main 1a2b3c4] feat: from a workdir', '1a2b3c4', 'feat: from a workdir'],
+      ['[feat/x-y (root-commit) 5d6e7f8] chore: first', '5d6e7f8', 'chore: first'],
+      ['[detached HEAD 9a8b7c6] fix: mid-rebase', '9a8b7c6', 'fix: mid-rebase'],
+    ]) {
+      const dev = fs.mkdtempSync(path.join(ws.dir, 'dev-'));
+      const out = `${line}\n 1 file changed, 2 insertions(+)`;
+      const recs = fire({ ...ws, dev }, `git commit -m '${subject}'`, out, { cwd: dev });
+      assert.equal(commits(recs).length, 1, line);
+      assert.equal(last(recs).summary.replace(/^\[\w+\] /, ''), `Commit ${sha}: ${subject}`, line);
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a commit the resolved repo does not hold takes nothing from that repo', () => {
+  const ws = makeWorkspace();
+  try {
+    // The session cwd is a repo, the commit ran in another one (a Codex
+    // workdir): five session-cartographer commits were filed under histospire.
+    const bystander = makeRemoteRepo(ws, 'bystander');
+    commitIn(bystander, 'b.js', 'feat: bystander', ['-q']);
+    ageHead(bystander);
+    commit(ws, 'y.js', 'docs: made elsewhere', ['-q']);
+    const sha = headOf(ws.repo);
+    const out = `[main ${sha.slice(0, 7)}] docs: made elsewhere\n 1 file changed`;
+    const recs = fire(ws, `git commit -m 'docs: made elsewhere'`, out, { cwd: bystander });
+    assert.equal(commits(recs).length, 1);
+    assert.match(last(recs).summary, new RegExp(`Commit ${sha.slice(0, 7)}: docs: made elsewhere$`));
+    assert.equal(last(toolRows(ws)).commit_url, undefined, 'a URL built from the wrong repo');
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a fresh HEAD in the wrong repo does not stand in for the commit git printed', () => {
+  const ws = makeWorkspace();
+  try {
+    // The bystander's HEAD is seconds old and unlogged, so freshness alone
+    // accepts it; git's own line names a sha the bystander does not hold.
+    const bystander = makeRemoteRepo(ws, 'bystander');
+    commitIn(bystander, 'b.js', 'feat: bystander work', ['-q']);
+    commit(ws, 'z.js', 'fix: the real one', ['-q']);
+    const sha = headOf(ws.repo);
+    const out = `[main ${sha.slice(0, 7)}] fix: the real one\n 1 file changed`;
+    const recs = fire(ws, `git commit -m 'fix: the real one'`, out, { cwd: bystander });
+    assert.equal(commits(recs).length, 1);
+    assert.match(last(recs).summary, new RegExp(`Commit ${sha.slice(0, 7)}: fix: the real one$`));
+    assert.doesNotMatch(last(recs).summary, /bystander/);
+    assert.doesNotMatch(last(recs).summary, new RegExp(headOf(bystander).slice(0, 7)));
   } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
 });

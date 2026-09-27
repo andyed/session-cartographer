@@ -302,6 +302,14 @@ before any probe means anything.
 - **Commits made from a `.claude/worktrees/` session write no event** — not
   `git_commit`, not even `tool_bash`. `/wrapup`'s digest shows an empty commits
   panel and the work is invisible to recall. Check `git log` and say so.
+- **Codex commits made with a `workdir` carry no files.** Codex runs
+  `exec_command` with the repo as `workdir` and sends the hook only
+  `{command}`, with the session's cwd at the top level. A bare `git commit`
+  from a session rooted at `~/Documents/dev` therefore resolves no repo: the
+  row keeps git's own `[branch sha] subject` line and files under the
+  session cwd's project, with no `| files:`, diff shape or URL. 37 of the 42
+  `dev` commit rows from 2026-09-01 to 2026-09-26 are this. The transcript's
+  `CommandExecution` item names the real `cwd`.
 - **The digest's file list contains fragments** — `value.trim`, `console.log`
   and similar leak out of heredocs via the path extractor. Not files.
 - **Archival recall is buried by recency.** A near-exact match on an old record

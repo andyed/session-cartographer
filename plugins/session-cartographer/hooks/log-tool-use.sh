@@ -227,7 +227,7 @@ git_path() {
 }
 
 # Toplevel of the repo a git_invocation() ran in; empty when there is none.
-# Starts at the hook's cwd and applies each `-C` in order, a relative one
+# Starts at $2 (see git_base_dir()) and applies each `-C` in order, a relative one
 # resolving against the last, as git does. --work-tree and --git-dir resolve
 # after every -C, and a --git-dir only names a toplevel when it ends in `.git`.
 git_invocation_repo() {
@@ -258,6 +258,106 @@ EOF
     dir="${dir%/.git}"
   fi
   (cd "$dir" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+}
+
+# Where the command's own `cd` hops leave it when it reaches its first `git …
+# <$2>`, walking from $3. Prints nothing when no hop precedes the invocation,
+# and `?` when one cannot be read from text: `cd "$W"`, `cd -`, `popd`, a glob.
+# Nothing is evaluated — a guessed directory files a commit under the wrong
+# repo, which is worse than filing it under none.
+#
+# Reads the heredoc-stripped command with its newlines, which separate commands
+# as `;` does. A subshell scopes its hops, so `(cd a && make); git commit` and
+# `R=$(cd a && pwd); git commit` both commit where they started. Paths expand
+# `~` and `$HOME` as git_path() does.
+bash_cd_base() {
+  printf '%s\n' "$1" | LC_ALL=C awk \
+    -v re="(^|[^[:alnum:]_.-])git${GIT_OPTS}[[:space:]]+$2([^[:alnum:]_-]|\$)" \
+    -v start="$3" -v home="$HOME" '
+    function resolve(p) {
+      if (p == "~" || p == "$HOME" || p == "${HOME}") return home
+      if (substr(p, 1, 2) == "~/") return home "/" substr(p, 3)
+      if (substr(p, 1, 6) == "$HOME/") return home "/" substr(p, 7)
+      if (substr(p, 1, 8) == "${HOME}/") return home "/" substr(p, 9)
+      if (p == "-" || p ~ /[$`*?[]/) return "?"
+      if (substr(p, 1, 1) == "/") return p
+      return (cur == "?") ? "?" : cur "/" p
+    }
+    # One simple command: words split on unquoted blanks, quotes removed.
+    function hop(seg,   n, w, i, c, q, word, inword, verb) {
+      n = 0; word = ""; inword = 0; q = ""
+      for (i = 1; i <= length(seg); i++) {
+        c = substr(seg, i, 1)
+        if (q != "") {
+          if (c == "\\" && q == "\"") { word = word substr(seg, ++i, 1); continue }
+          if (c == q) q = ""; else word = word c
+          continue
+        }
+        if (c == "\\") { word = word substr(seg, ++i, 1); inword = 1; continue }
+        if (c == "\"" || c == "\047") { q = c; inword = 1; continue }
+        if (c == " " || c == "\t") { if (inword) { w[++n] = word; word = ""; inword = 0 }; continue }
+        word = word c; inword = 1
+      }
+      if (inword) w[++n] = word
+      i = 1
+      while (i <= n && w[i] ~ /^(if|then|else|elif|do|while|until|!|\{)$/) i++
+      if (i > n) return
+      verb = w[i]
+      if (verb == "popd") { cur = "?"; seen = 1; return }
+      if (verb != "cd" && verb != "pushd") return
+      seen = 1
+      for (i++; i <= n && w[i] ~ /^-[LPe@]$/; i++) ;
+      if (i <= n && w[i] == "--") i++
+      # A bare pushd swaps with the stack, which text does not show.
+      if (i > n) { cur = (verb == "pushd") ? "?" : home; return }
+      # zsh reads `cd old new` as a substitution in the current path.
+      cur = (i < n) ? "?" : resolve(w[i])
+    }
+    { if (sub(/\\$/, "")) { s = s $0 " " } else { s = s $0 "\n" } }
+    END {
+      if (!match(s, re)) exit
+      pre = substr(s, 1, RSTART - 1)
+      cur = start; seen = 0; d = 0; seg = ""; q = ""
+      for (i = 1; i <= length(pre); i++) {
+        c = substr(pre, i, 1)
+        if (q != "") {
+          seg = seg c
+          if (c == "\\" && q == "\"") seg = seg substr(pre, ++i, 1)
+          else if (c == q) q = ""
+          continue
+        }
+        if (c == "\\") { seg = seg c substr(pre, ++i, 1); continue }
+        if (c == "\"" || c == "\047") { q = c; seg = seg c; continue }
+        if (c == "(") { hop(seg); seg = ""; stack[++d] = cur; continue }
+        if (c == ")") { hop(seg); seg = ""; if (d > 0) cur = stack[d--]; continue }
+        if (c == ";" || c == "&" || c == "|" || c == "\n") { hop(seg); seg = ""; continue }
+        seg = seg c
+      }
+      # The separator before `git` belongs to the match, so the last hop is
+      # still in the buffer.
+      hop(seg)
+      if (seen) print cur
+    }'
+}
+
+# The directory a `git … <$1>` in the command started from, before its own -C:
+# the last literal `cd` hop ahead of it (bash_cd_base), else the hook's cwd.
+#
+# Claude Code reports the cwd its shell keeps AFTER the command, so a hop into
+# the project is already there; one that leaves the project is reset, and the
+# payload names where the session started. Codex reports the session's cwd
+# whatever the command did. A hop's directory that does not exist falls back to
+# the cwd, since `cd sub` read against a cwd that is already `sub` names
+# `sub/sub`. An unreadable hop falls back to it too: Claude's cwd is then
+# right when the harness kept the hop, and the caller must not trust a repo
+# that cannot confirm the commit.
+git_base_dir() {
+  local base
+  base=$(bash_cd_base "$COMMAND_SHELL" "$1" "$CWD")
+  case "$base" in
+    ''|'?') printf '%s' "$CWD" ;;
+    *) if [ -d "$base" ]; then printf '%s' "$base"; else printf '%s' "$CWD"; fi ;;
+  esac
 }
 
 case "$TOOL_NAME" in
@@ -314,17 +414,38 @@ case "$TOOL_NAME" in
 
     # Detect git commit — extract commit hash, message, and changed files
     if [ -n "$COMMIT_CALL" ]; then
-      # The repo the commit ran in, which `-C` makes different from the hook's
-      # cwd: every repo read below (freshness, diff-tree, remote) must hit it,
-      # or a commit made from ~/Documents/dev reads no HEAD, or the wrong one.
-      GIT_REPO=$(git_invocation_repo "$COMMIT_CALL" "$CWD")
-      [ -n "$GIT_REPO" ] && PROJECT=$(cartographer_project "$GIT_REPO")
+      # The repo the commit ran in, which a `cd` hop or `-C` makes different
+      # from the hook's cwd: every repo read below (freshness, diff-tree,
+      # remote) must hit it, or a commit made from ~/Documents/dev reads no
+      # HEAD, or the wrong one.
+      GIT_REPO=$(git_invocation_repo "$COMMIT_CALL" "$(git_base_dir commit)")
       # Parse the commit output from tool_response. Use .stdout when it's an
       # object: jq -r of the whole object prints raw JSON whose \n escape
       # sequences then leak into COMMIT_MSG as literal backslash-n text.
       RESPONSE=$(echo "$INPUT" | jq -r '(.tool_response // empty) | if type == "object" then (.stdout // "") else . end' | head -c 2000)
-      COMMIT_HASH=$(echo "$RESPONSE" | grep -oE '[a-f0-9]{7,}' | head -1)
-      COMMIT_MSG=$(echo "$RESPONSE" | grep -oE '\] .+' | head -1 | sed 's/^\] //')
+      # Only git's own summary line names a commit: `[main 1a2b3c4] subject`,
+      # with ` (root-commit)` on a first commit and `detached HEAD` in place of
+      # a branch. The first 7+ hex run anywhere in stdout stood here, and
+      # six phantom commits came of it by 2026-09-26: `feedbac` out of
+      # "feedback", a session-id prefix, a worktree name, a sha256, and two
+      # shas out of the JSON rows a hook replay printed.
+      COMMIT_LINE=$(printf '%s\n' "$RESPONSE" \
+        | LC_ALL=C grep -oE '\[(detached HEAD|[^][[:space:]]+)( \(root-commit\))? [0-9a-f]{7,40}\] .*' | head -1)
+      COMMIT_HASH=$(printf '%s' "$COMMIT_LINE" | sed -E 's/^\[[^]]* ([0-9a-f]{7,40})\] .*$/\1/')
+      COMMIT_MSG=$(printf '%s' "$COMMIT_LINE" | sed -E 's/^\[[^]]*\] //')
+
+      # A repo that does not hold the sha git printed is not where the commit
+      # ran, and a fresh HEAD there belongs to some other commit, so neither
+      # the HEAD nor files, diff shape or URL are read from it. Codex sends no
+      # per-command workdir to the hook, and its session cwd stands in: five
+      # session-cartographer commits from a session rooted in histospire
+      # carried URLs into histospire's remote. The project stays cwd-derived,
+      # which is all that is known.
+      if [ -n "$GIT_REPO" ] && [ -n "$COMMIT_HASH" ] \
+         && ! git -C "$GIT_REPO" cat-file -e "${COMMIT_HASH}^{commit}" 2>/dev/null; then
+        GIT_REPO=""
+      fi
+      [ -n "$GIT_REPO" ] && PROJECT=$(cartographer_project "$GIT_REPO")
 
       # Ask the repo, not the output. This hook is PostToolUse, so HEAD already
       # carries the commit, and `-q` / `--quiet` / `>/dev/null` — which suppress
@@ -438,7 +559,7 @@ case "$TOOL_NAME" in
       fi
     # Detect git push
     elif [ -n "$PUSH_CALL" ]; then
-      PUSH_REPO=$(git_invocation_repo "$PUSH_CALL" "$CWD")
+      PUSH_REPO=$(git_invocation_repo "$PUSH_CALL" "$(git_base_dir push)")
       [ -n "$PUSH_REPO" ] && PROJECT=$(cartographer_project "$PUSH_REPO")
       SUMMARY="Pushed: $COMMAND"
       TYPE="git_push"
