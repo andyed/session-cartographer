@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+### feat(standup): SILENT and UNCLAIMED — what the event log never saw
+
+On 2026-10-04 a Codex session edited files in psychodeli-webgl-port for an hour
+while `/standup` showed every session idle. It was invisible, not idle: 0.8.1
+pointed Codex at `hooks/codex-hooks.json`, every trust record in
+`~/.codex/config.toml` named `hooks/hooks.json`, and Codex skips untrusted
+hooks silently. Codex events fell from ~1,500 a day to 8 on 2026-09-28 and to
+none after, about half the corpus, with nothing in Claude's sessions to say so.
+**After updating the Codex plugin, approve its hooks with `/hooks` in the Codex
+CLI** (docs/SETUP.md § Codex hook trust).
+
+Standup now reads around the log (`scripts/standup-silence.js`):
+- **SILENT:** Codex transcripts written in the window with no logged events,
+  and whether Codex trusts the hook file the installed manifest declares.
+- **UNCLAIMED:** tracked files changed in the window that no logged session
+  edited, each with its best evidence — a logged command naming the file just
+  before the change, else the transcript naming it most, unlogged sessions
+  first.
+
+Both appear in `--json` (`silent`, `unclaimed_changes`). The existing standup
+tests now run hermetically (empty `CODEX_HOME`/`CLAUDE_CONFIG_DIR`, fixture cwd).
+
 ## 0.8.1 — 2026-09-27
 
 ### fix(codex): Codex loads its own hook file, without Claude-only events

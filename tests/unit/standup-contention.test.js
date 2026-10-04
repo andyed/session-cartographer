@@ -124,10 +124,15 @@ function build() {
 }
 
 function run(dir, args) {
+  // Hermetic: the SILENT / UNCLAIMED sections read the Codex and Claude transcript stores and
+  // the working tree of the cwd's repo, so point them at empty fixtures, never the machine's.
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'standup-empty-'));
   const res = spawnSync(process.execPath, [SCRIPT, ...args], {
     encoding: 'utf-8',
+    cwd: dir,
     env: { ...process.env, CARTOGRAPHER_DEV_DIR: dir, CARTOGRAPHER_SESSION_ID: ALPHA,
-           CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '' },
+           CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '',
+           CODEX_HOME: path.join(empty, 'codex'), CLAUDE_CONFIG_DIR: path.join(empty, 'claude') },
   });
   assert.equal(res.status, 0, `exit ${res.status}: ${res.stderr}`);
   return res.stdout;

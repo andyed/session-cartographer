@@ -16,6 +16,11 @@
  * silently costs an hour. Project-level overlap is the weak signal (two sessions
  * in one repo is normal); file-level overlap is the strong one.
  *
+ * SILENT and UNCLAIMED (standup-silence.js) cover the other failure: a session whose hooks
+ * never fire is not idle in this view, it is absent. They report activity the log did not
+ * record — a Codex transcript written in the window with no logged events, an untrusted Codex
+ * hook file, tracked files changed in the window that no logged session edited.
+ *
  * Read-only. Never writes to the changelog or to retrieval telemetry.
  */
 import { realpathSync, existsSync } from 'fs';
@@ -25,6 +30,7 @@ import { homedir } from 'os';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { HOUR, fmtAge, readTail, COMMIT_RE, eventFiles, contentionKey, unmappedWorktrees } from './contention.js';
 import { isResolved } from './sentinels.js';
+import { codexRollouts, claudeTranscripts, codexHookTrust, unclaimedChanges, transcriptMentions, commandEvidence } from './standup-silence.js';
 
 function parseSince(s) {
   const m = String(s).match(/^(\d+(?:\.\d+)?)\s*([mhd])$/i);
@@ -253,6 +259,66 @@ const contestedFiles = [...byFile.entries()]
   .filter(([, hits]) => new Set(hits.map((h) => h.s.id)).size > 1)
   .sort((a, b) => Math.max(...b[1].map((h) => h.t)) - Math.max(...a[1].map((h) => h.t)));
 
+// ---- silence: what the log did not record -----------------------------
+// A session whose hooks never fire has no events, so nothing above can see it.
+// Read the providers' own transcript stores and the repo's working tree instead.
+const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex');
+const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
+const sinceMs = now - windowMs;
+const loggedIds = new Set([...sessions.keys()].map((id) => id.toLowerCase()));
+const rollouts = codexRollouts({ codexHome, sinceMs, now });
+const unloggedRollouts = rollouts.filter((r) => !loggedIds.has(r.id));
+const hookTrust = codexHookTrust({ codexHome });
+const hookTrustProblem = hookTrust.status === 'untrusted' || hookTrust.status === 'partial';
+
+// The repo whose working tree to check: the --project checkout, else the one this ran in.
+function scopeRepo() {
+  const top = (dir) => {
+    try {
+      return execFileSync('git', ['-C', dir, 'rev-parse', '--show-toplevel'],
+        { encoding: 'utf-8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null;
+    } catch { return null; }
+  };
+  if (projectFilter) { const d = join(dev, projectFilter); return existsSync(d) ? top(d) : null; }
+  return top(process.cwd());
+}
+const repo = scopeRepo();
+const claimed = new Set();
+for (const sess of sessions.values()) for (const key of sess.files.keys()) claimed.add(key);
+const unclaimed = repo ? unclaimedChanges({ repo, sinceMs, claimed, keyOf: contentionKey }) : [];
+let mentions = new Map();
+// First: a logged command that named the file just before it changed (sed -i, a Python heredoc).
+for (const u of unclaimed) {
+  const hit = commandEvidence({ events: all, rel: u.rel, abs: u.abs, mtimeMs: u.mtimeMs })
+    .find((h) => isResolved(h.id));
+  if (hit) u.command = hit;
+}
+const needingTranscripts = unclaimed.filter((u) => !u.command);
+if (needingTranscripts.length) {
+  const self = (selfId || '').toLowerCase();
+  const needles = needingTranscripts.slice(0, 20).map((u) => u.rel);
+  // Two passes. The unlogged sessions' transcripts are few and are where the answer usually
+  // is; the rest include Claude transcripts of 100 MB+, which took a run from under 1 s to
+  // ~5.7 s on 2026-10-04. Only paths the first pass could not place pay for the second.
+  const silentPaths = new Set(unloggedRollouts.map((r) => r.path));
+  mentions = transcriptMentions({ transcripts: unloggedRollouts.filter((t) => t.id !== self), needles });
+  const unplaced = needles.filter((n) => !(mentions.get(n) || []).length);
+  if (unplaced.length) {
+    const rest = [...rollouts.filter((r) => !silentPaths.has(r.path)), ...claudeTranscripts({ claudeHome, sinceMs })]
+      .filter((t) => t.id !== self);
+    for (const [n, list] of transcriptMentions({ transcripts: rest, needles: unplaced })) mentions.set(n, list);
+  }
+  // A session that logs its edits would have CLAIMED the file, so the likeliest author of an
+  // unclaimed change is one whose events are missing. Raw counts alone favour long transcripts
+  // that name a busy file hundreds of times over a whole day (seen 2026-10-04: a Claude
+  // session with 407 mentions of flag-registry.js outranking the unlogged Codex editor).
+  const silentIds = new Set(unloggedRollouts.map((r) => r.id));
+  for (const list of mentions.values()) {
+    for (const m of list) m.unlogged = silentIds.has(m.id);
+    list.sort((a, b) => (b.unlogged - a.unlogged) || (b.count - a.count) || (b.mtimeMs - a.mtimeMs));
+  }
+}
+
 if (asJson) {
   console.log(JSON.stringify({
     window: opt('since', '6h'), generated: new Date(now).toISOString(), self: selfId,
@@ -277,6 +343,15 @@ if (asJson) {
         sessions: [...new Set(hits.map((h) => h.s.id))],
       })),
     },
+    silent: {
+      codex_sessions_without_events: unloggedRollouts.map((r) => ({ id: r.id, transcript_written: new Date(r.mtimeMs).toISOString() })),
+      codex_hook_trust: hookTrust,
+    },
+    unclaimed_changes: unclaimed.map((u) => ({
+      path: u.rel, repo, changed: new Date(u.mtimeMs).toISOString(),
+      named_in_command: u.command ? { id: u.command.id, provider: u.command.provider, at: new Date(u.command.t).toISOString() } : null,
+      mentioned_by: (mentions.get(u.rel) || []).slice(0, 3).map((m) => ({ id: m.id, provider: m.provider, mentions: m.count, unlogged: !!m.unlogged })),
+    })),
   }, null, 2));
   process.exit(0);
 }
@@ -333,6 +408,36 @@ if (contestedFiles.length || contestedProjects.length) {
   }
 } else if (peers.length) {
   out.push('CONTENTION — none. No shared project or file across these sessions.');
+}
+
+// SILENT before UNCLAIMED: the first is usually the cause of the second.
+if (unloggedRollouts.length || hookTrustProblem) {
+  out.push('');
+  out.push('SILENT — activity the event log did not record');
+  for (const r of unloggedRollouts.slice(0, 6)) {
+    out.push(`  codex  ${r.id.slice(0, 8)}  transcript written ${fmtAge(now - r.mtimeMs)} ago · 0 events logged`);
+  }
+  if (unloggedRollouts.length > 6) out.push(`  … ${unloggedRollouts.length - 6} more Codex sessions with no events`);
+  if (hookTrustProblem) {
+    const was = hookTrust.trustedFiles?.length ? ` (trust is recorded for ${hookTrust.trustedFiles.join(', ')})` : '';
+    out.push(hookTrust.status === 'untrusted'
+      ? `  Codex hooks untrusted: ${hookTrust.hookFile} (${hookTrust.version}) has no trust record${was}. Codex skips untrusted hooks silently — approve with /hooks in the Codex CLI.`
+      : `  Codex hooks partly trusted: ${hookTrust.hookFile} (${hookTrust.version}) lacks trust for ${hookTrust.missingEvents.join(', ')}. Approve with /hooks in the Codex CLI.`);
+  }
+}
+if (unclaimed.length) {
+  out.push('');
+  out.push('UNCLAIMED — tracked files changed in the window that no logged session edited');
+  for (const u of unclaimed.slice(0, 10)) {
+    const top = (mentions.get(u.rel) || [])[0];
+    const c = u.command;
+    const who = (id) => `${id.slice(0, 8)}${id === selfId ? ' (you)' : ''}`;
+    const by = c ? ` · named in a command logged by ${c.provider} ${who(c.id)} ${fmtAge(Math.abs(u.mtimeMs - c.t))} ${c.t <= u.mtimeMs ? 'before' : 'after'} the change`
+      : top ? ` · mentioned by ${top.provider} ${who(top.id)}${top.unlogged ? ' (no events logged)' : ''} (${top.count}×, transcript ${fmtAge(now - top.mtimeMs)} ago)`
+        : ' · no transcript in the window names it';
+    out.push(`  ${u.rel}   changed ${fmtAge(now - u.mtimeMs)} ago${by}`);
+  }
+  if (unclaimed.length > 10) out.push(`  … ${unclaimed.length - 10} more`);
 }
 
 // A silent miss and a clean result print identically, so say what was not

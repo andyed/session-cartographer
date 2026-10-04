@@ -103,6 +103,38 @@ are truthy and equal to each other, so keying on them would fuse every
 unattributed event — across providers — into one phantom session that appears to
 collide with everybody.
 
+## What the log never saw: SILENT and UNCLAIMED
+
+Everything above reads the event log, so a session whose hooks never fire is
+not idle here, it is absent. Two sections read around the log:
+
+```
+SILENT — activity the event log did not record
+  codex  01a107bc  transcript written 1m ago · 0 events logged
+  Codex hooks untrusted: hooks/codex-hooks.json (0.8.1) has no trust record (trust is recorded for hooks/hooks.json). Codex skips untrusted hooks silently — approve with /hooks in the Codex CLI.
+
+UNCLAIMED — tracked files changed in the window that no logged session edited
+  js/config/flag-registry.js   changed 18m ago · mentioned by codex 01a107bc (no events logged) (189×, transcript 1m ago)
+```
+
+- **SILENT** lists Codex transcripts written in the window whose session has no
+  events, and checks that `~/.codex/config.toml` trusts the hook file the
+  installed Codex plugin declares. An untrusted hook file is the usual cause:
+  Codex records trust per hook file and definition hash and skips the rest
+  without a word. The fix belongs to the person: `/hooks` in an interactive
+  Codex CLI (docs/SETUP.md § Codex hook trust). Never write trust records
+  yourself.
+- **UNCLAIMED** lists tracked files in the project's repo (`--project`, else
+  the cwd's repo) changed inside the window with no logged edit. Evidence, best
+  first: a logged command that named the file just before it changed (an edit
+  through `sed -i` or a Python heredoc logs only `Ran: …`); else the transcript
+  that names it most, ranking sessions with no logged events first, since a
+  logging session would have claimed the file. A mention is evidence, not
+  authorship — report it as "mentioned by".
+
+Lead with SILENT when it appears: it is usually why UNCLAIMED is not empty, and
+while it lasts every other section undercounts that provider.
+
 ## Attributing a commit you did not make
 
 When a sha shows up under you — the common trigger for this skill — name its
