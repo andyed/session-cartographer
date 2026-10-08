@@ -84,8 +84,21 @@ if [ -n "$TRANSCRIPT_FILTER" ] && [ "$PROVIDER_FILTER" = "all" ]; then
 fi
 
 # Portable file mtime in epoch seconds — BSD stat (macOS), then GNU stat.
+# Seconds since the epoch of a file's last modification, or 0. Each stat is
+# tried and its answer kept only when it is a bare integer: GNU stat given the
+# BSD flags (`-f %m`) exits non-zero but first prints a filesystem block to
+# stdout, so `bsd || gnu` captured that block plus the real mtime, and every
+# Linux checkpoint key carried the garbage. grep -qxF then read each of its
+# lines as a separate pattern, which is how CI run 37727757122 skipped a
+# session and printed the whole progress line as its project.
 file_mtime() {
-    stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0
+    local m
+    for m in "$(stat -c %Y "$1" 2>/dev/null)" "$(stat -f %m "$1" 2>/dev/null)"; do
+        case "$m" in ''|*[!0-9]*) continue ;; esac
+        printf '%s\n' "$m"
+        return 0
+    done
+    echo 0
 }
 
 mkdir -p "$STATE_DIR"

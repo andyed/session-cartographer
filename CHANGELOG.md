@@ -55,6 +55,13 @@ and the full key check, so the project-in-key invalidation is unchanged, and
 `--project` runs still infer the project because they need it to decide
 inclusion at all.
 
+The first Linux run of the new tests also found that `file_mtime` had never
+worked on GNU stat: given the BSD flags it exits non-zero but prints a
+filesystem block to stdout first, so every Linux checkpoint key carried that
+block and `grep -qxF` read each of its lines as a separate pattern. The helper
+now keeps a stat answer only when it is a bare integer, whichever flavor
+answered.
+
 ### feat(standup): SILENT and UNCLAIMED — what the event log never saw
 
 On 2026-10-04 a Codex session edited files in psychodeli-webgl-port for an hour
