@@ -48,7 +48,9 @@ SCRIPT_DIR="$(dirname "$0")"
 INDEXER="$SCRIPT_DIR/index-event.sh"
 CLAUDE_TURN_GROUPER="$SCRIPT_DIR/transcript-to-turns.awk"
 CODEX_TURN_GROUPER="$SCRIPT_DIR/codex-transcript-to-turns.awk"
-CODEX_PROJECT_INFERER="$SCRIPT_DIR/infer-codex-project.js"
+# Overridable so a test can stand in a recorder for the inferer and prove the
+# checkpoint pre-check below never reaches it.
+CODEX_PROJECT_INFERER="${CARTOGRAPHER_CODEX_PROJECT_INFERER:-$SCRIPT_DIR/infer-codex-project.js}"
 
 # Resume checkpoint — lives alongside the carto event logs.
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
@@ -131,6 +133,33 @@ while IFS=$'\t' read -r provider transcript; do
 
     session_file=$(basename "$transcript")
     if [ "$provider" = "codex" ]; then
+        # Checkpoint pre-check, before the two jq passes and the node inferer
+        # below. Those cost ~150 ms per transcript, and on a zero-work
+        # catch-up (78 of 123 runs in the two weeks to 2026-10-07) they were
+        # the whole run: 26 s median, 66 s p95, to decide to skip everything.
+        # A Codex rollout file is named rollout-<date>T<time>-<session id>,
+        # and the id in that name is the session_meta id (checked across the
+        # live store: every rollout matched). So "codex <id> <mtime> " as a
+        # line prefix of the progress file identifies a checkpointed session
+        # at this mtime without opening the transcript. No prefix match falls
+        # through to the full derivation and the full key check, so the
+        # project-in-key invalidation is untouched. --project is excluded
+        # because it needs the inferred project to decide inclusion at all.
+        pre_sid="${session_file%.jsonl}"
+        pre_sid="${pre_sid#rollout-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-}"
+        case "$pre_sid" in
+            "${session_file%.jsonl}"|*[!0-9a-fA-F-]*) pre_sid="" ;;
+        esac
+        if [ -n "$pre_sid" ] && [ -z "$PROJECT_FILTER" ]; then
+            pre_mtime=$(file_mtime "$transcript")
+            pre_prefix="codex $pre_sid $pre_mtime "
+            pre_hit=$(grep -m1 -- "^$pre_prefix" "$PROGRESS_FILE" 2>/dev/null)
+            if [ -n "$pre_hit" ]; then
+                echo "Skipping (already indexed): $pre_sid (codex/${pre_hit#"$pre_prefix"})"
+                echo 1 >> "$SKIPPED_FILE"
+                continue
+            fi
+        fi
         session_id=$(jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' "$transcript" 2>/dev/null | head -1)
         session_id="${session_id:-${session_file%.jsonl}}"
         session_cwd=$(jq -r 'select(.type == "session_meta") | .payload.cwd // empty' "$transcript" 2>/dev/null | head -1)
