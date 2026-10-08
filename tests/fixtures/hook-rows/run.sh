@@ -23,7 +23,20 @@ set -u
 HOOKS=$(cd "$1" && pwd -P)
 SCRIPTS=${2:-$(cd "$(dirname "$0")/../../.." && pwd -P)}
 
-TOP=$(mktemp -d "${TMPDIR:-/tmp}/carto-rows.XXXXXX")
+# The workspace must not sit under /tmp or /private/tmp: the hooks treat those
+# as scratch and drop any write there (bash_filter_paths, keep_path), so a
+# fixture built in /tmp loses its own heredoc, sed -i and tee rows. macOS puts
+# TMPDIR under /var/folders and the rows appear; Linux defaults to /tmp and
+# they vanish — CI run 37727203923 failed exactly that way on 2026-10-08.
+BASE=""
+for candidate in "${TMPDIR:-}" "${RUNNER_TEMP:-}" "$HOME/.cache"; do
+  case "$candidate" in
+    ''|/tmp|/tmp/*|/private/tmp|/private/tmp/*) continue ;;
+    *) BASE="$candidate"; break ;;
+  esac
+done
+mkdir -p "$BASE"
+TOP=$(mktemp -d "$BASE/carto-rows.XXXXXX")
 TOP=$(cd "$TOP" && pwd -P)
 trap 'rm -rf "$TOP"' EXIT
 WS="$TOP/space"            # fixed basename: it becomes a project name once
