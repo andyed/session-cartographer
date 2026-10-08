@@ -6,6 +6,7 @@
 #   - PreCompact (auto/manual) — context is full, about to lose detail
 #   - SessionEnd — natural session close
 #   - SubagentStop — research/explore agents completing work
+#   - Stop — a Codex turn boundary (Claude Code's Stop is a no-op here)
 #
 # Output: session-milestones.jsonl + changelog.jsonl
 # Environment: CARTOGRAPHER_DEV_DIR overrides ~/Documents/dev
@@ -14,43 +15,42 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="$DEV/session-milestones.jsonl"
 CHANGELOG="$DEV/changelog.jsonl"
 INPUT=$(cat)
-EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
+case "$0" in */*) HOOK_DIR="${0%/*}" ;; *) HOOK_DIR=. ;; esac
+. "$HOOK_DIR/common.sh"
 
-EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
-# The host hands us the path it INTENDS for this session; it does not promise
-# the file was ever written. Sessions that end abnormally (SessionEnd reason
-# "other") frequently leave no transcript at all — 78% of those rows pointed at
-# a nonexistent file, which is 97% of every broken link in the log. Record what
-# we were told, but say plainly whether it resolves, so consumers can tell a
-# reachable transcript from a remembered intention.
-TRANSCRIPT_VERIFIED=false
-[ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && TRANSCRIPT_VERIFIED=true
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Every field the hook reads, in ONE jq call — see log-tool-use.sh for why.
+# This hook runs on every Claude Code turn (Stop) and used to pay for ten jq
+# starts, two git calls and a python3 interpreter before discovering it had
+# nothing to log. The transcript path is URL-encoded here too: jq's @uri
+# percent-encodes every byte outside [A-Za-z0-9_.~-], the same set Python's
+# urllib.parse.quote(path, safe='') kept, so the deeplink is unchanged and
+# python3 is no longer a dependency of a hook.
+# The timestamp is jq's clock, in UTC to the second: the same text
+# `date -u +%Y-%m-%dT%H:%M:%SZ` printed, without the process.
+FIELDS=$(printf '%s' "$INPUT" | jq -r '
+  def s: (. // "") | tostring;
+  [ (.hook_event_name | s), (.session_id | s), (.transcript_path | s), (.cwd | s),
+    (.turn_id | s), (.model | s),
+    ((.trigger // "unknown") | tostring), ((.reason // "unknown") | tostring),
+    ((.agent_type // "unknown") | tostring),
+    ((.transcript_path | s) | @uri),
+    (now | floor | todate) ]
+  | @sh' 2>/dev/null)
+eval "set -- $FIELDS"
+EVENT=$1 SESSION_ID=$2 TRANSCRIPT=$3 CWD=$4 TURN_ID=$5 MODEL=$6
+TRIGGER=$7 REASON=$8 AGENT_TYPE=$9 ENCODED_PATH=${10} TIMESTAMP=${11}
+set --
 
-# Cross-event linkage: thread events into work-arcs.
-. "$(dirname "$0")/common.sh"
-PROVIDER=$(detect_provider "$INPUT")
-PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
+PROVIDER=$(detect_provider_from "$TRANSCRIPT" "$TURN_ID" "$MODEL")
 
-GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-# A worktree's basename is a throwaway name; resolve to the parent repo.
-. "$(dirname "$0")/common.sh"
-PROJECT=$(cartographer_project "$CWD")
-
-# Encode the transcript path for URL safety
-ENCODED_PATH=$(echo "$TRANSCRIPT" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip(), safe=''))" 2>/dev/null || echo "$TRANSCRIPT")
-
+# Which events log, decided before anything is spent on the rest: a Claude
+# Code Stop fires every turn and leaves here having run one process.
 case "$EVENT" in
     PreCompact)
-        TRIGGER=$(echo "$INPUT" | jq -r '.trigger // "unknown"')
         MILESTONE="compaction_${TRIGGER}"
         DESCRIPTION="Context compaction (${TRIGGER}) — session at peak density"
         ;;
     SessionEnd)
-        REASON=$(echo "$INPUT" | jq -r '.reason // "unknown"')
         MILESTONE="session_end_${REASON}"
         DESCRIPTION="Session ended (${REASON})"
         ;;
@@ -64,7 +64,6 @@ case "$EVENT" in
         DESCRIPTION="Codex turn completed"
         ;;
     SubagentStop)
-        AGENT_TYPE=$(echo "$INPUT" | jq -r '.agent_type // "unknown"')
         case "$AGENT_TYPE" in
             Explore|Plan|general-purpose)
                 MILESTONE="agent_${AGENT_TYPE}"
@@ -79,6 +78,26 @@ case "$EVENT" in
         exit 0
         ;;
 esac
+
+# The host hands us the path it INTENDS for this session; it does not promise
+# the file was ever written. Sessions that end abnormally (SessionEnd reason
+# "other") frequently leave no transcript at all — 78% of those rows pointed at
+# a nonexistent file, which is 97% of every broken link in the log. Record what
+# we were told, but say plainly whether it resolves, so consumers can tell a
+# reachable transcript from a remembered intention.
+TRANSCRIPT_VERIFIED=false
+[ -n "$TRANSCRIPT" ] && [ -f "$TRANSCRIPT" ] && TRANSCRIPT_VERIFIED=true
+
+# Cross-event linkage: thread events into work-arcs. Looked up only for an
+# event that logs — the per-turn Stop above never pays for it.
+PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
+
+# The repo the session sits in and its real project name from one git call.
+# A worktree's basename is a throwaway name; cartographer_repo resolves to the
+# parent repo.
+cartographer_repo "$CWD"
+GIT_REPO=$CARTO_TOPLEVEL
+PROJECT=$CARTO_PROJECT
 
 DEEPLINK=""
 # Only mint a deeplink we know resolves. An unopenable claude-history:// URL is
@@ -96,22 +115,31 @@ case "$MILESTONE" in
   *)                SALIENCE="0.5" ;;
 esac
 
-# Git context for session-end and compaction events
+# Git context for session-end and compaction events. The dirty count is the
+# porcelain's line count and the recent list its lines joined with `|`, as
+# `wc -l` and `paste -sd '|'` produced them, counted and joined in bash.
 GIT_BRANCH=""
 GIT_DIRTY=0
 GIT_RECENT=""
 if [ -n "$GIT_REPO" ]; then
     GIT_BRANCH=$(git -C "$GIT_REPO" branch --show-current 2>/dev/null || echo "detached")
-    GIT_DIRTY=$(git -C "$GIT_REPO" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-    GIT_RECENT=$(git -C "$GIT_REPO" log --oneline -5 2>/dev/null | paste -sd '|' - || true)
+    GIT_STATUS=$(git -C "$GIT_REPO" status --porcelain 2>/dev/null)
+    if [ -n "$GIT_STATUS" ]; then
+        while IFS= read -r _; do GIT_DIRTY=$((GIT_DIRTY + 1)); done <<EOF
+$GIT_STATUS
+EOF
+    fi
+    GIT_RECENT=$(git -C "$GIT_REPO" log --oneline -5 2>/dev/null)
+    GIT_RECENT=${GIT_RECENT//
+/|}
 fi
 
 # Count session events from changelog. grep -c prints "0" AND exits 1 on
-# zero matches, so `|| echo 0` would yield "0\n0" — take the first line and
-# guard non-numeric so --argjson below never sees a multi-line value.
+# zero matches, so `|| echo 0` would yield "0\n0" — guard non-numeric so
+# --argjson below never sees a multi-line value.
 SESSION_EVENT_COUNT=0
 if [ -f "$CHANGELOG" ] && [ -n "$SESSION_ID" ]; then
-    SESSION_EVENT_COUNT=$(LC_ALL=C grep -c "$SESSION_ID" "$CHANGELOG" 2>/dev/null | head -1)
+    SESSION_EVENT_COUNT=$(LC_ALL=C grep -c "$SESSION_ID" "$CHANGELOG" 2>/dev/null)
     case "$SESSION_EVENT_COUNT" in ''|*[!0-9]*) SESSION_EVENT_COUNT=0 ;; esac
 fi
 
@@ -135,8 +163,19 @@ case "$MILESTONE" in
         ;;
 esac
 
-# Write to milestones log
-jq -n -c \
+EVENT_ID=$(cartographer_event_id)
+
+# Build richer summary for changelog
+if [ -n "$GIT_BRANCH" ]; then
+    RICH_SUMMARY="${DESCRIPTION} [${GIT_BRANCH}, ${GIT_DIRTY} dirty, ${SESSION_EVENT_COUNT} events]"
+else
+    RICH_SUMMARY="${DESCRIPTION} [${SESSION_EVENT_COUNT} events]"
+fi
+
+# Both rows from one jq: the milestone row first, the changelog row second.
+NL='
+'
+ROWS=$(jq -n -c \
     --arg eid "$EVENT_ID" \
     --arg ts "$TIMESTAMP" \
     --arg milestone "$MILESTONE" \
@@ -155,40 +194,23 @@ jq -n -c \
     --argjson event_count "$SESSION_EVENT_COUNT" \
     --arg parent_id "$PARENT_ID" \
     --argjson salience "$SALIENCE" \
-    '{event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, transcript_verified: $transcript_verified, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count, salience: $salience}
-     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
-    >> "$LOG_FILE"
-
-# Build richer summary for changelog
-if [ -n "$GIT_BRANCH" ]; then
-    RICH_SUMMARY="${DESCRIPTION} [${GIT_BRANCH}, ${GIT_DIRTY} dirty, ${SESSION_EVENT_COUNT} events]"
-else
-    RICH_SUMMARY="${DESCRIPTION} [${SESSION_EVENT_COUNT} events]"
-fi
-
-# Write to unified changelog
-CHANGELOG_EVENT=$(jq -n -c \
-    --arg eid "$EVENT_ID" \
-    --arg ts "$TIMESTAMP" \
     --arg type "milestone_${MILESTONE}" \
-    --arg session "$SESSION_ID" \
-    --arg provider "$PROVIDER" \
-    --arg project "$PROJECT" \
-    --arg cwd "$CWD" \
-    --arg deeplink "$DEEPLINK" \
     --arg summary "$RICH_SUMMARY" \
-    --arg transcript "$TRANSCRIPT" \
-    --argjson transcript_verified "$TRANSCRIPT_VERIFIED" \
-    --arg parent_id "$PARENT_ID" \
-    --argjson salience "$SALIENCE" \
-    '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, transcript_verified: $transcript_verified, related_ids: [], salience: $salience}
-     + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
-if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
+    '({event_id: $eid, timestamp: $ts, milestone: $milestone, provider: $provider, description: $description, session_id: $session, transcript_path: $transcript, transcript_verified: $transcript_verified, deeplink: $deeplink, project: $project, cwd: $cwd, event: $event, git_branch: $branch, git_dirty_files: $dirty, recent_commits: $recent_commits, session_event_count: $event_count, salience: $salience}
+      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end),
+     ({event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, deeplink: $deeplink, summary: $summary, transcript_path: $transcript, transcript_verified: $transcript_verified, related_ids: [], salience: $salience}
+      + if $parent_id != "" then {parent_event_id: $parent_id} else {} end)')
+case "$ROWS" in *"$NL"*) ;; *) exit 0 ;; esac
+MILESTONE_ROW=${ROWS%%"$NL"*}
+CHANGELOG_EVENT=${ROWS#*"$NL"}
+
+printf '%s\n' "$MILESTONE_ROW" >> "$LOG_FILE"
+printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"
 
 # Real-time indexing (silent fail if services aren't running)
 INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
-  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
+  printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
 fi
 
 exit 0

@@ -19,28 +19,59 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="$DEV/tool-use-log.jsonl"
 CHANGELOG="$DEV/changelog.jsonl"
 INPUT=$(cat)
-new_event_id() { printf 'evt-%s' "$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"; }
-EVENT_ID=$(new_event_id)
+case "$0" in */*) HOOK_DIR="${0%/*}" ;; *) HOOK_DIR=. ;; esac
+. "$HOOK_DIR/common.sh"
 
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
-SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty')
-TRANSCRIPT=$(echo "$INPUT" | jq -r '.transcript_path // empty')
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-# PostToolUseFailure carries a failed call: no tool_response, and a command
-# that failed after committing still committed.
-HOOK_EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
-TOOL_USE_ID=$(echo "$INPUT" | jq -r '.tool_use_id // empty')
-DURATION_MS=$(echo "$INPUT" | jq -r '.duration_ms // empty | tostring | select(test("^[0-9]+(\\.[0-9]+)?$"))' 2>/dev/null)
-
-# A worktree's basename is a throwaway name; resolve to the parent repo.
-. "$(dirname "$0")/common.sh"
-PROJECT=$(cartographer_project "$CWD")
+# Every field the hook reads, in ONE jq call. A jq start costs ~13 ms on a
+# laptop and this hook paid for 17–19 of them per call (64 processes and
+# ~230 ms for a plain `npm test`, measured 2026-10-07); the work inside was
+# never the cost. @sh quotes each value for eval, so a command holding quotes,
+# newlines or `$(…)` comes back byte for byte. The last changelog row rides in
+# as --arg so the parent lookup (find_parent_event_id in common.sh) needs no
+# second parse; a row that is not an object yields no parent, as before.
+#
+# duration_ms is kept only when numeric. PostToolUseFailure carries a failed
+# call: no tool_response, and a command that failed after committing still
+# committed. apply_patch names its files inside the patch text: one line per
+# `*** Add|Update|Delete File:`, the first twenty, comma-joined.
+LAST_ROW=""
+[ -f "$CHANGELOG" ] && LAST_ROW=$(tail -1 "$CHANGELOG" 2>/dev/null)
+FIELDS=$(printf '%s' "$INPUT" | jq -r --arg last "$LAST_ROW" '
+  def s: (. // "") | tostring;
+  ((try ($last | fromjson) catch null) | if type == "object" then . else {} end) as $p
+  | (now | floor) as $t
+  | [ (.tool_name | s), (.session_id | s), (.transcript_path | s), (.cwd | s),
+      (.hook_event_name | s), (.tool_use_id | s),
+      ((.duration_ms | s) | if test("^[0-9]+(\\.[0-9]+)?$") then . else "" end),
+      (.turn_id | s), (.model | s),
+      (.tool_input.command | s),
+      (.tool_input.file_path | s),
+      ([ ((.tool_input.patch // .tool_input.input) | s) | split("\n")[]
+         | capture("^\\*\\*\\* (Add|Update|Delete) File: (?<f>.*)$").f ] | .[:20] | join(",")),
+      ((.tool_response // "") | if type == "object" then (.stdout // "") else . end | tostring),
+      (($p.session_id // $p.session) | s), ($p.timestamp | s), ($p.event_id | s),
+      ($t | todate), $t ]
+  | @sh' 2>/dev/null)
+eval "set -- $FIELDS"
+TOOL_NAME=$1 SESSION_ID=$2 TRANSCRIPT=$3 CWD=$4 HOOK_EVENT=$5 TOOL_USE_ID=$6 DURATION_MS=$7
+TURN_ID=$8 MODEL=$9 COMMAND_IN=${10} FILE_PATH_IN=${11} PATCH_FILES=${12} RESPONSE_IN=${13}
+LAST_SESSION=${14} LAST_TS=${15} LAST_ID=${16}
+# The row's timestamp and the epoch second the call_commits() window and HEAD
+# freshness check measure from: jq's clock, in UTC to the second, the same
+# text `date -u +%Y-%m-%dT%H:%M:%SZ` printed.
+TIMESTAMP=${17} NOW_EPOCH=${18}
+set --
+# Minted when a row is written: a call that logs nothing pays for no id.
+EVENT_ID=""
 
 # Cross-event linkage: thread events into work-arcs.
-. "$(dirname "$0")/common.sh"
-PROVIDER=$(detect_provider "$INPUT")
-PARENT_ID=$(find_parent_event_id "$CHANGELOG" "$SESSION_ID" "$TIMESTAMP")
+PROVIDER=$(detect_provider_from "$TRANSCRIPT" "$TURN_ID" "$MODEL")
+PARENT_ID=$(cartographer_parent_pick "$SESSION_ID" "$TIMESTAMP" "$LAST_SESSION" "$LAST_TS" "$LAST_ID")
+# PROJECT is resolved where a branch knows which directory to ask — the cwd,
+# the edited file's repo, the committed repo — so a call that exits early
+# never asks git. A worktree's basename is a throwaway name; cartographer_repo
+# in common.sh resolves to the parent repo.
+PROJECT=""
 
 SALIENCE="0.5"  # default; per-branch overrides below
 
@@ -54,147 +85,221 @@ SALIENCE="0.5"  # default; per-branch overrides below
 # file edits, all of them Write-tool calls. session-digest's `files` panel was
 # reporting a fraction of the work and reading as if that were the whole session.
 
-# Keep only the harvested strings that can be real write targets. Reads stdin,
-# one candidate per line; emits the survivors, deduped, at most five, one per
-# line. Factored out of bash_written_paths() so the variable-bound fallback
-# below can be gated on what SURVIVES filtering rather than on the raw harvest.
-bash_filter_paths() {
-  awk 'NF' | while read -r p; do
-    case "$p" in
-      /dev/*|/tmp/*|/private/tmp/*|\&*|-*) continue ;;                 # devices, scratch, fd dups, flags
-      */node_modules/*|*/.git/*|*.lock|*lock.json) continue ;;
-      *://*) continue ;;                                                # a URL in the content is never a target
-      # Shell/JSON metacharacters mean this came out of quoted SOURCE TEXT, not a
-      # real target. Writing this detector logged `Modified: {",{,src/app.js`
-      # because the harvester read the test file it was creating.
-      *[\{\}\"\(\)\$\*\;]*|\'*) continue ;;
-      *) printf '%s\n' "$p" ;;
-    esac
-  done | grep -E '(/|\.[A-Za-z0-9]{1,6}$)' \
-    | awk '!seen[$0]++' | head -5
-}
-
-# Paths a command WRITES to; empty when it only reads. Order matters at the call
-# site: a write must outrank the noise filter, because `cat > src/f.js <<EOF` is
-# both a real edit and a `cat `.
-bash_written_paths() {
-  local cmd="$1" raw=""
-  # `> path` / `>> path` — plain redirects and heredoc writes. Refusing a leading
-  # `&` keeps fd dups (`2>&1`) out.
-  raw="$raw
-$(printf '%s' "$cmd" | grep -oE '>>?[[:space:]]*[^ &|;<>()]+' | sed -E 's/^>>?[[:space:]]*//')"
-  # `sed -i … target` — the target is the last token of the sed clause.
-  raw="$raw
-$(printf '%s' "$cmd" | grep -oE 'sed -i[^|;&]*' | awk '{print $NF}')"
-  # `tee [-a] path`
-  raw="$raw
-$(printf '%s' "$cmd" | grep -oE 'tee[[:space:]]+(-a[[:space:]]+)?[^ &|;]+' | awk '{print $NF}')"
-  # python write-mode open(). Two shapes, because the idiomatic one binds the
-  # path to a variable first (`p='f.js'` … `open(p,'w')`) and a literal-only
-  # regex misses exactly the form that is most common in practice:
-  #   A) open('path', 'w')            → the literal
-  #   B) open(var, 'w') + var='path'  → harvest path-like quoted strings
-  if printf '%s' "$cmd" | grep -qE "open\([^)]*,[[:space:]]*[\"'][wa]"; then
-    raw="$raw
-$(printf '%s' "$cmd" | grep -oE "open\([\"'][^\"']+[\"'][[:space:]]*,[[:space:]]*[\"'][wa]" \
-      | sed -E "s/^open\([\"']//; s/[\"'].*$//")"
-    # Shape B (variable-bound path) is a LAST RESORT: harvest quoted path-like
-    # strings only when nothing explicit SURVIVES FILTERING. Otherwise a heredoc
-    # that writes a file whose CONTENT mentions other paths reports them all —
-    # `cat > t.test.js <<EOF … open('src/app.js','w') … EOF` named both.
-    #
-    # Gated on the filtered set, not the raw harvest. The raw check was empty in
-    # the tests but not in practice: a `<project>` placeholder inside the quoted
-    # content harvests as a `>` redirect to a bare backtick, and a `2>/dev/null`
-    # anywhere in the compound command harvests `/dev/null`. Either made the raw
-    # list non-empty, the fallback was skipped, the filter then discarded the
-    # junk, and a real `p='/Users/andyed/CLAUDE.md' … open(p,'w')` logged as
-    # `Ran:` (session 24b90edb, 2026-09-13, twice) while the same shape without
-    # the incidental `>` was caught.
-    if [ -z "$(printf '%s\n' "$raw" | bash_filter_paths | head -1)" ]; then
-      raw="$raw
-$(printf '%s' "$cmd" | grep -oE "[\"'][^\"' ]*(/[^\"' ]+|[^\"' /]+\.[A-Za-z0-9]{1,6})[\"']" \
-        | tr -d "\"'")"
-    fi
-  fi
-
-  printf '%s\n' "$raw" | bash_filter_paths | paste -sd ',' -
-}
-
-# The command as the shell runs it: heredoc bodies removed, lines intact. Reads
-# stdin. Git and noise detection read this, never the raw text, because a body
-# is data — a memory file, release notes, a commit message — and it names
-# `git push` or `git commit` without running either. Over 30 days of transcripts
-# (83,302 Bash commands, 2026-09-26) a commit or push appeared only inside a
-# body 40 times and none of them ran there; read raw, each is a phantom push, or
-# turns a real `cat > notes.md <<EOF` edit into `Ran:` via the commit branch.
+# Everything the Bash branch reads from the command's text comes out of ONE
+# awk pass, AWK_COMMAND_FACTS below. The functions it absorbed each ran as a
+# pipeline of processes per call — bash_strip_heredocs (awk, head),
+# git_invocation ×3 (awk each), bash_is_noise (awk ×2), bash_written_paths
+# and bash_filter_paths (grep ×5, sed, awk ×3, head, paste) — 12 awk, 7 head,
+# 5 tr, 5 grep per plain command, each start 5–13 ms. The rules are theirs,
+# applied in their order, and the notes that justified each rule stay with it.
 #
-# A delimiter must start with a letter or `_`, so arithmetic `1<<2` is not a
-# heredoc, and `<<<` is a here-string. A body with no terminator line is kept:
-# a misread `<<` then hides nothing.
-bash_strip_heredocs() {
-  awk -v Q="'" '
-    { L[++n] = $0 }
-    END {
-      i = 1
-      while (i <= n) {
-        line = L[i++]; print line
-        nq = 0; rest = line
-        while (match(rest, /<<-?[ \t]*[^ \t;&|<>()]+/)) {
-          before = (RSTART > 1) ? substr(rest, RSTART - 1, 1) : ""
-          tok = substr(rest, RSTART, RLENGTH)
-          rest = substr(rest, RSTART + RLENGTH)
-          if (before == "<") continue
-          d = tok; sub(/^<<-?[ \t]*/, "", d); gsub(/["\\]/, "", d); gsub(Q, "", d)
-          if (d !~ /^[A-Za-z_][A-Za-z0-9_.-]*$/) continue
-          q[++nq] = d; dash[nq] = (substr(tok, 3, 1) == "-")
-        }
-        # Bodies follow in the order their delimiters appeared on the line.
-        for (k = 1; k <= nq; k++) {
-          for (j = i; j <= n; j++) {
-            t = L[j]; sub(/\r$/, "", t)
-            if (dash[k]) sub(/^\t+/, "", t)
-            if (t == q[k]) break
-          }
-          if (j > n) break
-          i = j + 1
-        }
+# bash_filter_paths — keep only the harvested strings that can be real write
+# targets: not devices, scratch, fd dups (`2>&1` harvests `&1`), flags,
+# node_modules, .git, lock files, or a URL (never a target). Shell/JSON
+# metacharacters mean this came out of quoted SOURCE TEXT, not a real target.
+# Writing this detector logged `Modified: {",{,src/app.js` because the
+# harvester read the test file it was creating. A survivor must contain a `/`
+# or end in a 1–6 character extension; deduped, at most five.
+#
+# bash_written_paths — paths a command WRITES to; empty when it only reads.
+# Order matters at the call site: a write must outrank the noise filter,
+# because `cat > src/f.js <<EOF` is both a real edit and a `cat `.
+#   `> path` / `>> path`   plain redirects and heredoc writes; refusing a
+#                          leading `&` keeps fd dups out.
+#   `sed -i … target`      the target is the last token of the sed clause.
+#   `tee [-a] path`
+#   python write-mode open(). Two shapes, because the idiomatic one binds the
+#   path to a variable first (`p='f.js'` … `open(p,'w')`) and a literal-only
+#   regex misses exactly the form that is most common in practice:
+#     A) open('path', 'w')            → the literal
+#     B) open(var, 'w') + var='path'  → harvest path-like quoted strings
+#   Shape B is a LAST RESORT: harvest quoted path-like strings only when
+#   nothing explicit SURVIVES FILTERING. Otherwise a heredoc that writes a
+#   file whose CONTENT mentions other paths reports them all —
+#   `cat > t.test.js <<EOF … open('src/app.js','w') … EOF` named both.
+#   Gated on the filtered set, not the raw harvest. The raw check was empty in
+#   the tests but not in practice: a `<project>` placeholder inside the quoted
+#   content harvests as a `>` redirect to a bare backtick, and a `2>/dev/null`
+#   anywhere in the compound command harvests `/dev/null`. Either made the raw
+#   list non-empty, the fallback was skipped, the filter then discarded the
+#   junk, and a real `p='/Users/andyed/CLAUDE.md' … open(p,'w')` logged as
+#   `Ran:` (session 24b90edb, 2026-09-13, twice) while the same shape without
+#   the incidental `>` was caught.
+#
+# bash_strip_heredocs — the command as the shell runs it: heredoc bodies
+# removed, lines intact. Git and noise detection read this, never the raw
+# text, because a body is data — a memory file, release notes, a commit
+# message — and it names `git push` or `git commit` without running either.
+# Over 30 days of transcripts (83,302 Bash commands, 2026-09-26) a commit or
+# push appeared only inside a body 40 times and none of them ran there; read
+# raw, each is a phantom push, or turns a real `cat > notes.md <<EOF` edit
+# into `Ran:` via the commit branch. A delimiter must start with a letter or
+# `_`, so arithmetic `1<<2` is not a heredoc, and `<<<` is a here-string. A
+# body with no terminator line is kept: a misread `<<` then hides nothing.
+#
+# bash_is_noise — true when every command in a command line is noise: `cd
+# repo && ls` is, `cd repo && python3 …` is not. Reads the heredoc-stripped
+# command with its newlines, so each `&&`, `;` or newline segment is judged on
+# its own. This used to judge the first command after any leading `cd` hops
+# and ignore the rest, so a leading `cat`/`echo`/`ls` took everything after it
+# down. Commit c29a684 (session 979b81b0, 2026-09-26) was lost that way: `cat
+# > <scratchpad>/commit-msg.txt <<EOF … EOF` then `git add … && git commit -F
+# …`, where the scratchpad path is filtered out of the writes that would have
+# overridden the verdict. Replayed over the same 30 days, the old rule dropped
+# ~4,400 commands of real work this way (node/python/npx runs, curl, 552 git
+# writes) and ~9,900 inspection runs (`echo "==="; grep …`) that are logged
+# whenever they lack the leading echo. Judging every segment logs both: a
+# logged command costs a row, a dropped one can cost a commit. `ls*` used to
+# swallow lsof/lsblk/lsattr too — anchored now.
+#
+# git_invocation — the first `git [global options] <subcommand>` the command
+# runs, or nothing. Only the options between `git` and the subcommand come
+# back, so the `-C` of an earlier `git -C a add` never lends its path to a
+# later `git -C b commit`. Matched against code_only() and cut from the
+# original, so a quoted `-C` path comes back intact. Reads the heredoc-
+# stripped command with its newlines, since a comment ends at one.
+#
+# The summary forms are cut here too, in bytes as `head -c` cut them: the
+# 500-byte flattened COMMAND (newlines and tabs to spaces, runs of spaces
+# squeezed — downstream TSV/embedding paths are line-based, and the trailing
+# newline jq printed became its trailing space), the 20000-byte flattened
+# form the write harvest reads, and the heredoc-stripped 20000-byte form the
+# git and noise detection read. Detection reads the FULL command; only the
+# SUMMARY is truncated. A long heredoc puts its `open(p,'w')` well past 500
+# chars, so detecting against the truncated copy missed precisely the largest
+# edits — a real CHANGELOG.md rewrite logged as `tool_bash` while a short one
+# was caught. Git and noise detection read the truncated copy until
+# 2026-09-26, so a commit past char 500 was invisible: a `cat >> TODO.md
+# <<EOF … EOF` or a long `printf` ahead of it is enough. Replayed over 30
+# days, 584 commands put a real `git commit` past that cut. 20000 is capped
+# well above any real command so a pathological paste can't stall the hook.
+#
+# Prints, one per line: the commit, push and commit-verb invocations, the
+# noise verdict (1 = all noise), the written paths (comma-joined), the
+# 500-byte COMMAND, then the heredoc-stripped form on as many lines as it
+# has, closed by a line holding a single `.` so an empty form is still
+# delimited once `$(…)` strips trailing newlines. Needs AWK_CODE_ONLY ahead
+# of it, and re_commit/re_push/re_verbs from -v.
+AWK_COMMAND_FACTS='
+function flat(x) { gsub(/[\n\t\r]/, " ", x); gsub(/  +/, " ", x); return x }
+function trim(x) { sub(/^[[:space:]]+/, "", x); sub(/[[:space:]]+$/, "", x); return x }
+function last_field(x,   a, k) { k = split(x, a, " "); return (k ? a[k] : "") }
+# All matches of re in s, one per line, as `grep -oE` lists them. re is a
+# string: a regex literal in argument position is `$0 ~ /re/`, a number.
+function harvest(s, re,   out) {
+  out = ""
+  while (match(s, re)) { out = out substr(s, RSTART, RLENGTH) "\n"; s = substr(s, RSTART + RLENGTH) }
+  return out
+}
+function strip_heredocs(   o, i, line, nq, rest, before, tok, d, q, dash, k, j, t) {
+  o = ""; i = 1
+  while (i <= n) {
+    line = L[i++]; o = o line "\n"
+    nq = 0; rest = line
+    while (match(rest, /<<-?[ \t]*[^ \t;&|<>()]+/)) {
+      before = (RSTART > 1) ? substr(rest, RSTART - 1, 1) : ""
+      tok = substr(rest, RSTART, RLENGTH)
+      rest = substr(rest, RSTART + RLENGTH)
+      if (before == "<") continue
+      d = tok; sub(/^<<-?[ \t]*/, "", d); gsub(/["\\]/, "", d); gsub(/\047/, "", d)
+      if (d !~ /^[A-Za-z_][A-Za-z0-9_.-]*$/) continue
+      q[++nq] = d; dash[nq] = (substr(tok, 3, 1) == "-")
+    }
+    # Bodies follow in the order their delimiters appeared on the line.
+    for (k = 1; k <= nq; k++) {
+      for (j = i; j <= n; j++) {
+        t = L[j]; sub(/\r$/, "", t)
+        if (dash[k]) sub(/^\t+/, "", t)
+        if (t == q[k]) break
       }
-    }'
+      if (j > n) break
+      i = j + 1
+    }
+  }
+  return o
 }
-
-# True when every command in a command line is noise: `cd repo && ls` is,
-# `cd repo && python3 …` is not. Reads the heredoc-stripped command with its
-# newlines, so each `&&`, `;` or newline segment is judged on its own.
-#
-# This used to judge the first command after any leading `cd` hops and ignore
-# the rest, so a leading `cat`/`echo`/`ls` took everything after it down. Commit
-# c29a684 (session 979b81b0, 2026-09-26) was lost that way: `cat > <scratchpad>
-# /commit-msg.txt <<EOF … EOF` then `git add … && git commit -F …`, where the
-# scratchpad path is filtered out of the writes that would have overridden the
-# verdict. Replayed over the same 30 days, the old rule dropped ~4,400 commands
-# of real work this way (node/python/npx runs, curl, 552 git writes) and ~9,900
-# inspection runs (`echo "==="; grep …`) that are logged whenever they lack the
-# leading echo.
-# Judging every segment logs both: a logged command costs a row, a dropped one
-# can cost a commit.
-bash_is_noise() {
-  local seg
-  while IFS= read -r seg; do
-    seg="${seg#"${seg%%[![:space:]]*}"}"
-    seg="${seg%"${seg##*[![:space:]]}"}"
-    case "$seg" in
-      # `ls*` used to swallow lsof/lsblk/lsattr too — anchored now.
-      ''|\#*|ls|ls\ *|cat\ *|echo\ *|pwd|cd|cd\ *|which\ *|wc\ *|head\ *|tail\ *) ;;
-      *) return 1 ;;
-    esac
-  done <<EOF
-$(printf '%s\n' "$1" | awk '
-    { if (sub(/\\$/, "")) { buf = buf $0 " "; next } print buf $0; buf = "" }
-    END { if (buf != "") print buf }' | awk '{ gsub(/&&|;/, "\n"); print }')
-EOF
-  return 0
+function is_noise(sh,   m, lines, i, line, buf, out, segs, j, seg) {
+  m = split(sh, lines, "\n"); out = ""; buf = ""
+  for (i = 1; i <= m; i++) {
+    line = lines[i]
+    if (sub(/\\$/, "", line)) { buf = buf line " "; continue }
+    out = out buf line "\n"; buf = ""
+  }
+  if (buf != "") out = out buf "\n"
+  gsub(/&&|;/, "\n", out)
+  m = split(out, segs, "\n")
+  for (j = 1; j <= m; j++) {
+    seg = trim(segs[j])
+    if (seg == "" || seg ~ /^#/ || seg == "ls" || seg ~ /^ls / || seg ~ /^cat / || seg ~ /^echo / \
+        || seg == "pwd" || seg == "cd" || seg ~ /^cd / || seg ~ /^which / || seg ~ /^wc / \
+        || seg ~ /^head / || seg ~ /^tail /) continue
+    return 0
+  }
+  return 1
 }
+function keep_path(p) {
+  if (p ~ /^\/dev\// || p ~ /^\/tmp\// || p ~ /^\/private\/tmp\// || p ~ /^&/ || p ~ /^-/) return 0
+  if (p ~ /\/node_modules\// || p ~ /\/\.git\// || p ~ /\.lock$/ || p ~ /lock\.json$/) return 0
+  if (index(p, "://")) return 0
+  if (p ~ /[{}"()$*;]/ || p ~ /^\047/) return 0
+  return (index(p, "/") || p ~ EXT_END)
+}
+# bash_filter_paths over a newline-separated list: blank lines dropped, each
+# candidate trimmed as `read` trims, filtered, deduped, at most five.
+function filter_paths(raw, want,   m, c, i, p, seen, out, k) {
+  m = split(raw, c, "\n"); out = ""; k = 0
+  for (i = 1; i <= m; i++) {
+    p = trim(c[i])
+    if (p == "" || !keep_path(p) || (p in seen)) continue
+    seen[p] = 1
+    out = out (k ? "," : "") p
+    if (++k >= want) break
+  }
+  return out
+}
+function written_paths(full,   raw, lst, m, a, i, tok, re) {
+  raw = "\n"
+  lst = harvest(full, ">>?[[:space:]]*[^ &|;<>()]+")
+  m = split(lst, a, "\n"); for (i = 1; i < m; i++) { tok = a[i]; sub(/^>>?[[:space:]]*/, "", tok); raw = raw tok "\n" }
+  raw = raw "\n"
+  lst = harvest(full, "sed -i[^|;&]*")
+  m = split(lst, a, "\n"); for (i = 1; i < m; i++) raw = raw last_field(a[i]) "\n"
+  raw = raw "\n"
+  lst = harvest(full, "tee[[:space:]]+(-a[[:space:]]+)?[^ &|;]+")
+  m = split(lst, a, "\n"); for (i = 1; i < m; i++) raw = raw last_field(a[i]) "\n"
+  if (full ~ OPEN_W) {
+    raw = raw "\n"
+    lst = harvest(full, OPEN_LIT)
+    m = split(lst, a, "\n"); for (i = 1; i < m; i++) { tok = a[i]; sub(/^open\(["\047]/, "", tok); sub(/["\047].*$/, "", tok); raw = raw tok "\n" }
+    if (filter_paths(raw, 1) == "") {
+      raw = raw "\n"
+      lst = harvest(full, QUOTED_PATH)
+      m = split(lst, a, "\n"); for (i = 1; i < m; i++) { tok = a[i]; gsub(/["\047]/, "", tok); raw = raw tok "\n" }
+    }
+  }
+  return filter_paths(raw, 5)
+}
+BEGIN {
+  A = "[A-Za-z0-9]"; ext = "\\." A A "?" A "?" A "?" A "?" A "?"   # {1,6}, spelled out for every awk
+  EXT_END = ext "$"
+  OPEN_W = "open\\([^)]*,[[:space:]]*[\"\047][wa]"
+  OPEN_LIT = "open\\([\"\047][^\"\047]+[\"\047][[:space:]]*,[[:space:]]*[\"\047][wa]"
+  QUOTED_PATH = "[\"\047][^\"\047 ]*(/[^\"\047 ]+|[^\"\047 /]+" ext ")[\"\047]"
+}
+{ L[++n] = $0 }
+END {
+  raw = ""; for (i = 1; i <= n; i++) raw = raw L[i] "\n"
+  sh = substr(strip_heredocs(), 1, 20000); sub(/\n+$/, "", sh)
+  s = sh "\n"; m = code_only(s)
+  gsub(/[\t\r\n]/, " ", s); gsub(/[\t\r\n]/, " ", m)
+  print (match(m, re_commit) ? substr(s, RSTART, RLENGTH) : "")
+  print (match(m, re_push) ? substr(s, RSTART, RLENGTH) : "")
+  print (match(m, re_verbs) ? substr(s, RSTART, RLENGTH) : "")
+  print is_noise(sh)
+  print written_paths(flat(substr(raw, 1, 20000)))
+  print flat(substr(raw, 1, 500))
+  printf "%s\n.", sh
+}'
 
 # ── git subcommand detection ──────────────────────────────────────────────────
 # `git -C <repo> commit` is how an agent avoids a leading `cd`, and it contains
@@ -249,23 +354,9 @@ function code_only(s,   o, i, n, c, t, k, st, pd) {
   return o
 }'
 
-# The first `git [global options] <subcommand>` the command runs, or nothing.
-# Only the options between `git` and the subcommand come back, so the `-C` of
-# an earlier `git -C a add` never lends its path to a later `git -C b commit`.
-# Matched against code_only() and cut from the original, so a quoted `-C` path
-# comes back intact. Reads the heredoc-stripped command with its newlines, since
-# a comment ends at one.
-git_invocation() {
-  printf '%s\n' "$1" | LC_ALL=C awk \
-    -v re="(^|[^[:alnum:]_.-])git${GIT_OPTS}[[:space:]]+$2([^[:alnum:]_-]|\$)" \
-    "$AWK_CODE_ONLY"'
-    { s = s $0 "\n" }
-    END {
-      m = code_only(s)
-      gsub(/[\t\r\n]/, " ", s); gsub(/[\t\r\n]/, " ", m)
-      if (match(m, re)) print substr(s, RSTART, RLENGTH)
-    }'
-}
+# The regex a `git [global options] <verb>` is found by, for the awk passes
+# that read the command (AWK_COMMAND_FACTS, bash_cd_base, git_invocations).
+git_re() { printf '(^|[^[:alnum:]_.-])git%s[[:space:]]+%s([^[:alnum:]_-]|$)' "$GIT_OPTS" "$1"; }
 
 # A path as written in a command, made absolute against a base directory. The
 # shell never saw this text, so `~` and `$HOME` are expanded by hand; nothing
@@ -400,7 +491,7 @@ function walk(s, from, to,   i, c) {
 # `~` and `$HOME` as git_path() does.
 bash_cd_base() {
   printf '%s\n' "$1" | LC_ALL=C awk \
-    -v re="(^|[^[:alnum:]_.-])git${GIT_OPTS}[[:space:]]+$2([^[:alnum:]_-]|\$)" \
+    -v re="$(git_re "$2")" \
     -v start="$3" -v home="$HOME" "$AWK_CODE_ONLY$AWK_CD_HOP"'
     { if (sub(/\\$/, "")) { s = s $0 " " } else { s = s $0 "\n" } }
     END {
@@ -423,7 +514,7 @@ bash_cd_base() {
 # does not change directory. <args> is the rest of that simple command.
 git_invocations() {
   printf '%s\n' "$1" | LC_ALL=C awk \
-    -v re="(^|[^[:alnum:]_.-])git${GIT_OPTS}[[:space:]]+$2([^[:alnum:]_-]|\$)" \
+    -v re="$(git_re "$2")" \
     -v start="$3" -v home="$HOME" "$AWK_CODE_ONLY$AWK_CD_HOP"'
     { if (sub(/\\$/, "")) { s = s $0 " " } else { s = s $0 "\n" } }
     END {
@@ -504,7 +595,7 @@ repo_of() {
 call_commits() {
   local since="$1" now line base inv verb dir repo unresolved="" wt r
   local want="" fallback="" repos="" logged picks="" named="" tok args sub
-  now=$(date +%s)
+  now=$NOW_EPOCH
   while IFS=$'\t' read -r base inv args; do
     [ -n "$inv" ] || continue
     verb=${inv##*[[:space:]]}
@@ -641,8 +732,13 @@ call_start_cwd() {
 # COMMIT_ACTION is set only for rows read from the reflog: commit, amend,
 # merge, cherry-pick, revert or am.
 emit_row() {
-  # Write to tool-use log
-  jq -n -c \
+  [ -n "$EVENT_ID" ] || EVENT_ID=$(cartographer_event_id)
+  # Both rows from one jq: the tool-use row first, the changelog row second.
+  # The changelog row carries related_ids and names the session session_id;
+  # the tool-use row names the tool and carries commit_url.
+  local rows nl='
+' tool_row changelog_event
+  rows=$(jq -n -c \
       --arg eid "$EVENT_ID" \
       --arg ts "$TIMESTAMP" \
       --arg type "$TYPE" \
@@ -659,39 +755,26 @@ emit_row() {
       --argjson diff_shape "${DIFF_SHAPE:-null}" \
       --arg parent_id "$PARENT_ID" \
       --argjson salience "${SALIENCE:-0.5}" \
-      '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape, salience: $salience}
-       + if $commit_type != "" then {commit_type: $commit_type} else {} end
-       + if $commit_url != "" then {commit_url: $commit_url} else {} end
-       + if $commit_action != "" then {commit_action: $commit_action} else {} end
-       + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
-      >> "$LOG_FILE"
+      '({event_id: $eid, timestamp: $ts, type: $type, provider: $provider, tool: $tool, summary: $summary, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, diff_shape: $diff_shape, salience: $salience}
+        + if $commit_type != "" then {commit_type: $commit_type} else {} end
+        + if $commit_url != "" then {commit_url: $commit_url} else {} end
+        + if $commit_action != "" then {commit_action: $commit_action} else {} end
+        + if $parent_id != "" then {parent_event_id: $parent_id} else {} end),
+       ({event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: [], salience: $salience}
+        + if $commit_type != "" then {commit_type: $commit_type} else {} end
+        + if $commit_action != "" then {commit_action: $commit_action} else {} end
+        + if $parent_id != "" then {parent_event_id: $parent_id} else {} end)')
+  case "$rows" in *"$nl"*) ;; *) return 0 ;; esac
+  tool_row=${rows%%"$nl"*}
+  changelog_event=${rows#*"$nl"}
 
-  # Write to unified changelog
-  CHANGELOG_EVENT=$(jq -n -c \
-      --arg eid "$EVENT_ID" \
-      --arg ts "$TIMESTAMP" \
-      --arg type "$TYPE" \
-      --arg session "$SESSION_ID" \
-      --arg provider "$PROVIDER" \
-      --arg project "$PROJECT" \
-      --arg cwd "$CWD" \
-      --arg summary "$SUMMARY" \
-      --arg transcript "$TRANSCRIPT" \
-      --arg commit_type "${COMMIT_TYPE:-}" \
-      --arg commit_action "${COMMIT_ACTION:-}" \
-      --argjson diff_shape "${DIFF_SHAPE:-null}" \
-      --arg parent_id "$PARENT_ID" \
-      --argjson salience "${SALIENCE:-0.5}" \
-      '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, diff_shape: $diff_shape, related_ids: [], salience: $salience}
-       + if $commit_type != "" then {commit_type: $commit_type} else {} end
-       + if $commit_action != "" then {commit_action: $commit_action} else {} end
-       + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
-  if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
+  printf '%s\n' "$tool_row" >> "$LOG_FILE"
+  printf '%s\n' "$changelog_event" >> "$CHANGELOG"
 
   # Real-time indexing (silent fail if services aren't running)
   INDEXER=$(cartographer_script index-event.sh)
   if [ -x "$INDEXER" ]; then
-    [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
+    printf '%s\n' "$changelog_event" | "$INDEXER" &
   fi
 }
 
@@ -700,9 +783,19 @@ emit_row() {
 # stdout named the commit). One definition for the reflog's rows and HEAD's.
 commit_fields() {
   # Get changed files from the commit if we can
+  # The first twenty paths, comma-joined; the same list `head -20 | tr | sed`
+  # built, counted the same way below (a comma inside a path counts twice,
+  # as it always did).
   CHANGED_FILES=""
   if [ -n "$COMMIT_HASH" ] && [ -n "$GIT_REPO" ]; then
-    CHANGED_FILES=$(cd "$GIT_REPO" && git diff-tree --root --no-commit-id --name-only -r "$COMMIT_HASH" 2>/dev/null | head -20 | tr '\n' ', ' | sed 's/,$//')
+    n=0
+    while IFS= read -r f && [ "$n" -lt 20 ]; do
+      [ -n "$f" ] || continue
+      CHANGED_FILES="${CHANGED_FILES:+$CHANGED_FILES,}$f"
+      n=$((n + 1))
+    done <<EOF
+$(cd "$GIT_REPO" && git diff-tree --root --no-commit-id --name-only -r "$COMMIT_HASH" 2>/dev/null)
+EOF
   fi
 
   # Extract diff shape metadata (Tier 3)
@@ -749,7 +842,8 @@ commit_fields() {
   # Bonus: wide blast radius
   FILE_COUNT=0
   if [ -n "$CHANGED_FILES" ]; then
-    FILE_COUNT=$(echo "$CHANGED_FILES" | tr ',' '\n' | wc -l | tr -d ' ')
+    FILE_COUNT=${CHANGED_FILES//[!,]/}
+    FILE_COUNT=$(( ${#FILE_COUNT} + 1 ))
   fi
   if [ "$FILE_COUNT" -gt 5 ]; then
     SALIENCE_RAW=$(awk -v s="$SALIENCE_RAW" 'BEGIN { v = s + 0.1; if (v > 1.0) v = 1.0; printf "%.2f", v }')
@@ -765,56 +859,49 @@ commit_fields() {
   # Build GitHub commit URL from remote
   COMMIT_URL=""
   if [ -n "$GIT_REPO" ]; then
-    GITHUB_BASE=$(cd "$GIT_REPO" && git remote get-url origin 2>/dev/null | sed 's/\.git$//' | sed 's|git@github.com:|https://github.com/|')
+    GITHUB_BASE=$(cd "$GIT_REPO" && git remote get-url origin 2>/dev/null)
+    GITHUB_BASE=${GITHUB_BASE%.git}
+    gh='https://github.com/'
+    GITHUB_BASE=${GITHUB_BASE/git@github.com:/$gh}
     [ -n "$GITHUB_BASE" ] && COMMIT_URL="${GITHUB_BASE}/commit/${COMMIT_HASH}"
   fi
 }
 
 case "$TOOL_NAME" in
   Edit|Write|apply_patch)
-    if [ "$TOOL_NAME" = "apply_patch" ]; then
-      FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.patch // .tool_input.input // empty' | sed -nE 's/^\*\*\* (Add|Update|Delete) File: (.*)$/\2/p' | head -20 | paste -sd ',' -)
-    else
-      FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
-    fi
+    if [ "$TOOL_NAME" = "apply_patch" ]; then FILE_PATH=$PATCH_FILES; else FILE_PATH=$FILE_PATH_IN; fi
     [ -z "$FILE_PATH" ] && exit 0
     PRIMARY_FILE=${FILE_PATH%%,*}
-    # Refine project via file path's git repo
-    FILE_REPO=$(cd "$(dirname "$PRIMARY_FILE")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-    [ -n "$FILE_REPO" ] && PROJECT=$(cartographer_project "$FILE_REPO")
 
     # Skip noisy paths (node_modules, .git, lock files)
     case "$PRIMARY_FILE" in
       */node_modules/*|*/.git/*|*/package-lock.json|*/yarn.lock|*/pnpm-lock.yaml) exit 0 ;;
     esac
-    FILENAME=$(basename "$PRIMARY_FILE")
+    # Refine project via file path's git repo; the cwd's otherwise.
+    cartographer_repo "$(cartographer_dirname "$PRIMARY_FILE")"
+    if [ -n "$CARTO_TOPLEVEL" ]; then PROJECT=$CARTO_PROJECT; else PROJECT=$(cartographer_project "$CWD"); fi
     SUMMARY="Modified: $FILE_PATH"
     TYPE="tool_file_edit"
     SALIENCE="0.4"
     ;;
   Bash)
-    # Flatten newlines/tabs: multi-line commands (heredocs, python -c) must
-    # become one-line summaries — downstream TSV/embedding paths are line-based.
-    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 500 | tr '\n\t\r' '   ' | tr -s ' ')
+    [ -z "$COMMAND_IN" ] && exit 0
+    # One awk pass for every form of the command and everything read from it;
+    # see AWK_COMMAND_FACTS. Fields come back one per line, the heredoc-
+    # stripped form last, closed by a `.` line.
+    FACTS=$(printf '%s\n' "$COMMAND_IN" | LC_ALL=C awk \
+      -v re_commit="$(git_re commit)" -v re_push="$(git_re push)" -v re_verbs="$(git_re "$COMMIT_VERBS")" \
+      "$AWK_CODE_ONLY$AWK_COMMAND_FACTS")
+    NL='
+'
+    COMMIT_CALL=${FACTS%%"$NL"*};      FACTS=${FACTS#*"$NL"}
+    PUSH_CALL=${FACTS%%"$NL"*};        FACTS=${FACTS#*"$NL"}
+    COMMIT_VERB_CALL=${FACTS%%"$NL"*}; FACTS=${FACTS#*"$NL"}
+    BASH_NOISE=${FACTS%%"$NL"*};       FACTS=${FACTS#*"$NL"}
+    BASH_WRITES=${FACTS%%"$NL"*};      FACTS=${FACTS#*"$NL"}
+    COMMAND=${FACTS%%"$NL"*};          FACTS=${FACTS#*"$NL"}
+    COMMAND_SHELL=${FACTS%"$NL".}
     [ -z "$COMMAND" ] && exit 0
-    # Detection reads the FULL command; only the SUMMARY is truncated. A long
-    # heredoc puts its `open(p,'w')` well past 500 chars, so detecting against the
-    # truncated copy missed precisely the largest edits — a real CHANGELOG.md
-    # rewrite logged as `tool_bash` while a short one was caught. Capped well
-    # above any real command so a pathological paste can't stall the hook.
-    COMMAND_FULL=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 20000 | tr '\n\t\r' '   ' | tr -s ' ')
-    # Git and noise detection read the full command minus heredoc bodies — see
-    # bash_strip_heredocs(). They read the truncated copy until 2026-09-26, so a
-    # commit past char 500 was invisible: a `cat >> TODO.md <<EOF … EOF` or a
-    # long `printf` ahead of it is enough. Replayed over 30 days, 584 commands put
-    # a real `git commit` past that cut.
-    COMMAND_SHELL=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | bash_strip_heredocs | head -c 20000)
-    # The command as written, heredoc bodies included, where a commit message
-    # usually is: call_commits() matches reflog subjects against it.
-    COMMAND_RAW=$(echo "$INPUT" | jq -r '.tool_input.command // empty' | head -c 20000)
-    COMMIT_CALL=$(git_invocation "$COMMAND_SHELL" commit)
-    PUSH_CALL=$(git_invocation "$COMMAND_SHELL" push)
-    COMMIT_VERB_CALL=$(git_invocation "$COMMAND_SHELL" "$COMMIT_VERBS")
 
     # Every commit the call made, when the payload says how long the call ran
     # (Claude Code's duration_ms): the reflog is then read for exactly this
@@ -825,12 +912,22 @@ case "$TOOL_NAME" in
     if [ -n "$COMMIT_VERB_CALL" ] && [ -n "$DURATION_MS" ]; then
       PRE_CWD=$(call_start_cwd)
       [ -n "$PRE_CWD" ] && [ -d "$PRE_CWD" ] || PRE_CWD="$CWD"
-      CALL_START=$(awk -v now="$(date +%s)" -v ms="$DURATION_MS" 'BEGIN { printf "%d", now - ms / 1000 - 2 }')
+      # floor(now - ms/1000 - 2): whole seconds, rounding the duration up.
+      MS_INT=${DURATION_MS%%.*}; MS_FRAC=${DURATION_MS#"$MS_INT"}
+      case "$MS_FRAC" in *[1-9]*) MS_INT=$((10#$MS_INT + 1)) ;; *) MS_INT=$((10#$MS_INT)) ;; esac
+      CALL_START=$(( NOW_EPOCH - 2 - (MS_INT + 999) / 1000 ))
+      # The command as written, heredoc bodies included, where a commit
+      # message usually is: call_commits() matches reflog subjects against it.
+      COMMAND_RAW=$(cartographer_head_c "$COMMAND_IN" 20000)
       CALL_OUT=$(call_commits "$CALL_START")
     fi
-    CALL_COMMITS=$(printf '%s\n' "$CALL_OUT" | awk -F'\t' '$1 == "commit"')
-    # Read at least one reflog: the reflog, not HEAD, then says what was made.
-    REFLOG_READ=$(printf '%s\n' "$CALL_OUT" | awk -F'\t' '$1 == "reflog"' | head -1)
+    CALL_COMMITS=""
+    REFLOG_READ=""
+    if [ -n "$CALL_OUT" ]; then
+      CALL_COMMITS=$(printf '%s\n' "$CALL_OUT" | awk -F'\t' '$1 == "commit"')
+      # Read at least one reflog: the reflog, not HEAD, then says what was made.
+      REFLOG_READ=$(printf '%s\n' "$CALL_OUT" | awk -F'\t' '$1 == "reflog"' | head -1)
+    fi
 
     if [ -n "$CALL_COMMITS" ]; then
       while IFS=$'\t' read -r _ GIT_REPO COMMIT_HASH COMMIT_ACTION <&3; do
@@ -839,7 +936,7 @@ case "$TOOL_NAME" in
         commit_fields
         emit_row
         PARENT_ID="$EVENT_ID"
-        EVENT_ID=$(new_event_id)
+        EVENT_ID=$(cartographer_event_id)
       done 3<<EOF
 $CALL_COMMITS
 EOF
@@ -849,14 +946,14 @@ EOF
     # left out, as before PostToolUseFailure was registered.
     [ "$HOOK_EVENT" = "PostToolUseFailure" ] && exit 0
 
-    # A write outranks the noise filter — see bash_written_paths(). So does a
+    # A write outranks the noise filter — see bash_written_paths. So does a
     # commit or push, which a pipe can hide from the per-segment verdict
     # (`cat msg.txt | git commit -F -` is one segment, and it starts with cat).
-    BASH_WRITES=$(bash_written_paths "$COMMAND_FULL")
     if [ -z "$BASH_WRITES" ] && [ -z "$COMMIT_CALL" ] && [ -z "$PUSH_CALL" ] \
-       && bash_is_noise "$COMMAND_SHELL"; then
+       && [ "$BASH_NOISE" = 1 ]; then
       exit 0
     fi
+    PROJECT=$(cartographer_project "$CWD")
 
     # Detect git commit — extract commit hash, message, and changed files
     if [ -n "$COMMIT_CALL" ]; then
@@ -868,7 +965,7 @@ EOF
       # Parse the commit output from tool_response. Use .stdout when it's an
       # object: jq -r of the whole object prints raw JSON whose \n escape
       # sequences then leak into COMMIT_MSG as literal backslash-n text.
-      RESPONSE=$(echo "$INPUT" | jq -r '(.tool_response // empty) | if type == "object" then (.stdout // "") else . end' | head -c 2000)
+      RESPONSE=$(cartographer_head_c "$RESPONSE_IN" 2000)
       # Only git's own summary line names a commit: `[main 1a2b3c4] subject`,
       # with ` (root-commit)` on a first commit and `detached HEAD` in place of
       # a branch. The first 7+ hex run anywhere in stdout stood here, and
@@ -913,7 +1010,7 @@ EOF
         REPO_HASH=$(git -C "$GIT_REPO" rev-parse --verify -q HEAD 2>/dev/null)
         if [ -n "$REPO_HASH" ]; then
           REPO_COMMIT_TS=$(git -C "$GIT_REPO" log -1 --format=%ct "$REPO_HASH" 2>/dev/null)
-          REPO_AGE=$(( $(date +%s) - ${REPO_COMMIT_TS:-0} ))
+          REPO_AGE=$(( NOW_EPOCH - ${REPO_COMMIT_TS:-0} ))
           # Already recorded means this invocation did not create it — the
           # freshness window alone cannot tell a real commit from a `git commit`
           # that failed seconds after one, and both leave HEAD looking new.
@@ -951,13 +1048,13 @@ EOF
       # file is an implementation detail, and downstream (session-digest's `files`
       # panel, the profile's work-shape) only asks what changed.
       PRIMARY_FILE=${BASH_WRITES%%,*}
-      FILE_REPO=$(cd "$(dirname "$PRIMARY_FILE")" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-      [ -n "$FILE_REPO" ] && PROJECT=$(cartographer_project "$FILE_REPO")
+      cartographer_repo "$(cartographer_dirname "$PRIMARY_FILE")"
+      [ -n "$CARTO_TOPLEVEL" ] && PROJECT=$CARTO_PROJECT
       SUMMARY="Modified: $BASH_WRITES (via bash)"
       TYPE="tool_file_edit"
       SALIENCE="0.4"
     else
-      SUMMARY="Ran: $(echo "$COMMAND" | head -c 200)"
+      SUMMARY="Ran: $(cartographer_head_c "$COMMAND" 200)"
       TYPE="tool_bash"
       SALIENCE="0.2"
     fi
