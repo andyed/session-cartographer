@@ -41,6 +41,20 @@ the pre-rewrite capture and `hook-rows-golden.test.js` holds the live hooks to
 it byte for byte (64 rows, both locales). Live hooks run from
 `~/.claude/plugins/cache`, so the change lands with the next `/plugin update`.
 
+### perf(retro-index): checkpoint check before transcript inference
+
+The background catch-up that runs at every session start took 26 s median and
+66 s p95 for Codex even when it had nothing to index: 78 of 123 runs in the
+two weeks to 2026-10-07 backfilled zero turns. `retro-index.sh` ran two
+full-transcript jq passes and a node project-inference process on every Codex
+transcript before reading the checkpoint that said to skip it. A Codex rollout
+file carries its session id in its name, so a `codex <id> <mtime> ` prefix
+match against the progress file now skips a checkpointed session without
+opening the transcript. No prefix match falls through to the full derivation
+and the full key check, so the project-in-key invalidation is unchanged, and
+`--project` runs still infer the project because they need it to decide
+inclusion at all.
+
 ### feat(standup): SILENT and UNCLAIMED — what the event log never saw
 
 On 2026-10-04 a Codex session edited files in psychodeli-webgl-port for an hour

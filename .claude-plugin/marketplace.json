@@ -8,7 +8,7 @@
     {
       "name": "session-cartographer",
       "description": "Hooks preserve shared Claude Code and Codex history; /remember recalls it and /turbo keeps the index warm so recall answers in about 0.3 s instead of about 12 s, for both agents",
-      "version": "0.8.1",
+      "version": "0.8.2",
       "author": {
         "name": "Andy Edmonds"
       },
