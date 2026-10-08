@@ -178,7 +178,7 @@ what it deliberately excludes and why.
 A wrapper for a daily job should also pass `--day-digest yesterday`. The pulse's
 `--since` window is rolling, so a 04:00 run over `24h` sees parts of two days;
 the day digest adds the whole previous local calendar day, by project, with
-every commit checked against git ([the day digest](../README.md#the-day-digest)).
+every commit checked against git ([digests](../README.md#memory-desk-and-digests)).
 It uses the same allowlist, reports out-of-scope work only as a count, and
 renders as an outage rather than an empty day if it fails.
 
@@ -461,9 +461,9 @@ That is roughly **600 bytes per log line**. Note that `tool-use-log.jsonl` is
 39% of the lines and is the opt-in one — leaving `CARTOGRAPHER_LOG_TOOL_USE`
 off roughly halves the growth rate.
 
-The [Footprint](../README.md#footprint) figure in the README (1.5 MB of event
-logs) predates both tool-use logging and prompt history. Plan against the table
-above.
+Plan against this dated sample and your own logging volume. Tool-use logging
+and prompt history make older estimates that excluded them unsuitable for
+capacity planning.
 
 ---
 
