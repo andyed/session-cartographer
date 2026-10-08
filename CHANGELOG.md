@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### perf(hooks): single jq extraction, drop python from Stop hook
+
+The two hot hooks spent their time starting processes, not working. A fork
+census on 2026-10-07 (macOS, bash 3.2): `log-tool-use.sh` on a plain `npm
+test` spawned 64 processes — 19 jq, 12 awk, 8 head, 5 tr, 5 grep, 5 dirname —
+for ~230 ms; `log-session-milestones.sh` on Claude Code's per-turn Stop, which
+logs nothing, spawned 24 (ten jq, two git, a python3 to URL-encode one path)
+for ~165 ms. Now 7 processes and ~70 ms, and 2 and ~23 ms; an Edit 37 → 6,
+a SessionEnd 38 → 11. Each hook reads its payload with one `jq | @sh`, reads
+the command's text in one awk pass, resolves the project only when it writes,
+and writes both rows of a pair with one jq; the transcript path is encoded
+with jq's `@uri`, so python is no longer a dependency of a hook.
+
+The rows do not change. `tests/fixtures/hook-rows/run.sh` fires a fixed set of
+payloads at a hooks directory and prints the rows masked; `expected.txt` is
+the pre-rewrite capture and `hook-rows-golden.test.js` holds the live hooks to
+it byte for byte (64 rows, both locales). Live hooks run from
+`~/.claude/plugins/cache`, so the change lands with the next `/plugin update`.
+
 ### feat(standup): SILENT and UNCLAIMED — what the event log never saw
 
 On 2026-10-04 a Codex session edited files in psychodeli-webgl-port for an hour

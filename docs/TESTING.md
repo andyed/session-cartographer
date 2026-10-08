@@ -43,6 +43,16 @@ node --test tests/unit/project-scope-parity.test.js
 Two smoke scripts exist for packaging: `tests/release-smoke.sh` and
 `tests/source-marketplace-smoke.sh`.
 
+The two hot hooks have a golden capture. `tests/fixtures/hook-rows/run.sh
+<hooks-dir>` fires a fixed set of payloads (commands, writes, edits, commits
+read from the reflog and from HEAD, a push, a failed call, every lifecycle
+event) at a hooks directory in a throwaway workspace and prints the rows with
+ids, timestamps, shas and the temp path masked. `expected.txt` beside it is the
+pre-rewrite hooks' output; `hook-rows-golden.test.js` diffs the live hooks
+against it byte for byte. To compare two hook versions directly, run the
+script against each directory and diff — that is how the 2026-10-07 single-jq
+rewrite was proved, with the old hooks checked out from `git show`.
+
 `tests/private/` is gitignored and may contain maintainer-only benchmarks. It is
 not needed by a fresh checkout or the public CI suite.
 
