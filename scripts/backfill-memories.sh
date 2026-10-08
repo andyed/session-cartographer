@@ -99,7 +99,15 @@ process_memory_file() {
 
   local summary="Memory [${mem_type}]: ${name} — ${description}"
   local timestamp
-  timestamp=$(stat -f "%Sm" -t "%Y-%m-%dT%H:%M:%SZ" "$filepath" 2>/dev/null || date -r "$filepath" -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u +"%Y-%m-%dT%H:%M:%SZ")
+  # `date -r <file> -u` is the one form BSD and GNU date share. The BSD
+  # `stat -f %Sm` that stood here printed LOCAL time with a Z suffix, and GNU
+  # stat given those flags exits non-zero only after printing a filesystem
+  # block to stdout, so `stat || date` captured both on Linux.
+  timestamp=$(date -r "$filepath" -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null)
+  case "$timestamp" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) ;;
+    *) timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ") ;;
+  esac
 
   if $DRY_RUN; then
     echo "  [${mem_type:0:8}] ${project_name}: ${name}"
