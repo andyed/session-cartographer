@@ -115,6 +115,38 @@ fail_unreachable_service() {
   fi
 }
 
+# The semantic leg filters on `project` and `timestamp`. Without payload
+# indexes Qdrant scans payloads for those filters: 200-420 ms per filtered
+# search on 157k points against 4-16 ms indexed (scripts/qdrant-collection.js
+# carries the measurement). embed-events.js creates them with the collection;
+# this is the upgrade path for a collection that predates them, run from the
+# health check every event already pays for. Re-creating an existing index is
+# a Qdrant no-op, but the GET in hand says which are missing, so the common
+# case writes nothing. A refused build is recorded and retried after a
+# cooldown; it never fails the event, because an unindexed collection is slow
+# while an unindexed event is lost.
+PAYLOAD_INDEX_COOLDOWN_STAMP="$STATE_DIR/.payload-index-attempt"
+ensure_payload_indexes() {
+  local info="$1" spec field schema body
+  if [ -f "$PAYLOAD_INDEX_COOLDOWN_STAMP" ] \
+     && [ -n "$(find "$PAYLOAD_INDEX_COOLDOWN_STAMP" -mmin -60 2>/dev/null)" ]; then
+    return 0
+  fi
+  for spec in project:keyword timestamp:datetime; do
+    field="${spec%%:*}"
+    schema="${spec##*:}"
+    [ "$(printf '%s' "$info" | jq -r --arg f "$field" '.result.payload_schema[$f].data_type // empty' 2>/dev/null)" = "$schema" ] && continue
+    body=$(jq -n -c --arg f "$field" --arg s "$schema" '{field_name: $f, field_schema: $s}')
+    if ! curl -sf -X PUT "$QDRANT_URL/collections/$COLLECTION/index" \
+        -H "Content-Type: application/json" \
+        -d "$body" >/dev/null 2>&1; then
+      mkdir -p "$STATE_DIR" 2>/dev/null || true
+      touch "$PAYLOAD_INDEX_COOLDOWN_STAMP" 2>/dev/null || true
+      record_failure "payload_index_${field}" "index_build_failed"
+    fi
+  done
+}
+
 record_rejection() {
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   jq -n -c \
@@ -194,7 +226,8 @@ EMBED_TEXT=$(printf '%.*s' "$EMBED_TEXT_MAX" "$TEXT")
 
 # Quick health check. Hooks still degrade gracefully, but batch callers now
 # receive a non-zero status and can avoid checkpointing data that never landed.
-curl -sf "$QDRANT_URL/collections/$COLLECTION" >/dev/null 2>&1 || { fail_unreachable_service "qdrant"; exit $?; }
+COLLECTION_INFO=$(curl -sf "$QDRANT_URL/collections/$COLLECTION" 2>/dev/null) || { fail_unreachable_service "qdrant"; exit $?; }
+ensure_payload_indexes "$COLLECTION_INFO"
 curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || { fail_unreachable_service "embedder"; exit $?; }
 
 # Get embedding — body built with jq, not string interpolation: a summary

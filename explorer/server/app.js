@@ -15,6 +15,7 @@ import {
 import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { summarizeSessions } from './sessions.js';
 import { createInternalsHandler } from './internals-route.js';
+import { ensurePayloadIndexes, missingPayloadIndexes, PAYLOAD_INDEXES } from '../../scripts/qdrant-collection.js';
 import { accessSync, constants, existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
@@ -107,6 +108,7 @@ export function createExplorerApp() {
     if (!await handleMemory(req, res)) next();
   });
 
+  let indexBootstrap = null;
   app.get('/api/health', async (_req, res) => {
     const files = {};
     for (const [source, path] of Object.entries(LOG_FILES)) {
@@ -119,12 +121,31 @@ export function createExplorerApp() {
     }
 
     let qdrant = false;
+    let payloadIndexes = null;
     try {
-      const r = await fetch(
-        `${process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333'}/collections/${process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer'}`
-      );
+      const qdrantUrl = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
+      const collection = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
+      const r = await fetch(`${qdrantUrl}/collections/${collection}`);
       qdrant = r.ok;
-    } catch {}
+      if (r.ok) {
+        // This is the existence check an upgraded install reaches before any
+        // reindex, so it is where a collection that predates the payload
+        // indexes gets them (scripts/qdrant-collection.js has the numbers).
+        // One build at a time: a poll that lands during the ~1 s build joins
+        // it rather than issuing a second PUT.
+        const missing = missingPayloadIndexes(await r.json());
+        if (missing.length === 0) {
+          payloadIndexes = { present: PAYLOAD_INDEXES.map((ix) => ix.field), created: [], failed: [] };
+        } else {
+          indexBootstrap ??= ensurePayloadIndexes({ qdrantUrl, collection, log: (line) => console.log(line) })
+            .finally(() => { indexBootstrap = null; });
+          const { present, created, failed } = await indexBootstrap;
+          payloadIndexes = { present, created, failed };
+        }
+      }
+    } catch (error) {
+      if (qdrant) console.error('[health] payload index bootstrap failed:', error.message);
+    }
 
     let embed = false;
     try {
@@ -134,7 +155,7 @@ export function createExplorerApp() {
       embed = r.ok;
     } catch {}
 
-    res.json({ status: 'ok', events: events.length, files, qdrant, embed });
+    res.json({ status: 'ok', events: events.length, files, qdrant, payload_indexes: payloadIndexes, embed });
   });
 
   app.get('/api/recall/health', (_req, res) => {

@@ -14,6 +14,7 @@ import {
   FactsContractError,
 } from '../explorer/server/facts-contract.js';
 import { turboPaths, validateTurboUrl, writeJsonAtomic } from './turbo-common.js';
+import { ensurePayloadIndexes } from './qdrant-collection.js';
 
 const paths = turboPaths();
 let runtimeVersion = 'unknown';
@@ -97,6 +98,16 @@ events = readAllEvents();
 index = buildIndex(events);
 byEventId = indexEventsById(events);
 const handleMemory = createMemoryHandler({ getEvents: () => events });
+
+// Turbo issues the filtered semantic searches, so it checks once at boot that
+// the collection carries the payload indexes those filters need (200-420 ms a
+// search without them, 4-16 ms with; scripts/qdrant-collection.js). Off the
+// request path and never fatal: Qdrant down or the collection absent is the
+// semantic leg's problem to report per request, not a reason not to serve.
+if (process.env.CARTOGRAPHER_SEMANTIC !== '0') {
+  ensurePayloadIndexes({ log: (line) => console.log(`[turbo] ${line}`) })
+    .catch((error) => console.log(`[turbo] payload index check skipped: ${error.message}`));
+}
 
 function errorPayload(error) {
   const contractual = error instanceof RecallContractError || error instanceof FactsContractError;

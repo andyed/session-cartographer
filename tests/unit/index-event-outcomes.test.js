@@ -37,7 +37,15 @@ printf '%s %s\n' "$method" "$url" >> "$FAKE_CALLS"
 case "$url" in
   */collections/session-cartographer)
     [ "$FAKE_FAIL_STAGE" = "qdrant_health" ] && exit 22
-    printf '%s\n' '{"result":{"status":"green"}}'
+    if [ -n "$FAKE_PAYLOAD_SCHEMA" ]; then
+      printf '{"result":{"status":"green","payload_schema":%s}}\n' "$FAKE_PAYLOAD_SCHEMA"
+    else
+      printf '%s\n' '{"result":{"status":"green"}}'
+    fi
+    ;;
+  */collections/session-cartographer/index)
+    [ "$FAKE_FAIL_STAGE" = "payload_index" ] && exit 22
+    printf '%s\n' '{"result":{"status":"acknowledged"},"status":"ok"}'
     ;;
   */health)
     [ "$FAKE_FAIL_STAGE" = "embedder_health" ] && exit 22
@@ -81,6 +89,7 @@ esac
     FAKE_FAIL_STAGE: '',
     FAKE_GATE_SCORE: '0.2',
     FAKE_VERIFY_MISMATCH: '0',
+    FAKE_PAYLOAD_SCHEMA: '',
     CODEX_SANDBOX_NETWORK_DISABLED: '0',
     ...overrides,
   });
@@ -323,4 +332,68 @@ test('wrapup skill consumes the receipt and verifies by configured event id', ()
   assert.match(skill, /VERIFIED_EVENT_ID.*EVENT_ID/);
   assert.doesNotMatch(skill, /NOT INDEXED/);
   assert.doesNotMatch(skill, /\| bash "\$ROOT\/scripts\/index-event\.sh"/);
+});
+
+// ── Payload indexes from the hook path ──
+// The semantic leg's project and timestamp filters cost 200-420 ms a search
+// unindexed against 4-16 ms indexed (scripts/qdrant-collection.js). Every
+// event already fetches the collection to prove Qdrant is up; that response
+// says which indexes are missing, so an upgraded install gets them from the
+// first hook event without a reindex, and an indexed one issues no writes.
+
+const BOTH_INDEXED = JSON.stringify({
+  project: { data_type: 'keyword', points: 10 },
+  timestamp: { data_type: 'datetime', points: 10 },
+});
+const INDEX_PUT = 'PUT http://qdrant.test/collections/session-cartographer/index';
+const indexCalls = (h) => fs.readFileSync(h.calls, 'utf8').trim().split('\n').filter((line) => line === INDEX_PUT);
+const event = (id) => ({ event_id: id, timestamp: '2026-10-07T12:00:00Z', type: 'tool_file_edit', project: 'fixture', summary: 'payload index fixture' });
+
+test('an unindexed collection gets both payload indexes from the first hook event', () => {
+  const h = harness();
+  const result = h.run(event('evt-unindexed'));
+
+  assert.equal(result.status, 0);
+  assert.equal(receipt(result).outcome, 'indexed', 'the event itself still lands');
+  assert.equal(indexCalls(h).length, 2, 'one PUT per missing index');
+  const calls = fs.readFileSync(h.calls, 'utf8').trim().split('\n');
+  assert.ok(calls.indexOf(INDEX_PUT) < calls.findIndex((line) => line.includes('points?wait=true')),
+    'indexes are built before the upsert, from the health-check response');
+});
+
+test('an indexed collection issues no index writes', () => {
+  const h = harness();
+  const result = h.run(event('evt-indexed-already'), { FAKE_PAYLOAD_SCHEMA: BOTH_INDEXED });
+
+  assert.equal(result.status, 0);
+  assert.equal(receipt(result).outcome, 'indexed');
+  assert.deepEqual(indexCalls(h), []);
+});
+
+test('only the missing index is created when one is present', () => {
+  const h = harness();
+  h.run(event('evt-half-indexed'), {
+    FAKE_PAYLOAD_SCHEMA: JSON.stringify({ project: { data_type: 'keyword', points: 10 } }),
+  });
+  assert.equal(indexCalls(h).length, 1);
+});
+
+test('a refused index build is recorded, never fails the event, and backs off', () => {
+  const h = harness();
+  const first = h.run(event('evt-refused-1'), { FAKE_FAIL_STAGE: 'payload_index' });
+
+  assert.equal(first.status, 0, 'an unindexed collection is slow; an unindexed event is lost');
+  assert.equal(receipt(first).outcome, 'indexed');
+  const failures = readJsonl(path.join(h.dev, '.carto', 'index-errors.jsonl'));
+  assert.deepEqual(failures.map((f) => [f.stage, f.outcome]), [
+    ['payload_index_project', 'index_build_failed'],
+    ['payload_index_timestamp', 'index_build_failed'],
+  ]);
+  assert.equal(indexCalls(h).length, 2);
+
+  // The cooldown stamp stops every later event from retrying a refused build.
+  const second = h.run(event('evt-refused-2'), { FAKE_FAIL_STAGE: 'payload_index' });
+  assert.equal(second.status, 0);
+  assert.equal(indexCalls(h).length, 2, 'no further PUTs inside the cooldown');
+  assert.equal(readJsonl(path.join(h.dev, '.carto', 'index-errors.jsonl')).length, 2);
 });

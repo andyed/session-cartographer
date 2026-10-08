@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### feat(qdrant): create project and timestamp payload indexes at bootstrap
+
+A 2026-10-07 performance review found the `session-cartographer` collection
+had no payload indexes. The semantic leg filters every query on `project` and
+`timestamp`, and Qdrant scanned payloads for both: 200-420 ms per
+project-filtered search and 100-170 ms per timestamp range on 157k points,
+against 3-6 ms unfiltered. That was the dominant cost in `/api/recall`'s
+semantic stage and why some recalls blew the 4000 ms Turbo budget. A `keyword`
+index on `project` and a `datetime` index on `timestamp` brought the same
+searches to 4-16 ms with identical top-50 results. They were created by hand;
+nothing in the repo made them, so a fresh install or `--reindex` lost them.
+
+`scripts/qdrant-collection.js` now owns collection bootstrap. `embed-events.js`
+creates both indexes with the collection, and the three paths that already
+check the collection exists (`index-event.sh`, the Explorer's `/api/health`,
+Turbo at boot) read `payload_schema` and create whatever is missing, so an
+upgraded install gets the indexes from its first hook event with no reindex.
+`node scripts/qdrant-collection.js ensure-indexes --json` does it by hand;
+`/api/health` reports `payload_indexes`.
+
 ### feat(standup): SILENT and UNCLAIMED — what the event log never saw
 
 On 2026-10-04 a Codex session edited files in psychodeli-webgl-port for an hour

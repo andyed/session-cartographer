@@ -145,6 +145,23 @@ node scripts/embed-events.js --reindex
 
 Run periodically or add to a cron/launchd to keep the index fresh.
 
+`embed-events.js` creates the collection and two payload indexes with it: a
+`keyword` index on `project` and a `datetime` index on `timestamp`. The
+semantic leg filters every query on those two fields, and without the indexes
+Qdrant scans payloads: measured on 157k points (Qdrant 1.12.1, 2026-10-07), a
+project-filtered search cost 200-420 ms and a timestamp range 100-170 ms,
+against 4-16 ms indexed with identical results. A collection that predates
+the indexes gets them without a reindex from the first hook event, the
+Explorer's `/api/health`, or a Turbo start. To check or create them by hand:
+
+```bash
+node scripts/qdrant-collection.js ensure-indexes --json
+```
+
+Re-creating an index that already exists is a no-op (Qdrant answers 200
+`acknowledged`); the command reads `payload_schema` first and only writes what
+is missing.
+
 ### 4. Test it
 
 ```bash

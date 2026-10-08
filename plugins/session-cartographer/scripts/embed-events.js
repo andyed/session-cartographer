@@ -21,13 +21,13 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
+import { ensureCollection as bootstrapCollection, VECTOR_SIZE } from './qdrant-collection.js';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
 const EMBED_MODEL = process.env.CARTOGRAPHER_EMBED_MODEL || 'mxbai-embed-large';
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const COLLECTION = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
-const VECTOR_SIZE = 1024; // mxbai-embed-large-v1
 const BATCH_SIZE = 20;
 const REINDEX = process.argv.includes('--reindex');
 
@@ -99,28 +99,18 @@ async function getEmbeddings(texts) {
   return data.data.map(d => d.embedding);
 }
 
+// Collection creation and the two payload indexes (project keyword, timestamp
+// datetime) live in qdrant-collection.js so every bootstrap path builds the
+// same collection. An existing collection that predates the indexes gets them
+// here too, without a reindex.
 async function ensureCollection() {
-  // Check if collection exists
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}`);
-  if (res.ok && !REINDEX) return;
-
-  if (REINDEX) {
-    // Delete and recreate
-    await fetch(`${QDRANT_URL}/collections/${COLLECTION}`, { method: 'DELETE' });
-  }
-
-  // Create collection
-  const createRes = await fetch(`${QDRANT_URL}/collections/${COLLECTION}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      vectors: { size: VECTOR_SIZE, distance: 'Cosine' },
-    }),
+  await bootstrapCollection({
+    qdrantUrl: QDRANT_URL,
+    collection: COLLECTION,
+    vectorSize: VECTOR_SIZE,
+    recreate: REINDEX,
+    log: (line) => console.log(line),
   });
-  if (!createRes.ok) {
-    throw new Error(`Failed to create collection: ${await createRes.text()}`);
-  }
-  console.log(`Created collection: ${COLLECTION}`);
 }
 
 async function getExistingIds() {

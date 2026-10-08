@@ -57,3 +57,19 @@ permissions are fixed when the task starts. In that fresh task, rerun `doctor`
 and require HTTP success for both Qdrant `/healthz` and the embedder `/health`
 before reporting semantic search ready. Keyword-only recall does not require
 this setup.
+
+## Payload indexes
+
+Once Qdrant is reachable and the collection exists, confirm it carries the two
+payload indexes the semantic leg filters on (`project` keyword, `timestamp`
+datetime). Without them a filtered search costs 200-420 ms on a 157k-point
+collection instead of 4-16 ms, which is enough to blow the Turbo recall
+budget. The check is read-first and creates only what is missing; it is safe
+to run on every diagnosis:
+
+```bash
+node "$ROOT/scripts/qdrant-collection.js" ensure-indexes --json
+```
+
+`created` names what this run built; `failed` means the Qdrant version
+refused an index type (datetime needs Qdrant 1.8+). Report either verbatim.
