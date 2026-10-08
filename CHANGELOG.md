@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.8.3 — 2026-10-07
 
 ### feat(qdrant): create project and timestamp payload indexes at bootstrap
 
