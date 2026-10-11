@@ -27,6 +27,7 @@ for required in \
   "$PLUGIN/hooks/codex-hooks.json" \
   "$PLUGIN/hooks/log-compact-summary.sh" \
   "$PLUGIN/hooks/surface-turbo-on-start.sh" \
+  "$PLUGIN/hooks/warn-missing-jq-on-start.sh" \
   "$PLUGIN/skills/setup/SKILL.md" \
   "$PLUGIN/skills/turbo/SKILL.md" \
   "$PLUGIN/scripts/cartographer-search.sh" \

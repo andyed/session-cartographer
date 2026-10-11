@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### fix(hooks): tell the user when jq is missing
+
+Every hook reads its payload with jq and exits 0 without it, by design: a
+missing dependency must never block a tool call. The cost of that design
+showed on 2026-10-10, installing on a Windows box with no jq. The plugin
+reported installed, the SessionStart hooks found no jq and exited silently,
+the capture hooks errored into the void, and the corpus stayed empty with
+nothing to say why. The only mention of jq anywhere was one clause in
+`docs/SETUP.md`.
+
+`hooks/warn-missing-jq-on-start.sh` now runs on every startup, resume and
+clear (not compact). When `command -v jq` fails it prints one line, as a
+`systemMessage` for the user and as `additionalContext` for the agent, naming
+the three install commands (`winget install jqlang.jq`, `brew install jq`,
+`apt install jq`); with jq present it prints nothing and exits before reading
+stdin. `log-session-milestones.sh`, `log-tool-use.sh` and `log-research.sh`
+gain the same `command -v jq` guard the other hooks already had, so an
+install without jq is quiet rather than noisy on stderr every turn.
+README's Install section opens with the requirement (bash and jq; Git Bash
+supplies bash on Windows) and `docs/SETUP.md` says the same.
+`tests/unit/missing-jq-notice.test.js` runs the hooks under a PATH with no jq
+on it and, where jq is installed, with it present.
+
 ## 0.8.3 — 2026-10-07
 
 ### feat(qdrant): create project and timestamp payload indexes at bootstrap

@@ -38,6 +38,12 @@ from recorded usage. See [auto-mode guidance](docs/AUTO_MODE.md).
 
 ## Install
 
+**Requirements:** bash and jq. Every hook reads its payload with jq, and
+without it the plugin installs cleanly but captures nothing. Install jq with
+`winget install jqlang.jq` (Windows), `brew install jq` (macOS), or
+`apt install jq` (Debian/Ubuntu). On Windows, Git Bash supplies bash. A
+session started without jq prints a notice saying so.
+
 Download and extract `session-cartographer-<version>.tar.gz` from
 [Releases](https://github.com/andyed/session-cartographer/releases), keeping the
 extracted directory in a stable location. One bundle supports both agents.

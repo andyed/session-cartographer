@@ -14,6 +14,10 @@
 
 # Opt-in gate — set CARTOGRAPHER_LOG_TOOL_USE=true to enable
 [ "${CARTOGRAPHER_LOG_TOOL_USE:-false}" = "true" ] || exit 0
+# Without jq there is nothing this hook can read. The SessionStart notice
+# (warn-missing-jq-on-start.sh) has told the user; exit quietly like every
+# other hook, rather than erroring on each tool call.
+command -v jq >/dev/null 2>&1 || exit 0
 
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="$DEV/tool-use-log.jsonl"
