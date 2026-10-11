@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 // The hooks degrade silently without jq by design: a missing dependency must
 // never block a tool call. warn-missing-jq-on-start.sh is the one hook that
@@ -58,7 +59,7 @@ function pathWithoutJq(tmp) {
 
 function runHook(name, { input = '', args = [], env = {} } = {}) {
   return spawnSync(BASH, [path.join(HOOKS, name), ...args], {
-    cwd: ROOT, input, encoding: 'utf8', env: { ...process.env, ...env },
+    cwd: ROOT, input, encoding: 'utf8', env: { ...process.env, ...OFFLINE_INDEX_ENV, ...env },
   });
 }
 
@@ -69,7 +70,7 @@ function withoutJq(t, fn) {
   try {
     const dev = path.join(tmp, 'dev');
     fs.mkdirSync(dev);
-    const env = { ...process.env, [PATH_KEY]: pathWithoutJq(tmp), CARTOGRAPHER_DEV_DIR: dev };
+    const env = { ...process.env, ...OFFLINE_INDEX_ENV, [PATH_KEY]: pathWithoutJq(tmp), CARTOGRAPHER_DEV_DIR: dev };
     const probe = spawnSync(BASH, ['-c', 'command -v jq'], { encoding: 'utf8', env });
     if (probe.status === 0) { t.skip(`could not build a PATH without jq (found ${probe.stdout.trim()})`); return; }
     fn(env, dev);
