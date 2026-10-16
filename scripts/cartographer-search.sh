@@ -180,8 +180,8 @@ case "$OUTPUT_FORMAT" in
 esac
 
 case "$PURPOSE" in
-  remember|focus|feed|eval|audit|manual) ;;
-  *) echo "Error: --purpose must be remember, focus, feed, eval, audit, or manual" >&2; exit 2 ;;
+  remember|focus|feed|eval|audit|manual|mcp) ;;
+  *) echo "Error: --purpose must be remember, focus, feed, eval, audit, manual, or mcp" >&2; exit 2 ;;
 esac
 case "$CALL_ID" in
   *[!A-Za-z0-9_.:-]*|-) echo "Error: malformed --call-id '$CALL_ID'" >&2; exit 2 ;;
