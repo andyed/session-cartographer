@@ -35,9 +35,14 @@
  *   fits in a few hundred lines, in keeping with the repo's zero-dependency
  *   runtime (bm25-search.awk is the exemplar). The plugin ships no node_modules.
  *
- * Every tool answers with compact text for the model (one line per hit,
- * call_id always present) and, from protocol 2025-06-18 on, the same answer as
- * structuredContent.
+ * - **A source of structuredContent.** Every tool answers with compact text
+ *   only: one line per hit, call_id always present. Measured 2026-10-16, Claude
+ *   Code 2.1.277 and Codex 0.160 hand the model JSON.stringify(structuredContent)
+ *   whenever it is present and drop the text, and Hermes 0.21 hands it both.
+ *   A recall that also carried structuredContent cost Claude Code ~1,600
+ *   tokens at 3 hits and ~4,700 at 10, unclipped summaries and all; as text it
+ *   costs ~590 and ~1,650. No client reads the JSON programmatically, so the
+ *   text is the whole answer (docs/MCP.md, "What each client shows the model").
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -70,7 +75,6 @@ const SERVER_VERSION = (() => {
 // Newest first. A client asking for one of these gets it back; anything else
 // gets the newest, which the client may accept or refuse (spec: lifecycle).
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
-const STRUCTURED_SINCE = '2025-06-18';
 
 // Telemetry purpose for every call this server makes. One value for all of
 // them is load-bearing, not tidy: --touch and --get join a mark to its serve
@@ -97,7 +101,6 @@ const SUMMARY_CLIP = 180;
 
 const devDir = () => process.env.CARTOGRAPHER_DEV_DIR || path.join(os.homedir(), 'Documents', 'dev');
 
-let negotiatedVersion = PROTOCOL_VERSIONS[0];
 let clientInfo = null;
 let callSeq = 0;
 
@@ -153,17 +156,6 @@ function childEnv() {
     if (provider) env.CARTOGRAPHER_PROVIDER = provider;
   }
   return env;
-}
-
-function attributionReport() {
-  const env = childEnv();
-  const { attribution_status: status, session_source: source } = sessionAttribution(env);
-  return {
-    attribution_status: status,
-    session_source: source,
-    provider: isResolved(env.CARTOGRAPHER_PROVIDER) ? env.CARTOGRAPHER_PROVIDER : '',
-    client: clientInfo?.name || '',
-  };
 }
 
 /**
@@ -365,13 +357,8 @@ function normalizeHit(row) {
     provider: providerOf(extras),
     event_type: row.event_type || '',
     source: row.source || '',
-    salience: Number.isFinite(Number(row.salience)) ? Number(row.salience) : null,
     summary: flatten(row.summary),
     transcript_path: extras.transcript || null,
-    session_id: extras.session || null,
-    url: extras.url || null,
-    cwd: extras.cwd || null,
-    intent: extras.intent || null,
   };
 }
 
@@ -408,11 +395,24 @@ function sourceMix(hits) {
   return mix;
 }
 
-function hitLine(hit) {
+// Ids that live only in the semantic index (turn-<sid>-<idx>) or in a
+// transcript grep (transcript-…). `get` reads the event logs, so it answers
+// these "missing".
+const UNFETCHABLE = /^(turn|transcript)-/;
+
+/**
+ * One hit as the model sees it, plus its transcript path when `get` cannot
+ * fetch the id. That path is the only way to follow a conversation turn up,
+ * and the text is all any client shows the model, so it goes here. A path
+ * costs ~60 tokens, so the hits `get` can resolve leave theirs to `get`.
+ */
+function hitLines(hit) {
   const date = (hit.timestamp || '?').slice(0, 10);
   const type = hit.event_type ? `${hit.event_type} · ` : '';
-  return `${String(hit.rank).padStart(2)}. ${date} · ${hit.project || '-'} · ${hit.provider || '?'} · ${type}`
-    + `${clip(hit.summary, SUMMARY_CLIP)} · ${hit.event_id}`;
+  const lines = [`${String(hit.rank).padStart(2)}. ${date} · ${hit.project || '-'} · ${hit.provider || '?'} · ${type}`
+    + `${clip(hit.summary, SUMMARY_CLIP)} · ${hit.event_id}`];
+  if (UNFETCHABLE.test(hit.event_id) && hit.transcript_path) lines.push(`    transcript: ${hit.transcript_path}`);
+  return lines;
 }
 
 /**
@@ -436,29 +436,19 @@ async function servedSearch({ query, project, since, before, limit, intent, incl
   return { callId, result, hits, notes, call, semanticStatus };
 }
 
-function backendLine(call) {
-  if (!call) return '';
+/**
+ * Backend, latency and semantic status, from the search-call row the CLI wrote.
+ * Without that row (an unwritable log, as under Codex's sandbox) the semantic
+ * status still comes from Turbo's rows: a missing ladder is the signal worth
+ * keeping (docs/TESTING.md).
+ */
+function backendLine(call, semanticStatus) {
+  if (!call) return semanticStatus ? `semantic ${semanticStatus}` : '';
   const backend = call.selected_backend === 'explorer' ? 'turbo' : (call.selected_backend || 'cli');
   const parts = [`${backend} ${Number(call.elapsed_ms ?? 0)} ms`];
   if (call.semantic_status && call.semantic_status !== 'unknown') parts.push(`semantic ${call.semantic_status}`);
   if (call.fallback_reason) parts.push(`fallback: ${call.fallback_reason}`);
   return parts.join(' · ');
-}
-
-function searchStructured({ callId, hits, call, notes, result, semanticStatus }, extra = {}) {
-  return {
-    call_id: callId,
-    ...extra,
-    result_count: hits.length,
-    backend: call ? (call.selected_backend === 'explorer' ? 'turbo' : call.selected_backend || 'cli') : null,
-    elapsed_ms: call ? Number(call.elapsed_ms ?? 0) : null,
-    semantic_status: (call?.semantic_status && call.semantic_status !== 'unknown' ? call.semantic_status : semanticStatus) || null,
-    fallback_reason: call?.fallback_reason || null,
-    source_mix: sourceMix(hits),
-    results: hits,
-    notes: [...notes, ...stderrLines(result.stderr)],
-    attribution: attributionReport(),
-  };
 }
 
 // ─── Tools ───
@@ -478,32 +468,32 @@ async function toolRecall(args, { signal }) {
   const search = await servedSearch({ query, project, since, before, limit, intent, includeSeen, signal });
   if (search.result.code !== 0) return errorResult(failure('recall', search.result));
 
-  const { callId, hits, call } = search;
-  const attribution = attributionReport();
+  const { callId, hits, call, semanticStatus } = search;
   const filters = [project && `project ${project}`, since && `since ${since}`, before && `before ${before}`,
     intent && `intent ${intent}`].filter(Boolean).join(' · ');
+  const backend = backendLine(call, semanticStatus);
   const lines = [];
   lines.push(`recall "${clip(query, 120)}" — ${hits.length} result${hits.length === 1 ? '' : 's'} · call_id ${callId}`
-    + `${filters ? ` · ${filters}` : ''}${call ? ` · ${backendLine(call)}` : ''}`);
+    + `${filters ? ` · ${filters}` : ''}${backend ? ` · ${backend}` : ''}`);
   if (hits.length) {
     const mix = sourceMix(hits);
     lines.push(`sources: keyword ${mix.keyword} · semantic ${mix.semantic} · both ${mix.both}`);
-    for (const hit of hits) lines.push(hitLine(hit));
+    for (const hit of hits) lines.push(...hitLines(hit));
     lines.push('');
     lines.push(`Summaries are truncated. Next: get(event_ids, call_id="${callId}") for full records and transcript paths;`
-      + ` mark_used(event_ids, call_id="${callId}") for the hits that informed your answer.`);
+      + ` mark_used(event_ids, call_id="${callId}") for the hits that informed your answer.`
+      + (hits.some((hit) => UNFETCHABLE.test(hit.event_id))
+        ? ' turn-… hits are conversation turns get cannot fetch: read the transcript under them.'
+        : ''));
   } else {
     lines.push('No results. Try the words the original work would have used (file, component, error text), drop'
       + ' project/since, or widen the window.'
-      + (attribution.attribution_status === 'session' && !includeSeen
+      + (sessionAttribution(childEnv()).attribution_status === 'session' && !includeSeen
         ? ' Hits already shown earlier in this session are hidden; include_seen=true re-shows them.'
         : ''));
   }
   for (const note of search.notes) lines.push(`(${note.replace(/^\(|\)$/g, '')})`);
-  return okResult(lines.join('\n'), searchStructured(search, {
-    query, project: project || null, since: since || null, before: before || null, intent: intent || null,
-    include_seen: includeSeen,
-  }));
+  return okResult(lines.join('\n'));
 }
 
 /** Split `--get` output into records and misses. Its blocks are "=== id ===" then JSON. */
@@ -548,14 +538,24 @@ async function toolGet(args, { signal }) {
   for (const record of records) {
     const provider = isResolved(record.provider) ? record.provider : providerOf({ transcript: record.transcript_path });
     lines.push('');
-    lines.push(`${record.event_id} · ${record.timestamp || '?'} · ${record.project || '-'} · ${provider || '?'}`
-      + ` · ${record.type || record.milestone || record.event_type || '-'}`);
-    if (record.transcript_path_resolved) {
-      lines.push(`  transcript: ${record.transcript_path_resolved} (archived; read this path, not the recorded one)`);
-    } else if (record.transcript_path) {
-      lines.push(`  transcript: ${record.transcript_path}${record.transcript_path_status === 'missing' ? ' (MISSING on disk)' : ''}`);
+    // Time, project and type are in the record below; the agent is named here
+    // because older rows carry no provider field and only the path tells.
+    lines.push(`${record.event_id} · ${provider || '?'}`);
+    const shown = { ...record };
+    if (record.transcript_path_resolved || record.transcript_path) {
+      if (record.transcript_path_resolved) {
+        lines.push(`  transcript: ${record.transcript_path_resolved} (archived; read this path, not the recorded one)`);
+      } else {
+        lines.push(`  transcript: ${record.transcript_path}${record.transcript_path_status === 'missing' ? ' (MISSING on disk)' : ''}`);
+      }
+      // The line above says which path to read and whether it exists; printing
+      // the recorded path again inside the record costs ~60 tokens and offers
+      // the stale one of the two.
+      delete shown.transcript_path;
+      delete shown.transcript_path_resolved;
+      delete shown.transcript_path_status;
     }
-    lines.push(`  record: ${JSON.stringify(record)}`);
+    lines.push(`  record: ${JSON.stringify(shown)}`);
   }
   if (missing.length) {
     lines.push('');
@@ -563,14 +563,7 @@ async function toolGet(args, { signal }) {
       + ' in the semantic index; for a turn, read the transcript path recall returned with it. Do not answer around the gap.');
   }
   if (!callId) lines.push('(no call_id given: this fetch is recorded without attributing it to a recall)');
-  return okResult(lines.join('\n'), {
-    call_id: callId || null,
-    requested: ids,
-    records,
-    missing,
-    notes: stderrLines(result.stderr),
-    attribution: attributionReport(),
-  });
+  return okResult(lines.join('\n'));
 }
 
 const ATTRIBUTION_MEANING = {
@@ -614,13 +607,7 @@ async function toolMarkUsed(args, { signal }) {
     const status = mark.attribution_status;
     lines.push(`  ${mark.event_id}  ${mark.recorded ? `${status}: ${ATTRIBUTION_MEANING[status] || status}` : 'not found in the ledger'}`);
   }
-  return okResult(lines.join('\n'), {
-    call_id: callId,
-    purpose: PURPOSE,
-    marks,
-    notes: stderrLines(result.stderr),
-    attribution: attributionReport(),
-  });
+  return okResult(lines.join('\n'));
 }
 
 /** Parse the `--thread` timeline: "★ [ts] [type] id", a summary line, then project/parent lines. */
@@ -659,7 +646,7 @@ async function toolThread(args, { signal }) {
   if (result.code !== 0 && events.length === 0) {
     if (/no event with id/.test(result.stdout)) {
       return okResult(`thread — no changelog event ${eventId}. Threads cover changelog events (commits, edits,`
-        + ' commands, research), not transcript turns or milestones.', { event_id: eventId, events: [] });
+        + ' commands, research), not transcript turns or milestones.');
     }
     return errorResult(failure('thread', result));
   }
@@ -668,7 +655,7 @@ async function toolThread(args, { signal }) {
     lines.push(`${event.anchor ? '★' : ' '} ${(event.timestamp || '?').slice(0, 19)} · ${event.project || '-'} · `
       + `${event.type || '-'} · ${clip(event.summary, SUMMARY_CLIP)} · ${event.event_id}`);
   }
-  return okResult(lines.join('\n'), { event_id: eventId, events });
+  return okResult(lines.join('\n'));
 }
 
 /** One graph lens. Its "(no …)" answers mean "nothing to show", not an error. */
@@ -699,14 +686,15 @@ async function toolOrient(args, { signal }) {
     ? familyResult.stdout.split('\n').map((s) => s.trim()).filter(Boolean)
     : [];
   const isFamily = members.length > 1 || (members.length === 1 && members[0] !== project);
+  const backend = backendLine(search.call, search.semanticStatus);
   const lines = [`orient ${project}${isFamily ? ` (family: ${members.join(', ')})` : ''} · call_id ${search.callId}`
-    + `${search.call ? ` · ${backendLine(search.call)}` : ''}`];
+    + `${backend ? ` · ${backend}` : ''}`];
   lines.push('');
   // The skill's orientation query ranks by relevance with recency decay, so
   // high-salience milestones from weeks ago can outrank today's edits. Say so
   // rather than let the list read as a timeline.
   lines.push(`Recent activity, ranked (recency-weighted relevance, not a timeline; ${search.hits.length}):`);
-  if (search.hits.length) for (const hit of search.hits) lines.push(hitLine(hit));
+  if (search.hits.length) for (const hit of search.hits) lines.push(...hitLines(hit));
   else lines.push('  none recorded for this name — check the spelling, or try a family name.');
   if (graph.related.length) {
     lines.push('');
@@ -718,12 +706,7 @@ async function toolOrient(args, { signal }) {
   }
   lines.push('');
   lines.push(`Next: get/mark_used take call_id "${search.callId}"; standup(project="${project}") shows who else is working here now.`);
-  return okResult(lines.join('\n'), searchStructured(search, {
-    project,
-    family: isFamily ? members : [],
-    related: graph.related,
-    maneuvers: graph.maneuvers,
-  }));
+  return okResult(lines.join('\n'));
 }
 
 /**
@@ -743,21 +726,6 @@ async function turboTarget(signal) {
     await run('node', [TURBO_CONTROL, 'ensure'], { signal, timeoutMs: QUICK_TIMEOUT_MS });
   }
   return target;
-}
-
-/** Cap long arrays in structuredContent; the text already shows the head. */
-function capFacts(response) {
-  const copy = JSON.parse(JSON.stringify(response));
-  const truncated = {};
-  for (const [key, max] of [['commits', 100], ['events', 200]]) {
-    const list = copy.facts?.[key];
-    if (Array.isArray(list) && list.length > max) {
-      truncated[key] = list.length;
-      copy.facts[key] = list.slice(0, max);
-    }
-  }
-  if (Object.keys(truncated).length) copy.mcp_truncated = truncated;
-  return copy;
 }
 
 async function toolFacts(args, { signal }) {
@@ -798,9 +766,9 @@ async function toolFacts(args, { signal }) {
     return errorResult('facts returned output that is not JSON.');
   }
   const text = renderFactsText(response, 'turbo')
-    + (verb === 'delta' ? '\nPass facts.cursor back as `cursor` on the next delta call.\n' : '')
+    + (verb === 'delta' ? '\nPass the cursor above back as `cursor` on the next delta call.\n' : '')
     + 'Every count cites sample event_ids; verify any number with get(event_ids).\n';
-  return okResult(text, capFacts(response));
+  return okResult(text);
 }
 
 const WINDOW = /^\d+(\.\d+)?[mhd]$/i;
@@ -821,23 +789,9 @@ async function toolStandup(args, { signal }) {
   // roster. "unknown" is the pipeline's own spelling of absence (sentinels.js).
   if (sessionAttribution(childEnv()).attribution_status === 'no_session') cli.push('--me', 'unknown');
 
-  const [textResult, jsonResult] = await Promise.all([
-    run('node', cli, { signal, timeoutMs: QUICK_TIMEOUT_MS }),
-    commit ? Promise.resolve(null) : run('node', [...cli, '--json'], { signal, timeoutMs: QUICK_TIMEOUT_MS }),
-  ]);
-  if (textResult.code !== 0) return errorResult(failure('standup', textResult));
-  let roster = null;
-  if (jsonResult?.code === 0) {
-    try { roster = JSON.parse(jsonResult.stdout); } catch {}
-  }
-  return okResult(textResult.stdout.trimEnd(), {
-    window,
-    project: project || null,
-    commit: commit || null,
-    standup: roster,
-    text: commit ? textResult.stdout : undefined,
-    attribution: attributionReport(),
-  });
+  const result = await run('node', cli, { signal, timeoutMs: QUICK_TIMEOUT_MS });
+  if (result.code !== 0) return errorResult(failure('standup', result));
+  return okResult(result.stdout.trimEnd());
 }
 
 // ─── Tool definitions: the descriptions are the product ───
@@ -859,13 +813,14 @@ const TOOLS = [
       'approach. Also before debugging something that looks familiar.',
       '',
       'Returns one line per hit (date · project · agent · event type · summary · event_id), the call_id and the',
-      'keyword/semantic source mix; structuredContent adds transcript paths and session ids. Summaries are',
-      'truncated: follow with get(event_ids, call_id) for full records, then mark_used(event_ids, call_id) for the',
-      'hits that informed your answer.',
+      'keyword/semantic source mix; a conversation-turn hit (turn-…) also prints its transcript path, which get',
+      'cannot fetch. Summaries are truncated: follow with get(event_ids, call_id) for full records and transcript',
+      'paths, then mark_used(event_ids, call_id) for the hits that informed your answer.',
       '',
       'Query with the words the original work used (file, component, error text, commit phrasing), not a',
-      'question. Cost: about 0.3-1 s with the warm Turbo service, 10-20 s on the portable fallback; about 70',
-      'tokens per hit. Later calls in the same session hide hits already shown; include_seen=true re-shows them.',
+      'question. Cost: about 0.3-1 s with the warm Turbo service, 10-20 s on the portable fallback; about 600',
+      'tokens for 3 hits and 1,650 for 10. Later calls in the same session hide hits already shown;',
+      'include_seen=true re-shows them.',
     ].join('\n'),
     inputSchema: {
       type: 'object',
@@ -894,13 +849,13 @@ const TOOLS = [
     title: 'Fetch full event records',
     description: [
       'Fetch complete, untruncated records by event_id: the verification step after recall or orient. Each record',
-      'comes back as JSON with transcript_path (plus transcript_path_resolved when Codex archived the session, or',
-      'transcript_path_status "missing" when it is gone), session_id, files_changed and diff_shape where recorded.',
+      'comes back as its full JSON (session_id, files_changed and diff_shape where recorded) under a line naming',
+      'its transcript: the archived path when Codex moved the session, flagged MISSING when it is gone.',
       'Ids that resolve to nothing are listed as missing, not dropped; say so rather than answering around the gap.',
       'Transcript-turn ids (turn-…) live only in the semantic index and come back missing; read the transcript path',
-      'recall returned with them instead. Pass the call_id of the call that served the ids; omit it only for ids',
-      'from thread, facts or standup. Cost about 0.1 s. A fetch records inspection, not use: still call mark_used',
-      'for records you relied on.',
+      'recall printed under them instead. Pass the call_id of the call that served the ids; omit it only for ids',
+      'from thread, facts or standup. Cost about 0.1 s and 600 tokens per commit record. A fetch records',
+      'inspection, not use: still call mark_used for records you relied on.',
     ].join('\n'),
     inputSchema: {
       type: 'object',
@@ -1054,10 +1009,17 @@ const INSTRUCTIONS = [
 
 // ─── Results ───
 
-function okResult(text, structured) {
-  const result = { content: [{ type: 'text', text }] };
-  if (structured && negotiatedVersion >= STRUCTURED_SINCE) result.structuredContent = structured;
-  return result;
+/**
+ * Text only, and no outputSchema on any tool. The spec treats structuredContent
+ * as the full answer and the text as its fallback, and the clients follow it:
+ * Claude Code 2.1.277 and Codex 0.160 give the model the serialized JSON and
+ * drop the text; Hermes 0.21 gives it both. Measured 2026-10-16 on the live
+ * corpus, a 10-hit recall reached Claude Code as 9,864 characters of JSON
+ * (~4,700 tokens); as text it is 3,274 (~1,650). The text here is written for
+ * the model and is all it needs, so it is all that is sent.
+ */
+function okResult(text) {
+  return { content: [{ type: 'text', text }] };
 }
 
 function errorResult(text) {
@@ -1155,13 +1117,12 @@ async function handle(message) {
   switch (method) {
     case 'initialize': {
       const requested = params?.protocolVersion;
-      negotiatedVersion = PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0];
       clientInfo = params?.clientInfo && typeof params.clientInfo === 'object' ? params.clientInfo : null;
       return {
         jsonrpc: '2.0',
         id,
         result: {
-          protocolVersion: negotiatedVersion,
+          protocolVersion: PROTOCOL_VERSIONS.includes(requested) ? requested : PROTOCOL_VERSIONS[0],
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'session-cartographer', title: 'Session Cartographer', version: SERVER_VERSION },
           instructions: INSTRUCTIONS,
@@ -1239,4 +1200,4 @@ if (isMain) {
   });
 }
 
-export { TOOLS, INSTRUCTIONS, PROTOCOL_VERSIONS, parseGetOutput, parseThread, parseExtras, providerFromClient, sourceMix };
+export { TOOLS, INSTRUCTIONS, PROTOCOL_VERSIONS, parseGetOutput, parseThread, parseExtras, providerFromClient, sourceMix, hitLines };
