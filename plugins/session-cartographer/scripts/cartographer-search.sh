@@ -128,7 +128,7 @@ Usage: cartographer-search.sh "<query>" [--project NAME] [--limit N] [--format t
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. No query is needed (a leading "_" placeholder from older callers is accepted and ignored).
        --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. No query is needed ("_" accepted and ignored).
-       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual, mcp). Defaults to CARTOGRAPHER_PURPOSE or manual.
        --call-id ID: search-call identifier printed with results. Carry it to --get/--touch for exact attribution; without it, only unambiguous same-session, same-purpose provenance is credited.
        --turbo / --no-turbo: use or bypass warm Explorer recall for this standard query. A shared user preference otherwise applies across Claude and Codex.
        --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. No query is needed ("_" accepted and ignored).
