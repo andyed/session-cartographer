@@ -18,6 +18,13 @@
   ],
   "skills": "./skills/",
   "hooks": "./hooks/codex-hooks.json",
+  "mcpServers": {
+    "cartographer": {
+      "command": "node",
+      "args": ["./scripts/cartographer-mcp.js"],
+      "cwd": "./"
+    }
+  },
   "interface": {
     "displayName": "Session Cartographer",
     "shortDescription": "Recall agent history, warm in 0.3 s",
