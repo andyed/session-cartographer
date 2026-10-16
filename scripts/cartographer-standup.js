@@ -114,6 +114,11 @@ const commitQuery = opt('commit', null);
 const asJson = flag('json');
 const includeSelf = flag('all');
 const liveMs = parseSince(opt('live', '20m'));
+// --roster answers only "who else is active": no SILENT or UNCLAIMED pass. The
+// SessionStart note runs this on every session start, and the transcript pass
+// below has cost seconds (see "Two passes"). In JSON the skipped sections read
+// null rather than [], so a check that was not run never reads as a clean one.
+const rosterOnly = flag('roster');
 
 const dev = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev');
 const changelog = join(dev, 'changelog.jsonl');
@@ -266,9 +271,9 @@ const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex');
 const claudeHome = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 const sinceMs = now - windowMs;
 const loggedIds = new Set([...sessions.keys()].map((id) => id.toLowerCase()));
-const rollouts = codexRollouts({ codexHome, sinceMs, now });
+const rollouts = rosterOnly ? [] : codexRollouts({ codexHome, sinceMs, now });
 const unloggedRollouts = rollouts.filter((r) => !loggedIds.has(r.id));
-const hookTrust = codexHookTrust({ codexHome });
+const hookTrust = rosterOnly ? { status: 'not_checked' } : codexHookTrust({ codexHome });
 const hookTrustProblem = hookTrust.status === 'untrusted' || hookTrust.status === 'partial';
 
 // The repo whose working tree to check: the --project checkout, else the one this ran in.
@@ -282,7 +287,7 @@ function scopeRepo() {
   if (projectFilter) { const d = join(dev, projectFilter); return existsSync(d) ? top(d) : null; }
   return top(process.cwd());
 }
-const repo = scopeRepo();
+const repo = rosterOnly ? null : scopeRepo();
 const claimed = new Set();
 for (const sess of sessions.values()) for (const key of sess.files.keys()) claimed.add(key);
 const unclaimed = repo ? unclaimedChanges({ repo, sinceMs, claimed, keyOf: contentionKey }) : [];
@@ -333,6 +338,9 @@ if (asJson) {
       edits_unresolved: s.unresolvedEdits,
       commits: s.commits.map((c) => ({ sha: c.sha, subject: c.subject, type: c.type, project: c.project })),
       pushes: s.pushes,
+      // Contention keys (worktree-collapsed absolute paths), most recent first:
+      // what a peer is in the middle of, for a reader deciding where not to edit.
+      recent_files: [...s.files.entries()].sort((a, b) => b[1].t - a[1].t).slice(0, 5).map(([key]) => key),
     })),
     contention: {
       projects: contestedProjects.map(([p, ss]) => ({ project: p, sessions: ss.map((s) => s.id) })),
@@ -343,11 +351,11 @@ if (asJson) {
         sessions: [...new Set(hits.map((h) => h.s.id))],
       })),
     },
-    silent: {
+    silent: rosterOnly ? null : {
       codex_sessions_without_events: unloggedRollouts.map((r) => ({ id: r.id, transcript_written: new Date(r.mtimeMs).toISOString() })),
       codex_hook_trust: hookTrust,
     },
-    unclaimed_changes: unclaimed.map((u) => ({
+    unclaimed_changes: rosterOnly ? null : unclaimed.map((u) => ({
       path: u.rel, repo, changed: new Date(u.mtimeMs).toISOString(),
       named_in_command: u.command ? { id: u.command.id, provider: u.command.provider, at: new Date(u.command.t).toISOString() } : null,
       mentioned_by: (mentions.get(u.rel) || []).slice(0, 3).map((m) => ({ id: m.id, provider: m.provider, mentions: m.count, unlogged: !!m.unlogged })),
