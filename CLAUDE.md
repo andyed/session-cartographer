@@ -49,6 +49,8 @@ scripts/
   day-digest.js                 — One local day across all sessions, by project, commits checked against git (landed/moved/rewritten/missing, git-only); `session-digest.js --day`, --md receipt, --json contract
   digest-parts.js               — Commit parsing, edit-path resolution, repo state shared by both digests
   cartographer-standup.js       — Concurrent-session roster + CONTENTION (files two sessions both edit) + --commit attribution; used by /standup
+  cartographer-collision.js     — PreToolUse edit hook body: warns when a peer session touched the file; also runs the history note below
+  file-history.js               — Opt-in (CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1) first-edit note: diagnoses naming the file, last peer commit, a wrapup; once per (session, file)
   non-projects.js               — isNonProject(): workspace-root and worktree directory names that are not projects (filters project labels, never file paths)
   trust-digest.js               — Derives infrastructure actually touched (orgs, LAN hosts, buckets, CLIs) for auto mode's autoMode.environment; used by /trustmap
   build-profile.js              — Derives .carto/profile.md: standing summary of projects, preferences, decisions, work shape, cadence
