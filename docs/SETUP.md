@@ -54,8 +54,7 @@ Every count comes with a bounded sample of the `event_id`s behind it, so you can
 verify it instead of trusting it:
 
 ```bash
-# the query argument is ignored, so any placeholder works
-bash scripts/cartographer-search.sh x --get <event-id>,<event-id>
+bash scripts/cartographer-search.sh --get <event-id>,<event-id>
 ```
 
 Three things worth knowing before you build on it:
@@ -186,11 +185,13 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_COLLECTION` | `session-cartographer` | Qdrant collection name |
 | `CARTOGRAPHER_LOG_TOOL_USE` | `false` | Set `true` to log Edit/Write/Bash + git commits |
 | `CARTOGRAPHER_REUSE_WEIGHT` | `0.3` | Promote-on-reuse activation weight (`0` disables) |
-| `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to auto-surface project orientation (related threads + maneuvers) on session start — opt-in, dormant by default |
+| `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to inject a start note: the latest /wrapup's open threads, repo state, and live peer sessions in this project. Opt-in, dormant by default |
 | `CARTOGRAPHER_RECALL_ON_PROMPT` | `0` | Set `1` to run recall when a prompt carries a memory cue and inject the top hits — opt-in trial, dormant by default (see [Recall on memory cues](#recall-on-memory-cues-trial)) |
 | `CARTOGRAPHER_RECALL_ON_PROMPT_BUDGET_MS` | `1500` | Hard time budget for that search; past it the search is killed and the hook abstains |
 | `CARTOGRAPHER_RECALL_ON_PROMPT_MIN_SCORE` | `0.010` | Fused-score floor a hit must clear to be injected (passed to the search as `--min-score`) |
 | `CARTOGRAPHER_RECALL_ON_PROMPT_LOG` | `$CARTOGRAPHER_DEV_DIR/recall-on-prompt-trial.jsonl` | One row per evaluated prompt: fired or why not, latency, counts, `call_id` |
+| `CARTOGRAPHER_FILE_HISTORY_ON_EDIT` | `0` | Set `1` to add a file's history to the agent's context before its first edit in a session — opt-in trial, dormant by default (see [File history on first edit](#file-history-on-first-edit-trial)) |
+| `CARTOGRAPHER_FILE_HISTORY_DAYS` | `14` | How far back a commit, peer edit or wrapup counts for that note; diagnoses have no age limit |
 | `CARTOGRAPHER_AUTO_CATCHUP` | `1` | Set `0` to disable the background Codex transcript catch-up on session start |
 | `CARTOGRAPHER_CATCHUP_INTERVAL_SECONDS` | `900` | Minimum interval between successful automatic catch-up runs |
 | `CARTOGRAPHER_CATCHUP_LIMIT_DAYS` | `7` | Recent transcript window scanned by automatic catch-up |
@@ -259,6 +260,26 @@ each prompt fired or abstained, and `call_id` joins a fired row to its served
 and access rows, so "the agent touched what the hook surfaced" is countable.
 Cue rows keep the prompt and the query, which is enough to replay them against
 recall when the floor is retuned.
+
+### File history on first edit (trial)
+
+`CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1`: before the first edit of a file in a
+session, add up to two lines to the agent's context: a /investigate diagnosis
+that names the file (open or confirmed) and the most recent commit to it by
+another session, each with an event id for `/remember --get`. Silent when there
+is nothing; never blocks an edit. Later edits of the same file cost one
+state-file read. `CARTOGRAPHER_FILE_HISTORY_DAYS` (default 14) sets how far
+back a commit, peer edit or wrapup counts; diagnoses have no age limit.
+Evaluations are logged to `$CARTOGRAPHER_DEV_DIR/file-history-on-edit-trial.jsonl`.
+Uses `rg` when installed.
+
+### MCP tools
+
+The plugin also registers an MCP server (`scripts/cartographer-mcp.js`) that
+gives agents `recall`, `get`, `mark_used`, `thread`, `orient`, `facts` and
+`standup` as typed tools. Registration per client, what session identity each
+client passes, and the manual Codex `config.toml` block are in
+[MCP.md](MCP.md).
 
 ### Codex hook trust
 

@@ -41,6 +41,70 @@ scored 0.0112-0.0219, the three with nothing behind them 0.0059-0.0077, and
 judged-irrelevant hits overlapped the relevant band, so the floor removes only
 empty queries. `prompt-cue` is a new `--purpose`.
 
+### fix(search): cartographer-search.sh accepts flags in any position
+
+The script took $1 as the query and silently discarded every token it did not
+recognise. `search.sh --project X --since 10d "query"` searched for the literal
+"--project", dropped the scope, and returned other projects' results with no
+error: 3 logged queries began with "--" and 7 flag-first invocations appeared
+in 30 days of transcripts. A value flag as the last argument spun forever.
+
+Flags now parse anywhere. The non-flag words form the query (several are
+joined with single spaces); `--` ends flag parsing; `--flag=value` works.
+A value flag with no value, an unknown `--option` or `-x`, and a plain search
+with no query exit 2 with a one-line message and write no telemetry.
+`--get`, `--touch` and `--thread` need no query; a leading `_` is still
+accepted and ignored. `-h`/`--help` prints the usage.
+
+### feat(mcp): recall as typed MCP tools
+
+Recall was reachable only through skills that wrap bash: an agent had to
+decide to load a skill, resolve the plugin root and build a command line, and
+Codex recalled in 1 of 59 sessions that saw the startup nudge.
+`scripts/cartographer-mcp.js` (no dependencies) exposes `recall`, `get`,
+`mark_used`, `thread`, `orient`, `facts` and `standup` as MCP tools. The
+plugin registers it for Claude Code (`.mcp.json`) and Codex (its own
+`mcpServers` entry in `.codex-plugin/plugin.json`, because Codex does not
+expand `${CLAUDE_PLUGIN_ROOT}` in a plugin's MCP args), and `build-release.sh`
+ships `.mcp.json`. Recall still goes through `cartographer-search.sh`, which
+remains the single telemetry writer, under the new purpose `mcp`
+(`hit-rate-report.js --purpose mcp`). The server refuses any argument its
+schema does not declare, so a model-supplied `session_id` reaches no row.
+Claude Code gives the server `CLAUDE_CODE_SESSION_ID` (stale after `/clear`
+or `--resume`); Codex 0.160 and Hermes give it no session id, so their rows say
+`attribution_status: "no_session"` and delta serving is off for them. `thread`
+is a full pass over the changelog and takes 10-20 s. See docs/MCP.md.
+
+### feat(hooks): the start note carries open threads, repo state and live peers
+
+With `CARTOGRAPHER_FOCUS_ON_START=1`, the SessionStart note now shows the
+latest `/wrapup`'s `unresolved[]` threads with its event id for `--get`. Older
+wrapups fall back to their `Unfinished:`/`Open:` clause. It also shows the
+checkout's branch, uncommitted and unpushed counts, and sessions active in the
+project in the last 2 h (`cartographer-standup.js --roster`). It replaces the
+related-threads and maneuvers lines, which drew no measurable follow-up and
+cost ~1.8 s per session start because each call rebuilt the co-occurrence
+graph. The note now costs ~130 ms. It shows when there is a new wrapup or a
+live peer and stays silent on repeats. `focus-on-start-trial.jsonl` rows gain
+`v:2`, `session_id`, wrapup, repo and peer fields. Also: `standup --roster`,
+`recent_files` in standup `--json`, and `record-wrapup.sh` keeping every text
+field on one line.
+
+### feat(hooks): the first edit of a file says what the corpus knows about it
+
+On 2026-10-15, 4 of 72 mid-session prompts carrying a memory cue got a recall,
+and many of those prompts were rework on files whose history the agent never
+looked at. With `CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1`, the first edit of a
+file in a session adds up to two lines: a /investigate diagnosis naming it
+(open or confirmed), and the newest commit to it by another session in the
+last 14 days (or the newest peer edit when no commit was logged). A wrapup
+naming the file fills a free line. Each line carries an event id for `--get`.
+Later edits of the same file cost one state-file read. The lookup is one `rg`
+over the changelog and milestones (31-61 ms on a 120 MB corpus), with an
+in-process fallback when rg is missing. Each evaluation is logged to
+`file-history-on-edit-trial.jsonl`; the five searched logs gain no writer.
+Off by default.
+
 ## 0.8.3 — 2026-10-07
 
 ### feat(qdrant): create project and timestamp payload indexes at bootstrap

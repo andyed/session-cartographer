@@ -13,6 +13,10 @@ consumer and producer do not need to match: Claude can recover Codex work and
 Codex can recover Claude work. The user is trying to recover context — a
 decision, a fix, a paper, an approach — not run a database query.
 
+When the `cartographer` MCP tools are in your tool list (`recall`, `get`,
+`mark_used`, `thread`, `orient`), prefer them to the bash commands below: same
+search, same telemetry, typed arguments (docs/MCP.md).
+
 ## Resolve the runtime once
 
 Before running commands, resolve `ROOT` to the Session Cartographer plugin
