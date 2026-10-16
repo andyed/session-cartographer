@@ -54,6 +54,43 @@ detect_provider_from() {
   fi
 }
 
+# cartographer_resolved <value>
+#
+# True when <value> is a real identifier: isResolved() in scripts/sentinels.js,
+# for hooks that cannot import it. Absence is spelled "" or "unknown", trimmed
+# and in any case. "unknown" is truthy and equal to itself, so a hook that keys
+# on it with `[ -n ]` merges every unattributed session into one phantom.
+# Parameter expansion and a case pattern only: no process.
+cartographer_resolved() {
+  local v="$1"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  case "$v" in
+    ''|[Uu][Nn][Kk][Nn][Oo][Ww][Nn]) return 1 ;;
+  esac
+  return 0
+}
+
+# cartographer_session_id
+#
+# Sets CARTO_SESSION_ID and CARTO_SESSION_SOURCE from the chain
+# cartographer-search.sh reads — CARTOGRAPHER_SESSION_ID, CLAUDE_SESSION_ID,
+# CLAUDE_CODE_SESSION_ID, CODEX_SESSION_ID — taking the first resolved value,
+# not the first non-empty one: a ${a:-$b} chain lets "unknown" shadow a real id.
+# A hook that calls a search must name the session the search will name, or its
+# own rows cannot be joined to the served rows; this is that one reading.
+cartographer_session_id() {
+  local var
+  CARTO_SESSION_ID=""; CARTO_SESSION_SOURCE=""
+  for var in CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID; do
+    if cartographer_resolved "${!var:-}"; then
+      CARTO_SESSION_ID="${!var}"; CARTO_SESSION_SOURCE="$var"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # cartographer_script <filename>
 #
 # Resolve a Cartographer script from a self-contained release plugin, a source

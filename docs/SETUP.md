@@ -187,6 +187,10 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_LOG_TOOL_USE` | `false` | Set `true` to log Edit/Write/Bash + git commits |
 | `CARTOGRAPHER_REUSE_WEIGHT` | `0.3` | Promote-on-reuse activation weight (`0` disables) |
 | `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to auto-surface project orientation (related threads + maneuvers) on session start — opt-in, dormant by default |
+| `CARTOGRAPHER_RECALL_ON_PROMPT` | `0` | Set `1` to run recall when a prompt carries a memory cue and inject the top hits — opt-in trial, dormant by default (see [Recall on memory cues](#recall-on-memory-cues-trial)) |
+| `CARTOGRAPHER_RECALL_ON_PROMPT_BUDGET_MS` | `1500` | Hard time budget for that search; past it the search is killed and the hook abstains |
+| `CARTOGRAPHER_RECALL_ON_PROMPT_MIN_SCORE` | `0.010` | Fused-score floor a hit must clear to be injected (passed to the search as `--min-score`) |
+| `CARTOGRAPHER_RECALL_ON_PROMPT_LOG` | `$CARTOGRAPHER_DEV_DIR/recall-on-prompt-trial.jsonl` | One row per evaluated prompt: fired or why not, latency, counts, `call_id` |
 | `CARTOGRAPHER_AUTO_CATCHUP` | `1` | Set `0` to disable the background Codex transcript catch-up on session start |
 | `CARTOGRAPHER_CATCHUP_INTERVAL_SECONDS` | `900` | Minimum interval between successful automatic catch-up runs |
 | `CARTOGRAPHER_CATCHUP_LIMIT_DAYS` | `7` | Recent transcript window scanned by automatic catch-up |
@@ -216,6 +220,45 @@ run a search or show a recurring user-facing banner. Exposure receipts are
 deduplicated per session in `.carto/turbo-awareness.jsonl`; join their session
 ids to search-call and access telemetry when evaluating whether awareness led
 to useful recall.
+
+### Recall on memory cues (trial)
+
+Agents rarely reach for recall mid-session. Over 30 days of Claude transcripts
+(measured 2026-10-15), 72 prompts carried a memory cue — "thought we fixed
+this?", "did we implement that?", "not sure where we tried that (which agent)"
+— and the agent recalled after 4 of them. `surface-recall-on-prompt.sh` is a
+UserPromptSubmit hook for Claude Code and Codex that runs the search at the
+cue instead:
+
+```bash
+export CARTOGRAPHER_RECALL_ON_PROMPT=1   # in the environment that launches the agent
+```
+
+In Claude Code the variable can also go in the `env` block of
+`~/.claude/settings.json`. Hooks run from the installed plugin, so a checkout
+change reaches them only after the plugin is updated.
+
+When a prompt matches one of the named cues in `recallCue()`
+(`scripts/classify-prompt-intent.js`), the hook removes the cue phrase, searches
+the remaining topic in the session's project over the last 30 days, and injects
+up to three single-line hits with their event ids and the `call_id` to carry to
+`--get` and `--touch`. It stays silent on the first prompt of a session
+(SessionStart covers turn one), on slash commands, on text that starts with
+`<`, on compaction continuations, on a cue with no topic left ("didn't we fix
+this?"), when the search outruns its budget, and when no hit clears the score
+floor. Sessions started in the workspace root or the home directory search every
+project rather than scoping to `dev`.
+
+The floor is applied inside the search (`--min-score`), so the served rows and
+the session's delta-serving list hold exactly what the agent was shown, and a
+weak hit the agent never saw is not suppressed from its next `/remember`.
+Searches carry `purpose: "prompt-cue"`; their search-call rows record
+`min_score`, `top_score` (the best score before the floor) and
+`below_min_score`. To judge the trial, read the trial log: `reason` says why
+each prompt fired or abstained, and `call_id` joins a fired row to its served
+and access rows, so "the agent touched what the hook surfaced" is countable.
+Cue rows keep the prompt and the query, which is enough to replay them against
+recall when the floor is retuned.
 
 ### Codex hook trust
 

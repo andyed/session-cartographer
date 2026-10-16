@@ -111,6 +111,8 @@ describe('shared hook configuration', () => {
     assert.match(JSON.stringify(config.hooks.SessionStart), /start-transcript-catch-up\.sh/);
     assert.match(JSON.stringify(config.hooks.SessionStart), /surface-turbo-on-start\.sh/);
     assert.match(JSON.stringify(config.hooks.PostCompact), /log-compact-summary\.sh/);
+    // Opt-in, gated inside the script; Codex knows the event (CODEX_EVENTS below).
+    assert.match(JSON.stringify(config.hooks.UserPromptSubmit), /surface-recall-on-prompt\.sh/);
     assert.doesNotMatch(JSON.stringify(config), /"async"/);
   });
 
