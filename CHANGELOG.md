@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased
+
+### feat(hooks): opt-in recall on memory cues (UserPromptSubmit)
+
+Agents do not call recall mid-session. Measured 2026-10-15 over 30 days: 287
+of 1,350 Claude sessions recalled at all, 224 of them on the first turn where
+the SessionStart nudge sits; of 72 mid-session prompts carrying a memory cue,
+the agent recalled after 4; Codex recalled in 1 of 59 sessions that saw the
+nudge. Recall was already fast (p90 377 ms after 0.8.3), so the gap was the
+call, not the cost.
+
+`hooks/surface-recall-on-prompt.sh`, registered for Claude Code and Codex and
+dormant unless `CARTOGRAPHER_RECALL_ON_PROMPT=1`, runs the search where the
+cue happens. Cue detection is `recallCue()` in
+`scripts/classify-prompt-intent.js`: 19 named, rule-based patterns ("thought
+we fixed", "did we ship", "last time", "which agent"), with weak cues vetoed by
+in-session markers ("did we just", "above") and nothing past 1,200 characters,
+so a pasted brief that quotes cue phrases does not fire. Over 6,867
+mid-session prompts in the same 30 days it fired on 22 (0.3%), nearly all
+genuine on review. The first prompt of a session, slash commands, `<`-prefixed
+tooling text, compaction continuations and cues with no topic left are skipped.
+On a cue the hook searches the session's project for 30 days under a hard
+1.5 s budget, killing the search's process group past it, and injects at most
+three single-line hits with the `call_id` for `--get`/`--touch`, in about 600
+characters. Every evaluated prompt writes one row to
+`recall-on-prompt-trial.jsonl` saying whether it fired and why not.
+
+### feat(search): `score` on jsonl rows, and `--min-score`
+
+Both backends now print the fused score they ranked by on `--format jsonl`
+rows. `--min-score X` drops results under it before anything is shown, served
+or added to the delta-serving list, and the call row records `min_score`,
+`top_score` (the best score before the floor) and `below_min_score`. A caller
+that filtered afterwards would leave served rows for results nobody saw and
+put those ids on the session's delta-serving list, hiding them from the next
+`/remember`. The prompt-cue hook uses a floor of 0.010, chosen from 19 real cue
+prompts replayed with scores re-based to each prompt's time: relevant top hits
+scored 0.0112-0.0219, the three with nothing behind them 0.0059-0.0077, and
+judged-irrelevant hits overlapped the relevant band, so the floor removes only
+empty queries. `prompt-cue` is a new `--purpose`.
+
 ## 0.8.3 — 2026-10-07
 
 ### feat(qdrant): create project and timestamp payload indexes at bootstrap

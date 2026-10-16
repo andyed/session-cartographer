@@ -76,7 +76,15 @@ append_portable_call_log() {
   local result_count="$5"
   local fallback_reason="$6"
   local fallback_detail="$7"
-  local log_dir
+  local log_dir floor_top="" floor_below=0
+
+  # Written by the fusion awk; absent when fusion never ran. "-" is its
+  # spelling of "no candidates": a tab is IFS whitespace, so a leading empty
+  # field would be swallowed and the count read as the score.
+  if [ -s "$TMPDIR/floor.tsv" ]; then
+    IFS=$'\t' read -r floor_top floor_below < "$TMPDIR/floor.tsv" || true
+    [ "$floor_top" != "-" ] || floor_top=""
+  fi
 
   [ -n "$SEARCH_CALL_LOG" ] || return 0
   case "$SEARCH_CALL_LOG" in
@@ -93,7 +101,8 @@ append_portable_call_log() {
     -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
     -v result_count="$result_count" -v elapsed_ms="$elapsed_ms" \
     -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" \
-    -v fallback_detail="$fallback_detail" '
+    -v fallback_detail="$fallback_detail" \
+    -v min_score="$MIN_SCORE" -v floor_top="$floor_top" -v floor_below="${floor_below:-0}" '
       function esc(value) {
         gsub(/\\/, "\\\\", value)
         gsub(/"/, "\\\"", value)
@@ -106,12 +115,16 @@ append_portable_call_log() {
       BEGIN {
         fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
         detail = fallback_detail == "" ? "null" : quoted(fallback_detail)
-        printf "{\"timestamp\":%s,\"request_started_at\":%s,\"results_served_at\":%s,\"request_started_ms\":%.0f,\"results_served_ms\":%.0f,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"attribution_status\":%s,\"session_source\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
+        # min_score/top_score/below_min_score match turbo-search-client.js.
+        floor = min_score == "" ? "null" : sprintf("%s", min_score + 0)
+        top = floor_top == "" ? "null" : sprintf("%.6f", floor_top + 0)
+        printf "{\"timestamp\":%s,\"request_started_at\":%s,\"results_served_at\":%s,\"request_started_ms\":%.0f,\"results_served_ms\":%.0f,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"attribution_status\":%s,\"session_source\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s,\"min_score\":%s,\"top_score\":%s,\"below_min_score\":%d}\n", \
           quoted(timestamp), quoted(request_started_at), quoted(timestamp), request_started_ms + 0, results_served_ms + 0, \
           quoted(call_id), quoted(requested_backend), quoted(purpose), \
           quoted(session_id), quoted(provider), quoted(attribution_status), quoted(session_source), \
           quoted(query), quoted(project), quoted(since), \
-          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail
+          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail, \
+          floor, top, floor_below + 0
       }
     ' >> "$SEARCH_CALL_LOG"; } 2>/dev/null; then
     echo "cartographer-search: warning: cannot write search-call telemetry at $SEARCH_CALL_LOG; continuing" >&2
@@ -121,14 +134,15 @@ append_portable_call_log() {
 
 print_usage() {
   cat <<'USAGE'
-Usage: cartographer-search.sh "<query>" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
+Usage: cartographer-search.sh "<query>" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--min-score X] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
        Flags and the query may come in any order. The first words that are not flags form the query (several unquoted words are joined with single spaces). "--" ends flag parsing, so a query that starts with "--" is: cartographer-search.sh --project NAME -- "--force flag". "--flag=value" works for every flag that takes a value.
        WHEN: today | yesterday | "this morning" | "this afternoon" | "this evening" | "this week" | "last week" | "this month" | "last month" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. No query is needed (a leading "_" placeholder from older callers is accepted and ignored).
        --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. No query is needed ("_" accepted and ignored).
-       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual, mcp). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual, mcp, prompt-cue). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --min-score X: drop results whose fused score (the "score" field in jsonl output) is below X, before anything is shown, served, or added to the delta-serving list. For callers that act only on a confident hit, such as the prompt-cue hook.
        --call-id ID: search-call identifier printed with results. Carry it to --get/--touch for exact attribution; without it, only unambiguous same-session, same-purpose provenance is credited.
        --turbo / --no-turbo: use or bypass warm Explorer recall for this standard query. A shared user preference otherwise applies across Claude and Codex.
        --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. No query is needed ("_" accepted and ignored).
@@ -200,6 +214,7 @@ THREAD_ID=""
 GET_IDS=""
 TOUCH_IDS=""
 CALL_ID=""
+MIN_SCORE=""
 PURPOSE="${CARTOGRAPHER_PURPOSE:-manual}"
 TURBO_FLAG=""
 # Transcript fallback is expensive (turn-grouping awk runs per-query on raw
@@ -240,6 +255,7 @@ while [ $# -gt 0 ]; do
     --get)            need_value "$@"; GET_IDS="$2"; shift 2 ;;
     --touch)          need_value "$@"; TOUCH_IDS="$2"; shift 2 ;;
     --call-id)        need_value "$@"; CALL_ID="$2"; shift 2 ;;
+    --min-score)      need_value "$@"; MIN_SCORE="$2"; shift 2 ;;
     --purpose)        need_value "$@"; PURPOSE="$2"; shift 2 ;;
     --turbo)          TURBO_FLAG=1; shift ;;
     --no-turbo)       TURBO_FLAG=0; shift ;;
@@ -265,11 +281,15 @@ case "$OUTPUT_FORMAT" in
 esac
 
 case "$PURPOSE" in
-  remember|focus|feed|eval|audit|manual) ;;
-  *) echo "Error: --purpose must be remember, focus, feed, eval, audit, or manual" >&2; exit 2 ;;
+  remember|focus|feed|eval|audit|manual|prompt-cue) ;;
+  *) echo "Error: --purpose must be remember, focus, feed, eval, audit, manual, or prompt-cue" >&2; exit 2 ;;
 esac
 case "$CALL_ID" in
   *[!A-Za-z0-9_.:-]*|-) echo "Error: malformed --call-id '$CALL_ID'" >&2; exit 2 ;;
+esac
+case "$MIN_SCORE" in
+  '') ;;
+  *[!0-9.]*|*.*.*|.) echo "Error: --min-score must be a non-negative decimal, got '$MIN_SCORE'" >&2; exit 2 ;;
 esac
 
 # CLAUDE_CODE_SESSION_ID is the variable Claude Code actually exports to tool
@@ -1138,7 +1158,7 @@ rank_fuse_and_display() {
       -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
       -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
       -v session_attribution="$SESSION_ATTRIBUTION" -v session_source="$SESSION_SOURCE" \
-      -v output_format="$OUTPUT_FORMAT" '
+      -v output_format="$OUTPUT_FORMAT" -v min_score="${MIN_SCORE:-0}" -v floor_out="$TMPDIR/floor.tsv" '
   # Stable O(n log n) merge sort over order[] using score_map[]. The old
   # insertion sort was acceptable for tiny corpora, but common project terms
   # can generate tens of thousands of keyword candidates.
@@ -1517,16 +1537,28 @@ rank_fuse_and_display() {
 
     # ─── Display top results ───
     shown = 0
+    below_floor = 0
     for (i = 1; i <= n && shown < limit; i++) {
       k = order[i]
+      # --min-score: order[] is sorted by score, so the first result under the
+      # floor ends the list. Count what the limit would have admitted, so the
+      # call log can say how many slots the floor emptied.
+      if (min_score + 0 > 0 && rrf_score[k] + 0 < min_score + 0) {
+        below_floor = n - i + 1
+        if (below_floor > limit - shown) below_floor = limit - shown
+        break
+      }
       # Reuse marker: events with recorded accesses show a visible (used xN)
       # tag — the glass-box cue for why a result may rank above fresher ones.
       reuse_tag = (acc_n[k] + 0 > 0) ? sprintf(" (used x%d)", acc_n[k]) : ""
+      # score is the fused value the ranking used (RRF x salience x activation),
+      # the same quantity the warm path reports. --min-score and the prompt-cue
+      # hook both read it, so the two paths must emit it on one scale.
       if (output_format == "jsonl") {
-        printf "{\"call_id\":\"%s\",\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"rank\":%d,\"extras\":\"%s\"}\n", \
+        printf "{\"call_id\":\"%s\",\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"score\":%.6f,\"rank\":%d,\"extras\":\"%s\"}\n", \
           json_escape(call_id), json_escape(timestamp[k]), json_escape(sources[k]), json_escape(k), \
           json_escape(summaries[k]), json_escape(project[k]), json_escape(etype_map[k]), \
-          salience_map[k] + 0, shown + 1, json_escape(extra[k])
+          salience_map[k] + 0, rrf_score[k] + 0, shown + 1, json_escape(extra[k])
       } else {
         printf "[%s] [%s] %s%s\n", timestamp[k], sources[k], k, reuse_tag
 
@@ -1578,6 +1610,16 @@ rank_fuse_and_display() {
         printf "{\"timestamp\":\"%s\",\"call_id\":\"%s\",\"purpose\":\"%s\",\"session_id\":\"%s\",\"provider\":\"%s\",\"attribution_status\":\"%s\",\"session_source\":\"%s\",\"query\":\"%s\",\"event_id\":\"%s\",\"rank\":%d,\"source\":\"%s\",\"project\":\"%s\",\"backend\":\"cli\"}\n", \
           serve_ts, call_id, purpose, esc_sid, esc_prov, session_attribution, session_source, esc_q, k, i, esc_src, esc_proj >> served_log
       }
+    }
+
+    # The best score before the floor, for the call log: a caller that
+    # abstains never sees it, and it is the number a floor is retuned against.
+    if (floor_out != "") {
+      if (n > 0) printf "%.6f\t%d\n", rrf_score[order[1]] + 0, below_floor > floor_out
+      else printf "-\t0\n" > floor_out
+    }
+    if (output_format == "text" && below_floor > 0) {
+      printf "(min-score: %d result%s under %s dropped)\n", below_floor, (below_floor == 1 ? "" : "s"), min_score
     }
 
     # Surface a hint when delta-serving suppressed material so the user
@@ -1856,6 +1898,7 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --format "$OUTPUT_FORMAT" \
       --purpose "$PURPOSE" \
       --call-id "$CALL_ID" \
+      --min-score "$MIN_SCORE" \
       --request-started-ms "$REQUEST_STARTED_MS" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
