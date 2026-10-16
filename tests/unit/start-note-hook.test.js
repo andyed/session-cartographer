@@ -31,6 +31,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+import { withoutTrialGates } from './helpers/trial-gates.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'surface-focus-on-start.sh');
@@ -136,7 +137,7 @@ function fixture() {
 function run(f, cwd, { sid = SELF, source = 'startup', gate = '1', env = {} } = {}) {
   const payload = { hook_event_name: 'SessionStart', source, session_id: sid, cwd,
     transcript_path: `/home/t/.claude/projects/x/${sid}.jsonl` };
-  const childEnv = { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: f.dev,
+  const childEnv = { ...withoutTrialGates(process.env), ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: f.dev,
     CARTOGRAPHER_FOCUS_ON_START: gate, CARTOGRAPHER_SEMANTIC: '0', ...env };
   for (const k of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
     'CARTOGRAPHER_SESSION_ID', 'CARTOGRAPHER_ROOT', 'CARTOGRAPHER_MILESTONES', 'CARTOGRAPHER_PROVIDER']) {

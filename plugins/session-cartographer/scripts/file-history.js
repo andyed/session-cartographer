@@ -419,6 +419,11 @@ function excerpt(s, at, n) {
   return `…${clip(text.slice(Math.max(0, at - 40)).replace(/^\S*\s/, ''), n - 1)}`;
 }
 
+// An event id worth printing. Rows written before ids were stamped carry none,
+// and a line reading "(undefined)" sends the agent to `--get undefined`.
+const idOf = (e) => (isResolved(e?.event_id) ? e.event_id : null);
+const paren = (id) => (id ? ` (${id})` : '');
+
 /**
  * At most `max` lines across all targets: diagnoses first, then the commit
  * (or the edit standing in for one), then a wrapup if room remains.
@@ -436,33 +441,38 @@ export function noteLines(history, ids, now, { max = 2, skipShas = [] } = {}) {
     const items = [];
     const [inv, ...more] = h.investigations;
     if (inv) {
-      const extra = more.length ? ` (+${more.length} more: ${more.slice(0, 2).map((m) => m.event_id).join(', ')}${more.length > 2 ? ', …' : ''})` : '';
-      items.push({ id: inv.event_id, text: `${inv.label} diagnosis ${fmtAgo(now - inv.t)} (${inv.event_id}): ${clip(inv.symptom, 120)}${extra}` });
+      const moreIds = more.map(idOf).filter(Boolean);
+      const listed = moreIds.length ? `: ${moreIds.slice(0, 2).join(', ')}${moreIds.length > 2 ? ', …' : ''}` : '';
+      const extra = more.length ? ` (+${more.length} more${listed})` : '';
+      items.push({ id: idOf(inv), text: `${inv.label} diagnosis ${fmtAgo(now - inv.t)}${paren(idOf(inv))}: ${clip(inv.symptom, 120)}${extra}` });
     }
     const commit = h.commit && !skipShas.some((s) => s && h.commit.sha.startsWith(s.slice(0, 7))) ? h.commit : null;
     if (commit) {
       // The event id fetches the session, provider and transcript; the line
       // only has to say what changed and when.
-      items.push({ id: commit.event_id, text: `last commit by another session ${commit.sha.slice(0, 8)} ${fmtAgo(now - commit.t)} ` +
-        `(${commit.event_id}): "${clip(commit.subject, 90)}"` });
+      items.push({ id: idOf(commit), text: `last commit by another session ${commit.sha.slice(0, 8)} ${fmtAgo(now - commit.t)}` +
+        `${paren(idOf(commit))}: "${clip(commit.subject, 90)}"` });
     } else if (h.edit && !h.commit) {
-      items.push({ id: h.edit.event_id, text: `edited ${fmtAgo(now - h.edit.t)} by another session with no logged commit ` +
-        `(${h.edit.provider} ${h.edit.session.slice(0, 8)}, ${h.edit.event_id})` });
+      const eid = idOf(h.edit);
+      items.push({ id: eid, text: `edited ${fmtAgo(now - h.edit.t)} by another session with no logged commit ` +
+        `(${h.edit.provider} ${h.edit.session.slice(0, 8)}${eid ? `, ${eid}` : ''})` });
     }
     if (h.wrapup) {
-      items.push({ id: h.wrapup.event_id, text: `wrapup ${fmtAgo(now - h.wrapup.t)} (${h.wrapup.event_id}), ${h.wrapup.label}: ${excerpt(h.wrapup.text, h.wrapup.at, 120)}` });
+      items.push({ id: idOf(h.wrapup), text: `wrapup ${fmtAgo(now - h.wrapup.t)}${paren(idOf(h.wrapup))}, ${h.wrapup.label}: ${excerpt(h.wrapup.text, h.wrapup.at, 120)}` });
     }
     for (const it of items) {
       if (lines.length >= max) break;
       // The path once per file; its second line needs only the name.
       lines.push(`[carto history] ${named ? basename(name) : name}: ${it.text}`);
       named = true;
-      cited.push(it.id);
+      if (it.id) cited.push(it.id);
+      // Counted for the trial log's `fired`, so a line with no id still counts.
       shown.get(id.key).push(it.id);
     }
     if (lines.length >= max) break;
   }
-  if (lines.length) lines[lines.length - 1] += ' · /remember --get <id> for any record.';
+  // Point at --get only when a line gave an id to fetch.
+  if (cited.length) lines[lines.length - 1] += ' · /remember --get <id> for any record.';
   return { lines, cited, shown };
 }
 

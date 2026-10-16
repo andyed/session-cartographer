@@ -138,6 +138,18 @@ in-process fallback when rg is missing. Each evaluation is logged to
 `file-history-on-edit-trial.jsonl`; the five searched logs gain no writer.
 Off by default.
 
+### fix(hooks): first-edit history never cites a missing event id
+
+A record written before ids were stamped has no `event_id`, and the note
+printed it as "(claude peer-111, undefined)" with a `--get` pointer to match.
+The note now cites an id only when the record has one, and offers `--get` only
+when some line gave an id to fetch. Hook tests also stop inheriting the trial
+gates from the developer's shell: with `CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1` in
+settings.json, `edit-collision-hook.test.js` failed because the collision hook
+added a history line the test never set up. `withoutTrialGates()` clears them,
+and `trial-gate-isolation.test.js` fails any test file that runs a gated hook
+without it.
+
 ## 0.8.3 — 2026-10-07
 
 ### feat(qdrant): create project and timestamp payload indexes at bootstrap

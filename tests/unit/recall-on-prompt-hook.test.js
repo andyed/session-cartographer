@@ -24,6 +24,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+import { withoutTrialGates } from './helpers/trial-gates.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'surface-recall-on-prompt.sh');
@@ -78,7 +79,7 @@ function makeCorpus() {
 }
 
 function hookEnv(corpus, overrides = {}) {
-  const base = { ...process.env };
+  const base = withoutTrialGates(process.env);
   for (const key of IDENTITY_VARS) delete base[key];
   return {
     ...base,

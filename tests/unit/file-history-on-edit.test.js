@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+import { withoutTrialGates } from './helpers/trial-gates.js';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const HOOK = path.join(ROOT, 'plugins/session-cartographer/hooks/check-edit-collision.sh');
@@ -74,8 +75,8 @@ function standardLogs(dev, repo) {
 }
 
 function baseEnv(extra = {}) {
-  const env = { ...process.env, ...OFFLINE_INDEX_ENV };
-  for (const k of ['CARTOGRAPHER_FILE_HISTORY_ON_EDIT', 'CARTOGRAPHER_FILE_HISTORY_DAYS', 'CARTOGRAPHER_COLLISION_CHECK',
+  const env = { ...withoutTrialGates(process.env), ...OFFLINE_INDEX_ENV };
+  for (const k of ['CARTOGRAPHER_FILE_HISTORY_DAYS', 'CARTOGRAPHER_COLLISION_CHECK',
     'CARTOGRAPHER_COLLISION_WINDOW', 'CARTOGRAPHER_PROVIDER', 'CARTOGRAPHER_RG']) delete env[k];
   return { ...env, ...extra };
 }
@@ -230,6 +231,32 @@ test('records from a worktree, a subdirectory cwd, or another repo are matched b
   ]);
   const edited = context(runHook(dev, payload(app)));
   assert.match(edited, /edited 12h ago by another session with no logged commit \(claude othr-222, evt-wt-edit\)/);
+});
+
+test('a record with no event_id is cited without one, and --get is offered only for an id', () => {
+  // Rows written before ids were stamped have none. The note once printed
+  // "(claude peer-111, undefined)" and pointed the agent at --get for it.
+  const { dev, repo, app } = workspace();
+  writeLogs(dev, [
+    { timestamp: ago(0.5), type: 'tool_file_edit', session_id: OTHER, provider: 'claude', project: 'widget',
+      cwd: repo, summary: `Modified: ${app}` },
+  ]);
+  const r = runHook(dev, payload(app));
+  const bare = context(r);
+  assert.match(bare, /edited 12h ago by another session with no logged commit \(claude othr-222\)/);
+  assert.doesNotMatch(bare, /undefined|null/);
+  assert.doesNotMatch(bare, /--get/, 'nothing to fetch, so no --get pointer');
+  assert.equal(trial(dev).at(-1).fired, true, 'a line without an id still counts as fired');
+
+  writeLogs(dev, [
+    commit(undefined, PEER, 'abc1234def5678', 'fix(morph): re-seat the channel', 2, 'src/app.js', { cwd: repo }),
+    investigation('evt-inv-has-id', 3),
+  ]);
+  const mixed = context(runHook(dev, payload(app)));
+  assert.match(mixed, /diagnosis 3d ago \(evt-inv-has-id\)/);
+  assert.match(mixed, /last commit by another session abc1234d 2d ago: "fix\(morph\)/);
+  assert.doesNotMatch(mixed, /undefined|null/);
+  assert.match(mixed, /--get <id> for any record/, 'the diagnosis has an id to fetch');
 });
 
 test('a summary without a files list counts only a path, or a basename the repository holds once', () => {
