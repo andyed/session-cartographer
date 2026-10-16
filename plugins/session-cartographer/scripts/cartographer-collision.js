@@ -27,9 +27,15 @@
  * Fail open. Any error, missing log, or unparseable input exits 0 with no
  * output, so the edit proceeds exactly as it would without the hook.
  *
+ * The same process also carries the opt-in first-edit history note
+ * (file-history.js), so enabling it adds no process to any edit and a state
+ * read to every edit after a file's first. Both notes leave in one JSON object;
+ * a hook may print only one.
+ *
  * Env:
- *   CARTOGRAPHER_COLLISION_CHECK=0        disable
+ *   CARTOGRAPHER_COLLISION_CHECK=0        disable the collision note
  *   CARTOGRAPHER_COLLISION_WINDOW=45m     how far back a peer touch counts (m/h)
+ *   CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1   enable the first-edit history note
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, realpathSync } from 'fs';
@@ -137,8 +143,10 @@ function freshOnly(hits, selfId) {
   return fresh;
 }
 
-function main() {
-  if (process.env.CARTOGRAPHER_COLLISION_CHECK === '0') return;
+async function main() {
+  const collisionOn = process.env.CARTOGRAPHER_COLLISION_CHECK !== '0';
+  const historyOn = process.env.CARTOGRAPHER_FILE_HISTORY_ON_EDIT === '1';
+  if (!collisionOn && !historyOn) return;
   let input;
   try { input = JSON.parse(readFileSync(0, 'utf-8')); } catch { return; }
   const selfId = input?.session_id;
@@ -148,34 +156,55 @@ function main() {
 
   const dev = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev');
   const now = Date.now();
-  const hits = freshOnly(findCollisions({
-    changelog: join(dev, 'changelog.jsonl'), targets, selfId, now,
-    windowMs: parseWindow(process.env.CARTOGRAPHER_COLLISION_WINDOW),
-  }), selfId);
-  if (!hits.length) return;
+  const notes = [];
+  let hits = [];
+  if (collisionOn) {
+    try {
+      hits = freshOnly(findCollisions({
+        changelog: join(dev, 'changelog.jsonl'), targets, selfId, now,
+        windowMs: parseWindow(process.env.CARTOGRAPHER_COLLISION_WINDOW),
+      }), selfId);
+    } catch { hits = []; }
+  }
+  if (hits.length) {
+    // Record what was surfaced so the check can later be judged on whether it
+    // preceded a real conflict, the same way /remember is judged on use.
+    try {
+      const log = join(dev, '.carto', 'collision-warnings.jsonl');
+      for (const h of hits) {
+        appendFileSync(log, JSON.stringify({
+          timestamp: new Date(now).toISOString(), self: selfId, peer: h.session, file: h.key,
+          kind: h.kind, split: isSplit(h), age_ms: now - h.t,
+        }) + '\n');
+      }
+    } catch { /* telemetry never blocks the note */ }
 
-  // Record what was surfaced so the check can later be judged on whether it
-  // preceded a real conflict, the same way /remember is judged on use.
-  try {
-    const log = join(dev, '.carto', 'collision-warnings.jsonl');
-    for (const h of hits) {
-      appendFileSync(log, JSON.stringify({
-        timestamp: new Date(now).toISOString(), self: selfId, peer: h.session, file: h.key,
-        kind: h.kind, split: isSplit(h), age_ms: now - h.t,
-      }) + '\n');
-    }
-  } catch { /* telemetry never blocks the note */ }
+    const lines = hits.slice(0, 3).map((h) => `- ${note(h, now)}`);
+    if (hits.length > 3) lines.push(`- … ${hits.length - 3} more; run /standup for the full view.`);
+    notes.push(`[carto collision] Another session touched a file this edit changes:\n${lines.join('\n')}`);
+  }
 
-  const lines = hits.slice(0, 3).map((h) => `- ${note(h, now)}`);
-  if (hits.length > 3) lines.push(`- … ${hits.length - 3} more; run /standup for the full view.`);
+  if (historyOn) {
+    // Loaded only when enabled, so the default path parses nothing extra.
+    try {
+      const { fileHistoryNote } = await import('./file-history.js');
+      const history = fileHistoryNote({
+        input, targets, selfId, dev, now,
+        skipShas: hits.filter((h) => h.kind === 'commit' && h.commit).map((h) => h.commit),
+      });
+      if (history) notes.push(history);
+    } catch { /* fail open: the edit proceeds */ }
+  }
+
+  if (!notes.length) return;
   process.stdout.write(JSON.stringify({
     hookSpecificOutput: {
       hookEventName: 'PreToolUse',
-      additionalContext: `[carto collision] Another session touched a file this edit changes:\n${lines.join('\n')}`,
+      additionalContext: notes.join('\n'),
     },
   }));
 }
 
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
-  try { main(); } catch { /* fail open: the edit proceeds */ }
+  main().catch(() => { /* fail open: the edit proceeds */ });
 }
