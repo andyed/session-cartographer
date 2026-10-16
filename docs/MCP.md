@@ -20,19 +20,20 @@ its arguments cannot be put in the wrong order.
 
 | Tool | What it answers | Runs | Cost | Writes |
 |---|---|---|---|---|
-| `recall(query, project?, since?, before?, limit?, intent?, include_seen?)` | What earlier sessions did about this | `cartographer-search.sh --format jsonl` | 0.3–1 s on Turbo, 10–20 s portable | served + search-call rows |
-| `get(event_ids, call_id?)` | The full records behind ids, with transcript paths | `cartographer-search.sh --get` | ~0.1 s | `result_fetched` access rows |
+| `recall(query, project?, since?, before?, limit?, intent?, include_seen?)` | What earlier sessions did about this | `cartographer-search.sh --format jsonl` | 0.3–1 s on Turbo, 10–20 s portable; ~600 tokens at 3 hits, ~1,650 at 10 | served + search-call rows |
+| `get(event_ids, call_id?)` | The full records behind ids, with transcript paths | `cartographer-search.sh --get` | ~0.1 s; ~600 tokens per commit record | `result_fetched` access rows |
 | `mark_used(event_ids, call_id)` | Records that a hit informed the answer | `cartographer-search.sh --touch` | ~0.1 s | `result_used` access rows |
 | `thread(event_id)` | The work arc around one event | `cartographer-search.sh --thread` | 10–20 s on a 180k-event changelog | nothing |
 | `orient(project)` | Recent state of one project | the `/remember --project` recipe | 1–3 s | served + search-call rows |
 | `facts(verb, …)` | Counts: census, tempo, delta | `cartographer-facts.js --format json` | 0.1–0.5 s, needs Turbo | nothing |
 | `standup(window?, project?, commit?)` | Who else is working, which files collide | `cartographer-standup.js` | ~0.2 s | nothing |
 
-Every answer is compact text for the model, one line per hit
+Every answer is compact text and nothing else, one line per hit
 (`date · project · agent · event type · summary · event_id`), and always names
-the `call_id`. From protocol 2025-06-18 on, the same answer also comes back as
-`structuredContent`, with transcript paths, session ids and the
-keyword/semantic source mix.
+the `call_id`. A conversation-turn hit (`turn-…`) also prints its transcript
+path on the next line, because those ids live only in the semantic index and
+`get` cannot fetch them. No result carries `structuredContent` and no tool
+declares an `outputSchema`; the next section says why.
 
 The workflow the descriptions teach is the `/remember` workflow: `recall`, then
 `get` with the recall's `call_id`, then read the transcript if the record is not
@@ -47,6 +48,57 @@ we fixed…", "last time", "which agent tried…". `recall` also sets
 `_meta["anthropic/alwaysLoad"]`, so its schema loads up front: the problem being
 fixed is that agents do not reach for recall at all. The other six load on
 demand.
+
+## What each client shows the model
+
+A tool result can carry `content` (text blocks) and `structuredContent` (one
+JSON object). The spec treats `structuredContent` as the full answer and asks a
+server to repeat it as serialized JSON in a text block for older clients. The
+clients follow that reading: they assume the two hold the same data and pick
+one. Checked 2026-10-16:
+
+| Client | Version | When `structuredContent` is present | Without it | Where it is decided |
+|---|---|---|---|---|
+| Claude Code | 2.1.277 | `JSON.stringify(structuredContent)` only. Text blocks are dropped, non-text blocks (images) kept. Applies with or without an `outputSchema`. | the content blocks | MCP result conversion in the shipped binary. Also observed live: this server's `recall` reached a Claude Code session as the JSON. |
+| Codex | 0.160.0 | `serde_json::to_string(structured_content)` only, unless a block is `codex/encryptedContent`. Its own test names the dropped text `"ignored"`. | text blocks as `input_text` items | `CallToolResult::as_function_call_output_payload`, `codex-rs/protocol/src/models.rs` at tag `rust-v0.160.0` |
+| Hermes | 0.21.0 | `json.dumps({"result": <text>, "structuredContent": <json>})`, so both | `json.dumps({"result": <text>})` | `tools/mcp_tool.py` in the local `hermes-agent` checkout (3312947e14) |
+
+So a result carrying both reaches two of the three clients as the JSON alone and
+the third as text plus JSON. This server's text was written for the model and
+its JSON was a superset (per-hit transcript path, session id, cwd, salience,
+unclipped summary, attribution block), so the model paid for the JSON. Measured
+on the live corpus, the same query and ids through the 0.8.3 server (before)
+and this one (after), in characters of what the model receives:
+
+| Call | Claude Code / Codex before | after | Hermes before | after |
+|---|---|---|---|---|
+| `recall`, 3 hits | 3,272 | 1,201 | 4,645 | 1,227 |
+| `recall`, 10 hits | 9,864 | 3,274 | 13,159 | 3,320 |
+| `get`, 3 ids | 3,814 | 3,766 | 8,387 | 4,006 |
+
+In tokens, read from the input-token delta of a Claude Code session that
+received each payload: recall at 3 hits went from ~1,600 to ~590, at 10 from
+~4,700 to ~1,650, and `get` on 3 commit records stayed at ~1,900. Both forms
+tokenize at about 2 characters per token, because hit lines are mostly
+hashes, ids and paths. The earlier "about 70 tokens per hit" assumed 4.
+
+Three ways to fix it were weighed:
+
+- **Slim `structuredContent`** to the fields an agent acts on. Claude Code and
+  Codex would show compact JSON, which repeats every key on every hit and
+  loses the text's guidance (the next-step line carrying the `call_id`, the
+  source mix, the `include_seen` hint). Hermes would still pay twice.
+- **Choose per client from `clientInfo`.** Every client measured shows the
+  model one form or both; none reads the JSON for itself. There was no client
+  to send it to.
+- **Text only** (chosen). One form, written for the model, in all three
+  clients. What only the JSON carried and an agent needs moved into the text:
+  the transcript path of a `turn-…` hit. Paths for ids `get` can fetch stay
+  with `get`, at about 60 tokens each.
+
+An `outputSchema` would now be wrong as well as useless: Claude Code's client
+rejects a result without `structuredContent` from a tool that declares one
+("has an output schema but did not return structured content").
 
 ## Design rules
 
@@ -246,7 +298,13 @@ entry's `env`; Codex will not pass it through from your shell.
 ## Tests
 
 `tests/unit/mcp-server.test.js` drives the server over stdio against a fixture
-corpus with the semantic leg and Turbo pinned off. Its assertions are about
+corpus with the semantic leg and Turbo pinned off. Every assertion reads a
+result the way Claude Code and Codex hand it to the model (`modelSees`: the
+serialized `structuredContent` if present, else the text), so a test cannot
+pass on a field the model never sees. A recall must fit a budget of 900
+characters plus 330 per hit while a 6,000-character record is among its hits,
+and must show the `call_id` the CLI recorded and every `event_id` it served.
+Its other assertions are about
 composition: recall hits fetch back through `get` untruncated; `mark_used`
 writes an access row with the recall's `call_id` and purpose `mcp`; an `orient`
 hit can be marked from the same server; the session the client gave the server

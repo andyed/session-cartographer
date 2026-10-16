@@ -15,7 +15,15 @@
  *   serving, and a session named in a tool argument reaches nothing;
  * - a client that gives no session (Codex, Hermes) gets "no_session" rows
  *   instead of a borrowed identity, in recall telemetry and in standup alike;
- * - a facts census agrees with an independent count of the fixture.
+ * - a facts census agrees with an independent count of the fixture;
+ * - what the model receives stays inside a budget and still names the call_id
+ *   and every event_id.
+ *
+ * Every assertion reads the result the way the clients hand it to the model
+ * (modelSees below): Claude Code 2.1.277 and Codex 0.160 send the serialized
+ * structuredContent whenever it is present and drop the text. A test that read
+ * structuredContent would pass while the model saw something else, which is
+ * how a 3-hit recall came to cost ~1,600 tokens against a promised ~210.
  *
  * Run with: node --test tests/unit/mcp-server.test.js
  */
@@ -34,6 +42,7 @@ import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+import { hitLines } from '../../scripts/cartographer-mcp.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SERVER = path.join(ROOT, 'scripts', 'cartographer-mcp.js');
@@ -207,6 +216,40 @@ function readJsonl(file) {
   return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
 }
 
+/**
+ * The payload the model receives, by the rule Claude Code 2.1.277 and Codex
+ * 0.160 both follow (docs/MCP.md): the serialized structuredContent when the
+ * result has one, the text blocks otherwise.
+ */
+function modelSees(result) {
+  if (result.structuredContent !== undefined) return JSON.stringify(result.structuredContent);
+  return result.content.filter((block) => block.type === 'text').map((block) => block.text).join('\n');
+}
+
+/** Hermes 0.21 wraps the same text as {"result": …} (tools/mcp_tool.py). */
+const hermesSees = (result) => JSON.stringify(result.structuredContent === undefined
+  ? { result: modelSees(result) }
+  : { result: result.content[0].text, structuredContent: result.structuredContent });
+
+/** Hit lines as the model reads them: "N. date · project · agent · [type ·] summary · event_id". */
+function hitsIn(text) {
+  return text.split('\n').filter((line) => /^\s*\d+\. /.test(line)).map((line) => {
+    const parts = line.trim().split(' · ');
+    return { event_id: parts.at(-1), project: parts[1], provider: parts[2], line };
+  });
+}
+
+const callIdIn = (text) => text.match(/call_id (call-\S+)/)?.[1];
+
+/** get's records, from the JSON after "record: ". */
+function recordsIn(text) {
+  return text.split('\n').filter((line) => line.startsWith('  record: ')).map((line) => JSON.parse(line.slice(10)));
+}
+
+const missingIn = (text) => text.match(/^missing: (.+?) — /m)?.[1].split(', ') ?? [];
+
+const occurrences = (text, needle) => text.split(needle).length - 1;
+
 let counter = 0;
 const freshSid = (label) => `sid-mcp-${label}-${process.pid}-${++counter}`;
 
@@ -241,6 +284,9 @@ test('tools/list names seven tools whose descriptions say when to call them', as
           `${tool.name} must not take a session, provider or purpose argument`);
         assert.equal(typeof tool.annotations?.readOnlyHint, 'boolean');
         assert.equal('handler' in tool, false);
+        // Results are text only, and Claude Code's MCP client throws "has an
+        // output schema but did not return structured content" on that pairing.
+        assert.equal(tool.outputSchema, undefined, `${tool.name}: an outputSchema needs structuredContent`);
       }
       const recall = result.tools[0].description;
       for (const cue of ['did we', 'last time', 'I thought we fixed', 'which agent tried', 'mark_used', 'call_id']) {
@@ -295,7 +341,9 @@ test('the plugin registers the server for Claude Code and Codex, and the mirror 
   assert.ok(!JSON.stringify(codex).includes('${'), 'Codex passes ${…} through literally');
 
   for (const name of ['cartographer-mcp.js', 'facts-render.js', 'cartographer-facts.js', 'sentinels.js']) {
-    assert.deepEqual(fs.readFileSync(path.join(ROOT, 'scripts', name)), fs.readFileSync(path.join(PLUGIN, 'scripts', name)),
+    // Buffer.equals, not deepEqual: on a drift, deepEqual diffs two ~50 KB
+    // byte arrays and runs the test process out of heap instead of failing.
+    assert.ok(fs.readFileSync(path.join(ROOT, 'scripts', name)).equals(fs.readFileSync(path.join(PLUGIN, 'scripts', name))),
       `${name} drifted from its packaged plugin mirror`);
   }
 });
@@ -309,15 +357,15 @@ test('recall hits fetch back through get, and mark_used joins the same call unde
     await withServer(fx, { CARTOGRAPHER_SESSION_ID: sid }, async (client) => {
       const recall = await client.call('recall', { query: QUERY, limit: 5 });
       assert.equal(recall.isError, undefined, recall.content[0].text);
-      const served = recall.structuredContent;
+      const text = modelSees(recall);
+      const hits = hitsIn(text);
       // The guard on the guard: without the hit, nothing below is tested.
-      assert.equal(served.results[0]?.event_id, HIT, recall.content[0].text);
-      const callId = served.call_id;
+      assert.equal(hits[0]?.event_id, HIT, text);
+      const callId = callIdIn(text);
       assert.match(callId, /^call-\d{8}T\d{6}-mcp\d+-\d+$/);
-      assert.ok(recall.content[0].text.includes(callId), 'the text names the call_id');
-      assert.ok(recall.content[0].text.includes(HIT));
-      assert.ok(!recall.content[0].text.includes(HIT_SUMMARY), 'the display line is a clip, not the record');
-      assert.equal(served.results[0].provider, 'codex', 'the agent is named from the transcript store');
+      assert.ok(text.includes(`call_id="${callId}"`), 'the next-step line hands the call_id to get and mark_used');
+      assert.ok(!text.includes(HIT_SUMMARY), 'the display line is a clip, not the record');
+      assert.equal(hits[0].provider, 'codex', 'the agent is named from the transcript store');
 
       const servedRows = readJsonl(fx.served).filter((row) => row.call_id === callId);
       assert.ok(servedRows.some((row) => row.event_id === HIT));
@@ -329,13 +377,19 @@ test('recall hits fetch back through get, and mark_used joins the same call unde
       const callRows = readJsonl(fx.calls).filter((row) => row.call_id === callId);
       assert.equal(callRows.length, 1, 'one search-call row per recall, written by the CLI');
       assert.equal(callRows[0].purpose, 'mcp');
-      assert.equal(callRows[0].result_count, served.results.length);
+      assert.equal(callRows[0].result_count, hits.length, 'the model sees every hit the CLI served');
 
       const fetched = await client.call('get', { event_ids: [HIT, 'evt-mcp-missing'], call_id: callId });
-      assert.deepEqual(fetched.structuredContent.records.map((r) => r.event_id), [HIT]);
-      assert.equal(fetched.structuredContent.records[0].summary, HIT_SUMMARY, 'get returns the record untruncated');
-      assert.deepEqual(fetched.structuredContent.missing, ['evt-mcp-missing'], 'a miss is reported, not dropped');
-      assert.match(fetched.content[0].text, /missing: evt-mcp-missing/);
+      const fetchedText = modelSees(fetched);
+      const records = recordsIn(fetchedText);
+      assert.deepEqual(records.map((r) => r.event_id), [HIT]);
+      assert.equal(records[0].summary, HIT_SUMMARY, 'get returns the record untruncated');
+      assert.deepEqual(missingIn(fetchedText), ['evt-mcp-missing'], 'a miss is reported, not dropped');
+      // The point of get: the transcript path, said once, with its state.
+      const transcript = fx.rows.find((row) => row.event_id === HIT).transcript_path;
+      assert.equal(occurrences(fetchedText, transcript), 1, fetchedText);
+      assert.match(fetchedText, /transcript: \S+ \(MISSING on disk\)/);
+      assert.ok(fetchedText.includes(callId));
       const fetchRow = readJsonl(fx.ledger).find((row) => row.source === 'result_fetched' && row.event_id === HIT);
       assert.equal(fetchRow?.call_id, callId);
       assert.equal(fetchRow.purpose, 'mcp');
@@ -348,8 +402,8 @@ test('recall hits fetch back through get, and mark_used joins the same call unde
       assert.equal(useRows[0].purpose, 'mcp');
       assert.equal(useRows[0].session_id, sid);
       assert.equal(useRows[0].attribution_status, 'explicit');
-      assert.deepEqual(marked.structuredContent.marks,
-        [{ event_id: HIT, recorded: true, call_id: callId, attribution_status: 'explicit' }]);
+      assert.match(modelSees(marked), new RegExp(`1 of 1 recorded · call_id ${callId}`));
+      assert.match(modelSees(marked), new RegExp(`${HIT}\\s+explicit: attributed to the call`));
     });
   } finally {
     fx.cleanup();
@@ -362,10 +416,8 @@ test('a client that gives the server no session gets no_session rows, named by i
     // What Codex 0.160 sends, with none of the chain variables in the child.
     await withServer(fx, {}, async (client) => {
       const recall = await client.call('recall', { query: QUERY, limit: 3 });
-      const callId = recall.structuredContent.call_id;
-      assert.equal(recall.structuredContent.results[0]?.event_id, HIT);
-      assert.deepEqual(recall.structuredContent.attribution,
-        { attribution_status: 'no_session', session_source: '', provider: 'codex', client: 'codex-mcp-client' });
+      const callId = callIdIn(modelSees(recall));
+      assert.equal(hitsIn(modelSees(recall))[0]?.event_id, HIT);
       const servedRows = readJsonl(fx.served).filter((row) => row.call_id === callId);
       assert.ok(servedRows.length > 0);
       for (const row of servedRows) {
@@ -379,15 +431,14 @@ test('a client that gives the server no session gets no_session rows, named by i
       assert.equal(useRow.attribution_status, 'no_session');
       assert.equal(useRow.call_id, undefined, 'an empty session never joins a mark to a serve');
       assert.equal(useRow.requested_call_id, callId);
-      assert.equal(marked.structuredContent.marks[0].attribution_status, 'no_session');
-      assert.match(marked.content[0].text, /no session id/);
+      assert.match(modelSees(marked), new RegExp(`${HIT}\\s+no_session: .*no session id`));
     }, { client: 'codex-mcp-client' });
 
     // Without a recognizable client the provider stays unknown, so the label
     // above came from clientInfo and not from something else in the env.
     await withServer(fx, {}, async (client) => {
       const recall = await client.call('recall', { query: QUERY, limit: 3, include_seen: true });
-      const rows = readJsonl(fx.served).filter((row) => row.call_id === recall.structuredContent.call_id);
+      const rows = readJsonl(fx.served).filter((row) => row.call_id === callIdIn(modelSees(recall)));
       assert.ok(rows.length > 0);
       assert.ok(rows.every((row) => row.provider === 'unknown'));
     }, { client: 'some-other-client' });
@@ -401,12 +452,12 @@ test('delta serving follows the session the client gave the server', async () =>
   try {
     await withServer(fx, { CARTOGRAPHER_SESSION_ID: freshSid('delta') }, async (client) => {
       const first = await client.call('recall', { query: QUERY, limit: 5 });
-      assert.equal(first.structuredContent.results[0]?.event_id, HIT);
+      assert.equal(hitsIn(modelSees(first))[0]?.event_id, HIT);
       const second = await client.call('recall', { query: QUERY, limit: 5 });
-      assert.ok(!second.structuredContent.results.some((r) => r.event_id === HIT), 'a repeat hides what was shown');
-      assert.match(second.content[0].text, /include_seen=true/);
+      assert.ok(!hitsIn(modelSees(second)).some((r) => r.event_id === HIT), 'a repeat hides what was shown');
+      assert.match(modelSees(second), /include_seen=true/);
       const third = await client.call('recall', { query: QUERY, limit: 5, include_seen: true });
-      assert.equal(third.structuredContent.results[0]?.event_id, HIT, 'include_seen re-shows it');
+      assert.equal(hitsIn(modelSees(third))[0]?.event_id, HIT, 'include_seen re-shows it');
     });
   } finally {
     fx.cleanup();
@@ -457,17 +508,111 @@ test('input errors come back as tool errors the model can act on', async () => {
   }
 });
 
-test('structuredContent appears only from protocol 2025-06-18 on', async () => {
-  const fx = makeFixture();
+// ─── What the model receives ───
+
+// A 6,000-character summary on a hit: an answer that passed records through
+// unclipped (as structuredContent did) cannot fit the budget below.
+const LONG = 'evt-mcplongsummary';
+const LONG_SUMMARY = `Wrapup: ${QUERY} long record ${'with a great deal of detail '.repeat(215)}`;
+
+// Header and next-step lines, plus one display line per hit: rank, date,
+// project, agent, type, a 180-character clip and the id.
+const RECALL_FIXED_BUDGET = 900;
+const RECALL_HIT_BUDGET = 330;
+
+test('what the model receives from recall fits its budget and names the call_id and every event_id', async () => {
+  const freshRows = [{ event_id: LONG, timestamp: day(4), type: 'milestone_session_wrapup', provider: 'claude',
+    project: 'mcpfixture', session_id: 'sess-long', summary: LONG_SUMMARY }];
+  const fx = makeFixture({ freshRows });
   try {
-    await withServer(fx, {}, async (client) => {
-      const recall = await client.call('recall', { query: QUERY, limit: 2 });
-      assert.ok(recall.content[0].text.includes(HIT));
-      assert.equal(recall.structuredContent, undefined);
-    }, { protocolVersion: '2025-03-26' });
+    for (const protocolVersion of ['2025-11-25', '2025-06-18', '2025-03-26']) {
+      await withServer(fx, {}, async (client) => {
+        const recall = await client.call('recall', { query: QUERY, limit: 10 });
+        assert.equal(recall.structuredContent, undefined, `${protocolVersion}: no client would show the text`);
+        const text = modelSees(recall);
+        const hits = hitsIn(text);
+        // Without the long record among the hits the budget proves nothing.
+        assert.ok(hits.some((hit) => hit.event_id === LONG), text);
+        assert.ok(LONG_SUMMARY.length > RECALL_FIXED_BUDGET + RECALL_HIT_BUDGET * hits.length,
+          'the fixture must hold a record too long to pass through whole');
+
+        const budget = RECALL_FIXED_BUDGET + RECALL_HIT_BUDGET * hits.length;
+        assert.ok(text.length <= budget, `recall sent ${text.length} characters for ${hits.length} hits (budget ${budget})`);
+        assert.ok(hermesSees(recall).length <= budget * 1.1, 'Hermes wraps the same text, not text plus JSON');
+        for (const hit of hits) assert.ok(hit.line.length <= RECALL_HIT_BUDGET, hit.line);
+
+        const callId = callIdIn(text);
+        const callRow = readJsonl(fx.calls).find((row) => row.call_id === callId);
+        assert.ok(callRow, 'the call_id the model sees is the one the CLI recorded');
+        const served = readJsonl(fx.served).filter((row) => row.call_id === callId).map((row) => row.event_id);
+        assert.deepEqual(hits.map((hit) => hit.event_id).sort(), [...new Set(served)].sort(),
+          'every event_id served is in what the model sees');
+      }, { protocolVersion });
+    }
   } finally {
     fx.cleanup();
   }
+});
+
+test('no tool answers with structuredContent', async () => {
+  const fx = makeFixture();
+  try {
+    await withServer(fx, { CARTOGRAPHER_SESSION_ID: freshSid('nostruct') }, async (client) => {
+      const recall = await client.call('recall', { query: QUERY, limit: 3 });
+      const callId = callIdIn(modelSees(recall));
+      const results = [
+        recall,
+        await client.call('get', { event_ids: [HIT], call_id: callId }),
+        await client.call('mark_used', { event_ids: [HIT], call_id: callId }),
+        await client.call('thread', { event_id: 'evt-thr-b' }),
+        await client.call('orient', { project: 'mcpfixture', limit: 3 }),
+        await client.call('standup', { window: '2h' }),
+      ];
+      for (const result of results) {
+        assert.equal(result.isError, undefined, result.content[0].text);
+        assert.equal(result.structuredContent, undefined, result.content[0].text.split('\n')[0]);
+        assert.deepEqual(result.content.map((block) => block.type), ['text']);
+      }
+    });
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('get says each transcript path once and keeps the record whole', async () => {
+  const fx = makeFixture();
+  try {
+    await withServer(fx, {}, async (client) => {
+      const ids = [HIT, 'evt-thr-a', 'evt-thr-b'];
+      const fetched = await client.call('get', { event_ids: ids });
+      const text = modelSees(fetched);
+      const records = recordsIn(text);
+      assert.deepEqual(records.map((r) => r.event_id), ids, text);
+      for (const record of records) {
+        const original = fx.rows.find((row) => row.event_id === record.event_id);
+        assert.equal(record.summary, original.summary, 'untruncated');
+        assert.equal(record.session_id, original.session_id);
+      }
+      // Measured: one transcript line per record plus the JSON, no second copy.
+      const recordJson = records.reduce((sum, record) => sum + JSON.stringify(record).length, 0);
+      assert.ok(text.length <= recordJson + 300 * records.length, `get sent ${text.length} for ${recordJson} of records`);
+    });
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('a conversation-turn hit carries its transcript path, because get cannot fetch it', () => {
+  const transcript = '/Users/x/.claude/projects/-p/0f7a.jsonl';
+  const base = { rank: 1, timestamp: '2026-10-15T22:07:28Z', project: 'p', provider: 'claude', event_type: '',
+    source: 'semantic', summary: 'a turn', transcript_path: transcript };
+  const turn = hitLines({ ...base, event_id: 'turn-0f7a-566' });
+  assert.equal(turn.length, 2);
+  assert.match(turn[0], /· turn-0f7a-566$/);
+  assert.equal(turn[1], `    transcript: ${transcript}`);
+  // An event-log hit leaves its path to get: about 60 tokens a hit saved.
+  assert.deepEqual(hitLines({ ...base, event_id: 'evt-abc', event_type: 'git_commit' }).length, 1);
+  assert.deepEqual(hitLines({ ...base, event_id: 'turn-0f7a-1', transcript_path: null }).length, 1);
 });
 
 // ─── The other lenses ───
@@ -476,15 +621,15 @@ test('thread returns the arc oldest first with the anchor marked', async () => {
   const fx = makeFixture();
   try {
     await withServer(fx, {}, async (client) => {
-      const arc = await client.call('thread', { event_id: 'evt-thr-b' });
-      assert.deepEqual(arc.structuredContent.events.map((e) => [e.event_id, e.anchor]),
-        [['evt-thr-a', false], ['evt-thr-b', true], ['evt-thr-c', false]]);
-      assert.equal(arc.structuredContent.events[1].summary, 'Modified: /tmp/arc.js');
-      assert.equal(arc.structuredContent.events[1].parent_event_id, 'evt-thr-a');
+      const arc = modelSees(await client.call('thread', { event_id: 'evt-thr-b' }));
+      const events = arc.split('\n').filter((line) => / · evt-\S+$/.test(line))
+        .map((line) => [line.split(' · ').at(-1), line.startsWith('★')]);
+      assert.deepEqual(events, [['evt-thr-a', false], ['evt-thr-b', true], ['evt-thr-c', false]], arc);
+      assert.match(arc, /^★ .* · Modified: \/tmp\/arc\.js · evt-thr-b$/m);
 
       const none = await client.call('thread', { event_id: 'evt-not-there' });
       assert.equal(none.isError, undefined, 'an unknown anchor is an answer, not a failure');
-      assert.deepEqual(none.structuredContent.events, []);
+      assert.match(modelSees(none), /no changelog event evt-not-there/);
     });
   } finally {
     fx.cleanup();
@@ -497,11 +642,13 @@ test('orient serves under purpose mcp, so its hits can be marked used from here'
     await withServer(fx, { CARTOGRAPHER_SESSION_ID: freshSid('orient') }, async (client) => {
       const orient = await client.call('orient', { project: 'mcpfixture' });
       assert.equal(orient.isError, undefined, orient.content[0].text);
-      const { call_id: callId, results } = orient.structuredContent;
-      assert.ok(results.some((r) => r.event_id === 'evt-orient-1'), orient.content[0].text);
+      const text = modelSees(orient);
+      const callId = callIdIn(text);
+      const results = hitsIn(text);
+      assert.ok(results.some((r) => r.event_id === 'evt-orient-1'), text);
       // The fixture holds the same words in another project; scope must hold.
       assert.ok(results.every((r) => r.project === 'mcpfixture'));
-      assert.match(orient.content[0].text, /not a timeline/);
+      assert.match(text, /not a timeline/);
 
       await client.call('mark_used', { event_ids: ['evt-orient-1'], call_id: callId });
       const useRow = readJsonl(fx.ledger).find((row) => row.source === 'result_used');
@@ -516,11 +663,12 @@ test('orient serves under purpose mcp, so its hits can be marked used from here'
 test('standup does not let a fresh peer pass for the caller when the client gave no session', async () => {
   const now = Date.now();
   const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+  // Ids whose first eight characters differ: the text roster prints that much.
   const freshRows = [
     { event_id: 'evt-peer-old', timestamp: iso(now - 30 * 60e3), type: 'tool_bash', provider: 'claude',
-      project: 'mcpfixture', session_id: 'sess-peer-older', summary: 'Ran: ls' },
+      project: 'mcpfixture', session_id: 'peerold1-session', summary: 'Ran: ls' },
     { event_id: 'evt-peer-fresh', timestamp: iso(now - 20e3), type: 'tool_bash', provider: 'codex',
-      project: 'mcpfixture', session_id: 'sess-peer-fresh', summary: 'Ran: git status' },
+      project: 'mcpfixture', session_id: 'peerfrsh-session', summary: 'Ran: git status' },
   ];
   const fx = makeFixture({ freshRows });
   try {
@@ -531,16 +679,19 @@ test('standup does not let a fresh peer pass for the caller when the client gave
     const direct = spawnSync(process.execPath, [STANDUP, '--since', '2h', '--json'],
       { env: cleanEnv(fx, isolated), encoding: 'utf8' });
     assert.equal(direct.status, 0, direct.stderr);
-    const claimed = JSON.parse(direct.stdout).sessions.find((s) => s.id === 'sess-peer-fresh');
+    const claimed = JSON.parse(direct.stdout).sessions.find((s) => s.id === 'peerfrsh-session');
     assert.equal(claimed?.is_self, true, 'the fixture must exercise the newest-event heuristic');
+    // And the text marks the claimed one, so its absence below means something.
+    const directText = spawnSync(process.execPath, [STANDUP, '--since', '2h'], { env: cleanEnv(fx, isolated), encoding: 'utf8' });
+    assert.match(directText.stdout, /\(you\)|you are/);
 
     await withServer(fx, isolated, async (client) => {
       const standup = await client.call('standup', { window: '2h' });
       assert.equal(standup.isError, undefined, standup.content[0].text);
-      const sessions = standup.structuredContent.standup.sessions;
-      assert.deepEqual(sessions.map((s) => s.id).sort(), ['sess-peer-fresh', 'sess-peer-older']);
-      assert.ok(sessions.every((s) => !s.is_self), 'no peer is mistaken for the caller');
-      assert.match(standup.content[0].text, /sess-pee/);
+      const text = modelSees(standup);
+      assert.match(text, /peerold1/);
+      assert.match(text, /peerfrsh/);
+      assert.doesNotMatch(text, /\(you\)|you are/, 'no peer is mistaken for the caller');
     }, { client: 'codex-mcp-client' });
   } finally {
     fx.cleanup();
@@ -583,16 +734,22 @@ test('a facts census through the server agrees with an independent count', async
     await withServer(fx, { CARTOGRAPHER_TURBO_URL: turboEnv.CARTOGRAPHER_TURBO_URL }, async (client) => {
       const census = await client.call('facts', { verb: 'census', since, before, top: 10, sample: 2 });
       assert.equal(census.isError, undefined, census.content[0].text);
-      const facts = census.structuredContent.facts;
-      assert.equal(facts.events, inWindow.length, 'the census counts what a scan counts');
-      const bucket = facts.by_project.find((b) => b.name === 'mcpfixture');
-      assert.equal(bucket.count, expectedFixture);
-      assert.match(census.content[0].text, /facts census/);
+      const text = modelSees(census);
+      assert.match(text, /facts census/);
+      assert.equal(Number(text.match(/^([\d,]+) events · /m)?.[1].replace(/,/g, '')), inWindow.length,
+        'the census counts what a scan counts');
+      // The by_project table row: name, count, sample event_ids.
+      const byProject = text.slice(text.indexOf('by_project'), text.indexOf('by_type'));
+      const bucket = byProject.match(/^ {2}mcpfixture +(\d+) +(.+)$/m);
+      assert.ok(bucket, text);
+      assert.equal(Number(bucket[1]), expectedFixture);
+      const sampleIds = bucket[2].trim().split(/\s+/);
 
       // A number is only as good as the ids behind it.
-      const fetched = await client.call('get', { event_ids: bucket.event_ids });
-      assert.deepEqual(fetched.structuredContent.missing, []);
-      assert.ok(fetched.structuredContent.records.every((r) => r.project === 'mcpfixture'));
+      const fetched = modelSees(await client.call('get', { event_ids: sampleIds }));
+      assert.deepEqual(missingIn(fetched), []);
+      assert.equal(recordsIn(fetched).length, sampleIds.length);
+      assert.ok(recordsIn(fetched).every((r) => r.project === 'mcpfixture'));
     });
   } finally {
     try { await runAsync(process.execPath, [CONTROL, 'stop'], { env: turboEnv }); } catch {}

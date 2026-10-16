@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+### fix(mcp): tool results are text only, at about a third of the tokens
+
+The MCP server answered with compact text and, from protocol 2025-06-18 on,
+the same answer as `structuredContent`. Clients do not show the model both.
+Claude Code 2.1.277 and Codex 0.160 send it the serialized `structuredContent`
+and drop the text; Hermes 0.21 sends both. So in Claude Code the model got the
+JSON, with full summaries, transcript paths, session ids, salience and cwd per
+hit. A 3-hit recall cost about 1,600 tokens against the ~210 its description
+promised. Measured on the live corpus with the same queries and ids:
+
+| Call | Claude Code / Codex, before → after | Hermes, before → after |
+|---|---|---|
+| `recall`, 3 hits | 3,272 → 1,201 chars (~1,600 → ~590 tokens) | 4,645 → 1,227 chars |
+| `recall`, 10 hits | 9,864 → 3,274 chars (~4,700 → ~1,650 tokens) | 13,159 → 3,320 chars |
+| `get`, 3 ids | 3,814 → 3,766 chars (~1,900 tokens) | 8,387 → 4,006 chars |
+
+Every tool now returns text only and declares no `outputSchema`, which Claude
+Code's client would reject without `structuredContent`. Nothing read the JSON
+except the model. The text gains the one thing only the JSON had: a turn hit
+(`turn-…`, semantic index only, so `get` answers it "missing") prints its
+transcript path under its line. `get` names each transcript once, on its own
+line with its archived/MISSING state, instead of again inside the record, and
+drops the per-record line that repeated the record's time, project and type.
+`standup` no longer runs its CLI a second time for JSON. The `recall`
+description now states the measured cost, about 600 tokens for 3 hits and
+1,650 for 10. The old "about 70 tokens per hit" assumed ~4 characters per
+token, and these lines (hashes, ids, paths) tokenize at ~2. The
+`call_id` is in every recall and orient header and in the next-step line, and
+`cartographer-search.sh` is still the only telemetry writer. Tests now read
+results the way the clients do and bound the payload, with a 6,000-character
+record that an unclipped answer cannot fit. See docs/MCP.md, "What each client
+shows the model".
+
 ### feat(hooks): opt-in recall on memory cues (UserPromptSubmit)
 
 Agents do not call recall mid-session. Measured 2026-10-15 over 30 days: 287
