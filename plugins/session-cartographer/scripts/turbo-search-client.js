@@ -189,6 +189,9 @@ function renderText(response, transport) {
     }
     out += '\n';
   }
+  if (belowMinScore > 0) {
+    out += `(min-score: ${belowMinScore} result${belowMinScore === 1 ? '' : 's'} under ${minScore} dropped)\n`;
+  }
   if ((response.meta?.excluded_count || 0) > 0) {
     const count = response.meta.excluded_count;
     out += `(delta serving: ${count} already-shown result${count === 1 ? '' : 's'} suppressed; --all to see)\n`;
@@ -207,6 +210,10 @@ function renderJsonl(response) {
     project: item.project || '',
     event_type: item.type || item.milestone || '',
     salience: Number(item.salience ?? 0.5),
+    // The fused score the server ranked by; the portable path emits the same
+    // quantity. A server too old to send _score yields null, not 0, so a
+    // threshold reads it as unknown rather than weak.
+    score: Number.isFinite(item._score) ? item._score : null,
     rank: index + 1,
     extras: extrasFor(item),
   })).join('\n') + (response.results.length ? '\n' : '');
@@ -262,6 +269,22 @@ try {
   process.exit(75);
 }
 
+// --min-score drops results under a fused-score floor before anything is
+// counted, served, or shown, so served telemetry and delta serving describe
+// only what the caller displays. A result without _score (a server older than
+// the field) cannot be shown to clear the floor and is dropped with the rest.
+// The pre-floor top score goes to the call log: a caller that abstains never
+// sees it, and it is the number a floor is retuned against. Mirrors the
+// portable fusion in cartographer-search.sh.
+const minScore = Number(args['min-score']);
+const topScore = Number.isFinite(response.results[0]?._score) ? response.results[0]._score : null;
+let belowMinScore = 0;
+if (Number.isFinite(minScore) && minScore > 0) {
+  const kept = response.results.filter((item) => Number.isFinite(item._score) && item._score >= minScore);
+  belowMinScore = response.results.length - kept.length;
+  response.results = kept;
+}
+
 if (args['count-out']) fs.writeFileSync(args['count-out'], `${response.results.length}\n`);
 if (args['served-out']) {
   fs.writeFileSync(args['served-out'], response.results.map((item) => item.event_id).join('\n') + (response.results.length ? '\n' : ''));
@@ -310,6 +333,9 @@ appendJsonl(args['call-log'], {
   index_generation: response.index_generation,
   semantic_status: response.semantic_status,
   fallback_reason: null,
+  min_score: Number.isFinite(minScore) && minScore > 0 ? minScore : null,
+  top_score: topScore,
+  below_min_score: belowMinScore,
 });
 
 process.stdout.write(outputFormat === 'jsonl' ? renderJsonl(response) : renderText(response, transport));
