@@ -68,7 +68,7 @@ display. `--get` returns the complete records for ids the search surfaced,
 including `transcript_path`, `files_changed`, and `diff_shape`:
 
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>[,<event_id>...] --call-id <originating_call_id>
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" --get <event_id>[,<event_id>...] --call-id <originating_call_id>
 ```
 
 Cheap (~0.1s) and the right move before deciding which transcript is worth
@@ -129,10 +129,10 @@ Hooks link successive events from the same session into a `parent_event_id` chai
 When the user asks "show me how I got to X", "what led up to that commit", or "what was the chain of work around Y", run a normal search to find the anchor `event_id`, then walk the arc:
 
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --thread evt-xxxxxxxxxxxx
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" --thread evt-xxxxxxxxxxxx
 ```
 
-The first argument is ignored when `--thread` is set (pass any placeholder like `_`). Output is the full ancestor + descendant arc sorted by timestamp, with the supplied event marked `★`. Present it as a coherent timeline rather than a search result.
+`--thread` needs no query. (Older callers passed a placeholder `_` first; it is still accepted and ignored.) Output is the full ancestor + descendant arc sorted by timestamp, with the supplied event marked `★`. Present it as a coherent timeline rather than a search result.
 
 ### Procedural recall: "how do I do X" (maneuver map)
 
@@ -235,6 +235,8 @@ For more results, add `--limit 25` or `--limit 50`. If the user says "more" or "
 CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" "<same terms>" --limit 30
 ```
 
+Flags and the query can come in any order, and `--project=NAME` works as well as `--project NAME`. Several unquoted words are joined into one query, but quote the query anyway. A query that starts with `--` needs `--` before it (`... --project tracker -- "--force flag"`). An unrecognised `--option`, or a value flag with no value, fails with exit 2 instead of searching.
+
 Wildcard prefix search works: `shader*` matches `shader`, `shaders`, `shaderlab`, etc.
 
 If event logs + semantic come up empty and you genuinely need raw transcript keyword matching, opt in with `--transcript`. Expect it to be slow; some sessions are 100MB+.
@@ -256,7 +258,7 @@ complete record first. It costs ~0.1s against a 100MB+ transcript read, and it
 carries the `transcript_path` you need for Step 3 anyway.
 
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --get <event_id>,<event_id> --call-id <originating_call_id>
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" --get <event_id>,<event_id> --call-id <originating_call_id>
 ```
 
 Often this ends the recall — a commit's full `files_changed` and `diff_shape`
@@ -319,7 +321,7 @@ jq 'select(.uuid == "<uuid>" or .parentUuid == "<uuid>")' <transcript_path>
 When a result summary, transcript, or `--thread` arc actually contributes to the answer, touch the event_ids whose context you used — this is both the promote-on-reuse moment and the explicit result-use signal:
 
 ```bash
-CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" _ --touch <event_id>[,<event_id>...] --call-id <originating_call_id>
+CARTOGRAPHER_PURPOSE=remember bash "$ROOT/scripts/cartographer-search.sh" --touch <event_id>[,<event_id>...] --call-id <originating_call_id>
 ```
 
 Touch only what you used, not everything that was served. A result you read and discarded as irrelevant should NOT be touched — false vouching pollutes future rankings.
@@ -350,9 +352,9 @@ The access ledger records that order for first- and last-access MRR.
     → bash cartographer-search.sh "debug" --since "last week" --before yesterday
 /remember show me how I got to that fix
     → bash cartographer-search.sh "the fix" --limit 5     (find anchor event_id)
-    → bash cartographer-search.sh _ --thread evt-xxxxxxxxxxxx
+    → bash cartographer-search.sh --thread evt-xxxxxxxxxxxx
 /remember what exactly did that commit touch
-    → bash cartographer-search.sh _ --get git-abc1234      (full files_changed + diff_shape)
+    → bash cartographer-search.sh --get git-abc1234      (full files_changed + diff_shape)
 /remember what am I working on these days
     → read ~/Documents/dev/.carto/profile.md               (standing question, not a search)
 /remember how do I deploy widget-site

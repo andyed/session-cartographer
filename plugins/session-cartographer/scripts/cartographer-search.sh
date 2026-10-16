@@ -2,6 +2,10 @@
 # cartographer-search.sh — Unified search across all Claude Code session history.
 #
 # Usage: cartographer-search.sh <query> [--project NAME] [--limit N] [--format text|jsonl]
+#        cartographer-search.sh --get IDS | --touch IDS | --thread ID   (no query needed)
+#
+# Flags and the query may appear in any order; "--" ends flag parsing. Run with
+# --help for the full flag list.
 #
 # Searches (in order):
 #   1. Qdrant semantic search (if available)
@@ -115,17 +119,74 @@ append_portable_call_log() {
   return 0
 }
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
-       WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
+print_usage() {
+  cat <<'USAGE'
+Usage: cartographer-search.sh "<query>" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
+       Flags and the query may come in any order. The first words that are not flags form the query (several unquoted words are joined with single spaces). "--" ends flag parsing, so a query that starts with "--" is: cartographer-search.sh --project NAME -- "--force flag". "--flag=value" works for every flag that takes a value.
+       WHEN: today | yesterday | "this morning" | "this afternoon" | "this evening" | "this week" | "last week" | "this month" | "last month" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
-       --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).
-       --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. The query argument is ignored (pass any placeholder).
-       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. No query is needed (a leading "_" placeholder from older callers is accepted and ignored).
+       --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. No query is needed ("_" accepted and ignored).
+       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual, mcp). Defaults to CARTOGRAPHER_PURPOSE or manual.
        --call-id ID: search-call identifier printed with results. Carry it to --get/--touch for exact attribution; without it, only unambiguous same-session, same-purpose provenance is credited.
        --turbo / --no-turbo: use or bypass warm Explorer recall for this standard query. A shared user preference otherwise applies across Claude and Codex.
-       --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
-shift
+       --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. No query is needed ("_" accepted and ignored).
+USAGE
+}
+
+# ─── Argument parsing ───
+# Flags are recognised in any position. An LLM caller naturally writes
+#   cartographer-search.sh --project NAME --since 10d "milestone decision"
+# and the old parser, which took $1 as the query, searched for the literal
+# "--project", dropped the scope, and returned another project's results with
+# nothing reporting a problem. The same parser also silently discarded every
+# unrecognised token, so a mistyped flag or a stray word changed the search the
+# same way. This one accepts or refuses; it never discards.
+#
+# - The query is the words that are not flags. "--" ends flag parsing, so a
+#   query that really starts with "--" is still searchable.
+# - Several non-flag words are JOINED with single spaces rather than rejected.
+#   Unquoted `cartographer-search.sh milestone decision --project x` is the
+#   natural spelling for an agent, and the old behaviour kept only "milestone"
+#   and dropped the rest in silence, which is the worse failure. Joining can
+#   over-include a stray word, but the joined query is echoed in the results
+#   header and written to the telemetry rows, so a wrong guess is visible;
+#   rejecting would cost a round trip on every unquoted multi-word query, whose
+#   intent is unambiguous.
+# - A token that looks like a flag but is not one ("--projct", "-p") is an
+#   error, not query text: a flag dropped into the query is exactly the silent
+#   failure above. "--" is the escape for text that genuinely starts with it.
+# - A flag that takes a value and finds none (or finds another flag) fails
+#   naming that flag. An explicit empty value (--project "") stays accepted.
+# - --get / --touch / --thread need no query. A leading "_" placeholder is how
+#   older callers satisfied the old required argument; positional words are
+#   ignored alongside those three, as the placeholder always was.
+VALUE_FLAGS=" --project --limit --format --since --before --intent --thread --get --touch --call-id --purpose "
+SWITCH_FLAGS=" --transcript --no-transcript --all --reset-served --turbo --no-turbo "
+
+is_flag_name() {
+  # "" would match the double space where the two lists meet.
+  [ -n "$1" ] || return 1
+  case "$VALUE_FLAGS$SWITCH_FLAGS" in
+    *" $1 "*) return 0 ;;
+  esac
+  return 1
+}
+
+# Called as `need_value "$@"` with the flag first. Exits; it is not a subshell.
+need_value() {
+  if [ $# -lt 2 ] || [ "$2" = "--" ] || is_flag_name "$2"; then
+    echo "cartographer-search: $1 requires a value" >&2
+    exit 2
+  fi
+}
+
+add_query_word() {
+  QUERY="${QUERY:+$QUERY }$1"
+}
+
+QUERY=""
 
 LIMIT=15
 FUSION_DEPTH=500
@@ -149,27 +210,51 @@ TURBO_FLAG=""
 INCLUDE_TRANSCRIPTS=0
 OUTPUT_FORMAT="text"
 while [ $# -gt 0 ]; do
-  case "$1" in
-    --project)        PROJECT="$2"; shift 2 ;;
-    --limit)          LIMIT="$2"; shift 2 ;;
-    --format)         OUTPUT_FORMAT="$2"; shift 2 ;;
+  arg="$1"
+  # --flag=value spelling, only for flags that take a value. Rewritten to the
+  # two-argument form so the cases below stay the single definition.
+  case "$arg" in
+    --*=*)
+      case "$VALUE_FLAGS" in
+        *" ${arg%%=*} "*) set -- "${arg%%=*}" "${arg#*=}" "${@:2}"; arg="$1" ;;
+      esac
+      ;;
+  esac
+  case "$arg" in
+    --)
+      shift
+      for word in "$@"; do add_query_word "$word"; done
+      break ;;
+    -h|--help)        print_usage; exit 0 ;;
+    --project)        need_value "$@"; PROJECT="$2"; shift 2 ;;
+    --limit)          need_value "$@"; LIMIT="$2"; shift 2 ;;
+    --format)         need_value "$@"; OUTPUT_FORMAT="$2"; shift 2 ;;
     --transcript)     INCLUDE_TRANSCRIPTS=1; shift ;;
     --no-transcript)  INCLUDE_TRANSCRIPTS=0; shift ;;
-    --since)          SINCE="$2"; shift 2 ;;
-    --before)         BEFORE="$2"; shift 2 ;;
-    --intent)         INTENT="$2"; shift 2 ;;
+    --since)          need_value "$@"; SINCE="$2"; shift 2 ;;
+    --before)         need_value "$@"; BEFORE="$2"; shift 2 ;;
+    --intent)         need_value "$@"; INTENT="$2"; shift 2 ;;
     --all)            ALL_MODE=1; shift ;;
     --reset-served)   RESET_SERVED=1; shift ;;
-    --thread)         THREAD_ID="$2"; shift 2 ;;
-    --get)            GET_IDS="$2"; shift 2 ;;
-    --touch)          TOUCH_IDS="$2"; shift 2 ;;
-    --call-id)        CALL_ID="$2"; shift 2 ;;
-    --purpose)        PURPOSE="$2"; shift 2 ;;
+    --thread)         need_value "$@"; THREAD_ID="$2"; shift 2 ;;
+    --get)            need_value "$@"; GET_IDS="$2"; shift 2 ;;
+    --touch)          need_value "$@"; TOUCH_IDS="$2"; shift 2 ;;
+    --call-id)        need_value "$@"; CALL_ID="$2"; shift 2 ;;
+    --purpose)        need_value "$@"; PURPOSE="$2"; shift 2 ;;
     --turbo)          TURBO_FLAG=1; shift ;;
     --no-turbo)       TURBO_FLAG=0; shift ;;
-    *) shift ;;
+    --*|-[A-Za-z])
+      echo "cartographer-search: unknown option '$arg' (to search for text that starts with a dash, put -- before the query)" >&2
+      exit 2 ;;
+    *)                add_query_word "$arg"; shift ;;
   esac
 done
+
+if [ -z "$THREAD_ID$GET_IDS$TOUCH_IDS" ] && [ -z "$QUERY" ]; then
+  echo "cartographer-search: no query given" >&2
+  print_usage >&2
+  exit 2
+fi
 
 case "$OUTPUT_FORMAT" in
   text|jsonl) ;;

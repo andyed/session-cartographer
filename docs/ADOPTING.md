@@ -389,8 +389,8 @@ Every count ships with a bounded sample of the `event_id`s behind it, so you can
 check it rather than trust it:
 
 ```bash
-# ids are comma-separated; the query argument is ignored, so any placeholder works
-bash scripts/cartographer-search.sh x --get chg-1f2a,tul-04c1
+# ids are comma-separated; --get needs no query (an old leading placeholder is ignored)
+bash scripts/cartographer-search.sh --get chg-1f2a,tul-04c1
 ```
 
 Full request/response contract, bounds, and error table:

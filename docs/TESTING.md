@@ -242,11 +242,11 @@ A zero in check 1 or 2 for a ladder that should be present is the bug this
 codebase keeps having. It will not announce itself.
 
 **Counted answers must be checkable.** Every facts bucket ships the `event_id`s
-behind it; fetch them back rather than trusting the number. The query argument
-is positional and required, so pass a placeholder:
+behind it; fetch them back rather than trusting the number. `--get` needs no query
+(a leading `_` placeholder from older callers is still accepted and ignored):
 
 ```bash
-bash scripts/cartographer-search.sh "verify" --get evt-abc123,evt-def456
+bash scripts/cartographer-search.sh --get evt-abc123,evt-def456
 ```
 
 ## Reconcile before you conclude
