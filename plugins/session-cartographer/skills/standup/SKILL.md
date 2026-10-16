@@ -183,6 +183,7 @@ liveness — `●` means it was active recently, which is a different claim. Say
 | `--live` | `20m` | idle threshold for the `●` marker |
 | `--me` | inferred | override self-identification |
 | `--all` | off | keep your own session in the peer roster |
-| `--json` | off | machine-readable; adds `unattributed_events`, `worktrees_unmapped`, per-session `edits_unresolved`, and `worktree_split`/`paths` on each contested file |
+| `--roster` | off | roster and contention only: skips SILENT and UNCLAIMED (their JSON keys read `null`, not empty). The SessionStart note uses it |
+| `--json` | off | machine-readable; adds `unattributed_events`, `worktrees_unmapped`, per-session `edits_unresolved` and `recent_files` (newest first, worktree-collapsed), and `worktree_split`/`paths` on each contested file |
 
 Read-only. Writes nothing to the changelog and emits no retrieval telemetry.

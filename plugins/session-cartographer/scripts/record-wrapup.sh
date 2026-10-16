@@ -40,6 +40,19 @@ DESCRIPTION=$(printf '%s' "$INPUT" | jq -r '.description // empty')
   || { wrapper_failure "not_session_wrapup" 65; exit $?; }
 [ -n "$DESCRIPTION" ] || { wrapper_failure "missing_description" 65; exit $?; }
 
+# One line per text field, at the source. The pipeline is line-based, and the
+# SessionStart note lists unresolved[] items one per line, so a newline inside
+# the synthesis or an item would split it there. Empty items are dropped so an
+# empty list stays [] rather than [""]. Retries normalize the same way, so the
+# idempotency check below still compares like with like.
+INPUT=$(printf '%s' "$INPUT" | jq -c '
+  def flat: if type == "string" then gsub(" *[\\r\\n\\t]+ *"; " ") | gsub("^ +| +$"; "") else . end;
+  .description |= flat
+  | if has("key_insight") then .key_insight |= flat else . end
+  | reduce ("decisions", "unresolved") as $k (.;
+      if (.[$k] | type) == "array" then .[$k] |= map(flat | select(. != "")) else . end)') \
+  || { wrapper_failure "normalize_failed" 65; exit $?; }
+
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null \
   || { wrapper_failure "milestone_directory_unwritable" 73; exit $?; }
 
