@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // jsonl-lock.js — the rewrite lock the hooks and every in-place rewriter share,
 // and the replace that runs under it.
 //
