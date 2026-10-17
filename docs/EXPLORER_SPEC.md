@@ -71,7 +71,7 @@ The Explorer has raw access to session transcripts. Local-only hardening:
 | GET | `/api/events?project=...&since=...&limit=N` | Paginated event history |
 | GET | `/api/projects` | List of all projects seen in logs |
 | GET | `/api/stats` | Event counts by type, project, day |
-| GET | `/api/health` | Service health: `status` is `degraded` when a log on disk failed its last read (`load_errors` names it), else `ok`; `files` (which logs exist), Qdrant and embedder reachability, and `qdrant_error: "unauthorized"` when Qdrant answered 401/403 (a missing or wrong API key, not an outage) |
+| GET | `/api/health` | Service health: `status` is `degraded` when a log on disk failed its last read (`load_errors` names it), else `ok`; `logs` counts torn rows (`malformed` in total, and per log `malformed_lines`, `appended_malformed`) with each log's rewrite state and `spooled_rows`, without changing `status` (`/api/recall/health` serves the same `load_errors` and `logs`); `files` (which logs exist), Qdrant and embedder reachability, and `qdrant_error: "unauthorized"` when Qdrant answered 401/403 (a missing or wrong API key, not an outage) |
 
 ### SSE stream (`/api/stream`)
 

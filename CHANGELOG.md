@@ -97,6 +97,71 @@ missing log is still not an error; a fresh install has no prompt history yet.
 - The attribution lines moved from `LICENSE` to `THIRD_PARTY_NOTICES.md`, now
   with the upstream session-bridge notice, so GitHub can detect the MIT license.
   The plugin package ships the notices too.
+### fix(logs): one write per row, a rewrite lock, torn rows counted, deadlines
+
+Concurrent sessions tore rows. The hooks appended with bash's builtin
+`printf '%s\n' "$row" >> log`, which on macOS writes through a 1024-byte line
+buffer, so a longer row left in several `write(2)` calls and another session's
+row landed between them. `session-milestones.jsonl` held six such lines (three
+pairs of session-end milestones, spliced at byte 1025), and readers skipped
+them without a word. Linux CI never saw it: glibc's buffer is 8 KB. Measured
+with 8 writers × 400 rows on macOS, bash 3.2 and 5.3 alike: 1024 bytes with the
+newline arrived whole every time, and 1025 tore about 60% of rows.
+
+- **`cartographer_append`** (`hooks/common.sh`) is the one append, used by every
+  hook and shell writer (`scripts/cartographer-common.sh` sources it into
+  `scripts/`). A row that fits 1024 bytes keeps the builtin, and a longer one
+  goes through one `cat` of a here-string, clean to 70 KB. That is 99.5% of
+  tool-use rows and 99.3% of changelog rows, so the hot hooks keep their
+  process counts: 7 for `npm test`, 2 for the Stop no-op, unchanged and byte
+  identical to the golden capture. The cat path costs ~5-6 ms at load average
+  370, the builtin path +0.17 ms. The search script's awk-written served rows
+  and call rows, which went out through awk's 4 KB buffer, are appended the same
+  way.
+- **Rewrite lock** (`scripts/jsonl-lock.js`). Every in-place rewriter
+  (`enrich-sessions`, `repair-orphan-sessions`, `prune-contentless-milestones`,
+  `repair-transcript-paths`, `backfill-event-ids`, `migrate-project-attribution`,
+  `repair-foreign-commit-sessions`, `enrich-diff-shapes.sh`) now replaces by temp
+  + rename under `<log>.lock`, and carries every row appended since its read. The
+  first four truncated and rewrote, losing whatever arrived meanwhile.
+  `enrich-sessions` also dropped every row it could not parse, and now keeps it.
+  Appenders read `<log>.rewrite` with builtins (no process), spool to
+  `<log>.spool` while a live rewriter holds the log, and write a row again if a
+  rewrite may have finished reading where it went. Delivery is at least once. A
+  grace period alone lost rows in the race test at load average 160 and 434, and
+  the generation-checked second read loses none. Readers fold the rare row
+  written twice by event id.
+- **Torn rows are counted**, not skipped. `readJsonlWithReport` in
+  `explorer/server/jsonl.js`, and the watcher, count malformed lines per log
+  with their line numbers. A read failure is recorded and logged, not returned
+  as an empty log. `/api/health` and `/api/recall/health` serve the same two
+  fields: `load_errors` (above), the one place a failed read is reported, and
+  `logs`, with `malformed` totalled and, per log, rows, `malformed`,
+  `malformed_lines`, `appended_malformed`, `absent`, the rewrite state and
+  `spooled_rows`. Torn rows leave `status` alone: they are history to repair,
+  not a log that is down. Only `/api/health` answers `degraded`, for a
+  `load_errors` entry; `/api/recall/health` keeps `ok`, which Turbo's clients
+  key on.
+- **`scripts/repair-torn-rows.js`** splits a torn run back into its records.
+  Chunks fall at fixed 1024-byte boundaries, so cutting is deterministic, and
+  only an assignment in which every row parses is accepted. All three live pairs
+  parse two ways (their tails are interchangeable), and the changelog copy of
+  each milestone, whose summary names its counts, decides. It is a dry run by
+  default; `--write` backs up and replaces under the lock.
+- **Deadlines.** Every curl in `index-event.sh` and `cartographer-search.sh` has
+  `--connect-timeout 1` and `--max-time 2` (probes) or 5 (calls), and the
+  Qdrant ones still go through `qdrant_curl`, so they carry the API key
+  (above) as well. The Explorer's Qdrant calls pass their signal through
+  `qdrantFetch` the same way. A payload
+  index build gets 30 s. `CARTOGRAPHER_HTTP_MAX_TIME` raises the call budget. A
+  search that timed out is no longer retried without its range. The semantic
+  leg in `explorer/server/search.js` shares one `AbortSignal.timeout` of 3 s,
+  under Turbo's 4 s client budget (`CARTOGRAPHER_SEMANTIC_TIMEOUT_MS`), and the
+  health probes have 2 s. The background indexer is detached from the hook's
+  stdout and stderr: Node's `close` waited 2.1 s for a hook whose 2 s
+  background child held them, and 0.1 s once they were redirected.
+- **CI** gains a macOS job that runs the append and rewrite races, then the
+  unit suite.
 
 ### fix(mcp): tool results are text only, at about a third of the tokens
 
