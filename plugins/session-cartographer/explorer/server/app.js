@@ -15,6 +15,7 @@ import {
 import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { summarizeSessions } from './sessions.js';
 import { createInternalsHandler } from './internals-route.js';
+import { guardLoopback } from './loopback-guard.js';
 import { ensurePayloadIndexes, missingPayloadIndexes, PAYLOAD_INDEXES } from '../../scripts/qdrant-collection.js';
 import { accessSync, constants, existsSync, statSync } from 'fs';
 import { resolve } from 'path';
@@ -33,6 +34,10 @@ function indexEventsById(list) {
  */
 export function createExplorerApp() {
   const app = express();
+  // First, so a rebound or cross-site request is refused before its body is
+  // parsed. The headless Turbo server binds this same port and runs the same
+  // guard (loopback-guard.js); the UI host checks again before mounting this app.
+  app.use(guardLoopback);
   app.use(express.json({ limit: '1mb' }));
 
   let events;

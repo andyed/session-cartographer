@@ -4,12 +4,12 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
 import { effectiveTurboSettings } from '../../scripts/turbo-common.js';
+import { assertLoopbackRequest } from './loopback-guard.js';
 
 const exec = promisify(execFile);
 const controllerPath = fileURLToPath(new URL('../../scripts/cartographer-turbo.js', import.meta.url));
 const ACTIONS = new Set(['enable', 'start', 'refresh']);
 const MEMORY_PATHS = new Set(['/api/memory/health', '/api/memory/activity', '/api/memory/state', '/api/memory/session', '/api/memory/file', '/api/memory/recall', '/api/memory/recall/call', '/api/memory/day']);
-const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]']);
 
 function reply(res, status, body) {
   res.writeHead(status, {
@@ -73,21 +73,11 @@ async function memoryHealth(url, fetchImpl) {
 }
 
 // UI middleware runs before Vite's own host guard, so every local API mounted
-// there must validate its origin before serving private corpus data.
+// there must validate its origin before serving private corpus data. The
+// host/origin half is the guard every listener shares (loopback-guard.js); a
+// mutation also demands an Origin and the explicit action header.
 export function validateUiRequest(req, mutation) {
-  let origin;
-  try {
-    const url = new URL(`http://${req.headers.host}`);
-    if (!LOOPBACK_HOSTS.has(url.hostname) || url.username || url.password || url.pathname !== '/') throw new Error();
-    origin = url.origin;
-  } catch {
-    throw failure(403, 'Cartographer is available only on the loopback UI host');
-  }
-  const requestOrigin = req.headers.origin;
-  if ((requestOrigin && requestOrigin !== origin) || (mutation && requestOrigin !== origin)) {
-    throw failure(403, 'Cartographer requires the same UI origin');
-  }
-  if (req.headers['sec-fetch-site'] === 'cross-site') throw failure(403, 'Cross-site Turbo requests are not allowed');
+  assertLoopbackRequest(req, { requireOrigin: mutation });
   if (mutation && (
     req.headers['x-cartographer-action'] !== 'start'
     || !/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')
