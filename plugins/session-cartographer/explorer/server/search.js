@@ -354,10 +354,14 @@ function rrfFuseMany(ladders, limit, exemptIds = null) {
  *
  * No single curve keeps both kinds of case; d trades the archive for the
  * week. With the exemption every curve tested reaches 0.97-1.00 in every
- * bucket. Exp stays the browse curve for now: the power-law family scored a
- * little higher on recency (0.70-0.72) but both metrics here reward a steeper
- * curve, so they cannot show what it costs a topical browse
- * (docs/SCORING.md, "Choosing the browse curve").
+ * bucket. Exp stays the browse curve, decided 2026-10-17 with a third case
+ * kind, since both metrics above reward a steeper curve: the nine graded
+ * demo/truth queries, on the corpus as it stood when they were labeled
+ * (their sessions then 4-10 days old). Every power-law form with the
+ * exemption (ACT-R base-level d=0.3 and 0.5, t^-0.5) lost topical P@10 on
+ * two or three queries and won none, 0.40-0.42 against 0.48. Below about
+ * d/λ (12-21 days) a power law is the steeper curve, and that is where a
+ * browse's material lives (docs/SCORING.md, "Choosing the browse curve").
  *
  * The count is over every keyword candidate that survived scope, window and
  * stale-memory filtering, before FUSION_DEPTH and before delta serving (which

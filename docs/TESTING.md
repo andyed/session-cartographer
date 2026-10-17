@@ -15,6 +15,7 @@ confident, well-formed, wrong answer while every stage reported success:
 | Semantic window trimmed client-side | 0 of 500 in-window | a full 24h of matches |
 | Project scoped by exact equality | 0 semantic rows | 9,943 indexed points |
 | Commits from a worktree | no event | five pushed commits |
+| Eval matcher at half of a label's words | ACT-R ahead on topical P@10, 0.58 to 0.56 | one-word matches; fixed, it trails 0.42 to 0.48 |
 
 So the two instincts that feel like testing are the two that do not work here:
 

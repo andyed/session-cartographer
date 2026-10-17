@@ -2,6 +2,16 @@
 
 Status: plan 2026-09-24 · age-curve gate built and first fix shipped 2026-10-16
 
+**2026-10-17.** The browse curve is decided: exp stays. `age-curve.js` gained
+the third case kind the gate lacked, the nine graded `demo/truth` queries
+(`--truth`), and `--as-of`, which rebuilds the corpus as it stood when they were
+labeled. On that snapshot every power-law form with the exemption (ACT-R
+base-level d=0.3 and 0.5, t^-0.5) lost topical P@10 on two or three of nine
+queries and won none. Below roughly d/λ (12–21 days) a power law is the steeper
+curve, and a browse's material is there. What the power family wins, the named
+record at rank 1, is a question for the exemption. docs/SCORING.md has the
+tables.
+
 **2026-10-16.** Steps 1, 2 and the query-aware half of step 4 are done.
 `scripts/age-curve.js` is the gate below, run on both engines, and
 `tests/unit/age-curve-gate.test.js` runs it in CI on a synthetic corpus. The
