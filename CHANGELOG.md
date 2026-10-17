@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-### fix(logs): the rewrite lock lost rows on small CI runners
+### fix(logs): the rewrite lock keeps every row under contention
 
 `jsonl-lock.test.js` lost 1-2 rows per run on the 2-4 core CI runners (Linux and
 macOS). On a 16-core Mac it passed, and lost rows only when confined to the four
@@ -88,7 +88,6 @@ nothing. `normalizeLiteralPrompt` and `isNonPromptNoise` are now exported from
 `classify-prompt-intent.js`, so the probe shares its definition of a human
 prompt. `live-index-isolation.test.js` exempts the new test, which names the
 CLI only inside transcript fixtures.
-||||||| parent of a962f6c (test(hooks): keep the detached indexer out of hook-test cleanup)
 
 ### feat(security): Qdrant runs with an API key, and every client sends it
 
