@@ -34,7 +34,10 @@
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
 #   CARTOGRAPHER_COLLECTION      — default: session-cartographer
-#   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~30-day half-life)
+#   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~29-day half-life)
+#   CARTOGRAPHER_DECAY_LOOKUP_MAX — a query whose tokens all appear together in at
+#                                  most this many candidates is a lookup, and those
+#                                  candidates are not decayed (default: 10; 0 = off)
 #   CARTOGRAPHER_SERVED_LOG      — default: $DEV/served-log.jsonl (every displayed result)
 #   CARTOGRAPHER_ACCESS_LEDGER   — default: $DEV/access-ledger.jsonl (every --touch)
 #   CARTOGRAPHER_SEARCH_CALL_LOG — default: $DEV/.carto/search-calls.jsonl (standard calls)
@@ -530,6 +533,11 @@ if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
 fi
 
 DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
+# Same variable, default and fallback as rankingFromEnv() in
+# explorer/server/search.js. A wildcard query sets it to 0 below: an expansion
+# names every matching vocabulary term, which no record contains all of.
+LOOKUP_MAX="${CARTOGRAPHER_DECAY_LOOKUP_MAX:-10}"
+case "$LOOKUP_MAX" in ''|*[!0-9]*) LOOKUP_MAX=10 ;; esac
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
@@ -852,6 +860,7 @@ exec 1> "$OUTPUT_PIPE"
 GREP_QUERY="$QUERY"
 AWK_QUERY="$QUERY"
 if echo "$QUERY" | grep -q '\*'; then
+  LOOKUP_MAX=0
   # Build grep pattern for file matching
   GREP_QUERY=$(echo "$QUERY" | sed 's/\*/[a-z0-9]*/g')
 
@@ -1165,6 +1174,7 @@ rank_fuse_and_display() {
   # codex_memory_stale mirrors CODEX_MEMORY_STALE_RELATIVE in
   # codex-memory-stale.js; tests/unit/codex-memory-stale.test.js pins them.
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
+      -v lookup_max="$LOOKUP_MAX" -v noise_trim=0.1 \
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
       -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
@@ -1306,6 +1316,14 @@ rank_fuse_and_display() {
       if (before_epoch + 0 > 0 && ts_epoch > before_epoch + 0) next
     }
 
+    # ─── Lookup candidates ───
+    # bm25-search.awk sets column 10 when the record contains every query
+    # token. Counted here, after scope, window and stale filtering and before
+    # delta serving, so what a query names does not depend on what this
+    # session was already shown. lookupExemption() in explorer/server/search.js
+    # counts the same set.
+    if (($10 + 0) == 1) full_key[key] = 1
+
     # ─── Delta-serving suppression ───
     # Drop already-served event_ids so iterative /remember calls in the
     # same session surface fresh material rather than re-returning the
@@ -1345,6 +1363,30 @@ rank_fuse_and_display() {
     # Sort by RRF score without allowing query breadth to make fusion quadratic.
     merge_sort_order(1, n, order, sort_scratch, rrf_score, stable_rank)
 
+    # ─── Relative noise trim, on relevance ───
+    # Drop what scores under noise_trim of the best RRF x salience score,
+    # before any age weighting — trimNoise() in explorer/server/search.js. The
+    # API trimmed after decay until 2026-10-16 and so cut old records for
+    # their age; this path had no trim at all, so the engines also disagreed
+    # about the pool. Sorted, so the survivors are a prefix.
+    if (n > 0 && noise_trim + 0 > 0) {
+      trim_floor = rrf_score[order[1]] * noise_trim
+      while (n > 0 && rrf_score[order[n]] < trim_floor) n--
+    }
+
+    # ─── Lookup exemption ───
+    # Between 1 and lookup_max candidates hold every query token: the query
+    # names them, and age is no evidence against a named record. They skip the
+    # decay below; everything else decays. Why a switch and not a gentler
+    # curve is measured in lookupExemption() in explorer/server/search.js.
+    # On this path, measured 2026-10-16 on 204k live events (paired cases):
+    # S@10 for known items older than 90 days went 0.23 -> 1.00 (12 of 30
+    # absent from the top 100 -> 0), 30-90 days 0.67 -> 0.97, and the newest
+    # record on recency cases stayed at 0.73.
+    nfull = 0
+    for (fk in full_key) nfull++
+    exempt_on = (lookup_max + 0 > 0 && nfull >= 1 && nfull <= lookup_max + 0)
+
     # ─── Activation: Ebbinghaus time-decay + promote-on-reuse ───
     # score *= exp(-lambda * hours_since_last_use) * reuse_boost
     #
@@ -1365,7 +1407,7 @@ rank_fuse_and_display() {
         factor *= boost
         resort_needed = 1
       }
-      if (decay_lambda + 0 > 0 && now_epoch + 0 > 0) {
+      if (decay_lambda + 0 > 0 && now_epoch + 0 > 0 && !(exempt_on && (k in full_key))) {
         event_epoch = ts_to_epoch(timestamp[k])
         if (event_epoch > 0) {
           if (acc_last[k] + 0 > event_epoch) event_epoch = acc_last[k] + 0

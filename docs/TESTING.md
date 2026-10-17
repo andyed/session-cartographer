@@ -339,9 +339,14 @@ before any probe means anything.
   commit: `1f977e3` (session `01a0df72`, 2026-09-26) was logged that way.
 - **The digest's file list contains fragments** — `value.trim`, `console.log`
   and similar leak out of heredocs via the path extractor. Not files.
-- **Archival recall is buried by recency.** A near-exact match on an old record
-  ranks first in its own ladder and still misses an unscoped result set. Reach it
-  with `--since` / `--before`; do not read its absence as an indexing failure.
+- **Archival recall is fixed for lookups, not for browses.** Since 2026-10-16 a
+  query whose tokens all appear together in at most 10 candidates is a lookup and
+  those candidates skip time decay (docs/SCORING.md), so a near-exact match on an
+  old record comes back at any age. A broad query still decays, by design: an
+  old record that shares only common words with it still ranks under recent
+  ones. Reach it with `--since` / `--before`; do not read its absence as an
+  indexing failure. `node scripts/age-curve.js` measures both cases on the live
+  corpus; `age-curve-gate.test.js` holds both engines to it in CI.
 - **The access ledger is thin**, so hit-rate reports have little to join and new
   lenses have no utility signal yet.
 
@@ -355,7 +360,7 @@ before any probe means anything.
 | Test passes locally, fails elsewhere | A live session id, or the semantic leg not pinned off |
 | Test passes against known-broken code | The fixture does not exercise the defect — add the rank/parity assertion |
 | API probe disagrees with the CLI | You are almost certainly talking to another checkout's server |
-| Old material never surfaces | Recency weighting; scope with `--since` before assuming loss |
+| Old material never surfaces | A browse query decays; did the query name it (≤10 candidates holding every token)? Scope with `--since` before assuming loss |
 | Work missing from a digest | Committed from a worktree — verify with `git log` |
 | Turbo misses rows that are in the logs | `cartographer-turbo.js status`: `index_freshness` and the per-log `watch` entries compare what each watcher consumed with the disk |
 | `start` says Turbo did not become ready | The last `[turbo-control]` line in `server.log`: killed at the deadline, or exited with a signal before it. A `loading corpus` line from the same pid means the load had begun; `loaded ... in N ms` lines from earlier starts give its usual cost |

@@ -1,6 +1,23 @@
 # Archival recall — frecency and query-aware decay
 
-Status: plan, measurement not yet run · 2026-09-24
+Status: plan 2026-09-24 · age-curve gate built and first fix shipped 2026-10-16
+
+**2026-10-16.** Steps 1, 2 and the query-aware half of step 4 are done.
+`scripts/age-curve.js` is the gate below, run on both engines, and
+`tests/unit/age-curve-gate.test.js` runs it in CI on a synthetic corpus. The
+noise trim now runs before decay on both paths, which halved the archival items
+missing from the pool but did not lift them into the top 10. The arm that
+passed was specificity-conditioned decay in its simplest form: a query whose
+tokens all appear together in at most 10 candidates skips decay for those
+candidates, and everything else decays as before. Power-law and ACT-R
+base-level decay (d swept 0.05–0.5) did not pass alone; no d kept both the
+archive and the week. With the exemption they scored a little higher than exp
+on both gate metrics, but both metrics reward steepness, so exp stays the
+browse curve until the `demo/truth` set prices what steepness costs a topical
+browse. The numbers are in docs/SCORING.md. Frecency (step 3) and interleaving
+(step 5) are still open. The exemption shipped as the default without an
+interleaving run, because the recency cases are its guard and its browse-query
+behaviour is unchanged.
 
 Old material is unreachable by default. This document states the evidence,
 the design agreed on 2026-09-24, and the measurement that gates any ranking

@@ -1,31 +1,74 @@
 #!/usr/bin/env node
 // eval-search.js — Evaluate search quality against labeled truth data.
 //
-// Runs each truth query through three modes:
-//   1. grep (raw transcript search — baseline)
-//   2. BM25 (keyword only, no Qdrant)
-//   3. Hybrid (BM25 + semantic fusion)
+// Runs each truth query through these arms, each pinned to one engine:
+//   1. grep    raw transcript search — baseline
+//   2. bm25    portable CLI, keyword only (CARTOGRAPHER_TURBO=0, semantic off)
+//   3. hybrid  portable CLI, keyword + semantic (CARTOGRAPHER_TURBO=0)
+//   4. api     hybridSearch in-process — the engine Turbo runs — with the
+//              same decay settings (--api; it loads the whole corpus)
 //
 // Compares results against demo/truth/<query-id>.json labels.
 // Reports precision@k, recall, noise breakdown, and latency.
 //
 // Usage:
-//   node scripts/eval-search.js              # run evaluation
-//   node scripts/eval-search.js --verbose    # show per-result detail
+//   node scripts/eval-search.js                    # shipped ranking
+//   node scripts/eval-search.js --lambda 0         # the decay-off arm
+//   node scripts/eval-search.js --lookup-max 0     # decay without the lookup exemption
+//   node scripts/eval-search.js --api --verbose    # add the in-process arm; per-result detail
+//
+// What it measures is the configuration it is given. Until 2026-10-16 it forced
+// CARTOGRAPHER_DECAY_LAMBDA=0, which made its numbers describe a ranking no one
+// ran, and it called the CLI without --no-turbo, so with Turbo enabled the bm25
+// and hybrid arms were both answered by the warm server — whose decay and
+// semantic settings are its own environment's, not this harness's — and
+// compared the server with itself. Now each arm names its engine, and the
+// decay settings (CARTOGRAPHER_DECAY_LAMBDA, CARTOGRAPHER_DECAY_LOOKUP_MAX, or
+// --lambda / --lookup-max) reach every arm. Telemetry is not written: served
+// and search-call rows go to /dev/null, and session variables are unset so
+// delta serving cannot shrink later queries' result sets.
 
-import { readFileSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { execSync } from 'child_process';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { execFileSync, execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const TRUTH_DIR = join(ROOT, 'demo', 'truth');
 const SEARCH_SCRIPT = join(ROOT, 'scripts', 'cartographer-search.sh');
 const VERBOSE = process.argv.includes('--verbose');
+const API_ARM = process.argv.includes('--api');
+
+function flagValue(name) {
+  const i = process.argv.indexOf(name);
+  if (i < 0) return undefined;
+  const value = process.argv[i + 1];
+  if (value === undefined || !/^[0-9.]+$/.test(value)) {
+    console.error(`${name} needs a non-negative number`);
+    process.exit(2);
+  }
+  return value;
+}
+
+// One decay configuration for every arm. Unset means each engine's default,
+// which is the shipped ranking.
+const RANKING_ENV = {};
+for (const [flag, key] of [['--lambda', 'CARTOGRAPHER_DECAY_LAMBDA'], ['--lookup-max', 'CARTOGRAPHER_DECAY_LOOKUP_MAX']]) {
+  const value = flagValue(flag) ?? process.env[key];
+  if (value !== undefined && value !== '') RANKING_ENV[key] = value;
+}
+// The in-process arm reads these at call time from its own environment.
+Object.assign(process.env, RANKING_ENV);
 
 // ─── Load truth data ───
 
+// demo/truth/ is gitignored: the labels name real sessions, so they exist only
+// in the maintainer's own checkout.
+if (!existsSync(TRUTH_DIR)) {
+  console.error(`No truth labels at ${TRUTH_DIR} (gitignored; present only in the maintainer's checkout).`);
+  process.exit(2);
+}
 const truthFiles = readdirSync(TRUTH_DIR).filter(f => f.endsWith('.json'));
 const queries = truthFiles.map(f => JSON.parse(readFileSync(join(TRUTH_DIR, f), 'utf-8')));
 
@@ -34,24 +77,24 @@ console.log(`Loaded ${queries.length} truth queries\n`);
 // ─── Search runners ───
 
 function runSearch(query, mode) {
-  const env = { ...process.env };
+  const env = { ...process.env, ...RANKING_ENV };
   // Delta serving suppresses event_ids already returned this session. An eval
   // that inherits a live session id scores later queries against a shrinking
   // result set and reports a precision drop that is pure measurement artifact.
   for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID',
     'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
-  // Same class of artifact, different mechanism. Time decay (~30-day half-life)
-  // is correct for live recall and ruinous for a fixed truth set: every labeled
-  // event ages, so the scores this harness grades decay ~16x over four months
-  // while the corpus fills the result window with material the labels have
-  // never seen. Measured 2026-08-14 — decay on: bm25 P@5 0.11 / recall 22%,
-  // hybrid 0.13 / 15%. Same corpus, decay off: bm25 0.40 / 56%, hybrid
-  // 0.42 / 65%. The harness was reporting label age, not search quality.
-  env.CARTOGRAPHER_DECAY_LAMBDA = '0';
-  const args = [`"${query}"`, '--limit', '50'];
+  // An evaluation is not a recall: its served rows would feed hit-rate reports
+  // and its call rows the Internals latency cohorts. The access ledger is left
+  // alone — it is only written by --touch, which this never passes, and it is
+  // read for promote-on-reuse, which is part of the ranking being measured.
+  env.CARTOGRAPHER_SERVED_LOG = '/dev/null';
+  env.CARTOGRAPHER_SEARCH_CALL_LOG = '/dev/null';
+  // Pin the engine. Without --no-turbo an enabled Turbo answers both CLI arms.
+  env.CARTOGRAPHER_TURBO = '0';
+  const args = [SEARCH_SCRIPT, query, '--limit', '50', '--all', '--no-turbo'];
 
   if (mode === 'bm25') {
-    env.CARTOGRAPHER_QDRANT_URL = 'http://localhost:1'; // disable semantic
+    env.CARTOGRAPHER_SEMANTIC = '0';
   } else if (mode === 'grep') {
     // grep: just count unique sessions from raw transcript search
     const start = performance.now();
@@ -75,15 +118,37 @@ function runSearch(query, mode) {
 
   const start = performance.now();
   try {
-    const out = execSync(
-      `bash "${SEARCH_SCRIPT}" ${args.join(' ')}`,
-      { encoding: 'utf-8', timeout: 120000, env }
-    );
+    const out = execFileSync('bash', args, { encoding: 'utf-8', timeout: 120000, env });
     const elapsed = performance.now() - start;
     return parseSearchOutput(out, elapsed);
   } catch {
     return { sessions: new Set(), events: [], elapsed: performance.now() - start, rawCount: 0 };
   }
+}
+
+// The api arm: hybridSearch in this process, over the same five logs. Loaded
+// once — a corpus load costs about a second — and only when asked for.
+let apiEngine = null;
+async function runApiSearch(query) {
+  if (!apiEngine) {
+    const load = (rel) => import(pathToFileURL(join(ROOT, rel)).href);
+    const [{ readAllEvents }, { buildIndex }, { hybridSearch }] = await Promise.all([
+      load('explorer/server/jsonl.js'), load('explorer/server/bm25.js'), load('explorer/server/search.js'),
+    ]);
+    apiEngine = { hybridSearch, index: buildIndex(readAllEvents()) };
+  }
+  const start = performance.now();
+  const res = await apiEngine.hybridSearch(apiEngine.index, query, {});
+  const elapsed = performance.now() - start;
+  const events = res.items.slice(0, 50).map((item) => ({
+    timestamp: item.timestamp || '',
+    sources: item._sources || '',
+    event_id: item.event_id || '',
+    summary: String(item.summary || item.description || item.prompt || '').split('\n')[0],
+    session: item.session_id || item.session || '',
+    project: item.project || '',
+  }));
+  return { sessions: new Set(events.map((e) => e.session).filter(Boolean)), events, elapsed, rawCount: events.length };
 }
 
 function parseSearchOutput(output, elapsed) {
@@ -289,8 +354,11 @@ function scoreResults(truthQuery, searchResult, mode) {
 
 // ─── Run evaluation ───
 
-const MODES = ['grep', 'bm25', 'hybrid'];
+const MODES = ['grep', 'bm25', 'hybrid', ...(API_ARM ? ['api'] : [])];
 const allScores = [];
+
+const shown = Object.entries(RANKING_ENV).map(([k, v]) => `${k}=${v}`).join(' ');
+console.log(`Ranking: ${shown || 'engine defaults (shipped)'}; arms: ${MODES.join(', ')}\n`);
 
 for (const truth of queries) {
   console.log(`── ${truth.query} ──`);
@@ -300,7 +368,7 @@ for (const truth of queries) {
 
   for (const mode of MODES) {
     process.stdout.write(`   ${mode.padEnd(8)} `);
-    const result = runSearch(truth.query, mode);
+    const result = mode === 'api' ? await runApiSearch(truth.query) : runSearch(truth.query, mode);
     const score = scoreResults(truth, result, mode);
     allScores.push(score);
 
