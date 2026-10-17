@@ -29,7 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  acquireRewriteLock, appendJsonl, drainSpool, lockPath, lockStatus, releaseRewriteLock,
+  acquireRewriteLock, APPEND_TRIES, appendJsonl, drainSpool, lockPath, lockStatus, releaseRewriteLock,
   replaceJsonl, RewriteConflictError, snapshotJsonl, spoolPath, statePath,
 } from '../../scripts/jsonl-lock.js';
 
@@ -142,6 +142,97 @@ test('a live holder makes a second rewriter wait, then give up with its name', (
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// Wait, without yielding: the rewriter under test is synchronous, and the
+// appenders are separate processes that keep running while it blocks.
+function waitFor(predicate, ms = 10000) {
+  const deadline = Date.now() + ms;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('timed out waiting');
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+  }
+}
+
+// Run <during> inside replaceJsonl at two points, by wrapping fs.renameSync,
+// which the module calls through the same fs object: once the state file has
+// just been renamed to say held, and once the new copy is about to be renamed
+// over the log.
+function replaceWithPauses(file, { afterHeld, beforeSwap }) {
+  const rename = fs.renameSync;
+  fs.renameSync = function patched(from, to) {
+    if (to === file && String(from).startsWith(`${file}.rewrite-`)) beforeSwap?.();
+    rename.call(fs, from, to);
+    if (to === statePath(file) && fs.readFileSync(to, 'utf8').startsWith('held ')) afterHeld?.();
+  };
+  try {
+    const raw = snapshotJsonl(file);
+    return replaceJsonl(file, { original: raw, body: raw, graceMs: 50 });
+  } finally {
+    fs.renameSync = rename;
+  }
+}
+
+test('a dead rewriter\'s spool is moved before the state says held, never after', () => {
+  const { dir, file } = tempLog([{ event_id: 'a' }]);
+  const dead = deadPid();
+  fs.writeFileSync(lockPath(file), `${dead} host 2026-10-16T00:00:00Z\n`);
+  fs.writeFileSync(statePath(file), `held ${dead} 3 host 2026-10-16T00:00:00Z\n`);
+  fs.writeFileSync(spoolPath(file), `${JSON.stringify({ event_id: 'orphan' })}\n`);
+  const states = [];
+  const rename = fs.renameSync;
+  fs.renameSync = function spy(from, to) {
+    if (from === spoolPath(file)) states.push(fs.readFileSync(statePath(file), 'utf8').trim());
+    if (to === file) fs.appendFileSync(spoolPath(file), `${JSON.stringify({ event_id: 'spooled-while-held' })}\n`);
+    return rename.call(fs, from, to);
+  };
+  try {
+    const raw = snapshotJsonl(file);
+    replaceJsonl(file, { original: raw, body: raw, graceMs: 0 });
+  } finally {
+    fs.renameSync = rename;
+  }
+  assert.equal(states.length, 2, 'the orphan spool and the one written while held are each moved once');
+  for (const state of states) assert.ok(!state.startsWith(`held ${process.pid} `), `the spool moved while the state read "${state}"`);
+  assert.deepEqual(rowsOf(file).map((r) => r.event_id).sort(), ['a', 'orphan', 'spooled-while-held']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('an appender that opens the spool as a rewrite says held keeps its row (the CI race)', { timeout: 60000 }, async () => {
+  // Found on 2-4 core runners: the rewriter said held, an appender read it and
+  // opened the spool, the rewriter then moved the spool (renamed, read, unlinked),
+  // and the appender's row went into the unlinked file. Its second read still
+  // said held, so it never wrote again. Here the interleaving is forced: a cat
+  // shim slows the appender's write, and the rewriter waits at its rename until
+  // the appender has finished.
+  const { dir, file } = tempLog([{ event_id: 'seed' }]);
+  const shim = path.join(dir, 'bin');
+  fs.mkdirSync(shim);
+  fs.writeFileSync(path.join(shim, 'cat'), '#!/bin/bash\nsleep 0.3\nexec /bin/cat "$@"\n', { mode: 0o755 });
+  const done = path.join(dir, 'appender-done');
+  const row = JSON.stringify({ event_id: 'raced', pad: 'r'.repeat(1500) });   // past 1023 bytes: the cat path
+  let appender;
+  replaceWithPauses(file, {
+    afterHeld() {
+      appender = spawn('bash', ['-c', '. "$1"; cartographer_append "$2" "$3"; : > "$4"', '_', COMMON, file, row, done],
+        { env: { ...process.env, PATH: `${shim}:${process.env.PATH}` }, stdio: 'ignore' });
+      waitFor(() => fs.existsSync(spoolPath(file)));                       // it read held and opened the spool
+    },
+    beforeSwap() { waitFor(() => fs.existsSync(done)); },                    // it wrote, re-read held, returned
+  });
+  await new Promise((resolve) => (appender.exitCode !== null ? resolve() : appender.on('exit', resolve)));
+  drainSpool(file);
+  const ids = rowsOf(file).map((r) => r.event_id);
+  assert.equal(ids.filter((id) => id === 'raced').length, 1, `the raced row must arrive once: ${JSON.stringify(ids)}`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('a drain takes complete rows only; the fragment of a write still landing is left to its appender', () => {
+  const { dir, file } = tempLog([{ event_id: 'a' }]);
+  fs.writeFileSync(spoolPath(file), `${JSON.stringify({ event_id: 'whole' })}\n{"event_id":"half`);
+  assert.equal(drainSpool(file), 1);
+  assert.deepEqual(rowsOf(file).map((r) => r.event_id), ['a', 'whole']);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // writer <file> <tag> <count>: appends tagged rows through cartographer_append,
 // a few hundred microseconds apart, like a busy hook.
 const WRITER = '. "$1"; f=$2; tag=$3; i=0; pad=$(printf "%*s" 1500 "" | tr " " x); '
@@ -187,7 +278,7 @@ function writerRows(file, count) {
   return { lost, doubled, most, expected };
 }
 
-test('replaces racing six appenders lose nothing, and write no row more than three times', { timeout: 120000 }, async (t) => {
+test('replaces racing six appenders lose nothing, and write no row more often than an appender may', { timeout: 120000 }, async (t) => {
   const { dir, file } = tempLog(Array.from({ length: 2000 }, (_, i) => ({ event_id: `seed-${i}`, seed: true })));
   const count = 300;
   const { rewrites, moved } = await rewriteWhileWriting(file, startWriters(file, count), (target, raw, body) => {
@@ -203,11 +294,11 @@ test('replaces racing six appenders lose nothing, and write no row more than thr
   // At least once: a row whose write spans a rewrite's release, or a whole
   // rewrite, can be both kept and written again; readers fold it by event_id.
   // The rewriter moves rows and never copies one, so a row exists once per
-  // write of it, and an appender writes a row at most three times. How many
+  // write of it, and an appender writes a row at most APPEND_TRIES times. How many
   // double depends on load: this test rewrites every few dozen ms, and doubled
   // 1-3 of 1,800 rows alone and ~200 under the full suite's parallel load.
   // A repair run is one rewrite per log.
-  assert.ok(most <= 3, `a writer row appears ${most} times; an appender writes a row at most three`);
+  assert.ok(most <= APPEND_TRIES, `a writer row appears ${most} times; an appender writes a row at most ${APPEND_TRIES}`);
   assert.equal(rowsOf(file).filter((r) => r.seed).length, 2000, 'every seed row survives');
   assert.deepEqual(fs.readdirSync(dir).sort(), ['log.jsonl', 'log.jsonl.rewrite'], 'no lock, spool or temp file is left');
   fs.rmSync(dir, { recursive: true, force: true });

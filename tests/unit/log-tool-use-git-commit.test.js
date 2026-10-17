@@ -71,6 +71,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { NO_INDEXER_ROOT } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'log-tool-use.sh');
@@ -96,9 +97,13 @@ function fire(ws, command, stdout, { cwd = ws.repo, env = {}, payload: extra = {
     input: JSON.stringify(payload),
     // The hook backgrounds index-event.sh, which otherwise embeds these fixture
     // rows into the live Qdrant: 18 `session: testsess` points were found there.
+    // It is detached, so the real one outlives the hook and wrote into the
+    // workspace while the test removed it (ENOTEMPTY on CI); these tests are
+    // not about indexing, so a no-op indexer takes its place.
     env: {
       ...process.env, CARTOGRAPHER_LOG_TOOL_USE: 'true', CARTOGRAPHER_DEV_DIR: ws.dev,
       CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1', CARTOGRAPHER_EMBED_URL: 'http://127.0.0.1:1',
+      CARTOGRAPHER_ROOT: NO_INDEXER_ROOT,
       ...env,
     },
   });
