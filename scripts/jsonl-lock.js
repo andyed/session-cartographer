@@ -19,9 +19,12 @@
 //                  rewrites. Replaced by rename, so a reader sees one whole
 //                  line. Kept between rewrites, so the count survives.
 //
-//   rewriter  takes the lock, says held, replaces the log by temp + rename,
-//             says released, drops the lock, waits a grace period, then
-//             appends the rows that reached the old file late and the spool.
+//   rewriter  takes the lock, moves any spool a dead rewriter left into the
+//             log, says held, replaces the log by temp + rename, says
+//             released, drops the lock, waits a grace period, then appends
+//             the rows that reached the old file late and the spool. The spool
+//             is moved only while the state does not say held: an appender
+//             that saw held is writing into it (acquireRewriteLock).
 //   appender  (cartographer_append in hooks/common.sh, appendJsonl here) reads
 //             the state, appends to "<log>.spool" while a live pid holds it,
 //             reads the state again, and writes the row again if it changed.
@@ -37,9 +40,11 @@
 // whose write spanned a whole rewrite, or its release, can be both kept and
 // written again; it appears twice, and every reader folds a repeated event_id.
 // Late rows and spooled rows that the new copy already holds are not appended
-// a second time. A held state whose pid is gone is ignored by
-// appenders, its lock is reclaimed by the next rewriter, and that rewriter
-// moves any spool the dead one left into the log first.
+// a second time. Every look takes complete rows only; a fragment is a write
+// still landing, whose appender writes it whole again. A held state whose pid
+// is gone is ignored by appenders, its lock is reclaimed by the next
+// rewriter, and that rewriter moves any spool the dead one left into the log
+// before it says held.
 //
 // Rows carried across are copied byte for byte, not transformed: a repair
 // applies to the history it read, and rows written during it are new.
@@ -153,8 +158,9 @@ export function mustRewrite(before, after) {
 }
 
 /**
- * Take <file>'s rewrite lock, waiting up to `waitMs` for a live holder, and
- * mark the log held. A lock whose holder is dead is moved aside and taken.
+ * Take <file>'s rewrite lock, waiting up to `waitMs` for a live holder, move
+ * any spool a dead rewriter left into the log, and only then mark the log
+ * held. A lock whose holder is dead is moved aside and taken.
  * Moving it aside, rather than unlinking it, means two scripts reclaiming at
  * once cannot each delete the lock the other has just taken: the one whose
  * rename picks up a lock it did not judge stale puts it back and keeps waiting.
@@ -192,6 +198,19 @@ export function acquireRewriteLock(file, { waitMs = DEFAULT_WAIT_MS } = {}) {
   const gen = Number.isFinite(previous) ? previous + 1 : 1;
   const handle = { file, lock, token, host, gen };
   try {
+    // The spool is moved before the state says held, never after. Once it says
+    // held, appenders open the spool to write, and moving it then lost rows on
+    // 2-4 core CI runners: an appender read held, opened the spool, and was
+    // descheduled; the move renamed the spool, read it, appended it and
+    // unlinked it; the appender's row then went into the unlinked file, and
+    // its second read of the state still said held, the same as its first, so
+    // it never wrote the row again. Before held, the state is released (or
+    // held by a dead pid), so appenders write to the log. The only spool
+    // writers left are ones that read the previous rewrite's held state; that
+    // rewrite has released since, so their second read differs from their
+    // first and they write the row again. Appended straight to the log: an
+    // append like any other, carried by replaceJsonl like any other.
+    moveSpool(file, new Set(), (data) => fs.appendFileSync(file, data));
     writeState(file, `held ${process.pid} ${gen} ${host} ${new Date().toISOString()}`);
   } catch (error) {
     releaseRewriteLock(handle);
@@ -284,7 +303,9 @@ export function drainSpool(file, known = new Set()) {
 }
 
 // Renamed first, so a hook that opens the spool after this point creates a
-// fresh one rather than writing into a file about to be unlinked.
+// fresh one rather than writing into a file about to be unlinked. Complete
+// rows only: a trailing fragment is a write still landing, and its appender,
+// whose state has changed under it, writes the whole row again.
 function moveSpool(file, known, append) {
   const spool = spoolPath(file);
   if (!fs.existsSync(spool)) return 0;
@@ -294,7 +315,7 @@ function moveSpool(file, known, append) {
   } catch {
     return 0;
   }
-  const { rows, bytes } = unseen(fs.readFileSync(draining), known);
+  const { rows, bytes } = unseen(completeRows(fs.readFileSync(draining)), known);
   if (rows) append(bytes);
   fs.unlinkSync(draining);
   return rows;
@@ -326,10 +347,6 @@ export function replaceJsonl(file, { original, body, graceMs = DEFAULT_GRACE_MS,
   let renamedSize;
   let carried = Buffer.alloc(0);
   try {
-    // Rows a dead rewriter diverted and never drained. Appended straight to
-    // the log (we hold it, so appendJsonl would only spool them again), they
-    // are an append like any other and are carried below.
-    moveSpool(file, new Set(), (data) => fs.appendFileSync(file, data));
     fd = fs.openSync(file, 'r');
     const stat = fs.fstatSync(fd);
     if (stat.size < before.length || !readRange(fd, 0, before.length).equals(before)) {
@@ -360,6 +377,9 @@ export function replaceJsonl(file, { original, body, graceMs = DEFAULT_GRACE_MS,
     try { fs.unlinkSync(temporary); } catch {}
     if (fd !== undefined) fs.closeSync(fd);
     releaseRewriteLock(handle);
+    // Nothing was replaced, so rows spooled while this held the log belong in
+    // it now rather than waiting for the next rewrite.
+    try { drainSpool(file); } catch {}
     throw error;
   }
   releaseRewriteLock(handle);
@@ -371,7 +391,9 @@ export function replaceJsonl(file, { original, body, graceMs = DEFAULT_GRACE_MS,
   sleepSync(graceMs);
   let late = Buffer.alloc(0);
   try {
-    late = readRange(fd, position, fs.fstatSync(fd).size - position);
+    // Complete rows only, as everywhere else: a fragment is a write still
+    // landing in the old file, and its appender writes the whole row again.
+    late = completeRows(readRange(fd, position, fs.fstatSync(fd).size - position));
   } finally {
     fs.closeSync(fd);
   }
