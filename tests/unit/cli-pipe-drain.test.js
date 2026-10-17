@@ -21,6 +21,13 @@
  * session-digest `--day` already waited for its write; it is here so the next
  * edit to that exit path cannot quietly undo it.
  *
+ * wrapup-coverage `--json` and cooccurrence-graph's query modes had the same
+ * write-then-exit shape, and /wrapup and /remember read them through pipes.
+ * wrapup's default output on the live corpus was 10 KB, over the 8,192-byte
+ * send buffer a Node parent's socketpair starts with; `--limit 100000` piped
+ * to `wc -c` arrived cut at 65,536. cooccurrence's widest query was 4.7 KB and
+ * grows with every project that runs a maneuver.
+ *
  * Run with: node --test tests/unit/cli-pipe-drain.test.js
  */
 import test from 'node:test';
@@ -34,6 +41,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const STANDUP = path.join(ROOT, 'scripts', 'cartographer-standup.js');
 const DIGEST = path.join(ROOT, 'scripts', 'session-digest.js');
+const WRAPUP_COVERAGE = path.join(ROOT, 'scripts', 'wrapup-coverage.js');
+const COOCCURRENCE = path.join(ROOT, 'scripts', 'cooccurrence-graph.js');
 
 // The default pipe capacity on macOS and Linux. The stalled reader has taken
 // at most one chunk of about this size, and the pipe holds about this much
@@ -162,6 +171,55 @@ test('session-digest --day --json arrives whole through a stalled pipe', async (
     const project = doc.projects.find((p) => p.name === 'pipefixture');
     assert.equal(project?.commits.length, SESSIONS);
     assert.equal(project.sessions.length, SESSIONS);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('wrapup-coverage --json lists every pending session through a stalled pipe', async () => {
+  // Every fixture session made a commit (material) and has ended once the
+  // stale window is zero, so all of them are pending and --limit lets the
+  // JSON carry every one. The changelog paths are pinned because a caller's
+  // CARTOGRAPHER_CHANGELOG would otherwise point the run at the live corpus.
+  const env = hermeticEnv(liveDir, {
+    CARTOGRAPHER_CHANGELOG: path.join(liveDir, 'changelog.jsonl'),
+    CARTOGRAPHER_MILESTONES: path.join(liveDir, 'session-milestones.jsonl'),
+  });
+  const result = await readThroughStalledPipe(WRAPUP_COVERAGE,
+    ['--json', '--stale-hours', '0', '--limit', String(SESSIONS), '--now', new Date().toISOString()],
+    { cwd: liveDir, env });
+  assertDrained(result);
+  const doc = JSON.parse(result.stdout);
+  assert.equal(doc.coverage.pending, SESSIONS);
+  assert.equal(doc.pending.length, SESSIONS);
+  assert.deepEqual(new Set(doc.pending.map((row) => row.session_id)),
+    new Set(Array.from({ length: SESSIONS }, (_, i) => sessionId(i))));
+  for (const row of doc.pending) assert.equal(row.commits, 1, row.session_id);
+});
+
+test('cooccurrence-graph --signal lists every project through a stalled pipe', async () => {
+  // One summary that trips each of the catalog's 19 maneuver signatures, so
+  // every project runs every maneuver and each signal's line names them all.
+  const everyManeuver = 'git merge --ff-only; git merge --no-ff; merge-base --is-ancestor; rebase; cherry-pick; '
+    + 'worktree; git tag; gh release; npm version; git lfs; wrangler pages deploy; api.cloudflare.com; '
+    + 'wrangler.toml; netlify; .github/workflows; overleaf';
+  const maneuvers = 19;
+  // Long names rather than many projects: the transfer graph counts project
+  // pairs per signal, so the output has to grow by width, not by count.
+  const projects = Array.from({ length: 24 }, (_, j) => `pipe-drain-${String(j).padStart(2, '0')}-${'w'.repeat(1000)}`);
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'carto-pipe-')));
+  try {
+    const rows = projects.map((project, j) => ({
+      event_id: `evt-pipe-maneuver-${j}`, timestamp: '2026-09-26T08:00:00Z', type: 'tool_bash',
+      provider: 'claude', session_id: sessionId(j), project, cwd: dir, summary: `Ran: ${everyManeuver}`,
+    }));
+    fs.writeFileSync(path.join(dir, 'changelog.jsonl'), rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+    // An empty query is a substring of every signal name, so it matches them all.
+    const result = await readThroughStalledPipe(COOCCURRENCE, ['--signal', ''], { cwd: dir, env: hermeticEnv(dir) });
+    assertDrained(result);
+    const heads = result.stdout.split('\n').filter((line) => line.includes(' — run by: '));
+    assert.equal(heads.length, maneuvers, `every maneuver signature should match the fixture summary`);
+    for (const line of heads) assert.deepEqual(line.split(' — run by: ')[1].split(', '), projects, line.slice(0, 40));
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

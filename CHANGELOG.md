@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### fix(wrapup-coverage, cooccurrence-graph): output no longer cut through a pipe
+
+The same write-then-exit defect as standup's, in two more CLIs that skills read
+through pipes. `wrapup-coverage.js --json` exited straight after printing; on
+the live corpus `--limit 100000` piped to `wc -c` arrived cut at 65,536 bytes
+of about 728 KB, and its 10 KB default output is past 8,192 bytes, where one
+of standup's cuts under the MCP server fell. `cooccurrence-graph.js` exited
+after each `--related`, `--maneuvers` and `--signal` answer; `--signal` names
+every project behind a maneuver, 4.7 KB for the whole catalog today and growing
+with the project count. Both now wait for stdout to drain. `cli-pipe-drain.test.js`
+gains a case for each, over 256 KB: against the old scripts they failed 3 of 3
+runs, cut at 65,536 and 163,167 bytes. `hit-rate-report.js`, `trust-digest.js`
+and `infer-codex-project.js` were checked and left alone: hit-rate's `--json`
+falls off the end of the module, and their explicit exits print at most a fixed
+2.2 KB.
+
 ### fix(standup): `--json` and `--commit` no longer lose their tail through a pipe
 
 `cartographer-standup.js` called `process.exit(0)` right after printing. On
