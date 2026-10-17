@@ -43,6 +43,12 @@ node --test tests/unit/project-scope-parity.test.js
 Two smoke scripts exist for packaging: `tests/release-smoke.sh` and
 `tests/source-marketplace-smoke.sh`.
 
+One test needs a real Qdrant: `qdrant-start-services-key.test.js` starts one
+through `start-services.sh` and checks that a keyless `text/plain` write gets
+401. It skips unless `qdrant` is on `PATH` or `CARTOGRAPHER_TEST_QDRANT_BIN`
+names the binary. It runs on its own storage dir and free ports and stops only
+the process it started, so a live Qdrant on :6333 is safe.
+
 The two hot hooks have a golden capture. `tests/fixtures/hook-rows/run.sh
 <hooks-dir>` fires a fixed set of payloads (commands, writes, edits, commits
 read from the reflog and from HEAD, a push, a failed call, every lifecycle

@@ -17,6 +17,7 @@ import { summarizeSessions } from './sessions.js';
 import { createInternalsHandler } from './internals-route.js';
 import { guardLoopback } from './loopback-guard.js';
 import { ensurePayloadIndexes, missingPayloadIndexes, PAYLOAD_INDEXES } from '../../scripts/qdrant-collection.js';
+import { qdrantFetch } from '../../scripts/qdrant-auth.js';
 import { accessSync, constants, existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
@@ -133,12 +134,16 @@ export function createExplorerApp() {
     }
 
     let qdrant = false;
+    let qdrantRefused = false;
     let payloadIndexes = null;
     try {
       const qdrantUrl = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
       const collection = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
-      const r = await fetch(`${qdrantUrl}/collections/${collection}`);
+      const r = await qdrantFetch(`${qdrantUrl}/collections/${collection}`);
       qdrant = r.ok;
+      // A keyed Qdrant refusing a missing or wrong key is up, not down; say
+      // which, or `qdrant: false` sends the user looking for a dead process.
+      qdrantRefused = r.status === 401 || r.status === 403;
       if (r.ok) {
         // This is the existence check an upgraded install reaches before any
         // reindex, so it is where a collection that predates the payload
@@ -170,6 +175,7 @@ export function createExplorerApp() {
     res.json({
       status: Object.keys(loadErrors).length ? 'degraded' : 'ok',
       events: events.length, files, load_errors: loadErrors, qdrant, payload_indexes: payloadIndexes, embed,
+      ...(qdrantRefused ? { qdrant_error: 'unauthorized' } : {}),
     });
   });
 

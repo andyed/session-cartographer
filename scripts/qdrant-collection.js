@@ -26,10 +26,13 @@
  *
  * Environment:
  *   CARTOGRAPHER_QDRANT_URL  — Qdrant endpoint (default: http://localhost:6333)
+ *   CARTOGRAPHER_QDRANT_API_KEY — optional api-key header (scripts/qdrant-auth.js)
  *   CARTOGRAPHER_COLLECTION  — collection name (default: session-cartographer)
  */
 
 import { fileURLToPath } from 'node:url';
+
+import { qdrantFetch } from './qdrant-auth.js';
 
 export const DEFAULT_QDRANT_URL = 'http://localhost:6333';
 export const DEFAULT_COLLECTION = 'session-cartographer';
@@ -42,10 +45,14 @@ export const PAYLOAD_INDEXES = Object.freeze([
 ]);
 
 function settings(opts = {}) {
+  // An injected fetch (tests, callers with their own transport) is wrapped,
+  // not replaced, so the api-key header rides on every request either way.
+  const transport = opts.fetch || globalThis.fetch;
+  const env = opts.env || process.env;
   return {
-    qdrantUrl: (opts.qdrantUrl || process.env.CARTOGRAPHER_QDRANT_URL || DEFAULT_QDRANT_URL).replace(/\/+$/, ''),
-    collection: opts.collection || process.env.CARTOGRAPHER_COLLECTION || DEFAULT_COLLECTION,
-    fetch: opts.fetch || globalThis.fetch,
+    qdrantUrl: (opts.qdrantUrl || env.CARTOGRAPHER_QDRANT_URL || DEFAULT_QDRANT_URL).replace(/\/+$/, ''),
+    collection: opts.collection || env.CARTOGRAPHER_COLLECTION || DEFAULT_COLLECTION,
+    fetch: (url, init) => qdrantFetch(url, init, { env, fetch: transport }),
     log: opts.log || (() => {}),
   };
 }

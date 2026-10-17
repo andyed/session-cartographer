@@ -44,6 +44,7 @@ import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, sta
 import { join, basename } from 'path';
 import { homedir } from 'os';
 import { defaultPaths } from './session-windows.js';
+import { qdrantFetch } from './qdrant-auth.js';
 
 const args = process.argv.slice(2);
 const valueAfter = (flag, fallback) => {
@@ -150,7 +151,7 @@ if (DO_QDRANT) {
       filter: { must: [{ key: 'transcript_path', match: { text: 'codex/sessions' } }] },
     };
     if (offset !== null) body.offset = offset;
-    const res = await fetch(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
+    const res = await qdrantFetch(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }).then(r => r.json()).catch(() => null);
     const pts = res?.result?.points || [];
@@ -176,7 +177,7 @@ if (DO_QDRANT) {
     for (const [target, ids] of byTarget) {
       for (let i = 0; i < ids.length; i += 500) {
         const chunk = ids.slice(i, i + 500);
-        const ok = await fetch(`${QDRANT}/collections/${COLLECTION}/points/payload?wait=true`, {
+        const ok = await qdrantFetch(`${QDRANT}/collections/${COLLECTION}/points/payload?wait=true`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ payload: { transcript_path: target }, points: chunk }),
         }).then(r => r.ok).catch(() => false);

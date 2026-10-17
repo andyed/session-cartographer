@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+### feat(security): Qdrant runs with an API key, and every client sends it
+
+CORS off (below) stopped web pages reading :6333 but not writing to it: Qdrant
+1.12.1 parses a `text/plain` POST, which needs no preflight, as JSON, and such a
+POST to `points/delete` removed the point. `start-services.sh` now generates a
+key on first start, keeps it in `$CARTOGRAPHER_QDRANT_STORAGE/api-key` (mode
+600), and writes it into its config (now also mode 600) as `service.api_key`.
+Against that Qdrant the same POST gets 401, and so does the preflight a page
+would need to add the header. Every client sends the key as the `api-key`
+header: the indexer, the CLI, the Explorer API and its `/api/health` probe,
+Turbo, `semantic-search.js`, `embed-events.js`, the backfill and repair scripts,
+and the `/wrapup` read-back. They resolve it through one module per language,
+`scripts/qdrant-auth.js` and `qdrant-auth.sh`: `CARTOGRAPHER_QDRANT_API_KEY`
+when set, else the launcher's key file, which is sent only to a loopback URL.
+Nothing needs exporting, and with no key configured every request is what it
+was before. The key is never printed, put in a URL, or written to a log row.
+A refused key now reads as `qdrant_unauthorized` in `index-errors.jsonl` and
+`qdrant_error: "unauthorized"` in `/api/health` rather than as Qdrant being
+down. A Qdrant the launcher did not start is not changed; the launcher warns
+when one answers without a key. `qdrant-api-key.test.js` runs every client
+against a recorder with an env key, a file key and no key, and checks the
+header on each request; `qdrant-start-services-key.test.js` sends the blind
+write to a launcher-started Qdrant and expects 401 (it skips without a `qdrant`
+binary; set `CARTOGRAPHER_TEST_QDRANT_BIN`).
+
 ### fix(explorer): event urls link only through the allowlist
 
 `EventCard` put a corpus `url` straight into `href` in three places (the link

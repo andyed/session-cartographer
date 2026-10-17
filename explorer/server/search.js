@@ -11,6 +11,7 @@ import { epochMsFromTimestamp, scoreBM25 } from './bm25.js';
 import { projectMatcher } from './project-filter.js';
 import { isResolved } from '../../scripts/sentinels.js';
 import { cachedCodexMemoryStale } from '../../scripts/codex-memory-stale.js';
+import { qdrantFetch } from '../../scripts/qdrant-auth.js';
 
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
@@ -61,7 +62,7 @@ async function getEmbedding(text) {
 const SEMANTIC_SCORE_THRESHOLD = 0.3;
 
 async function qdrantSearch(body) {
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+  const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

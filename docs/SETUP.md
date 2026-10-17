@@ -81,6 +81,28 @@ bash scripts/start-services.sh
 
 Stop with `bash scripts/start-services.sh --stop`.
 
+The launcher starts Qdrant on `127.0.0.1` with CORS off and an API key. On
+first start it generates the key, stores it in
+`$CARTOGRAPHER_QDRANT_STORAGE/api-key` (default
+`~/Documents/dev/qdrant-storage/api-key`, mode 600) and writes it into the
+generated `config.yaml` (also mode 600) as `service.api_key`; later starts
+reuse it. Every client reads that file and sends the key as the `api-key`
+header, so nothing needs exporting. The key closes a hole CORS leaves open:
+with CORS off and no key, a web page could still delete points with a
+`text/plain` POST, which needs no preflight
+([ADOPTING.md](ADOPTING.md#what-leaves-your-machine) has the measurement).
+
+To use a key of your own, set `CARTOGRAPHER_QDRANT_API_KEY` before a start;
+the launcher writes it into the config and the key file. If you moved the
+storage dir with `CARTOGRAPHER_QDRANT_STORAGE`, export that variable (or
+`CARTOGRAPHER_QDRANT_API_KEY_FILE`) wherever your agents run, or they will not
+find the key. Running Qdrant yourself instead? Give it
+`QDRANT__SERVICE__API_KEY=<key>` and export the same value as
+`CARTOGRAPHER_QDRANT_API_KEY`. A Qdrant that answers 401 shows up as
+`qdrant_unauthorized` in `.carto/index-errors.jsonl` and as
+`qdrant_error: "unauthorized"` in the Explorer's `/api/health`, not as an
+outage.
+
 ### Codex: allow the local services
 
 Codex's default workspace sandbox blocks command-network access, including
@@ -116,7 +138,9 @@ chmod +x qdrant
 sudo mv qdrant /usr/local/bin/  # or add to PATH
 ```
 
-Runs on port 6333 by default. No Docker needed.
+Runs on port 6333 by default. No Docker needed. Started on its own, Qdrant
+has CORS on and no API key; start it with `scripts/start-services.sh`, or see
+the Quick start above for the settings to give it.
 
 ### 2. Embedding server (llama.cpp)
 
@@ -182,6 +206,9 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_EMBED_URL` | `http://localhost:8890/v1/embeddings` | OpenAI-compatible embedding endpoint |
 | `CARTOGRAPHER_EMBED_MODEL` | `mxbai-embed-large` | Embedding model name |
 | `CARTOGRAPHER_QDRANT_URL` | `http://localhost:6333` | Qdrant REST endpoint |
+| `CARTOGRAPHER_QDRANT_API_KEY` | unset | Qdrant API key, sent as the `api-key` header to whatever `CARTOGRAPHER_QDRANT_URL` names. Unset, the key file below is used |
+| `CARTOGRAPHER_QDRANT_API_KEY_FILE` | `$CARTOGRAPHER_QDRANT_STORAGE/api-key` | Where `start-services.sh` keeps the key and clients read it. A key from this file is sent only to a loopback URL |
+| `CARTOGRAPHER_QDRANT_STORAGE` | `~/Documents/dev/qdrant-storage` | The launcher's Qdrant data, config and key file |
 | `CARTOGRAPHER_COLLECTION` | `session-cartographer` | Qdrant collection name |
 | `CARTOGRAPHER_LOG_TOOL_USE` | `false` | Set `true` to log Edit/Write/Bash + git commits |
 | `CARTOGRAPHER_REUSE_WEIGHT` | `0.3` | Promote-on-reuse activation weight (`0` disables) |

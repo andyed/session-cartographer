@@ -358,6 +358,10 @@ test('wrapup skill consumes the receipt and verifies by configured event id', ()
   assert.match(skill, /\.index\.outcome/);
   assert.match(skill, /CARTOGRAPHER_QDRANT_URL/);
   assert.match(skill, /VERIFIED_EVENT_ID.*EVENT_ID/);
+  // The read-back must carry the Qdrant key, or a keyed Qdrant answers 401
+  // and every wrapup reports a verification failure for an event that landed.
+  assert.match(skill, /VERIFIED_EVENT_ID=\$\("\$ROOT\/scripts\/qdrant-curl\.sh"/);
+  assert.doesNotMatch(skill, /\$\(curl [^)]*\$QDRANT_URL/);
   assert.doesNotMatch(skill, /NOT INDEXED/);
   assert.doesNotMatch(skill, /\| bash "\$ROOT\/scripts\/index-event\.sh"/);
 });

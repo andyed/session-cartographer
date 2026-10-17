@@ -7,8 +7,13 @@ set -euo pipefail
 QDRANT_PORT="${CARTOGRAPHER_QDRANT_PORT:-6333}"
 EMBED_PORT="${CARTOGRAPHER_EMBED_PORT:-8890}"
 QDRANT_STORAGE="${CARTOGRAPHER_QDRANT_STORAGE:-$HOME/Documents/dev/qdrant-storage}"
+# The clients look here too (scripts/qdrant-auth.sh, qdrant-auth.js), so a key
+# provisioned below reaches every one of them with nothing exported.
+QDRANT_KEY_FILE="${CARTOGRAPHER_QDRANT_API_KEY_FILE:-$QDRANT_STORAGE/api-key}"
 MODEL_PATH="${CARTOGRAPHER_EMBED_MODEL_PATH:-$HOME/.cache/llama-models/mxbai-embed-large-v1-f16.gguf}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./qdrant-auth.sh
+. "$SCRIPT_DIR/qdrant-auth.sh"
 
 # Colors
 RED='\033[0;31m'
@@ -31,6 +36,8 @@ wait_for_port() {
     local max_wait=30
     local waited=0
 
+    # Qdrant answers / without a key, so this probe works before and after
+    # the API key is set.
     while ! curl -sf "http://localhost:$port" >/dev/null 2>&1; do
         sleep 1
         waited=$((waited + 1))
@@ -40,6 +47,46 @@ wait_for_port() {
         fi
     done
     log "$name ready on :$port"
+}
+
+# Sets QDRANT_KEY to the key Qdrant will be started with, and leaves it in
+# QDRANT_KEY_FILE (mode 600) for the clients. CARTOGRAPHER_QDRANT_API_KEY wins
+# when set and is written to the file, so a key supplied once at start still
+# reaches clients that never see that variable. Otherwise the file's key is
+# reused, and only a first start generates one. The key is never echoed: logs
+# name the file, not its contents.
+provision_qdrant_key() {
+    CARTOGRAPHER_QDRANT_API_KEY_FILE="$QDRANT_KEY_FILE"
+    cartographer_qdrant_auth "http://127.0.0.1:$QDRANT_PORT"
+    QDRANT_KEY="$CARTOGRAPHER_QDRANT_KEY"
+    if [ -z "$QDRANT_KEY" ]; then
+        # 32 random bytes as 64 hex characters: no shell, YAML or header
+        # metacharacters, and od is in every POSIX base system.
+        QDRANT_KEY=$(LC_ALL=C od -An -tx1 -N32 /dev/urandom | tr -d ' \n')
+        if [ "${#QDRANT_KEY}" -ne 64 ]; then
+            err "Could not generate a Qdrant API key from /dev/urandom"
+            exit 1
+        fi
+        log "Generated a Qdrant API key in $QDRANT_KEY_FILE"
+    fi
+    # The key is interpolated into YAML and sent as a header, so refuse
+    # anything outside the token characters rather than quote around it.
+    case "$QDRANT_KEY" in
+        *[!A-Za-z0-9._~+/=-]*)
+            err "CARTOGRAPHER_QDRANT_API_KEY (or $QDRANT_KEY_FILE) holds characters outside A-Z a-z 0-9 . _ ~ + / = -"
+            exit 1
+            ;;
+    esac
+    local existing=""
+    [ -f "$QDRANT_KEY_FILE" ] && { IFS= read -r existing < "$QDRANT_KEY_FILE" || true; }
+    if [ "$existing" != "$QDRANT_KEY" ]; then
+        mkdir -p "$(dirname "$QDRANT_KEY_FILE")"
+        # umask in a subshell so the file is never readable by others, not
+        # even between creation and a later chmod; mv makes the swap atomic.
+        local tmp="$QDRANT_KEY_FILE.tmp.$$"
+        ( umask 077 && printf '%s\n' "$QDRANT_KEY" > "$tmp" ) && mv -f "$tmp" "$QDRANT_KEY_FILE"
+    fi
+    chmod 600 "$QDRANT_KEY_FILE"
 }
 
 stop_services() {
@@ -81,6 +128,12 @@ start_services() {
     # Start Qdrant
     if is_running "$QDRANT_PORT"; then
         warn "Qdrant already running on :$QDRANT_PORT"
+        # Not started here, so its config is not ours to rewrite. Say when it
+        # takes keyless requests: that Qdrant accepts blind writes from any web
+        # page (see provision_qdrant_key and the config comment below).
+        if curl -sf "http://127.0.0.1:$QDRANT_PORT/collections" >/dev/null 2>&1; then
+            warn "It accepts requests without an API key. Set service.api_key (or QDRANT__SERVICE__API_KEY) on it to close blind writes."
+        fi
     else
         log "Starting Qdrant..."
         mkdir -p "$QDRANT_STORAGE"
@@ -92,9 +145,15 @@ start_services() {
         # reflects any Origin, so leaving it on (Qdrant's default) lets any web
         # page the browser opens try to read the corpus from :6333. Off stops
         # reads, not blind writes: Qdrant 1.12.1 parses a text/plain POST, which
-        # needs no preflight, as JSON. Only an API key closes that.
+        # needs no preflight, as JSON. Only an API key closes that, so one is
+        # always set: with service.api_key the same POST gets 401, as does the
+        # preflight a page would need to add an api-key header itself
+        # (measured on 1.12.1, 2026-10-16). Every client sends the header
+        # (scripts/qdrant-auth.js, qdrant-auth.sh). The config holds the key,
+        # so it is written mode 600 like the key file.
+        provision_qdrant_key
         local config_file="$QDRANT_STORAGE/config.yaml"
-        cat > "$config_file" <<EOF
+        ( umask 077 && cat > "$config_file" ) <<EOF
 storage:
   storage_path: $QDRANT_STORAGE/data
   snapshots_path: $QDRANT_STORAGE/snapshots
@@ -103,8 +162,12 @@ service:
   http_port: $QDRANT_PORT
   grpc_port: $((QDRANT_PORT + 1))
   enable_cors: false
+  api_key: "$QDRANT_KEY"
 telemetry_disabled: true
 EOF
+        # umask only governs creation; a config left by an earlier version of
+        # this script keeps its old mode unless it is narrowed here.
+        chmod 600 "$config_file"
 
         nohup qdrant --config-path "$config_file" >/dev/null 2>&1 &
         wait_for_port "$QDRANT_PORT" "Qdrant"
@@ -127,6 +190,9 @@ EOF
     log "All services ready"
     echo ""
     echo "  Qdrant:       http://localhost:$QDRANT_PORT"
+    if [ -n "${QDRANT_KEY:-}" ]; then
+        echo "  Qdrant key:   $QDRANT_KEY_FILE (clients read it; nothing to export)"
+    fi
     echo "  Embeddings:   http://localhost:$EMBED_PORT"
     echo ""
     echo "Stop with: $0 --stop"
@@ -150,6 +216,8 @@ case "${1:-}" in
         echo "  CARTOGRAPHER_QDRANT_PORT       Qdrant port (default: 6333)"
         echo "  CARTOGRAPHER_EMBED_PORT        Embedding server port (default: 8890)"
         echo "  CARTOGRAPHER_QDRANT_STORAGE    Qdrant data directory"
+        echo "  CARTOGRAPHER_QDRANT_API_KEY    Qdrant API key (default: generated on first start)"
+        echo "  CARTOGRAPHER_QDRANT_API_KEY_FILE  Where the key is kept (default: \$CARTOGRAPHER_QDRANT_STORAGE/api-key)"
         echo "  CARTOGRAPHER_EMBED_MODEL_PATH  Path to embedding model GGUF"
         ;;
     "")
