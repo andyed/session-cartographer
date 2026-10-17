@@ -36,6 +36,7 @@ import { execSync } from 'child_process';
 import { buildSessionWindows, defaultPaths, toSortedList } from './session-windows.js';
 import { createMatcher } from './session-match.js';
 import { isResolved, firstResolved } from './sentinels.js';
+import { appendJsonl } from './jsonl-lock.js';
 
 const args = process.argv.slice(2);
 const valueAfter = (flag, fallback) => {
@@ -242,7 +243,7 @@ if (fresh.length === 0) {
 // Append only. The changelog is the shared event stream; rewriting it here
 // would put this script in conflict with every hook writing concurrently.
 const payload = `${fresh.map((e) => JSON.stringify(e)).join('\n')}\n`;
-fs.appendFileSync(TARGET, payload);
+appendJsonl(TARGET, payload);
 if (!AS_JSON) console.log(`\nAppended ${fresh.length} event(s) to ${TARGET}`);
 
 if (DO_INDEX) {

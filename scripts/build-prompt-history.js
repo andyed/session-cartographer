@@ -41,6 +41,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { stableEventId } from '../explorer/server/stable-event-id.js';
+import { appendJsonl } from './jsonl-lock.js';
 
 const HOME = os.homedir();
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(HOME, 'Documents', 'dev');
@@ -300,7 +301,7 @@ function main() {
       if (tail.toString() !== '\n') prefix = '\n';
     }
   }
-  fs.appendFileSync(OUT, prefix + fresh.join('\n') + '\n');
+  appendJsonl(OUT, prefix + fresh.join('\n') + '\n');
   console.log(`appended ${fresh.length} rows to ${OUT}`);
   console.log('semantic index: run scripts/embed-events.js to make these reachable by vector search.');
 }

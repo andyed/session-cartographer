@@ -29,9 +29,10 @@
  *   CARTOGRAPHER_DEV_DIR — log directory (default: ~/Documents/dev)
  */
 
-import { appendFileSync, existsSync, readFileSync, readdirSync, statSync } from 'fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+import { appendJsonl } from './jsonl-lock.js';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
 const CHANGELOG = join(DEV_DIR, 'changelog.jsonl');
@@ -179,7 +180,7 @@ for (const { dir, store } of STORES) {
     if (DRY_RUN) {
       console.log(JSON.stringify(event).slice(0, 200));
     } else {
-      appendFileSync(CHANGELOG, JSON.stringify(event) + '\n');
+      appendJsonl(CHANGELOG, JSON.stringify(event) + '\n');
     }
     written++;
     existing.add(eventId);

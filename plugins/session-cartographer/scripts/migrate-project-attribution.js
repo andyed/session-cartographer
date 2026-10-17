@@ -23,6 +23,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { replaceJsonl, snapshotJsonl } from './jsonl-lock.js';
 
 const APPLY = process.argv.includes('--apply');
 const devFlag = process.argv.indexOf('--dev');
@@ -109,8 +110,8 @@ for (const name of LOGS) {
   const file = path.join(DEV, name);
   if (!fs.existsSync(file)) { console.log(`  ${name.padEnd(26)} not present, skipped`); continue; }
 
-  const sizeBefore = fs.statSync(file).size;
-  const raw = fs.readFileSync(file, 'utf8');
+  const rawBytes = snapshotJsonl(file);
+  const raw = rawBytes.toString('utf8');
   const lines = raw.split('\n');
   const trailingNewline = lines[lines.length - 1] === '';
   const body = trailingNewline ? lines.slice(0, -1) : lines;
@@ -139,31 +140,20 @@ for (const name of LOGS) {
 
   // Back up unconditionally. This file takes live appends from other sessions.
   const backup = `${file}.bak-${stamp}`;
-  fs.copyFileSync(file, backup);
+  fs.writeFileSync(backup, rawBytes);
 
-  // Anything appended while we were working is beyond sizeBefore; carry it across
-  // verbatim rather than truncating it away.
-  const fd = fs.openSync(file, 'r');
-  const tailLen = fs.statSync(file).size - sizeBefore;
-  let tail = '';
-  if (tailLen > 0) {
-    const buf = Buffer.alloc(tailLen);
-    fs.readSync(fd, buf, 0, tailLen, sizeBefore);
-    tail = buf.toString('utf8');
-  }
-  fs.closeSync(fd);
-
-  const tmp = `${file}.tmp-${stamp}`;
-  fs.writeFileSync(tmp, out.join('\n') + (trailingNewline ? '\n' : '') + tail);
-  fs.renameSync(tmp, file);
+  // Under the rewrite lock, carrying everything appended while we were working
+  // across verbatim rather than truncating it away (scripts/jsonl-lock.js).
+  replaceJsonl(file, { original: rawBytes, body: out.join('\n') + (trailingNewline ? '\n' : '') });
 
   // Verify by event-id SET comparison, not line counts — a concurrent append can mask
   // a loss that a count check would pass.
-  const beforeIds = idsOf(body.concat(tail.split('\n')));
+  const beforeIds = idsOf(body);
   const afterIds = idsOf(fs.readFileSync(file, 'utf8').split('\n'));
   const lost = [...beforeIds].filter((i) => !afterIds.has(i));
   if (lost.length) {
-    fs.copyFileSync(backup, file);
+    // The restore is a rewrite too: under the lock, carrying what arrived since.
+    replaceJsonl(file, { original: snapshotJsonl(file), body: fs.readFileSync(backup) });
     console.error(`  !! ${name}: ${lost.length} event id(s) lost — RESTORED from ${path.basename(backup)}`);
     process.exitCode = 1;
   } else {

@@ -132,6 +132,6 @@ NL='
 ROW=${RESULT%%"$NL"*}
 case "$RESULT" in *"$NL"*) OUT=${RESULT#*"$NL"} ;; *) OUT="" ;; esac
 case "$ROW" in "{"*) ;; *) exit 0 ;; esac
-printf '%s\n' "$ROW" >> "$TRIAL" 2>/dev/null
+cartographer_append "$TRIAL" "$ROW" 2>/dev/null
 [ -n "$OUT" ] && printf '%s\n' "$OUT"
 exit 0

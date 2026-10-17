@@ -7,6 +7,8 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="${CARTOGRAPHER_MILESTONES:-$DEV/session-milestones.jsonl}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 INDEXER="${CARTOGRAPHER_INDEXER:-$SCRIPT_DIR/index-event.sh}"
+. "$SCRIPT_DIR/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 
 wrapper_failure() {
   local stage="$1"
@@ -60,8 +62,10 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null \
 # reuse the durable line. The same id with different content is a collision and
 # must not silently rewrite append-only history.
 EXISTING=""
-if [ -f "$LOG_FILE" ]; then
-  EXISTING=$(LC_ALL=C grep -F "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" 2>/dev/null | head -1)
+# A rewrite in progress spools new rows beside the log (scripts/jsonl-lock.js),
+# so a retry looks there as well.
+if [ -f "$LOG_FILE" ] || [ -f "$LOG_FILE.spool" ]; then
+  EXISTING=$(LC_ALL=C grep -hsF "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" "$LOG_FILE.spool" | head -1)
 fi
 
 if [ -n "$EXISTING" ]; then
@@ -71,9 +75,9 @@ if [ -n "$EXISTING" ]; then
     || { wrapper_failure "event_id_conflict" 65 "conflict"; exit $?; }
   LOG_OUTCOME="already_present"
 else
-  printf '%s\n' "$(printf '%s' "$INPUT" | jq -c .)" >> "$LOG_FILE" \
+  cartographer_append "$LOG_FILE" "$(printf '%s' "$INPUT" | jq -c .)" \
     || { wrapper_failure "milestone_write_failed" 73; exit $?; }
-  LC_ALL=C grep -F "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" >/dev/null 2>&1 \
+  LC_ALL=C grep -qsF "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" "$LOG_FILE.spool" \
     || { wrapper_failure "milestone_verify_failed" 74; exit $?; }
   LOG_OUTCOME="written"
 fi

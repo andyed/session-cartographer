@@ -16,6 +16,8 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CHANGELOG="$DEV/changelog.jsonl"
 PROJECTS_DIR="${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}"
 INDEXER="$(dirname "$0")/index-event.sh"
+. "$(dirname "$0")/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 
 DRY_RUN=false
 PROJECT_FILTER=""
@@ -125,7 +127,7 @@ process_memory_file() {
     --arg mem_type "$mem_type" \
     --arg filepath "$filepath" \
     '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, body: $body, memory_name: $mem_name, memory_type: $mem_type, memory_path: $filepath, related_ids: []}')
-  if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
+  if [ -n "$CHANGELOG_EVENT" ]; then cartographer_append "$CHANGELOG" "$CHANGELOG_EVENT"; fi
 
   # Real-time indexing
   if [ -x "$INDEXER" ]; then

@@ -76,6 +76,12 @@ clock_ms() {
 REQUEST_STARTED_MS=$(clock_ms)
 REQUEST_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# cartographer_append: the one-write JSONL append the hooks use. Concurrent
+# sessions search at once, and a row that leaves in two writes can be split
+# by another session's row (hooks/common.sh has the measurement).
+. "$(dirname "$0")/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
+
 append_portable_call_log() {
   local timestamp="$1"
   local requested_backend="$2"
@@ -84,7 +90,7 @@ append_portable_call_log() {
   local result_count="$5"
   local fallback_reason="$6"
   local fallback_detail="$7"
-  local log_dir floor_top="" floor_below=0
+  local log_dir floor_top="" floor_below=0 row
 
   # Written by the fusion awk; absent when fusion never ran. "-" is its
   # spelling of "no candidates": a tab is IFS whitespace, so a leading empty
@@ -99,7 +105,9 @@ append_portable_call_log() {
     */*) log_dir=${SEARCH_CALL_LOG%/*}; mkdir -p "$log_dir" 2>/dev/null || true ;;
   esac
 
-  if ! { LC_ALL=C awk \
+  # The row is built first and appended in one write: awk writes its own
+  # output through a 4 KB stdio buffer, which a long query can overflow.
+  row=$(LC_ALL=C awk \
     -v timestamp="$timestamp" -v call_id="$CALL_ID" \
     -v request_started_at="$REQUEST_STARTED_AT" -v request_started_ms="$REQUEST_STARTED_MS" \
     -v results_served_ms="$PORTABLE_ENDED_MS" \
@@ -134,7 +142,8 @@ append_portable_call_log() {
           quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail, \
           floor, top, floor_below + 0
       }
-    ' >> "$SEARCH_CALL_LOG"; } 2>/dev/null; then
+    ' 2>/dev/null)
+  if [ -z "$row" ] || ! { cartographer_append "$SEARCH_CALL_LOG" "$row"; } 2>/dev/null; then
     echo "cartographer-search: warning: cannot write search-call telemetry at $SEARCH_CALL_LOG; continuing" >&2
   fi
   return 0
@@ -679,7 +688,7 @@ record_accesses() {
       echo "cartographer-search: warning: could not resolve access attribution" >&2
       return 0
     }
-  if ! { printf '%s\n' "$records" >> "$ACCESS_LEDGER"; } 2>/dev/null; then
+  if ! { cartographer_append "$ACCESS_LEDGER" "$records"; } 2>/dev/null; then
     echo "cartographer-search: warning: cannot write access ledger at $ACCESS_LEDGER" >&2
   fi
   printf '%s\n' "$records" | jq -r 'select(.call_id == null)
@@ -1184,7 +1193,7 @@ rank_fuse_and_display() {
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
       -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
       -v codex_memory_stale="$DEV/.carto/codex-memory-stale-ids.txt" \
-      -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
+      -v served_log="${SERVED_LOG:+$TMPDIR/served-rows.jsonl}" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
       -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
       -v session_attribution="$SESSION_ATTRIBUTION" -v session_source="$SESSION_SOURCE" \
       -v output_format="$OUTPUT_FORMAT" -v min_score="${MIN_SCORE:-0}" -v floor_out="$TMPDIR/floor.tsv" '
@@ -2041,6 +2050,13 @@ if [ "$TURBO_HANDLED" = "0" ]; then
 
   cat "$TMPDIR/keyword_results.tsv" "$TMPDIR/semantic_results.tsv" | rank_fuse_and_display
   [ $? -eq 0 ] && FOUND=1
+  # The fusion awk wrote this call's served rows beside its other output; one
+  # append puts them in the shared log, where awk's own buffered writes
+  # could leave them split by another session's rows.
+  if [ -n "$SERVED_LOG" ] && [ -s "$TMPDIR/served-rows.jsonl" ]; then
+    cartographer_append "$SERVED_LOG" "$(< "$TMPDIR/served-rows.jsonl")" 2>/dev/null \
+      || echo "cartographer-search: warning: cannot write served log at $SERVED_LOG" >&2
+  fi
 
   PORTABLE_ENDED_MS=$(clock_ms)
   PORTABLE_RESULT_COUNT=$(wc -l < "$SERVED_OUT" 2>/dev/null | tr -d ' ')

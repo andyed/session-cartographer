@@ -27,6 +27,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ownerNames } from './ownership.js';
+import { replaceJsonl, snapshotJsonl } from './jsonl-lock.js';
 
 const APPLY = process.argv.includes('--apply');
 const devFlag = process.argv.indexOf('--dev');
@@ -56,8 +57,8 @@ export function detach(e) {
 function main() {
   if (!fs.existsSync(LOG)) { console.error(`No changelog at ${LOG}`); process.exit(2); }
   const owners = ownerNames();
-  const raw = fs.readFileSync(LOG, 'utf8');
-  const readSize = Buffer.byteLength(raw);
+  const rawBytes = snapshotJsonl(LOG);
+  const raw = rawBytes.toString('utf8');
   const lines = raw.split('\n');
   const byAuthor = new Map();
   const sessions = new Set();
@@ -86,19 +87,12 @@ function main() {
     return;
   }
   const backup = `${LOG}.bak-foreign-sessions`;
-  fs.copyFileSync(LOG, backup);
+  fs.writeFileSync(backup, rawBytes);
   // Write beside, then rename: a crash mid-write must not truncate the log.
-  // Hooks in other sessions append to this log continuously. Carry over any rows
-  // appended since the read, then rename only if nothing more arrived meanwhile.
-  const tmp = `${LOG}.tmp-foreign-sessions`;
-  let body = out.join('\n');
-  for (let attempt = 0; ; attempt++) {
-    const size = fs.statSync(LOG).size;
-    const appended = size > readSize ? fs.readFileSync(LOG).subarray(readSize).toString('utf8') : '';
-    fs.writeFileSync(tmp, body + appended);
-    if (fs.statSync(LOG).size === size) { fs.renameSync(tmp, LOG); break; }
-    if (attempt >= 5) { fs.rmSync(tmp); console.error('Log kept growing during the rewrite; nothing applied. Retry.'); process.exit(1); }
-  }
+  // Hooks in other sessions append to this log continuously; replaceJsonl takes
+  // the rewrite lock and carries every row appended since the read across
+  // (scripts/jsonl-lock.js).
+  replaceJsonl(LOG, { original: rawBytes, body: out.join('\n') });
   fs.writeFileSync(path.join(DEV, '.carto', 'foreign-sessions-detached.txt'), ids.join('\n') + '\n');
   console.log(`\nApplied. Backup: ${backup}`);
   console.log(`Event ids: ${path.join(DEV, '.carto', 'foreign-sessions-detached.txt')}`);

@@ -52,7 +52,7 @@ if [ -n "$SESSION_KEY" ]; then
     if ! jq -e --arg key "$SESSION_KEY" \
       'select((if (.session_id // "") != "" then .session_id else (.transcript_path // "") end) == $key)' \
       "$RECEIPTS" >/dev/null 2>&1; then
-      jq -n -c \
+      RECEIPT=$(jq -n -c \
         --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
         --arg session "$SESSION_ID" \
         --arg transcript "$TRANSCRIPT" \
@@ -61,8 +61,8 @@ if [ -n "$SESSION_KEY" ]; then
         --arg project "$PROJECT" \
         --arg cwd "$CWD" \
         --arg activation_source "$ACTIVATION_SOURCE" \
-        '{timestamp:$ts,type:"turbo_awareness",shown:true,session_id:$session,transcript_path:$transcript,provider:$provider,source:$source,project:$project,cwd:$cwd,activation_source:$activation_source}' \
-        >> "$RECEIPTS" 2>/dev/null || true
+        '{timestamp:$ts,type:"turbo_awareness",shown:true,session_id:$session,transcript_path:$transcript,provider:$provider,source:$source,project:$project,cwd:$cwd,activation_source:$activation_source}' 2>/dev/null)
+      if [ -n "$RECEIPT" ]; then cartographer_append "$RECEIPTS" "$RECEIPT" 2>/dev/null || true; fi
     fi
   fi
 fi

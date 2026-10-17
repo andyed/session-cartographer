@@ -27,6 +27,8 @@ REJECT_LOG="${CARTOGRAPHER_INDEX_REJECT_LOG:-$STATE_DIR/index-rejects.jsonl}"
 EMBED_TEXT_MAX="${CARTOGRAPHER_EMBED_TEXT_MAX:-1200}"
 RECEIPT_ENABLED="${CARTOGRAPHER_INDEX_RECEIPT:-0}"
 PE_GATE_REJECT="${PE_GATE_REJECT:-0.85}"
+. "$(dirname "$0")/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 
 # Every Qdrant request below goes through qdrant_curl, which adds the api-key
 # header when a key applies. Sourced only when present: the plugin runs from a
@@ -93,16 +95,16 @@ emit_receipt() {
 
 record_failure() {
   local stage="$1"
-  local outcome="${2:-service_failed}"
+  local outcome="${2:-service_failed}" row
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   if command -v jq >/dev/null 2>&1; then
-    jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg eid "$EVENT_ID" \
+    row=$(jq -n -c --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg eid "$EVENT_ID" \
       --arg stage "$stage" --arg outcome "$outcome" \
-      '{timestamp:$ts,event_id:(if $eid == "" then null else $eid end),stage:$stage,outcome:$outcome}' \
-      >> "$ERROR_LOG" 2>/dev/null || true
+      '{timestamp:$ts,event_id:(if $eid == "" then null else $eid end),stage:$stage,outcome:$outcome}' 2>/dev/null)
+    if [ -n "$row" ]; then cartographer_append "$ERROR_LOG" "$row" 2>/dev/null || true; fi
   else
-    printf '{"timestamp":"%s","event_id":null,"stage":"jq_missing","outcome":"precondition_failed"}\n' \
-      "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$ERROR_LOG" 2>/dev/null || true
+    cartographer_append "$ERROR_LOG" "$(printf '{"timestamp":"%s","event_id":null,"stage":"jq_missing","outcome":"precondition_failed"}' \
+      "$(date -u +%Y-%m-%dT%H:%M:%SZ)")" 2>/dev/null || true
   fi
 }
 
@@ -165,15 +167,16 @@ ensure_payload_indexes() {
 
 record_rejection() {
   mkdir -p "$STATE_DIR" 2>/dev/null || true
-  jq -n -c \
+  local row
+  row=$(jq -n -c \
     --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg eid "$EVENT_ID" \
     --arg source "$SOURCE" \
     --arg score "$TOP_SCORE" \
     --arg threshold "$PE_GATE_REJECT" \
     '{timestamp:$ts,event_id:$eid,outcome:"gate_rejected",source:$source,
-      score:(try ($score|tonumber) catch $score),threshold:(try ($threshold|tonumber) catch $threshold)}' \
-    >> "$REJECT_LOG" 2>/dev/null || true
+      score:(try ($score|tonumber) catch $score),threshold:(try ($threshold|tonumber) catch $threshold)}' 2>/dev/null)
+  if [ -n "$row" ]; then cartographer_append "$REJECT_LOG" "$row" 2>/dev/null || true; fi
 }
 
 # Parse args or read from stdin

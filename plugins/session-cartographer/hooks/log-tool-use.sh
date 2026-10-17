@@ -768,8 +768,8 @@ emit_row() {
   tool_row=${rows%%"$nl"*}
   changelog_event=${rows#*"$nl"}
 
-  printf '%s\n' "$tool_row" >> "$LOG_FILE"
-  printf '%s\n' "$changelog_event" >> "$CHANGELOG"
+  cartographer_append "$LOG_FILE" "$tool_row"
+  cartographer_append "$CHANGELOG" "$changelog_event"
 
   # Real-time indexing (silent fail if services aren't running)
   INDEXER=$(cartographer_script index-event.sh)

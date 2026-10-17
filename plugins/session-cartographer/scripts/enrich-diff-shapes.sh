@@ -15,6 +15,7 @@ set -euo pipefail
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CHANGELOG="$DEV/changelog.jsonl"
 DIFF_SHAPE="$(dirname "$0")/diff-shape.sh"
+LOCK="$(dirname "$0")/jsonl-lock.js"
 DRY_RUN=false
 
 [ "${1:-}" = "--dry-run" ] && DRY_RUN=true
@@ -41,7 +42,14 @@ if $DRY_RUN; then
 fi
 
 echo "Enriching..."
+# Work from a snapshot of complete rows: the log takes appends from live
+# sessions for as long as this runs, and jsonl-lock.js replace carries those
+# across under the rewrite lock once the snapshot's rewrite is ready. A `mv`
+# over the log dropped every one of them.
+SNAPSHOT=$(mktemp)
 TMPFILE=$(mktemp)
+trap 'rm -f "$SNAPSHOT" "$TMPFILE"' EXIT
+node "$LOCK" snapshot "$CHANGELOG" "$SNAPSHOT"
 enriched=0
 failed=0
 
@@ -92,10 +100,9 @@ while IFS= read -r line; do
   if [ $(( (enriched + failed) % 100 )) -eq 0 ] && [ $((enriched + failed)) -gt 0 ]; then
     echo "  processed $((enriched + failed)) of $NEED..."
   fi
-done < "$CHANGELOG"
+done < "$SNAPSHOT"
 
-# Atomic replace
-mv "$TMPFILE" "$CHANGELOG"
+node "$LOCK" replace "$CHANGELOG" "$SNAPSHOT" "$TMPFILE" >/dev/null
 
 echo ""
 echo "Done. Enriched $enriched commits, $failed could not be resolved."

@@ -111,9 +111,9 @@ CUE="" STRENGTH="" TOPIC="" QUERY="" PROJECT="" SCOPE="" LATENCY="" COUNT="" TOP
 # prompt text is kept only once a cue matched, so the log can be replayed against
 # recall to retune the floor without holding every prompt the user typed.
 record() {
-  local excerpt=""
+  local excerpt="" row
   [ -n "$CUE" ] && excerpt=$(cartographer_bytes "$PROMPT" 300)
-  jq -n -c \
+  row=$(jq -n -c \
     --arg ts "$TS" --arg session "$SID" --arg session_source "$SID_SOURCE" \
     --arg provider "$PROVIDER" --arg project "$PROJECT" --arg scope "$SCOPE" \
     --arg cue "$CUE" --arg strength "$STRENGTH" --arg topic "$TOPIC" \
@@ -130,8 +130,8 @@ record() {
      top_score: ($top | num), event_ids: (if $ids == "" then [] else ($ids | split(",")) end),
      call_id: (if $searched == "" then null else $call_id end),
      budget_ms: ($budget | tonumber), min_score: ($min_score | tonumber),
-     prompt_chars: ($chars | tonumber), prompt: ($prompt | str), query: ($query | str)}' \
-    >> "$TRIAL" 2>/dev/null
+     prompt_chars: ($chars | tonumber), prompt: ($prompt | str), query: ($query | str)}' 2>/dev/null)
+  if [ -n "$row" ]; then cartographer_append "$TRIAL" "$row" 2>/dev/null; fi
 }
 
 # First prompt of the session: SessionStart already oriented this turn. Checked

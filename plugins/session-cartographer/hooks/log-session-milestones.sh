@@ -204,8 +204,8 @@ case "$ROWS" in *"$NL"*) ;; *) exit 0 ;; esac
 MILESTONE_ROW=${ROWS%%"$NL"*}
 CHANGELOG_EVENT=${ROWS#*"$NL"}
 
-printf '%s\n' "$MILESTONE_ROW" >> "$LOG_FILE"
-printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"
+cartographer_append "$LOG_FILE" "$MILESTONE_ROW"
+cartographer_append "$CHANGELOG" "$CHANGELOG_EVENT"
 
 # Real-time indexing (silent fail if services aren't running)
 INDEXER=$(cartographer_script index-event.sh)

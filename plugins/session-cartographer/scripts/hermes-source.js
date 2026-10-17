@@ -66,6 +66,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { registryConfigDir } from './project-registry.js';
+import { appendJsonl } from './jsonl-lock.js';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { flattenSummary } from './build-prompt-history.js';
 
@@ -853,7 +854,7 @@ export function existingIds(logFile) {
 
 function appendRows(logFile, rows) {
   if (!rows.length) return;
-  fs.appendFileSync(logFile, rows.map((r) => `${JSON.stringify(r)}\n`).join(''));
+  appendJsonl(logFile, rows.map((r) => `${JSON.stringify(r)}\n`).join(''));
 }
 
 /**
