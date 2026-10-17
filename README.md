@@ -1,19 +1,52 @@
 # Session Cartographer
 
-Shared, searchable session history for **Claude Code and Codex**. Recover a
-past decision, find the session behind a change, or pick up work after an absence.
-Both agents contribute to the same local history and can recall each other's work.
+For developers who run several coding agents at once and need to find, count and
+check what those agents did, without trusting an LLM's summary or sending their
+sessions anywhere.
 
-Hooks write JSONL events. Search, the Explorer, and session digests are independent
-ways to read them; keyword recall needs no server, and semantic search is optional.
+**Measured memory for multi-agent work.** Hooks record what Claude Code and Codex
+sessions do into local, append-only logs, and a read-only adapter adds Hermes.
+Cartographer counts what happened, checks logged commits against git, and
+measures whether the recall it serves gets used. No LLM runs at capture, and by
+default nothing leaves the machine.
 
-[Try the Explorer demo](https://andyed.github.io/session-cartographer/) ·
+## Results
+
+Measured on the author's own corpus: one person's Claude Code and Codex work,
+March to October 2026.
+
+| Result | How it was measured |
+| --- | --- |
+| **736 events, not 1.** A scheduled agent asked ranked search what happened in a 24-hour window and got 1 event back. | A deterministic count over the same window found 736 events, 22 sessions, and 20 commits and pushes across four repositories. Counting is now its own API, and every count ships sample event ids so it can be checked with `--get`. See [Facts](docs/FACTS.md#why-now). |
+| **43 of 125 landed commits** were missing from the session logs on 2026-09-26. | The day digest checks every logged commit against git; its 125 matched an independent `git log` count, repository by repository. Over 26–27 September, 23 of the 46 missing commits traced to a bug in the commit hook itself, which logged at most one commit per call; fixed in 0.8.1. See the [changelog](CHANGELOG.md#featdigest-a-day-digest-checked-against-git). |
+| **287 of 1,350 Claude Code sessions (21%)** called recall at all in the 30 days to 2026-10-15. Codex recalled in 1 of 59 sessions that saw the startup nudge. | Counted from Cartographer's retrieval telemetry, which records the session and call id behind every result it serves. Recall already answered quickly (p90 377 ms), so the gap was reach, not speed; recall now also ships as MCP tools. See [MCP](docs/MCP.md#why). |
+| **TODO: archival recall after the decay fix.** Share of known items older than 90 days that reach the top 10, before and after. | To be filled from the age-curve gate once the fix merges: query count, both engines, and the command that reproduces it. Do not publish this row as written. |
+
+<!-- TODO(age-curve): replace the row above with the post-fix result.
+     Pre-fix reference, not yet reproducible from this repo: the 2026-10-16
+     architecture review measured top-10 hit rate 0.15 for 90+-day known items
+     with decay on, against 0.98-1.00 with decay off (220 queries, semantic leg
+     off). The repo's own earlier measurement is in docs/LONGMEMEVAL.md
+     (2026-08-14, internal truth set: hybrid recall 15% decay on, 65% off). -->
+
+Several features here have close equivalents elsewhere. The
+[landscape survey](docs/landscape-survey.md) says which, with links.
+
 [Download a release](https://github.com/andyed/session-cartographer/releases) ·
-[Setup guide](docs/SETUP.md) · [Changelog](CHANGELOG.md)
+[Setup guide](docs/SETUP.md) · [Changelog](CHANGELOG.md) ·
+[Related projects](docs/landscape-survey.md)
 
-![Explorer activity: session field, activity traces, and token comparison](docs/screenshots/memory-activity.png)
+<!-- The "Try the Explorer demo" link is out of the opening until gh-pages is
+     rebuilt: the live build predates the Memory Desk and serves real March
+     activity. Restore it here after the rebuild. -->
 
-*Real recorded activity, with project and file names replaced for these screenshots.*
+![One day of concurrent agent sessions, one column per project](docs/screenshots/timeline.png)
+
+*One day of recorded work: 51 tasks across nine projects. Project names are
+randomized for this screenshot.*
+
+Keyword recall needs no server. Semantic search and the Explorer are optional,
+and both run locally.
 
 ## What you can do
 
@@ -21,7 +54,7 @@ ways to read them; keyword recall needs no server, and semantic search is option
 | --- | --- | --- |
 | Recover context | `/remember <question>` | Ranked evidence with links back to source transcripts |
 | Orient on a project | `/remember --project <name>` | Recent work, related projects, and recurring procedures |
-| Browse visually | `/carto` | Explorer search, timeline, transcripts, and the Memory Desk |
+| Browse visually | `/carto` | Explorer search, timeline, transcripts, and per-session review |
 | Check concurrent work | `/standup` | Recent peer activity, shared-file edits, and commit attribution |
 | Preserve a decision | `/wrapup` | A session digest plus decisions, discoveries, and unfinished work |
 | Investigate a bug | `/investigate <bug>` | Prior diagnoses and a new hypothesis tracked through verification |
@@ -126,7 +159,9 @@ bounded feeds for other agents, and briefings are described in
 
 ### Memory Desk and digests
 
-![Concurrent sessions grouped by project over a shared time range](docs/screenshots/timeline.png)
+![Explorer activity: session field, activity traces, and token comparison](docs/screenshots/memory-activity.png)
+
+*Real recorded activity, with project and file names replaced for these screenshots.*
 
 The Explorer's **Memory Desk** is an evolving workspace for returning to tasks
 and inspecting their evidence. It includes:
