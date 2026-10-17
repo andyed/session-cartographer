@@ -17,6 +17,11 @@
  * corpus showed the same shape (0.97/0.93/0.58/0.15); scripts/age-curve.js
  * measures that one.
  *
+ * Keeping a named record on the page does not put it first. The lookup lift
+ * tests below hold it at rank 1, after proving that the fixture's rivals take
+ * rank 1 when the lift is off. Live, the exemption alone left 92 of 240 known items off
+ * rank 1; with the lift at 3, 19.
+ *
  * Run with: node --test tests/unit/age-curve-gate.test.js
  */
 process.env.CARTOGRAPHER_SEMANTIC = '0';
@@ -40,6 +45,7 @@ let dir;
 let cases;
 let index;
 let hybridSearch;
+let rankingFromEnv;
 let scoreBM25;
 
 const known = () => cases.filter((c) => c.kind === 'known');
@@ -52,10 +58,10 @@ before(async () => {
   // search.js reads the access ledger path at module load, and promote-on-reuse
   // from a developer's real ledger must not colour a fixture ranking.
   process.env.CARTOGRAPHER_ACCESS_LEDGER = path.join(dir, 'no-ledger.jsonl');
-  for (const key of ['CARTOGRAPHER_DECAY_LAMBDA', 'CARTOGRAPHER_DECAY_LOOKUP_MAX']) delete process.env[key];
+  for (const key of ['CARTOGRAPHER_DECAY_LAMBDA', 'CARTOGRAPHER_DECAY_LOOKUP_MAX', 'CARTOGRAPHER_DECAY_LOOKUP_LIFT']) delete process.env[key];
   const { readAllEvents } = await import('../../explorer/server/jsonl.js');
   const bm25 = await import('../../explorer/server/bm25.js');
-  ({ hybridSearch } = await import('../../explorer/server/search.js'));
+  ({ hybridSearch, rankingFromEnv } = await import('../../explorer/server/search.js'));
   scoreBM25 = bm25.scoreBM25;
   index = bm25.buildIndex(readAllEvents(fixtureLogFiles(dir)));
 });
@@ -135,6 +141,84 @@ test('the switch is the count: widen lookupMax past a family and its recency cas
   const cli = await rankCli(CLI, recency(), cliEnv({ CARTOGRAPHER_DECAY_LOOKUP_MAX: '20' }));
   assert.equal(s10By(api, 'recency')['<7d'], 0);
   assert.equal(s10By(cli, 'recency')['<7d'], 0);
+});
+
+// ─── The lookup lift (CARTOGRAPHER_DECAY_LOOKUP_LIFT) ───
+
+const rivalled = () => known().filter((c) => c.rival);
+const lifted = (lift) => ({ api: { ranking: { lookupLift: lift } }, cli: { CARTOGRAPHER_DECAY_LOOKUP_LIFT: String(lift) } });
+
+test('the fixture puts a rival above named records when the lift is off, in both engines', async () => {
+  assert.ok(rivalled().length >= 8, `need a rivalled target in every bucket (got ${rivalled().length})`);
+  const off = lifted(1);
+  const api = await rankApi(hybridSearch, index, rivalled(), off.api);
+  const cli = await rankCli(CLI, rivalled(), cliEnv(off.cli));
+  for (const [engine, results] of [['api', api], ['cli', cli]]) {
+    const first = results.filter((r) => r.rank === 1).map((r) => r.query);
+    assert.deepEqual(first, [], `${engine}: without the lift a rival must take rank 1`);
+    for (const r of results) assert.ok(r.rank && r.rank <= 10, `${engine} ${r.query}: the exemption keeps it on the page (rank ${r.rank})`);
+  }
+});
+
+test('gate: the shipped lift puts every named record first, in both engines', async () => {
+  const api = await rankApi(hybridSearch, index, known());
+  const cli = await rankCli(CLI, known(), cliEnv());
+  for (const [engine, results] of [['api', api], ['cli', cli]]) {
+    const missed = results.filter((r) => r.rank !== 1).map((r) => `${r.bucket} ${r.query} @${r.rank}`);
+    assert.deepEqual(missed, [], `${engine}: known items off rank 1`);
+  }
+});
+
+test('the lift moves only lookups: recency cases rank the same with it off, in both engines', async () => {
+  const off = lifted(1);
+  const pairs = [
+    ['api', await rankApi(hybridSearch, index, recency()), await rankApi(hybridSearch, index, recency(), off.api)],
+    ['cli', await rankCli(CLI, recency(), cliEnv()), await rankCli(CLI, recency(), cliEnv(off.cli))],
+  ];
+  for (const [engine, on, without] of pairs) {
+    assert.deepEqual(on.map((r) => r.rank), without.map((r) => r.rank), `${engine}: a browse must not move`);
+  }
+});
+
+test('a lift under 1, or not a number, reads as the default in both engines', async () => {
+  assert.equal(rankingFromEnv({}).lookupLift, 3);
+  for (const [raw, want] of [['1', 1], ['2', 2], ['3.', 3], ['0.5', 3], ['0', 3], ['2x', 3], ['.', 3], [' 2', 3]]) {
+    assert.equal(rankingFromEnv({ CARTOGRAPHER_DECAY_LOOKUP_LIFT: raw }).lookupLift, want, `api reads '${raw}'`);
+  }
+  // 0.5 taken literally would demote the target under its rival; the default
+  // puts it first. So this fails if either engine honours a lift under 1.
+  const api = await rankApi(hybridSearch, index, rivalled(), { ranking: rankingFromEnv({ CARTOGRAPHER_DECAY_LOOKUP_LIFT: '0.5' }) });
+  const cli = await rankCli(CLI, rivalled(), cliEnv({ CARTOGRAPHER_DECAY_LOOKUP_LIFT: '0.5' }));
+  for (const [engine, results] of [['api', api], ['cli', cli]]) {
+    assert.ok(results.every((r) => r.rank === 1), `${engine}: '0.5' must read as 3`);
+  }
+});
+
+test('scores stay in rank order under the lift, so --min-score cuts a sorted list in both engines', async () => {
+  for (const c of rivalled().slice(0, 4)) {
+    const { items } = await hybridSearch(index, c.query);
+    const out = execFileSync('bash', [CLI, c.query, '--limit', '30', '--format', 'jsonl', '--all', '--no-turbo'],
+      { encoding: 'utf8', env: cliEnv() });
+    const cliScores = out.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l).score);
+    for (const [engine, scores] of [['api', items.map((it) => it._score)], ['cli', cliScores]]) {
+      assert.ok(scores.length >= 10, `${engine} ${c.query}: a page to check (${scores.length})`);
+      for (let i = 1; i < scores.length; i++) {
+        assert.ok(scores[i - 1] >= scores[i], `${engine} ${c.query}: score at rank ${i + 1} exceeds rank ${i}`);
+      }
+    }
+  }
+});
+
+test("lift 'first' (the harness's ceiling arm) puts the named record above every other item", async () => {
+  // A lift of 1.1 is too small for a 0.5 target against a 0.8 rival; 'first'
+  // computes whatever factor the query needs.
+  for (const c of rivalled()) {
+    const small = await hybridSearch(index, c.query, { ranking: { lookupLift: 1.1 } });
+    assert.notEqual(small.items[0].event_id, c.id, `${c.query}: 1.1 must leave the rival on top, or this asserts nothing`);
+    const { items } = await hybridSearch(index, c.query, { ranking: { lookupLift: 'first' } });
+    assert.equal(items[0].event_id, c.id, `${c.query}: the named record is first`);
+    assert.ok(items[0]._score > items[1]._score, `${c.query}: and its score says so`);
+  }
 });
 
 test('a checkpointed subsample files each result under its own case index', async () => {

@@ -95,7 +95,7 @@ export const LOG_NAMES = {
 
 const SESSION_VARS = ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID',
   'CODEX_SESSION_ID', 'CODEX_THREAD_ID', 'HERMES_SESSION_ID', 'CARTOGRAPHER_PROVIDER'];
-const RANKING_VARS = ['CARTOGRAPHER_DECAY_LAMBDA', 'CARTOGRAPHER_DECAY_LOOKUP_MAX'];
+const RANKING_VARS = ['CARTOGRAPHER_DECAY_LAMBDA', 'CARTOGRAPHER_DECAY_LOOKUP_MAX', 'CARTOGRAPHER_DECAY_LOOKUP_LIFT'];
 
 export function bucketOf(ageDays) {
   if (ageDays < 7) return '<7d';
@@ -136,6 +136,14 @@ export const ARMS = {
 //                       newest recorded access) and the shipped reuse boost
 //                       stays on. On a record with no reuse it is the actr arm
 //                       exactly; it differs only in how rehearsals count.
+//   lift<x>             the shipped curve with the lookup lift set to x
+//                       (CARTOGRAPHER_DECAY_LOOKUP_LIFT, both engines): lift1
+//                       is the exemption alone, as shipped 2026-10-16; lift3
+//                       is the default since 2026-10-17. Only lookups move:
+//                       every known case is one and no recency case is.
+//   lift-first          the smallest lift that puts every named candidate above
+//                       every other item, per query. The family's ceiling;
+//                       in-process only.
 // t is in days, floored at 0.02 (30 minutes), the floor the ledger reader uses.
 // Each curve is scaled to 1 at that floor, as exp(-λt) is at 0: the scale does
 // not change how non-exempt items order among themselves, but an exempt item
@@ -144,6 +152,9 @@ export const ARMS = {
 const FLOOR_DAYS = 0.02;
 export function resolveArm(name) {
   if (ARMS[name]) return ARMS[name];
+  const lift = /^lift(?:-(first)|([0-9]*\.?[0-9]+))$/.exec(name);
+  if (lift?.[1]) return { env: {}, ranking: { lookupLift: 'first' }, apiOnly: true };
+  if (lift) return { env: { CARTOGRAPHER_DECAY_LOOKUP_LIFT: lift[2] }, needsLift: true };
   const m = /^(actr|cmem|lastuse)-d([0-9]*\.?[0-9]+)(\+exempt)?$/.exec(name);
   if (!m) return null;
   const d = Number(m[2]);
@@ -551,7 +562,7 @@ function parseArgs(argv) {
   if (opts.arms.length === 0) opts.arms = [{ name: 'shipped', engines: null }];
   if (opts.roots.length === 0) opts.roots = [REPO_ROOT];
   for (const arm of opts.arms) {
-    if (!resolveArm(arm.name)) throw new Error(`unknown arm '${arm.name}' (${Object.keys(ARMS).join(', ')}, actr-d<d>, cmem-d<d>, lastuse-d<d>, +exempt)`);
+    if (!resolveArm(arm.name)) throw new Error(`unknown arm '${arm.name}' (${Object.keys(ARMS).join(', ')}, actr-d<d>, cmem-d<d>, lastuse-d<d>, +exempt, lift<x>, lift-first)`);
     arm.engines ||= opts.engines;
   }
   return opts;
@@ -602,6 +613,9 @@ async function loadEngine(root) {
     // A checkout from before 2026-10-16 has no `ranking` option and would
     // quietly run its defaults under another arm's name.
     takesRanking: typeof search.rankingFromEnv === 'function',
+    // Same for the lift: a checkout from before 2026-10-17 ignores the
+    // variable, and a lift arm on it would measure the exemption alone.
+    takesLift: typeof search.rankingFromEnv === 'function' && 'lookupLift' in search.rankingFromEnv({}),
     cli: path.join(root, 'scripts', 'cartographer-search.sh') };
 }
 
@@ -648,6 +662,10 @@ async function worker(opts) {
   const cases = JSON.parse(readFileSync(path.join(opts.state, 'cases.json'), 'utf8'));
   if (arm.ranking && !engine.takesRanking) {
     process.stderr.write(`  ${armName}: ${root} has no ranking option; skipped\n`);
+    return;
+  }
+  if (arm.needsLift && !engine.takesLift) {
+    process.stderr.write(`  ${armName}: ${root} has no lookup lift; skipped\n`);
     return;
   }
   if (opts.engines.includes('api')) {

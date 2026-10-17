@@ -32,16 +32,24 @@ const NOISE_TRIM = 0.1;
  *   lookupMax  CARTOGRAPHER_DECAY_LOOKUP_MAX, default 10: when between 1 and
  *              this many candidates contain every query token, the query is a
  *              lookup and those candidates are not decayed. 0 disables.
+ *   lookupLift CARTOGRAPHER_DECAY_LOOKUP_LIFT, default 3: those candidates'
+ *              scores are then multiplied by this (liftNamed). 1 disables; a
+ *              value under 1, or not a number, reads as the default.
  *
- * scripts/cartographer-search.sh reads the same two variables with the same
+ * scripts/cartographer-search.sh reads the same three variables with the same
  * defaults; keep the two in sync.
  */
 export function rankingFromEnv(env = process.env) {
   const lambda = Number.parseFloat(env.CARTOGRAPHER_DECAY_LAMBDA || '0.001');
   const lookupMax = Number.parseInt(env.CARTOGRAPHER_DECAY_LOOKUP_MAX || '10', 10);
+  // Digits with at most one dot, as the CLI's `case` accepts; parseFloat would
+  // read "2x" as 2 where the CLI falls back to 3.
+  const liftRaw = env.CARTOGRAPHER_DECAY_LOOKUP_LIFT || '3';
+  const lookupLift = /^[0-9]*\.?[0-9]*$/.test(liftRaw) && liftRaw !== '.' ? Number(liftRaw) : NaN;
   return {
     lambda: Number.isFinite(lambda) && lambda > 0 ? lambda : 0,
     lookupMax: Number.isFinite(lookupMax) ? Math.max(0, lookupMax) : 10,
+    lookupLift: Number.isFinite(lookupLift) && lookupLift >= 1 ? lookupLift : 3,
   };
 }
 
@@ -445,6 +453,57 @@ function applySalience(items) {
 }
 
 /**
+ * Multiply the candidates a lookup names by `lift` (default 3) after decay.
+ *
+ * Skipping decay keeps a named record on the page; it does not put it first.
+ * RRF is flat (1/61 for a rank-1 hit in any ladder) and a week of exp decay
+ * costs 15%, so salience decides. Of the 92 known items the exemption
+ * alone left off rank 1 on the live corpus, 78 lost to a record that did not
+ * hold every query token: 72 of those were salience 0.7-0.8, mostly milestones
+ * (median age 7.6 days), against targets at 0.25-0.5, mostly web fetches. The
+ * other 14 lost to another named record, which no lift reorders. Measured
+ * 2026-10-17 (semantic leg off, 206,896 live events, 240 known items, 60 per
+ * age bucket), known-item S@1 pooled, S@10 pooled:
+ *
+ *   exemption only, as shipped 2026-10-16   148/240 = 0.62   234/240
+ *   lift 1.5                                208/240 = 0.87   239/240
+ *   lift 2                                  217/240 = 0.90   240/240
+ *   lift 3                                  221/240 = 0.92   240/240
+ *   lift-first (every named item on top)    222/240 = 0.93   240/240
+ *
+ * No case lost rank under any lift, the 40 recency cases ranked identically
+ * (none is a lookup), and the graded topical queries scored the same P@10 on
+ * both the live corpus and the corpus as of their labeling (P@5 rose on two,
+ * fell on none). The power-law curves that reached S@1 0.85-0.98 did it by
+ * decaying everything else harder, which cost topical P@10 0.06-0.08; this
+ * leaves the browse curve alone (docs/SCORING.md, "Lifting named records").
+ *
+ * A number is a fixed factor. 'first', reachable only through hybridSearch's
+ * `ranking` option, is the smallest factor that puts every named candidate
+ * above every other item, computed per query; scripts/age-curve.js measures it
+ * as the family's ceiling. Either way it is a score change, not a sort tier:
+ * the CLI's --min-score stops at the first row under the floor while
+ * turbo-search-client.js filters, so scores out of rank order would make the
+ * two engines drop different rows.
+ */
+function liftNamed(items, exempt, lift) {
+  if (!exempt?.size || lift === 1 || lift == null) return;
+  let factor = lift;
+  if (lift === 'first') {
+    let topOther = 0;
+    let minNamed = Infinity;
+    for (const item of items) {
+      if (exempt.has(item)) minNamed = Math.min(minNamed, item._score);
+      else topOther = Math.max(topOther, item._score);
+    }
+    if (!(minNamed > 0) || !Number.isFinite(minNamed)) return;
+    factor = Math.max(1, (topOther / minNamed) * 1.000001);
+  }
+  if (!(Number.isFinite(factor) && factor > 0) || factor === 1) return;
+  for (const item of items) if (exempt.has(item)) item._score *= factor;
+}
+
+/**
  * Apply activation: Ebbinghaus time-decay + promote-on-reuse.
  * score *= exp(-lambda * hours_since_last_use) * reuse_boost
  *
@@ -453,7 +512,8 @@ function applySalience(items) {
  * 1 + REUSE_WEIGHT * Σ 1/sqrt(days_since_access), capped at 2.0 so reuse
  * breaks ties without overpowering relevance. Events with no recorded
  * access score exactly as before. Items in `exempt` (the candidates a lookup
- * names, see lookupExemption) keep the reuse boost and skip the decay. Mirrors
+ * names, see lookupExemption) keep the reuse boost, skip the decay and take
+ * the lookup lift (liftNamed). Mirrors
  * the awk activation block in scripts/cartographer-search.sh — keep the two in
  * sync.
  *
@@ -465,7 +525,7 @@ function applySalience(items) {
  * such an arm passes `reuseBoost: false` to switch the separate boost off.
  * Production callers pass none and get exp(-lambda * hours) with the boost.
  */
-function applyActivation(items, { lambda, decay = null, exempt = null, reuseBoost = true }) {
+function applyActivation(items, { lambda, decay = null, exempt = null, reuseBoost = true, lookupLift = 1 }) {
   const accesses = REUSE_WEIGHT > 0 || decay ? loadAccessLedger() : new Map();
   const decaying = Boolean(decay) || lambda > 0;
   const now = Date.now();
@@ -494,6 +554,7 @@ function applyActivation(items, { lambda, decay = null, exempt = null, reuseBoos
       }
     }
   }
+  liftNamed(items, exempt, lookupLift);
   // Re-sort after activation adjustment. Always, even with nothing to weigh:
   // salience has already changed the scores since fusion sorted them, and the
   // early return that used to sit here left a λ=0 ranking in pre-salience
@@ -593,11 +654,11 @@ export function computeFacets(items) {
  * Returns full fusion pool (up to 500) + facets. Client paginates.
  *
  * `ranking` overrides rankingFromEnv() field by field ({ lambda, lookupMax,
- * decay, reuseBoost }); only scripts/age-curve.js and tests pass it.
+ * decay, reuseBoost, lookupLift }); only scripts/age-curve.js and tests pass it.
  */
 export async function hybridSearch(index, query, { project = '', sinceMs = null, beforeMs = null, ranking = null } = {}) {
   const started = performance.now();
-  const { lambda, lookupMax, decay = null, reuseBoost = true } = { ...rankingFromEnv(), ...(ranking || {}) };
+  const { lambda, lookupMax, decay = null, reuseBoost = true, lookupLift = 1 } = { ...rankingFromEnv(), ...(ranking || {}) };
   const FUSION_DEPTH = 500;
   // Native Codex memory imports are append-only revisions. The small derived
   // id list suppresses replaced/removed versions in both search ladders.
@@ -687,8 +748,9 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
 
   // Activation: time-decay + promote-on-reuse. It reorders the trimmed pool
   // and removes nothing. A lookup's named candidates skip the decay
-  // (lookupExemption); everything else decays as before.
-  applyActivation(fusedItems, { lambda, decay, exempt, reuseBoost });
+  // (lookupExemption) and are lifted (liftNamed); everything else decays as
+  // before.
+  applyActivation(fusedItems, { lambda, decay, exempt, reuseBoost, lookupLift });
   const fusionMs = performance.now() - fusionStarted;
 
   return {

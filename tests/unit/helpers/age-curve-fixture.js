@@ -16,6 +16,12 @@
 //   share a word with almost any query) and the shape of the loss: under RRF a
 //   rank-1 hit in one ladder scores the same as a rank-1 partial hit in
 //   another, so any age penalty hands the page to the partial hits.
+// - A rival for every web-fetch target: a wrapup from the last day, salience
+//   0.8, holding two of the target's three tokens. On the live corpus that is
+//   what keeps a named record off rank 1 once it no longer decays: of 92 such
+//   misses, 72 lost to a 0.7-0.8 record (mostly milestones about a week old)
+//   against targets at 0.25-0.5. The lookup lift is what puts the target back
+//   on top; without it the rival wins, so the S@1 gate can fail.
 // - Recency families: fourteen records sharing two tokens across 160 days, the
 //   older ones shorter so BM25 prefers them. The newest is the target. An arm
 //   that never decays ranks it 14th; that is how the gate catches an arm that
@@ -104,7 +110,12 @@ export function writeAgeCurveFixture(dir, { nowMs = Date.now(), seed = 4242 } = 
       const terms = [word(), word(), word()];
       const id = add(kind.source, { ageDays, type: kind.type, salience: kind.salience,
         summary: `${pick(2)} ${terms[0]} ${pick(1)} ${terms[1]} ${terms[2]} ${pick(2)}` });
-      cases.push({ kind: 'known', bucket, id, query: terms.join(' '), source: kind.source });
+      cases.push({ kind: 'known', bucket, id, query: terms.join(' '), source: kind.source,
+        ...(kind.source === 'research' ? { rival: true } : {}) });
+      if (kind.source === 'research') {
+        add('milestones', { ageDays: 0.2 + rand() * 0.6, type: 'wrapup', salience: 0.8,
+          summary: `Wrapup ${pick(2)} ${terms[0]} ${pick(1)} ${terms[2]} ${pick(2)}` });
+      }
       for (const term of terms) {
         for (let i = 0; i < 2; i++) {
           add('changelog', { ageDays: 0.1 + rand() * 4, type: 'git_commit', salience: 0.5,

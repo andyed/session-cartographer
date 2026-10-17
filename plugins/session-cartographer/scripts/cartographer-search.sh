@@ -38,6 +38,8 @@
 #   CARTOGRAPHER_DECAY_LOOKUP_MAX — a query whose tokens all appear together in at
 #                                  most this many candidates is a lookup, and those
 #                                  candidates are not decayed (default: 10; 0 = off)
+#   CARTOGRAPHER_DECAY_LOOKUP_LIFT — those candidates' scores are multiplied by this
+#                                  (default: 3; 1 = off; under 1 reads as 3)
 #   CARTOGRAPHER_SERVED_LOG      — default: $DEV/served-log.jsonl (every displayed result)
 #   CARTOGRAPHER_ACCESS_LEDGER   — default: $DEV/access-ledger.jsonl (every --touch)
 #   CARTOGRAPHER_SEARCH_CALL_LOG — default: $DEV/.carto/search-calls.jsonl (standard calls)
@@ -538,6 +540,9 @@ DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
 # names every matching vocabulary term, which no record contains all of.
 LOOKUP_MAX="${CARTOGRAPHER_DECAY_LOOKUP_MAX:-10}"
 case "$LOOKUP_MAX" in ''|*[!0-9]*) LOOKUP_MAX=10 ;; esac
+# rankingFromEnv() reads a value under 1 as the default too; the awk does that.
+LOOKUP_LIFT="${CARTOGRAPHER_DECAY_LOOKUP_LIFT:-3}"
+case "$LOOKUP_LIFT" in ''|*[!0-9.]*|*.*.*|.) LOOKUP_LIFT=3 ;; esac
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
@@ -1174,7 +1179,7 @@ rank_fuse_and_display() {
   # codex_memory_stale mirrors CODEX_MEMORY_STALE_RELATIVE in
   # codex-memory-stale.js; tests/unit/codex-memory-stale.test.js pins them.
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
-      -v lookup_max="$LOOKUP_MAX" -v noise_trim=0.1 \
+      -v lookup_max="$LOOKUP_MAX" -v lookup_lift="$LOOKUP_LIFT" -v noise_trim=0.1 \
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
       -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
@@ -1386,6 +1391,17 @@ rank_fuse_and_display() {
     nfull = 0
     for (fk in full_key) nfull++
     exempt_on = (lookup_max + 0 > 0 && nfull >= 1 && nfull <= lookup_max + 0)
+    # ─── Lookup lift ───
+    # Skipping decay keeps a named record on the page but not first: RRF is
+    # flat, so a recent 0.8-salience milestone sharing part of the query
+    # outranks a 0.4 web fetch holding all of it. Named candidates are
+    # multiplied by lookup_lift after decay — liftNamed() in
+    # explorer/server/search.js, where the measurement is. A score change, not
+    # a sort tier, so --min-score below still stops at a sorted boundary.
+    # On this path, measured 2026-10-17 on the corpus as of 2026-04-04 (17,851
+    # events, 180 known items, 19 recency cases): known S@1 106 -> 173 and
+    # S@10 165 -> 180, no case ranked lower, recency unchanged.
+    if (lookup_lift + 0 < 1) lookup_lift = 3
 
     # ─── Activation: Ebbinghaus time-decay + promote-on-reuse ───
     # score *= exp(-lambda * hours_since_last_use) * reuse_boost
@@ -1416,6 +1432,10 @@ rank_fuse_and_display() {
           factor *= exp(-decay_lambda * hours)
           resort_needed = 1
         }
+      }
+      if (exempt_on && (k in full_key) && lookup_lift + 0 != 1) {
+        factor *= lookup_lift
+        resort_needed = 1
       }
       if (factor != 1.0) rrf_score[k] = rrf_score[k] * factor
     }
