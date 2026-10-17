@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### fix(standup): `--json` and `--commit` no longer lose their tail through a pipe
+
+`cartographer-standup.js` called `process.exit(0)` right after printing. On
+macOS Node writes to a pipe asynchronously, so the process ended before the
+pipe had taken everything. The reader got a prefix cut mid-string, and the exit
+code was 0. On the live corpus a 3-day `--json` roster of about 196 KB arrived
+cut at 131,041 bytes. The MCP server's `standup` tool reads that JSON through a
+pipe, so it failed to parse whenever a checkout's UNCLAIMED list grew. With 317
+modified tracked files, `mcp-server.test.js` failed at byte 65,536 on every
+run; on a clean tree it passed. Both exits now wait for stdout to drain.
+`cartographer-facts.js` and `session-digest.js` were already safe: facts never
+exits after writing, and the digest's `--day` path already waited on its write.
+`tests/unit/cli-pipe-drain.test.js` reads each CLI through a reader that stalls
+after the first chunk, with output past four times a pipe's capacity. Against
+the old standup it fails with output cut at 65,536 and about 131 KB.
+
 ### fix(mcp): tool results are text only, at about a third of the tokens
 
 The MCP server answered with compact text and, from protocol 2025-06-18 on,
