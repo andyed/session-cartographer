@@ -29,7 +29,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  acquireRewriteLock, appendJsonl, drainSpool, lockPath, lockStatus, releaseRewriteLock,
+  acquireRewriteLock, APPEND_TRIES, appendJsonl, drainSpool, lockPath, lockStatus, releaseRewriteLock,
   replaceJsonl, RewriteConflictError, snapshotJsonl, spoolPath, statePath,
 } from '../../scripts/jsonl-lock.js';
 
@@ -278,7 +278,7 @@ function writerRows(file, count) {
   return { lost, doubled, most, expected };
 }
 
-test('replaces racing six appenders lose nothing, and write no row more than three times', { timeout: 120000 }, async (t) => {
+test('replaces racing six appenders lose nothing, and write no row more often than an appender may', { timeout: 120000 }, async (t) => {
   const { dir, file } = tempLog(Array.from({ length: 2000 }, (_, i) => ({ event_id: `seed-${i}`, seed: true })));
   const count = 300;
   const { rewrites, moved } = await rewriteWhileWriting(file, startWriters(file, count), (target, raw, body) => {
@@ -294,11 +294,11 @@ test('replaces racing six appenders lose nothing, and write no row more than thr
   // At least once: a row whose write spans a rewrite's release, or a whole
   // rewrite, can be both kept and written again; readers fold it by event_id.
   // The rewriter moves rows and never copies one, so a row exists once per
-  // write of it, and an appender writes a row at most three times. How many
+  // write of it, and an appender writes a row at most APPEND_TRIES times. How many
   // double depends on load: this test rewrites every few dozen ms, and doubled
   // 1-3 of 1,800 rows alone and ~200 under the full suite's parallel load.
   // A repair run is one rewrite per log.
-  assert.ok(most <= 3, `a writer row appears ${most} times; an appender writes a row at most three`);
+  assert.ok(most <= APPEND_TRIES, `a writer row appears ${most} times; an appender writes a row at most ${APPEND_TRIES}`);
   assert.equal(rowsOf(file).filter((r) => r.seed).length, 2000, 'every seed row survives');
   assert.deepEqual(fs.readdirSync(dir).sort(), ['log.jsonl', 'log.jsonl.rewrite'], 'no lock, spool or temp file is left');
   fs.rmSync(dir, { recursive: true, force: true });

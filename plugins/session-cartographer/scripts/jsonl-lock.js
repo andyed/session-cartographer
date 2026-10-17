@@ -71,8 +71,13 @@ const graceEnv = Number(process.env.CARTOGRAPHER_REWRITE_GRACE_MS);
 export const DEFAULT_GRACE_MS = Number.isFinite(graceEnv) && graceEnv >= 0 ? graceEnv : 1000;
 export const DEFAULT_WAIT_MS = 30000;
 const NL = Buffer.from('\n');
-// Appender attempts before giving up on a state that keeps changing.
-const APPEND_TRIES = 3;
+// Appender writes before giving up on a state that keeps changing; the same
+// cap as cartographer_append. Every write that saw the state change is one
+// whose fate the appender cannot know, so stopping early can drop the row;
+// only rewrites coming faster than a single write keep it going. Three was
+// enough on a 16-core Mac, and too few where a rewrite every few dozen ms met
+// a write slowed past that on four contended cores.
+export const APPEND_TRIES = 8;
 
 export const lockPath = (file) => `${file}.lock`;
 export const statePath = (file) => `${file}.rewrite`;

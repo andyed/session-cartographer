@@ -292,8 +292,9 @@ cartographer_append() {
       case "$_g2" in ''|*[!0-9]*) _g2=x ;; esac
       [ "$_g1" != x ] && [ "$_g2" != x ] && [ "$_g2" -eq $((_g1 + 1)) ] && return 0
     fi
+    # At most 8 writes, the same cap as appendJsonl (scripts/jsonl-lock.js).
     _try=$((_try + 1))
-    [ "$_try" -lt 3 ] || return 0
+    [ "$_try" -lt 8 ] || return 0
   done
 }
 
