@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### fix(explorer): event urls link only through the allowlist
+
+`EventCard` put a corpus `url` straight into `href` in three places (the link
+icon, a commit's "view on GitHub", the detail's url line). The url is whatever a
+hook or agent recorded, and React 19 rewrites only a `javascript:` href, so
+`data:`, `file:` and relative values went through. One did in the live corpus: a
+bare slug rendered as a broken link relative to the Explorer. The card now uses
+the Memory Desk's `safeArtifactLink` (`http(s)`, `mailto`, `#`) and shows a
+refused url as text. `event-card-links.test.js` fails if an `EventCard` href is
+not a `safeArtifactLink` result, and the browser harness renders a
+`javascript:` url and checks it appears as text with no anchor.
+
 ### fix(security): the API and Turbo port refuses a forged Host
 
 The UI host (:2527) has always refused a request whose `Host` is not a loopback

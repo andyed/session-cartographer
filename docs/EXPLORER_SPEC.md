@@ -57,7 +57,7 @@ The Explorer has raw access to session transcripts. Local-only hardening:
 
 1. **Localhost binding**: API and Vite servers bind to `127.0.0.1`, never `0.0.0.0`. Binding does not stop DNS rebinding, so the API, headless Turbo and the UI host also refuse a non-loopback `Host`, a foreign `Origin` and `Sec-Fetch-Site: cross-site` (`explorer/server/loopback-guard.js`).
 2. **Path traversal protection**: Transcript endpoint (`/api/transcript?path=...`) verifies the resolved path is a descendant of `CARTOGRAPHER_TRANSCRIPTS_DIR`. Reject anything reaching outside.
-3. **No HTML rendering of corpus text**: Claude generates arbitrary code/markdown — treat it as untrusted. There is no DOMPurify; nothing needs one, because no corpus text is parsed as HTML. The transcript and Memory Desk markdown renderers emit React elements, nothing uses `dangerouslySetInnerHTML`, and Memory Desk links pass `safeArtifactLink` (`http(s)`, `mailto`, `#` only). Other corpus URLs rely on React 19 blocking `javascript:` URLs. A render path that emits raw HTML must bring its own sanitizer.
+3. **No HTML rendering of corpus text**: Claude generates arbitrary code/markdown — treat it as untrusted. There is no DOMPurify; nothing needs one, because no corpus text is parsed as HTML. The transcript and Memory Desk markdown renderers emit React elements, nothing uses `dangerouslySetInnerHTML`, and every corpus URL that becomes an `href` (Memory Desk links, `EventCard`'s event `url`) passes `safeArtifactLink` (`http(s)`, `mailto`, `#` only); a refused one renders as text. React 19 rewrites only a `javascript:` href, so it is not relied on. A render path that emits raw HTML must bring its own sanitizer.
 
 ## Node API (:2526)
 
