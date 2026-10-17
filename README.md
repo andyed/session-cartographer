@@ -20,14 +20,7 @@ March to October 2026.
 | **736 events, not 1.** A scheduled agent asked ranked search what happened in a 24-hour window and got 1 event back. | A deterministic count over the same window found 736 events, 22 sessions, and 20 commits and pushes across four repositories. Counting is now its own API, and every count ships sample event ids so it can be checked with `--get`. See [Facts](docs/FACTS.md#why-now). |
 | **43 of 125 landed commits** were missing from the session logs on 2026-09-26. | The day digest checks every logged commit against git; its 125 matched an independent `git log` count, repository by repository. Over 26–27 September, 23 of the 46 missing commits traced to a bug in the commit hook itself, which logged at most one commit per call; fixed in 0.8.1. See the [changelog](CHANGELOG.md#featdigest-a-day-digest-checked-against-git). |
 | **287 of 1,350 Claude Code sessions (21%)** called recall at all in the 30 days to 2026-10-15. Codex recalled in 1 of 59 sessions that saw the startup nudge. | Counted from Cartographer's retrieval telemetry, which records the session and call id behind every result it serves. Recall already answered quickly (p90 377 ms), so the gap was reach, not speed; recall now also ships as MCP tools. See [MCP](docs/MCP.md#why). |
-| **TODO: archival recall after the decay fix.** Share of known items older than 90 days that reach the top 10, before and after. | To be filled from the age-curve gate once the fix merges: query count, both engines, and the command that reproduces it. Do not publish this row as written. |
-
-<!-- TODO(age-curve): replace the row above with the post-fix result.
-     Pre-fix reference, not yet reproducible from this repo: the 2026-10-16
-     architecture review measured top-10 hit rate 0.15 for 90+-day known items
-     with decay on, against 0.98-1.00 with decay off (220 queries, semantic leg
-     off). The repo's own earlier measurement is in docs/LONGMEMEVAL.md
-     (2026-08-14, internal truth set: hybrid recall 15% decay on, 65% off). -->
+| **9 of 60 records older than 90 days** reached the top 10 when looked up by their own words; time decay let recent material outrank them. After the fix, 60 of 60. | `scripts/age-curve.js` on the live corpus on 2026-10-16: 204,341 events, 240 known items in four age buckets, 40 recency cases, semantic leg off. For the 90-day-plus bucket, the warm engine's top-10 hit rate went from 0.15 to 1.00, and recency stayed at 0.65. On a paired subsample of 30 cases, the portable CLI went from 0.23 to 1.00. A CI gate on a synthetic corpus now holds the curve. See [Scoring](docs/SCORING.md#the-age-curve-the-gate). |
 
 Several features here have close equivalents elsewhere. The
 [landscape survey](docs/landscape-survey.md) says which, with links.
