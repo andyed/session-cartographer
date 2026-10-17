@@ -76,7 +76,8 @@ if [ -n "$CHANGELOG_EVENT" ]; then cartographer_append "$CHANGELOG" "$CHANGELOG_
 # Real-time indexing (silent fail if services aren't running)
 INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
-  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
+  # Detached from the hook's pipes, as in log-tool-use.sh.
+  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" >/dev/null 2>&1 &
 fi
 
 exit 0

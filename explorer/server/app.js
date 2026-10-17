@@ -139,7 +139,9 @@ export function createExplorerApp() {
     try {
       const qdrantUrl = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
       const collection = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
-      const r = await qdrantFetch(`${qdrantUrl}/collections/${collection}`);
+      // Probes get a deadline: a wedged service would otherwise hold the
+      // health answer open with no limit (both answer in ~65 ms at load 68).
+      const r = await qdrantFetch(`${qdrantUrl}/collections/${collection}`, { signal: AbortSignal.timeout(2000) });
       qdrant = r.ok;
       // A keyed Qdrant refusing a missing or wrong key is up, not down; say
       // which, or `qdrant: false` sends the user looking for a dead process.
@@ -167,7 +169,8 @@ export function createExplorerApp() {
     let embed = false;
     try {
       const r = await fetch(
-        (process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings').replace('/v1/embeddings', '/health')
+        (process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings').replace('/v1/embeddings', '/health'),
+        { signal: AbortSignal.timeout(2000) },
       );
       embed = r.ok;
     } catch {}

@@ -72,11 +72,25 @@ const REUSE_WEIGHT = parseFloat(process.env.CARTOGRAPHER_REUSE_WEIGHT || '0.3');
 // const is fixed before an importing test can set the variable.
 const semanticEnabled = () => process.env.CARTOGRAPHER_SEMANTIC !== '0';
 
+// One deadline for the whole semantic leg: the embedding, the search, and the
+// range retry share it. Without one, an embedder that accepted the connection
+// and never answered held the request open with no limit. 3 s sits under the
+// 4 s Turbo client budget (TURBO_TIMEOUT_DEFAULT_MS), so a stalled leg still
+// leaves time for the keyword answer to arrive; missing that budget costs the
+// caller the portable CLI. An embedding measured 0.2-0.8 s at load average 68
+// on 2026-10-16, and a filtered search 4-16 ms with the payload indexes.
+// Read at call time, like semanticEnabled.
+const semanticTimeoutMs = () => {
+  const ms = Number(process.env.CARTOGRAPHER_SEMANTIC_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 3000;
+};
+
 /**
  * Get embedding vector for a query string.
  */
-async function getEmbedding(text) {
+async function getEmbedding(text, signal) {
   const res = await fetch(EMBED_URL, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -94,8 +108,9 @@ async function getEmbedding(text) {
  */
 const SEMANTIC_SCORE_THRESHOLD = 0.3;
 
-async function qdrantSearch(body) {
+async function qdrantSearch(body, signal) {
   const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -140,7 +155,8 @@ async function semanticSearch(query, { project, limit, sinceMs = null, beforeMs 
   // Say so without spending an embedding call or a round trip.
   if (project && projectValues && projectValues.length === 0) return [];
 
-  const vector = await getEmbedding(query);
+  const signal = AbortSignal.timeout(semanticTimeoutMs());
+  const vector = await getEmbedding(query, signal);
 
   const body = { vector, limit, with_payload: true, score_threshold: SEMANTIC_SCORE_THRESHOLD };
   const must = [];
@@ -180,7 +196,7 @@ async function semanticSearch(query, { project, limit, sinceMs = null, beforeMs 
 
   let data;
   try {
-    data = await qdrantSearch(body);
+    data = await qdrantSearch(body, signal);
   } catch (error) {
     // A 4xx means this Qdrant rejected the request itself — an older server
     // without datetime range support, or a payload schema that forbids the
@@ -192,7 +208,7 @@ async function semanticSearch(query, { project, limit, sinceMs = null, beforeMs 
     if (!hasRange || !(error.status >= 400 && error.status < 500)) throw error;
     body.filter = must.length > 1 ? { must: must.slice(0, -1) } : undefined;
     if (!body.filter) delete body.filter;
-    data = await qdrantSearch(body);
+    data = await qdrantSearch(body, signal);
   }
 
   return (data.result || []).map((hit, i) => ({

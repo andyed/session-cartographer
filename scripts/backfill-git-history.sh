@@ -191,7 +191,7 @@ process_repo() {
 
       # Real-time indexing
       if [ -x "$INDEXER" ]; then
-        [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" 2>/dev/null &
+        [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" >/dev/null 2>&1 &
       fi
     fi
 

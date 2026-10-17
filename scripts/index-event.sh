@@ -27,6 +27,19 @@ REJECT_LOG="${CARTOGRAPHER_INDEX_REJECT_LOG:-$STATE_DIR/index-rejects.jsonl}"
 EMBED_TEXT_MAX="${CARTOGRAPHER_EMBED_TEXT_MAX:-1200}"
 RECEIPT_ENABLED="${CARTOGRAPHER_INDEX_RECEIPT:-0}"
 PE_GATE_REJECT="${PE_GATE_REJECT:-0.85}"
+
+# A deadline on every request. Without one, a service that accepted the
+# connection and never answered held this indexer, and the copy every hook
+# detaches, open with no error and no row in index-errors.jsonl. One second to
+# connect is generous for a loopback service, which refuses at once when down.
+# Measured 2026-10-16 at load average 68: probes answered in ~65 ms and an
+# embedding took 0.2-0.8 s, so 2 s and 5 s leave several times the loaded tail.
+# A payload index build took ~1.1 s at 157k points and grows with the
+# collection, so it gets 30 s. CARTOGRAPHER_HTTP_MAX_TIME raises the call budget
+# for a slower or remote embedder.
+CURL_PROBE=(--connect-timeout 1 --max-time 2)
+CURL_CALL=(--connect-timeout 1 --max-time "${CARTOGRAPHER_HTTP_MAX_TIME:-5}")
+CURL_BUILD=(--connect-timeout 1 --max-time 30)
 . "$(dirname "$0")/cartographer-common.sh" 2>/dev/null \
   || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 
@@ -155,7 +168,7 @@ ensure_payload_indexes() {
     schema="${spec##*:}"
     [ "$(printf '%s' "$info" | jq -r --arg f "$field" '.result.payload_schema[$f].data_type // empty' 2>/dev/null)" = "$schema" ] && continue
     body=$(jq -n -c --arg f "$field" --arg s "$schema" '{field_name: $f, field_schema: $s}')
-    if ! qdrant_curl -sf -X PUT "$QDRANT_URL/collections/$COLLECTION/index" \
+    if ! qdrant_curl -sf "${CURL_BUILD[@]}" -X PUT "$QDRANT_URL/collections/$COLLECTION/index" \
         -H "Content-Type: application/json" \
         -d "$body" >/dev/null 2>&1; then
       mkdir -p "$STATE_DIR" 2>/dev/null || true
@@ -245,30 +258,30 @@ EMBED_TEXT=$(printf '%.*s' "$EMBED_TEXT_MAX" "$TEXT")
 
 # Quick health check. Hooks still degrade gracefully, but batch callers now
 # receive a non-zero status and can avoid checkpointing data that never landed.
-COLLECTION_INFO=$(qdrant_curl -sf "$QDRANT_URL/collections/$COLLECTION" 2>/dev/null)
+COLLECTION_INFO=$(qdrant_curl -sf "${CURL_PROBE[@]}" "$QDRANT_URL/collections/$COLLECTION" 2>/dev/null)
 QDRANT_RC=$?
 if [ "$QDRANT_RC" -ne 0 ]; then
   # A keyed Qdrant refusing this request is a configuration fault, not an
   # outage. Without this, a missing or wrong key lands in index-errors.jsonl
   # as `qdrant_unavailable` while Qdrant is up. curl -f exits 22 only when a
   # server answered with an HTTP error, so only then is a status probe worth
-  # its second request; a refused connection (7) stays one request, which
-  # the detached callers' tests count on.
+  # its second request; a refused connection (7) or a probe past its deadline
+  # (28) stays one request, which the detached callers' tests count on.
   if [ "$QDRANT_RC" -eq 22 ]; then
-    case "$(qdrant_curl -s -o /dev/null -w '%{http_code}' "$QDRANT_URL/collections/$COLLECTION" 2>/dev/null)" in
+    case "$(qdrant_curl -s "${CURL_PROBE[@]}" -o /dev/null -w '%{http_code}' "$QDRANT_URL/collections/$COLLECTION" 2>/dev/null)" in
       401|403) fail_index "qdrant_unauthorized" "configuration_missing"; exit $? ;;
     esac
   fi
   fail_unreachable_service "qdrant"; exit $?
 fi
 ensure_payload_indexes "$COLLECTION_INFO"
-curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || { fail_unreachable_service "embedder"; exit $?; }
+curl -sf "${CURL_PROBE[@]}" "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || { fail_unreachable_service "embedder"; exit $?; }
 
 # Get embedding — body built with jq, not string interpolation: a summary
 # containing quotes or backslashes would otherwise produce invalid JSON and
 # the event would silently never get indexed.
 EMBED_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$EMBED_TEXT" '{model: $m, input: $i}') || { fail_index "embed_request_invalid"; exit $?; }
-if ! EMBED_RESPONSE=$(curl -sf "$EMBED_URL" \
+if ! EMBED_RESPONSE=$(curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
   -H "Content-Type: application/json" \
   -d "$EMBED_BODY" 2>/dev/null); then
   # Code-dense text can exceed an embedder's token budget even under the
@@ -278,7 +291,7 @@ if ! EMBED_RESPONSE=$(curl -sf "$EMBED_URL" \
   [ "$RETRY_TEXT_MAX" -lt 256 ] && RETRY_TEXT_MAX=256
   RETRY_TEXT=$(printf '%.*s' "$RETRY_TEXT_MAX" "$TEXT")
   RETRY_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$RETRY_TEXT" '{model: $m, input: $i}') || { fail_index "embed_retry_request_invalid"; exit $?; }
-  EMBED_RESPONSE=$(curl -sf "$EMBED_URL" \
+  EMBED_RESPONSE=$(curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
     -H "Content-Type: application/json" \
     -d "$RETRY_BODY" 2>/dev/null) || { fail_index "embedding_failed"; exit $?; }
 fi
@@ -308,7 +321,7 @@ POINT_ID=$(cartographer_point_id "$EVENT_ID")
 # authored /wrapup synthesis. Event ids already make repeat indexing idempotent,
 # and two semantically similar sessions may carry different decisions.
 if [ "$SOURCE" != "milestones" ]; then
-  SEARCH_RESULT=$(qdrant_curl -sf "$QDRANT_URL/collections/$COLLECTION/points/search" \
+  SEARCH_RESULT=$(qdrant_curl -sf "${CURL_CALL[@]}" "$QDRANT_URL/collections/$COLLECTION/points/search" \
     -H "Content-Type: application/json" \
     -X POST \
     -d "{\"vector\":$VECTOR,\"limit\":1,\"with_payload\":false}" 2>/dev/null) \
@@ -351,7 +364,7 @@ PAYLOAD=$(jq -n -c \
   --arg intent "${PROMPT_INTENT:-}" \
   '{points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $provider != "" then {provider: $provider} else {} end) + (if $transcript_path != "" then {transcript_path: $transcript_path} else {} end) + (if $canonical != "" then {canonical: ($canonical == "true")} else {} end) + (if $noise_class != "" then {noise_class: $noise_class} else {} end) + (if $derived_from != null then {derived_from: $derived_from} else {} end) + (if $summary_hash != "" then {summary_hash: $summary_hash} else {} end) + (if $compaction_trigger != "" then {compaction_trigger: $compaction_trigger} else {} end) + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end) + (if $intent != "" then {prompt_intent: $intent} else {} end))}]}')
 
-qdrant_curl -sf "$QDRANT_URL/collections/$COLLECTION/points?wait=true" \
+qdrant_curl -sf "${CURL_CALL[@]}" "$QDRANT_URL/collections/$COLLECTION/points?wait=true" \
   -H "Content-Type: application/json" \
   -X PUT \
   -d "$PAYLOAD" \
@@ -361,7 +374,7 @@ qdrant_curl -sf "$QDRANT_URL/collections/$COLLECTION/points?wait=true" \
 # opt into a receipt; only they pay for an independent read-back before the
 # indexer says the exact event landed.
 if [ "$RECEIPT_ENABLED" = "1" ]; then
-  VERIFY_RESPONSE=$(qdrant_curl -sf "$QDRANT_URL/collections/$COLLECTION/points/$POINT_ID" 2>/dev/null) \
+  VERIFY_RESPONSE=$(qdrant_curl -sf "${CURL_CALL[@]}" "$QDRANT_URL/collections/$COLLECTION/points/$POINT_ID" 2>/dev/null) \
     || { fail_index "qdrant_verify_failed"; exit $?; }
   VERIFIED_EVENT_ID=$(printf '%s' "$VERIFY_RESPONSE" | jq -r '.result.payload.event_id // empty' 2>/dev/null)
   [ "$VERIFIED_EVENT_ID" = "$EVENT_ID" ] \

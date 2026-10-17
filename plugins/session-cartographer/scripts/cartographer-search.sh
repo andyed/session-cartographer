@@ -950,11 +950,17 @@ semantic_search_to_tsv() {
   # corpus rows from a live Qdrant rather than whatever happens to be running.
   [ "${CARTOGRAPHER_SEMANTIC:-}" = "0" ] && return 1
   $HAS_JQ || return 1
-  qdrant_curl -sf "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
-  curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1
+  # A deadline on every request: a service that accepts and never answers held
+  # this leg, and the search waiting on it, with no limit. Budgets as in
+  # index-event.sh, measured at load average 68 (probes ~65 ms, an embedding
+  # 0.2-0.8 s); CARTOGRAPHER_HTTP_MAX_TIME raises the call budget.
+  local probe=(--connect-timeout 1 --max-time 2)
+  local call=(--connect-timeout 1 --max-time "${CARTOGRAPHER_HTTP_MAX_TIME:-5}")
+  qdrant_curl -sf "${probe[@]}" "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
+  curl -sf "${probe[@]}" "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1
 
   local embed_response
-  embed_response=$(curl -sf "$EMBED_URL" \
+  embed_response=$(curl -sf "${call[@]}" "$EMBED_URL" \
     -H "Content-Type: application/json" \
     -d "$(jq -n --arg m "$EMBED_MODEL" --arg q "Represent this sentence for retrieval: $QUERY" \
       '{model: $m, input: $q}')" 2>/dev/null) || return 1
@@ -1029,18 +1035,21 @@ semantic_search_to_tsv() {
       '{vector: $v, limit: $l, with_payload: true, filter: {must: $m}}')
   fi
 
-  local results
-  results=$(qdrant_curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
+  local results status
+  results=$(qdrant_curl -sf "${call[@]}" "$QDRANT/collections/$COLLECTION/points/search" \
     -H "Content-Type: application/json" \
     -d "$search_body" 2>/dev/null)
+  status=$?
   # `curl -sf` fails the same way for "this server cannot do datetime ranges"
   # and "Qdrant is down", so retry once without the range before giving up.
   # Dropping the leg outright would be a regression against the pre-pushdown
   # behaviour on older servers: rank_fuse's awk temporal filter still trims the
   # window, so an unbounded query is degraded but not wrong. If Qdrant is
   # genuinely unreachable the retry fails too and we return 1 as before.
-  # Mirrors the 4xx retry in explorer/server/search.js:semanticSearch().
-  if [ -z "$results" ] && [ "$range_cond" != "{}" ]; then
+  # Mirrors the 4xx retry in explorer/server/search.js:semanticSearch(). Not
+  # after a timeout (curl exit 28): a server too slow to answer once is not
+  # refusing the range, and a second wait would double the leg's cost.
+  if [ -z "$results" ] && [ "$range_cond" != "{}" ] && [ "$status" -ne 28 ]; then
     if [ "$must_norange" = "[]" ]; then
       search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" \
         '{vector: $v, limit: $l, with_payload: true}')
@@ -1048,7 +1057,7 @@ semantic_search_to_tsv() {
       search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --argjson m "$must_norange" \
         '{vector: $v, limit: $l, with_payload: true, filter: {must: $m}}')
     fi
-    results=$(qdrant_curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
+    results=$(qdrant_curl -sf "${call[@]}" "$QDRANT/collections/$COLLECTION/points/search" \
       -H "Content-Type: application/json" \
       -d "$search_body" 2>/dev/null)
   fi
