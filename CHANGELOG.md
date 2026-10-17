@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+### fix(logs): the rewrite lock lost rows on small CI runners
+
+`jsonl-lock.test.js` lost 1-2 rows per run on the 2-4 core CI runners (Linux and
+macOS) and never on a 16-core Mac. `replaceJsonl` announced `held` first and
+moved any leftover spool second. An appender that read `held` in between opened
+the spool. If it was descheduled before writing, the move renamed the spool,
+read it, appended it to the log and unlinked it, and the row then went into the
+unlinked file. The appender's second read of the state still said `held`, the
+same as its first, so it never wrote the row again. A spool is now moved only
+while the state does not say `held`: a dead rewriter's spool is moved by
+`acquireRewriteLock` before it announces the hold, and the live spool after the
+release. Every look the rewriter takes (the late sweep of the old file, each
+spool drain) now reads complete rows only, since a trailing fragment is a write
+still landing and its appender writes the row again. A rewrite that fails now
+drains the spool it collected instead of leaving it for the next one.
+
+`jsonl-lock.test.js` forces the interleaving: a slowed `cat` makes the appender
+open the spool right after `held`, and the rewriter waits at its rename until
+the appender has finished. The pre-fix lock loses that row every time, and the
+fixed one keeps it. A second test checks that no spool is ever renamed while
+the state says `held`.
+
+The hook tests that removed their temp directory right after a hook
+(`log-tool-use-git-commit`, `log-tool-use-bash-edits`, `transcript-verified`)
+raced the indexer, which is now detached and outlives the hook. CI failed in
+cleanup with `ENOTEMPTY`. They run with `NO_INDEXER_ENV`
+(`tests/unit/helpers/offline-index.js`), a `CARTOGRAPHER_ROOT` whose
+`index-event.sh` does nothing. `live-index-isolation.test.js`, which needs the
+real indexer, now waits for it to finish (its error row), not for its first
+request.
+
 ### fix(search): --get records a fetch whatever happens to stdout, and fetches conversation turns
 
 Two ways lost the access row of a fetch an agent made exactly as the skill
@@ -48,6 +79,7 @@ nothing. `normalizeLiteralPrompt` and `isNonPromptNoise` are now exported from
 `classify-prompt-intent.js`, so the probe shares its definition of a human
 prompt. `live-index-isolation.test.js` exempts the new test, which names the
 CLI only inside transcript fixtures.
+||||||| parent of a962f6c (test(hooks): keep the detached indexer out of hook-test cleanup)
 
 ### feat(security): Qdrant runs with an API key, and every client sends it
 
