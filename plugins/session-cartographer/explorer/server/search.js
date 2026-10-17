@@ -354,7 +354,7 @@ function rrfFuseMany(ladders, limit, exemptIds = null) {
  * The candidates a lookup names, or null when the query is a browse.
  *
  * A query names a record when only a handful of candidates contain all of its
- * tokens: "blauch feedback", a commit subject half-remembered, the three odd
+ * tokens: a colleague's name plus "feedback", a commit subject half-remembered, the three odd
  * words of a decision. Age says nothing about whether that record is the
  * answer, so those candidates are not decayed. A query whose tokens many
  * records share — "deploy fix", "shader" — is a browse, and for a browse

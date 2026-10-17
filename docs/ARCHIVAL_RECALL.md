@@ -63,7 +63,7 @@ the original evidence.
 
 ## Two query intents, one curve
 
-"What was I doing" wants recency. "Blauch feedback", a commit hash, or
+"What was I doing" wants recency. A colleague's name plus "feedback", a commit hash, or
 "diff shape" is a known-item lookup where age is irrelevant. A single decay
 curve cannot serve both, which is why no single λ has worked. The design
 therefore separates **how old material earns its place** (frecency) from
