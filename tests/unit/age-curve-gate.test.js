@@ -30,7 +30,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 import { fixtureLogFiles, writeAgeCurveFixture } from './helpers/age-curve-fixture.js';
-import { measurementEnv, rankApi, rankCli, s10By, summarize } from '../../scripts/age-curve.js';
+import { measurementEnv, rankApi, rankCli, s10By, snapshotCorpus, summarize, topicalCases } from '../../scripts/age-curve.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const CLI = path.join(ROOT, 'scripts', 'cartographer-search.sh');
@@ -172,5 +172,77 @@ test('both engines mark the same records as containing every query token', () =>
       }
     }
     assert.deepEqual(awk.sort(), js, `${c.query}: full-coverage records differ between engines`);
+  }
+});
+
+// ─── Harness mechanics for the topical kind (scripts/age-curve.js --truth) ───
+//
+// The topical cases score graded truth labels (scripts/truth-score.js has its
+// own tests); these check how the harness buckets them, averages them, and
+// rebuilds a corpus --as-of the date the labels were written.
+
+const PRIMARY = 'aaaaaaaa-1111-2222-3333-444444444444';
+const CONTEXT = 'bbbbbbbb-1111-2222-3333-444444444444';
+const OTHER = 'cccccccc-1111-2222-3333-444444444444';
+const truth = {
+  query_id: 'widget-palette',
+  query: 'widget palette',
+  sessions: {
+    [PRIMARY]: { relevant: true, role: 'primary' },
+    [CONTEXT]: { relevant: true, role: 'context' },
+    [OTHER]: { relevant: false },
+  },
+  events: [],
+};
+
+test('topical cases are bucketed by the age of their newest relevant session', () => {
+  const now = Date.parse('2026-10-17T00:00:00Z');
+  const doc = (session, ts) => ({ event: { session_id: session, timestamp: ts } });
+  const index = { docs: new Map([
+    ['e1', doc(PRIMARY, '2026-03-28T00:00:00Z')],
+    ['e2', doc(CONTEXT, '2026-10-12T00:00:00Z')],
+    ['e3', doc(OTHER, '2026-10-16T00:00:00Z')],
+  ]) };
+  const [withRecent] = topicalCases([truth], index, { nowMs: now });
+  assert.equal(withRecent.bucket, '<7d', 'the context session is five days old; the irrelevant one does not count');
+  const onlyPrimary = { ...truth, sessions: { [PRIMARY]: { relevant: true, role: 'primary' } } };
+  assert.equal(topicalCases([onlyPrimary], index, { nowMs: now })[0].bucket, '90d+');
+  assert.equal(topicalCases([{ ...truth, sessions: {} }], index, { nowMs: now })[0].bucket, 'n/a');
+});
+
+test('a topical engine error is counted, not averaged in as an empty list', () => {
+  const ok = { kind: 'topical', bucket: '90d+', query: 'a', p5: 1, p10: 0.6, judgedP10: 1, gain10: 0.5, recall: 1,
+    unjudged10: 4, under1d10: 0, age10: 30 };
+  const [row] = summarize([ok, { kind: 'topical', bucket: '90d+', query: 'b', error: 'timeout' }]);
+  assert.equal(row.n, 1);
+  assert.equal(row.errors, 1);
+  assert.equal(row.p10, 0.6);
+});
+
+test('--as-of keeps rows at or before the cut and shifts them, so "now" falls at the cut', () => {
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), 'carto-asof-src-'));
+  const dst = fs.mkdtempSync(path.join(os.tmpdir(), 'carto-asof-dst-'));
+  try {
+    const rows = [
+      { event_id: 'old', timestamp: '2026-04-01T12:00:00Z' },
+      { event_id: 'offset', timestamp: '2026-04-03T20:00:00-07:00' }, // 04-04T03:00Z, kept
+      { event_id: 'epoch', timestamp: String(Date.parse('2026-04-02T00:00:00Z') / 1000) },
+      { event_id: 'late', timestamp: '2026-04-05T00:00:01Z' },
+      { event_id: 'none' },
+    ];
+    fs.writeFileSync(path.join(src, 'changelog.jsonl'), `${rows.map((r) => JSON.stringify(r)).join('\n')}\nnot json\n`);
+    const asOfMs = Date.parse('2026-04-05T00:00:00Z');
+    const shiftMs = 194 * 86400e3;
+    const kept = snapshotCorpus(src, dst, { asOfMs, shiftMs });
+    const out = fs.readFileSync(path.join(dst, 'changelog.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepEqual(out.map((r) => r.event_id), ['old', 'offset', 'epoch']);
+    assert.equal(kept['changelog.jsonl'], 3);
+    assert.equal(out[0].timestamp, new Date(Date.parse('2026-04-01T12:00:00Z') + shiftMs).toISOString().replace('.000Z', 'Z'));
+    assert.equal(Date.parse(out[1].timestamp), Date.parse('2026-04-04T03:00:00Z') + shiftMs);
+    for (const r of out) assert.match(r.timestamp, /^20\d\d-\d\d-\d\dT\d\d:\d\d:\d\dZ$/, 'UTC, no offset, no milliseconds');
+    assert.equal(fs.readFileSync(path.join(dst, 'research-log.jsonl'), 'utf8'), '', 'a missing log becomes an empty one');
+  } finally {
+    fs.rmSync(src, { recursive: true, force: true });
+    fs.rmSync(dst, { recursive: true, force: true });
   }
 });

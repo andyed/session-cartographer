@@ -9,7 +9,8 @@
 // decay off every bucket scored 98-100%. Nothing errored; old records were
 // simply ranked past the page, or trimmed for their age before they could be.
 //
-// Two kinds of case are measured, so an arm cannot pass by never decaying:
+// Three kinds of case are measured, so an arm cannot pass by never decaying,
+// nor by decaying as steeply as it likes:
 //
 //   known   a query built from a record's three highest-IDF tokens, kept only
 //           when at most five documents contain all three (a known item).
@@ -17,6 +18,12 @@
 //   recency a vague query whose tokens many records share across months.
 //           Success is the newest of them in the top 10 — the "latest on X"
 //           intent that time decay exists to serve.
+//   topical a graded truth query from demo/truth (--truth DIR; gitignored,
+//           present only in the maintainer's checkout), scored by
+//           scripts/truth-score.js as eval-search.js scores it: P@10, judged
+//           P@10, graded gain. Both metrics above reward steeper decay on
+//           non-exempt items; this one asks what steepness costs a browse that
+//           wants relevant material rather than the latest.
 //
 // Both engines run on the same cases: hybridSearch in-process (the Turbo path)
 // and the portable awk CLI as a child with CARTOGRAPHER_TURBO=0 and the same
@@ -31,6 +38,18 @@
 //   node scripts/age-curve.js --root /path/to/older/checkout --root . --arm shipped
 //   node scripts/age-curve.js --json --out /tmp/curve.json
 //   node scripts/age-curve.js --state /tmp/curve-state ...   # resumable; rerun the same line to continue
+//   node scripts/age-curve.js --truth ~/Documents/dev/session-cartographer/demo/truth --arm shipped:api --arm actr-d0.5+exempt
+//   node scripts/age-curve.js --truth ... --as-of 2026-04-04T23:59:59Z ...   # the corpus as it stood then
+//   node scripts/age-curve.js --truth ... --semantic ...  # live semantic leg, in-process engine only
+//
+// --as-of keeps only events at or before that moment and moves every kept
+// timestamp forward by (now - as-of), so the engines, which take "now" from
+// the clock, rank the corpus as they would have then. It exists for the
+// topical kind: the truth labels were written 2026-03-30 to 04-04 against
+// sessions then a few days old, so as of their writing they test how a curve
+// orders recent material, which on today's corpus they cannot (every labeled
+// session is now ~200 days old). It cannot combine with --semantic, whose
+// index carries the real timestamps and everything written since.
 //
 // An arm is `name[:engines]`; engines default to --engines (api,cli). The CLI
 // costs ~17 s a query on a 200k-event corpus, so diagnostic arms are usually
@@ -47,7 +66,8 @@
 // the curve. And the cases are corpus text: they are written only to the
 // temporary directory (or --state), and both --out and --state refuse a path
 // inside this repository, so a query built from someone's prompt history
-// cannot be committed by accident.
+// cannot be committed by accident. The truth labels are copied into the cases
+// file, which lives there too; results keep only their queries.
 
 import { execFile, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -55,6 +75,8 @@ import { constants as fsConstants, appendFileSync, copyFileSync, existsSync, mkd
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { eventFromCliRow, eventFromItem, loadTruth, sameSession, scoreTruth } from './truth-score.js';
+import { epochMsFromTimestamp } from '../explorer/server/event-time.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const REPO_ROOT = path.resolve(HERE, '..');
@@ -109,6 +131,11 @@ export const ARMS = {
 //                       them.
 //   cmem-d<d>[+exempt]  claude-mem's opt-in ranking (2026-09-30), taken here
 //                       as a factor: ln(1 + t^-d + α Σ t_k^-d) with α = 1.
+//   lastuse-d<d>[+exempt]  ACT-R's age term alone, t^-d, in the slot exp(-λt)
+//                       holds: t is the time since last use (the event, or its
+//                       newest recorded access) and the shipped reuse boost
+//                       stays on. On a record with no reuse it is the actr arm
+//                       exactly; it differs only in how rehearsals count.
 // t is in days, floored at 0.02 (30 minutes), the floor the ledger reader uses.
 // Each curve is scaled to 1 at that floor, as exp(-λt) is at 0: the scale does
 // not change how non-exempt items order among themselves, but an exempt item
@@ -117,13 +144,13 @@ export const ARMS = {
 const FLOOR_DAYS = 0.02;
 export function resolveArm(name) {
   if (ARMS[name]) return ARMS[name];
-  const m = /^(actr|cmem)-d([0-9]*\.?[0-9]+)(\+exempt)?$/.exec(name);
+  const m = /^(actr|cmem|lastuse)-d([0-9]*\.?[0-9]+)(\+exempt)?$/.exec(name);
   if (!m) return null;
   const d = Number(m[2]);
-  const decay = m[1] === 'actr' ? actrDecay(d) : cmemDecay(d, 1);
+  const decay = { actr: actrDecay, cmem: (x) => cmemDecay(x, 1), lastuse: lastUseDecay }[m[1]](d);
   return {
     env: m[3] ? {} : { CARTOGRAPHER_DECAY_LOOKUP_MAX: '0' },
-    ranking: { decay, reuseBoost: false }, apiOnly: true, ledger: true,
+    ranking: { decay, reuseBoost: m[1] === 'lastuse' }, apiOnly: true, ledger: true,
   };
 }
 
@@ -140,6 +167,10 @@ export function actrDecay(d) {
     for (const h of accessHours) sum += Math.pow(days(h), -d);
     return sum / unit;
   };
+}
+
+export function lastUseDecay(d) {
+  return ({ hours }) => Math.pow(days(hours) / FLOOR_DAYS, -d);
 }
 
 export function cmemDecay(d, alpha) {
@@ -282,7 +313,49 @@ export function sampleRecencyCases(index, { tokenize, nowMs, count = 40, seed = 
   return cases;
 }
 
+/**
+ * Topical cases: one per truth query, scored on graded relevance rather than a
+ * single target. The bucket is the age of the newest event in any session the
+ * label marks relevant, so the summary says which ages a topical case covers:
+ * on 2026-10-17 every labeled session was 199-205 days old, so on the live
+ * corpus all nine cases fell in 90d+ and none tested how a curve orders recent
+ * material. --as-of moves them back to the week they were labeled in.
+ */
+export function topicalCases(truths, index, { nowMs }) {
+  const newest = new Map(); // session -> newest event ms
+  for (const [, doc] of index.docs) {
+    const sid = doc.event.session_id || doc.event.session;
+    const ms = Date.parse(doc.event.timestamp);
+    if (sid && Number.isFinite(ms) && ms <= nowMs && ms > (newest.get(sid) ?? -Infinity)) newest.set(sid, ms);
+  }
+  return truths.map((truth) => {
+    let ms = -Infinity;
+    for (const [sid, info] of Object.entries(truth.sessions || {})) {
+      if (!info.relevant) continue;
+      for (const [s, m] of newest) if (sameSession(sid, s) && m > ms) ms = m;
+    }
+    return { kind: 'topical', bucket: Number.isFinite(ms) ? bucketOf((nowMs - ms) / DAY_MS) : 'n/a',
+      id: truth.query_id || truth.query, query: truth.query, truth };
+  });
+}
+
 // ─── Engines ───
+
+// eval-search.js scores the top 50, so a topical case does too.
+const TOPICAL_DEPTH = 50;
+
+/** A topical case's result: the truth-score metrics and the age of the top 10, without the labels. */
+function topicalResult(c, events, extra = {}) {
+  const s = scoreTruth(c.truth, events.slice(0, TOPICAL_DEPTH));
+  const now = Date.now();
+  const ages = events.slice(0, 10).map((e) => (now - Date.parse(e.timestamp)) / DAY_MS)
+    .filter(Number.isFinite).sort((a, b) => a - b);
+  const { truth, ...rest } = c;
+  return { ...rest, p5: s.precision5, p10: s.precision10, judgedP10: s.judgedP10, judged: s.judged,
+    gain10: s.gain10, unjudged10: s.unjudged10, recall: s.sessionRecall,
+    age10: ages.length ? ages[Math.floor((ages.length - 1) / 2)] : null,
+    under1d10: ages.filter((a) => a < 1).length, pool: events.length, ...extra };
+}
 
 /**
  * Rank every case through an in-process hybridSearch. `done` (index → result)
@@ -295,8 +368,13 @@ export async function rankApi(hybridSearch, index, cases, { ranking, done = null
     if (done?.has(i)) { out[i] = done.get(i); continue; }
     const c = cases[i];
     const res = await hybridSearch(index, c.query, ranking ? { ranking } : {});
-    const pos = res.items.findIndex((it) => it.event_id === c.id);
-    out[i] = { ...c, rank: pos >= 0 && pos < DEPTH ? pos + 1 : null, pool: res.items.length };
+    if (c.kind === 'topical') {
+      out[i] = topicalResult(c, res.items.map(eventFromItem), { semantic: res.semanticStatus || null });
+    } else {
+      const pos = res.items.findIndex((it) => it.event_id === c.id);
+      out[i] = { ...c, rank: pos >= 0 && pos < DEPTH ? pos + 1 : null, pool: res.items.length,
+        semantic: res.semanticStatus || null };
+    }
     onResult?.(i, out[i]);
   }
   return out;
@@ -351,9 +429,10 @@ export async function rankCli(cliPath, cases, env, { concurrency = 6, done = nul
         const rows = String(stdout || '').split('\n').filter((l) => l.startsWith('{')).map((l) => {
           try { return JSON.parse(l); } catch { return null; }
         }).filter(Boolean);
+        const failed = error && error.code !== 1 ? { error: String(error.message || error).slice(0, 200) } : {};
+        if (c.kind === 'topical') { resolve(topicalResult(c, rows.map(eventFromCliRow), failed)); return; }
         const pos = rows.findIndex((r) => r.event_id === c.id);
-        resolve({ ...c, rank: pos >= 0 ? pos + 1 : null, pool: rows.length,
-          ...(error && error.code !== 1 ? { error: String(error.message || error).slice(0, 200) } : {}) });
+        resolve({ ...c, rank: pos >= 0 ? pos + 1 : null, pool: rows.length, ...failed });
       });
   });
   await Promise.all(Array.from({ length: Math.min(concurrency, todo.length) }, async () => {
@@ -368,21 +447,37 @@ export async function rankCli(cliPath, cases, env, { concurrency = 6, done = nul
 
 // ─── Summary ───
 
+const TOPICAL_METRICS = ['p5', 'p10', 'judgedP10', 'gain10', 'recall', 'unjudged10', 'under1d10', 'age10'];
+
+/**
+ * Per kind and bucket: S@1, S@10, MRR and absent for known and recency cases;
+ * for topical cases the means of TOPICAL_METRICS, over the cases that ran (an
+ * engine error is counted, never scored as an empty list).
+ */
 export function summarize(results) {
   const table = {};
   for (const r of results) {
     const key = `${r.kind}:${r.bucket}`;
+    if (r.kind === 'topical') {
+      const b = (table[key] ||= { kind: r.kind, bucket: r.bucket, n: 0, errors: 0,
+        ...Object.fromEntries(TOPICAL_METRICS.map((m) => [m, 0])) });
+      if (r.error) { b.errors++; continue; }
+      b.n++;
+      for (const m of TOPICAL_METRICS) b[m] += r[m] ?? 0;
+      continue;
+    }
     const b = (table[key] ||= { kind: r.kind, bucket: r.bucket, n: 0, s1: 0, s10: 0, rr: 0, absent: 0 });
     b.n++;
     if (r.rank === 1) b.s1++;
     if (r.rank && r.rank <= 10) b.s10++;
     if (r.rank) b.rr += 1 / r.rank; else b.absent++;
   }
-  const rows = Object.values(table).map((b) => ({
-    kind: b.kind, bucket: b.bucket, n: b.n,
-    s1: b.s1 / b.n, s10: b.s10 / b.n, mrr: b.rr / b.n, absent: b.absent,
-  }));
-  const order = (r) => (r.kind === 'known' ? 0 : 1) * 10 + BUCKETS.indexOf(r.bucket);
+  const rows = Object.values(table).map((b) => (b.kind === 'topical'
+    ? { kind: b.kind, bucket: b.bucket, n: b.n, errors: b.errors,
+      ...Object.fromEntries(TOPICAL_METRICS.map((m) => [m, b.n ? b[m] / b.n : 0])) }
+    : { kind: b.kind, bucket: b.bucket, n: b.n,
+      s1: b.s1 / b.n, s10: b.s10 / b.n, mrr: b.rr / b.n, absent: b.absent }));
+  const order = (r) => ['known', 'recency', 'topical'].indexOf(r.kind) * 10 + BUCKETS.indexOf(r.bucket);
   return rows.sort((a, b) => order(a) - order(b));
 }
 
@@ -394,11 +489,30 @@ export function s10By(results, kind = 'known') {
 export function formatSummary(label, results) {
   const lines = [`${label}`];
   for (const r of summarize(results)) {
+    if (r.kind === 'topical') {
+      lines.push(`  ${r.kind.padEnd(7)} ${r.bucket.padEnd(6)} n=${String(r.n).padStart(3)}  P@5=${r.p5.toFixed(2)}  `
+        + `P@10=${r.p10.toFixed(2)}  judgedP@10=${r.judgedP10.toFixed(2)}  gain@10=${r.gain10.toFixed(2)}  `
+        + `recall=${r.recall.toFixed(2)}  unjudged@10=${r.unjudged10.toFixed(1)}  <1d@10=${r.under1d10.toFixed(1)}  `
+        + `age@10=${r.age10.toFixed(0)}d`);
+      continue;
+    }
     lines.push(`  ${r.kind.padEnd(7)} ${r.bucket.padEnd(6)} n=${String(r.n).padStart(3)}  S@1=${r.s1.toFixed(2)}  `
       + `S@10=${r.s10.toFixed(2)}  MRR=${r.mrr.toFixed(3)}  absent=${r.absent}`);
   }
+  // Nine truth queries is a small sample; the per-query rows are what a
+  // difference between arms has to survive.
+  for (const r of results.filter((x) => x.kind === 'topical')) {
+    lines.push(r.error ? `    · ${r.query}: engine error`
+      : `    · ${r.query.padEnd(24)} P@10=${r.p10.toFixed(2)}  judgedP@10=${r.judgedP10.toFixed(2)}  `
+        + `gain@10=${r.gain10.toFixed(2)}  recall=${r.recall.toFixed(2)}  age@10=${(r.age10 ?? NaN).toFixed(0)}d`);
+  }
   const errors = results.filter((r) => r.error).length;
   if (errors) lines.push(`  (${errors} engine errors)`);
+  // The embedding server is shared with every session's live indexing, and a
+  // busy moment fails the leg for one query. A semantic arm whose cases did not
+  // all get it is not paired with one whose cases did.
+  const missed = results.filter((r) => r.semantic === 'unavailable').length;
+  if (missed) lines.push(`  (semantic leg unavailable on ${missed} of ${results.length} cases)`);
   return lines.join('\n');
 }
 
@@ -407,7 +521,7 @@ export function formatSummary(label, results) {
 function parseArgs(argv) {
   const opts = { arms: [], roots: [], engines: ['api', 'cli'], perBucket: 60, recency: 40,
     cliPerBucket: null, json: false, out: null, corpus: path.join(os.homedir(), 'Documents', 'dev'),
-    concurrency: 6, worker: false };
+    concurrency: 6, worker: false, truth: null, semantic: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const val = () => { if (i + 1 >= argv.length) throw new Error(`${a} needs a value`); return argv[++i]; };
@@ -426,13 +540,18 @@ function parseArgs(argv) {
     else if (a === '--out') opts.out = path.resolve(val());
     else if (a === '--worker') opts.worker = true;
     else if (a === '--state') opts.state = path.resolve(val());
+    else if (a === '--truth') opts.truth = path.resolve(val());
+    else if (a === '--semantic') opts.semantic = true;
+    else if (a === '--as-of') opts.asOf = val();
     else if (a === '-h' || a === '--help') opts.help = true;
     else throw new Error(`unknown argument: ${a}`);
   }
+  if (opts.asOf !== undefined && !Number.isFinite(Date.parse(opts.asOf))) throw new Error(`--as-of ${opts.asOf} is not a date`);
+  if (opts.asOf && opts.semantic) throw new Error('--as-of cannot combine with --semantic: the index carries real timestamps');
   if (opts.arms.length === 0) opts.arms = [{ name: 'shipped', engines: null }];
   if (opts.roots.length === 0) opts.roots = [REPO_ROOT];
   for (const arm of opts.arms) {
-    if (!resolveArm(arm.name)) throw new Error(`unknown arm '${arm.name}' (${Object.keys(ARMS).join(', ')}, actr-d<d>, cmem-d<d>, +exempt)`);
+    if (!resolveArm(arm.name)) throw new Error(`unknown arm '${arm.name}' (${Object.keys(ARMS).join(', ')}, actr-d<d>, cmem-d<d>, lastuse-d<d>, +exempt)`);
     arm.engines ||= opts.engines;
   }
   return opts;
@@ -443,15 +562,35 @@ function insideRepo(p) {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
 }
 
-/** Copy the five logs and the ledger into `dir`; a clone on APFS, a copy elsewhere. */
-function snapshotCorpus(corpus, dir) {
+/**
+ * Copy the five logs and the ledger into `dir`; a clone on APFS, a copy
+ * elsewhere. With `asOfMs`, rewrite instead: keep the rows timestamped at or
+ * before it, shifted forward by `shiftMs` and written as ISO-8601 UTC (the
+ * awk parser ignores offsets, so a shifted row must not carry one). A row with
+ * no usable timestamp cannot be placed before or after the cut and is dropped.
+ */
+export function snapshotCorpus(corpus, dir, { asOfMs = null, shiftMs = 0 } = {}) {
   mkdirSync(dir, { recursive: true });
+  const kept = {};
   for (const name of [...Object.values(LOG_NAMES), LEDGER_NAME]) {
     const src = path.join(corpus, name);
     const dst = path.join(dir, name);
     if (!existsSync(src)) { writeFileSync(dst, ''); continue; }
-    copyFileSync(src, dst, fsConstants.COPYFILE_FICLONE);
+    if (asOfMs === null) { copyFileSync(src, dst, fsConstants.COPYFILE_FICLONE); continue; }
+    const out = [];
+    for (const line of readFileSync(src, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      let row;
+      try { row = JSON.parse(line); } catch { continue; }
+      const ms = epochMsFromTimestamp(row.timestamp);
+      if (ms === null || ms > asOfMs) continue;
+      row.timestamp = new Date(ms + shiftMs).toISOString().replace(/\.\d{3}Z$/, 'Z');
+      out.push(JSON.stringify(row));
+    }
+    writeFileSync(dst, out.length ? `${out.join('\n')}\n` : '');
+    kept[name] = out.length;
   }
+  return kept;
 }
 
 async function loadEngine(root) {
@@ -473,9 +612,12 @@ function logFilesIn(dir) {
 // Results are checkpointed one case per line, per (root, arm, engine), so a
 // killed run resumes where it stopped: the first full live run lost 23 minutes
 // of CLI work to an external kill because its results lived only in memory.
-function checkpointPath(state, root, armName, engine) {
+function checkpointPath(state, root, armName, engine, semantic = false) {
   const tag = `${path.basename(root)}-${createHash('sha1').update(root).digest('hex').slice(0, 6)}`;
-  return path.join(state, 'results', `${tag}--${armName}--${engine}.jsonl`);
+  // A semantic run is a different measurement of the in-process engine; the
+  // CLI stays keyword-only either way, so its rows are shared.
+  const leg = semantic && engine === 'api' ? '+semantic' : '';
+  return path.join(state, 'results', `${tag}--${armName}--${engine}${leg}.jsonl`);
 }
 
 function readCheckpoint(file) {
@@ -509,7 +651,7 @@ async function worker(opts) {
     return;
   }
   if (opts.engines.includes('api')) {
-    const file = checkpointPath(opts.state, root, armName, 'api');
+    const file = checkpointPath(opts.state, root, armName, 'api', opts.semantic);
     const done = readCheckpoint(file);
     if (done.size < cases.length) {
       const index = engine.buildIndex(engine.readAllEvents(logFilesIn(opts.state)));
@@ -548,18 +690,29 @@ function runWorker(root, { name: armName, engines }, opts, state) {
   const args = [fileURLToPath(import.meta.url), '--worker', '--root', root, '--arm', armName,
     '--state', state, '--engines', engines.join(','), '--concurrency', String(opts.concurrency)];
   if (opts.cliPerBucket) args.push('--cli-per-bucket', String(opts.cliPerBucket));
+  if (opts.semantic) args.push('--semantic');
+  const env = measurementEnv(state, armEnv(arm, state));
+  if (opts.semantic) {
+    // The in-process engine reads its Qdrant and embedding URLs at import, so
+    // they are restored for the worker itself. Its CLI children are built
+    // from measurementEnv again and stay keyword-only, with no route to the
+    // live index; only the in-process engine, which never writes, gets the leg.
+    env.CARTOGRAPHER_SEMANTIC = '1';
+    env.CARTOGRAPHER_QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
+    env.CARTOGRAPHER_EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
+  }
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { env: measurementEnv(state, armEnv(arm, state)), stdio: ['ignore', 'ignore', 'inherit'] });
+    const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'ignore', 'inherit'] });
     child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`worker ${armName} @ ${root} exited ${code}`))));
   });
 }
 
-function collectRun(state, root, { name: armName, engines }) {
+function collectRun(state, root, { name: armName, engines }, semantic = false) {
   const arm = resolveArm(armName);
-  const run = { root, arm: armName };
+  const run = { root, arm: armName, semantic };
   for (const engine of engines) {
     if (engine === 'cli' && arm.apiOnly) continue;
-    const done = readCheckpoint(checkpointPath(state, root, armName, engine));
+    const done = readCheckpoint(checkpointPath(state, root, armName, engine, semantic));
     if (done.size) run[engine] = [...done.entries()].sort((a, b) => a[0] - b[0]).map(([, r]) => r);
   }
   return run;
@@ -576,11 +729,16 @@ async function prepareState(opts, state) {
   const metaFile = path.join(state, 'meta.json');
   if (existsSync(casesFile) && existsSync(metaFile)) {
     const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
+    if (opts.truth && !meta.topical) throw new Error(`${state} was sampled without --truth; start a new --state`);
+    if ((opts.asOf ? Date.parse(opts.asOf) : null) !== (meta.as_of ? Date.parse(meta.as_of) : null)) {
+      throw new Error(`${state} was sampled ${meta.as_of ? `as of ${meta.as_of}` : 'from the live corpus'}; start a new --state`);
+    }
     process.stderr.write(`resuming ${state}: ${meta.docs} docs, ${meta.cases} cases sampled ${meta.sampled_at}\n`);
     return meta;
   }
   const t0 = Date.now();
-  snapshotCorpus(opts.corpus, state);
+  const asOfMs = opts.asOf ? Date.parse(opts.asOf) : null;
+  const kept = snapshotCorpus(opts.corpus, state, { asOfMs, shiftMs: asOfMs === null ? 0 : t0 - asOfMs });
   const sampler = await loadEngine(REPO_ROOT);
   const nowMs = Date.now();
   const index = sampler.buildIndex(sampler.readAllEvents(logFilesIn(state)));
@@ -588,6 +746,11 @@ async function prepareState(opts, state) {
     ...sampleKnownItems(index, { tokenize: sampler.tokenize, nowMs, perBucket: opts.perBucket }),
     ...sampleRecencyCases(index, { tokenize: sampler.tokenize, nowMs, count: opts.recency }),
   ];
+  if (opts.truth) {
+    const truths = loadTruth(opts.truth);
+    if (!truths?.length) throw new Error(`no truth labels in ${opts.truth}`);
+    cases.push(...topicalCases(truths, index, { nowMs }));
+  }
   // How many targets the ledger arms can rehearse at all. Read the way the
   // engines read it: a fetch is inspection, not use.
   const rehearsed = new Set();
@@ -601,11 +764,13 @@ async function prepareState(opts, state) {
   const meta = {
     docs: index.docs.size, cases: cases.length, sampled_at: new Date(nowMs).toISOString(),
     known: cases.filter((c) => c.kind === 'known').length, recency: cases.filter((c) => c.kind === 'recency').length,
+    topical: cases.filter((c) => c.kind === 'topical').length,
+    ...(asOfMs === null ? {} : { as_of: new Date(asOfMs).toISOString(), shift_ms: t0 - asOfMs, kept }),
     ledger_events: rehearsed.size, targets_with_reuse: cases.filter((c) => rehearsed.has(c.id)).length,
   };
   writeFileSync(casesFile, JSON.stringify(cases));
   writeFileSync(metaFile, JSON.stringify(meta));
-  process.stderr.write(`snapshot ${meta.docs} docs; ${meta.cases} cases (${meta.known} known, ${meta.recency} recency) `
+  process.stderr.write(`snapshot ${meta.docs} docs; ${meta.cases} cases (${meta.known} known, ${meta.recency} recency, ${meta.topical} topical) `
     + `in ${Date.now() - t0} ms; ledger: ${meta.ledger_events} used events, ${meta.targets_with_reuse} targets with any reuse\n`);
   return meta;
 }
@@ -613,8 +778,9 @@ async function prepareState(opts, state) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
-    process.stdout.write(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n')
-      .filter((l) => l.startsWith('//')).slice(0, 48).map((l) => l.slice(3)).join('\n') + '\n');
+    // The header comment, up to the first line that is not one.
+    const lines = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(1);
+    process.stdout.write(lines.slice(0, lines.findIndex((l) => !l.startsWith('//'))).map((l) => l.slice(3)).join('\n') + '\n');
     return;
   }
   if (opts.worker) return worker(opts);
@@ -633,7 +799,7 @@ async function main() {
         const started = Date.now();
         await runWorker(root, arm, opts, state);
         process.stderr.write(`  ${arm.name} @ ${path.basename(root)}: ${Date.now() - started} ms\n`);
-        runs.push(collectRun(state, root, arm));
+        runs.push(collectRun(state, root, arm, opts.semantic));
       }
     }
 
@@ -647,7 +813,7 @@ async function main() {
       process.stdout.write(`${JSON.stringify({ meta, summary }, null, 2)}\n`);
     } else {
       for (const run of runs) {
-        const tag = `${run.arm} @ ${path.basename(run.root)}`;
+        const tag = `${run.arm} @ ${path.basename(run.root)}${run.semantic ? ' (semantic on, api)' : ''}`;
         if (run.api) process.stdout.write(`${formatSummary(`[api] ${tag}`, run.api)}\n`);
         if (run.cli) process.stdout.write(`${formatSummary(`[cli] ${tag}`, run.cli)}\n`);
       }
