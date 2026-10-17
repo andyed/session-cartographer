@@ -1,5 +1,5 @@
 import express from 'express';
-import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal, CORPUS_ROOT, mergeDuplicateEvent } from './jsonl.js';
+import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, lastReadError, isHighSignal, CORPUS_ROOT, mergeDuplicateEvent } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
 import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js';
@@ -114,8 +114,13 @@ export function createExplorerApp() {
   });
 
   let indexBootstrap = null;
+  // `status` covers the keyword corpus this process serves: "degraded" when a
+  // log that exists failed its last read, so the events it holds are missing
+  // from every answer. Qdrant and the embedder are optional and report their
+  // own fields.
   app.get('/api/health', async (_req, res) => {
     const files = {};
+    const loadErrors = {};
     for (const [source, path] of Object.entries(LOG_FILES)) {
       try {
         statSync(path);
@@ -123,6 +128,8 @@ export function createExplorerApp() {
       } catch {
         files[source] = false;
       }
+      const failed = lastReadError(path);
+      if (failed) loadErrors[source] = failed;
     }
 
     let qdrant = false;
@@ -160,7 +167,10 @@ export function createExplorerApp() {
       embed = r.ok;
     } catch {}
 
-    res.json({ status: 'ok', events: events.length, files, qdrant, payload_indexes: payloadIndexes, embed });
+    res.json({
+      status: Object.keys(loadErrors).length ? 'degraded' : 'ok',
+      events: events.length, files, load_errors: loadErrors, qdrant, payload_indexes: payloadIndexes, embed,
+    });
   });
 
   app.get('/api/recall/health', (_req, res) => {
