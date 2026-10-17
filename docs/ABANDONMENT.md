@@ -14,7 +14,7 @@ transcript shows the agent used a served result moves first-access MRR from
 summary line answering the question outright is rare: 7 calls of 191, and none
 in the last 30 days. Six of the 30 implicit uses the probe finds are the agent
 calling `get` exactly as the skill says, with the access row then lost by the
-recorder (two defects, below).
+recorder (two defects, below, fixed the same day).
 
 ## What the probe does
 
@@ -170,8 +170,13 @@ on 9 calls (1.2 on decoys); it classifies nothing.
 ## Two recorder defects behind unmarked use
 
 Six of the 23 unmarked uses are `--get` fetches the agent made as the skill
-asks, which then left no access row. Both defects reproduce against temporary
-logs:
+asks, which then left no access row. Both defects reproduced against temporary
+logs, and both are fixed (2026-10-17, `tests/unit/get-access-recording.test.js`).
+`--get` now resolves every id, records the fetch, and only then prints. It also
+fetches a `turn-*` id the five logs do not hold from the semantic index, in one
+batched retrieval by the point id the indexers write. Rows written before the
+fix stay as they are: the ledger is append-only, so these calls keep their
+zeros.
 
 - **`--get … | head` drops the row.** `--get` prints the records, then records
   the access. A milestone record pretty-prints to 53 lines, so `| head -40`

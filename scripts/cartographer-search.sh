@@ -157,7 +157,7 @@ Usage: cartographer-search.sh "<query>" [--project NAME] [--limit N] [--format t
        Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. No query is needed (a leading "_" placeholder from older callers is accepted and ignored).
-       --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. No query is needed ("_" accepted and ignored).
+       --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. A conversation turn (turn-…) comes from the semantic index. Missing ids are reported, not silently dropped. No query is needed ("_" accepted and ignored).
        --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual, mcp, prompt-cue). Defaults to CARTOGRAPHER_PURPOSE or manual.
        --min-score X: drop results whose fused score (the "score" field in jsonl output) is below X, before anything is shown, served, or added to the delta-serving list. For callers that act only on a confident hit, such as the prompt-cue hook.
        --call-id ID: search-call identifier printed with results. Carry it to --get/--touch for exact attribution; without it, only unambiguous same-session, same-purpose provenance is credited.
@@ -732,6 +732,21 @@ fi
 # Fetch telemetry describes inspection, not meaningful use. Only an exact,
 # compatible originating call is attributed; an unserved/ambiguous id is still
 # fetched and recorded without a call_id, so it earns no search-call credit.
+
+# The Qdrant point id of an event: the first 13 hex digits of its SHA-256 as an
+# integer (52 bits). Must equal cartographer_point_id() in index-event.sh and
+# hashToInt() in embed-events.js, or --get asks for a point no indexer wrote;
+# tests/unit/get-access-recording.test.js checks the id it sends.
+cartographer_point_id() {
+  local _hex
+  if command -v shasum >/dev/null 2>&1; then
+    _hex=$(printf '%s' "$1" | shasum -a 256 | cut -c1-13)
+  else
+    _hex=$(printf '%s' "$1" | sha256sum | cut -c1-13)
+  fi
+  printf '%s' "$((16#$_hex))"
+}
+
 if [ -n "$GET_IDS" ]; then
   get_logs=""
   for f in "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
@@ -781,19 +796,79 @@ if [ -n "$GET_IDS" ]; then
     LC_ALL=C grep -h -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
   fi
 
+  # Resolve every id before printing any, and record the fetch before the first
+  # byte goes out. A reader that stops early (`--get … | head`) closes the pipe,
+  # and the next write ends this script by SIGPIPE: printing first lost the
+  # access row of fetches agents made exactly as the skill asks, --call-id and
+  # all (three calls found in transcripts, docs/ABANDONMENT.md). A closed pipe
+  # now costs output, never the row. record.N holds the Nth id's record.
+  get_index=0
   for gid in $get_ids; do
-    line=$(LC_ALL=C awk -v want="$gid" '
+    get_index=$((get_index + 1))
+    LC_ALL=C awk -v want="$gid" '
           {
             if (match($0, /"event_id"[[:space:]]*:[[:space:]]*"/)) {
               v = substr($0, RSTART + RLENGTH)
               sub(/".*/, "", v)
               if (v == want) { print; exit }
             }
-          }' "$GET_TMP/candidates")
+          }' "$GET_TMP/candidates" > "$GET_TMP/record.$get_index"
+  done
+
+  # Conversation turns (turn-<sid>-<idx>) are written to the semantic index and
+  # never to the five logs, so --get used to call every served turn missing and
+  # record nothing: about a sixth of served rows. One batched retrieval now
+  # fetches the turns the logs did not hold, by the point id the indexers
+  # write; its payload is the turn's record. Skipped when the semantic leg is
+  # pinned off or jq is absent. An unreachable index leaves the turns missing.
+  if [ "${CARTOGRAPHER_SEMANTIC:-}" != "0" ] && command -v jq >/dev/null 2>&1; then
+    get_points=""
+    get_index=0
+    for gid in $get_ids; do
+      get_index=$((get_index + 1))
+      case "$gid" in
+        turn-*) [ -s "$GET_TMP/record.$get_index" ] \
+                  || get_points="${get_points:+$get_points,}$(cartographer_point_id "$gid")" ;;
+      esac
+    done
+    if [ -n "$get_points" ]; then
+      qdrant_curl -sf --connect-timeout 1 --max-time "${CARTOGRAPHER_HTTP_MAX_TIME:-5}" \
+        "$QDRANT/collections/$COLLECTION/points" -H "Content-Type: application/json" \
+        -d "{\"ids\":[$get_points],\"with_payload\":true,\"with_vector\":false}" \
+        > "$GET_TMP/turns.json" 2>/dev/null || : > "$GET_TMP/turns.json"
+      get_index=0
+      for gid in $get_ids; do
+        get_index=$((get_index + 1))
+        case "$gid" in turn-*) ;; *) continue ;; esac
+        [ -s "$GET_TMP/record.$get_index" ] && continue
+        jq -c --arg id "$gid" '[.result[]? | .payload | select(.event_id == $id)][0] // empty' \
+          "$GET_TMP/turns.json" > "$GET_TMP/record.$get_index" 2>/dev/null || : > "$GET_TMP/record.$get_index"
+      done
+    fi
+  fi
+
+  # In request order, so access_ordinal still says which id was asked for first.
+  get_index=0
+  for gid in $get_ids; do
+    get_index=$((get_index + 1))
+    [ -s "$GET_TMP/record.$get_index" ] && get_redeemed="${get_redeemed:+$get_redeemed }$gid"
+  done
+  if [ -n "$get_redeemed" ]; then
+    record_accesses result_fetched "$get_redeemed" "$now_iso" "get-${now_iso}-$$"
+  fi
+
+  get_index=0
+  for gid in $get_ids; do
+    get_index=$((get_index + 1))
+    line=$(cat "$GET_TMP/record.$get_index")
 
     echo "=== $gid ==="
     if [ -z "$line" ]; then
-      echo "(no event with that id in $DEV/*.jsonl — it may have aged out, live only in Qdrant as a transcript turn, or not exist)"
+      case "$gid" in
+        turn-*) echo "(no event with that id in $DEV/*.jsonl or the semantic index — the index may be unreachable or pinned off, or the turn never indexed)" ;;
+        transcript-*) echo "(no event with that id: a transcript-… hit is a line from a transcript grep, not a stored event; read the transcript it names)" ;;
+        *) echo "(no event with that id in $DEV/*.jsonl — it may have aged out, or not exist)" ;;
+      esac
       echo ""
       get_missing=$((get_missing + 1))
       continue
@@ -835,12 +910,7 @@ if [ -n "$GET_IDS" ]; then
     fi
     echo ""
     get_found=$((get_found + 1))
-    get_redeemed="${get_redeemed:+$get_redeemed }$gid"
   done
-
-  if [ -n "$get_redeemed" ]; then
-    record_accesses result_fetched "$get_redeemed" "$now_iso" "get-${now_iso}-$$"
-  fi
 
   echo "($get_found fetched, $get_missing missing)"
   [ "$get_found" -eq 0 ] && exit 1

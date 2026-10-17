@@ -31,8 +31,10 @@ its arguments cannot be put in the wrong order.
 Every answer is compact text and nothing else, one line per hit
 (`date · project · agent · event type · summary · event_id`), and always names
 the `call_id`. A conversation-turn hit (`turn-…`) also prints its transcript
-path on the next line, because those ids live only in the semantic index and
-`get` cannot fetch them. No result carries `structuredContent` and no tool
+path on the next line. `get` fetches the whole turn from the semantic index
+(since 2026-10-17; it used to call every turn missing and record nothing), but
+the context around a turn is in the transcript, and the path is the way in when
+the index cannot answer. No result carries `structuredContent` and no tool
 declares an `outputSchema`; the next section says why.
 
 The workflow the descriptions teach is the `/remember` workflow: `recall`, then

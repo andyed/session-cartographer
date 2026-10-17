@@ -602,7 +602,7 @@ test('get says each transcript path once and keeps the record whole', async () =
   }
 });
 
-test('a conversation-turn hit carries its transcript path, because get cannot fetch it', () => {
+test('a conversation-turn hit carries its transcript path, the way in when the index cannot answer get', () => {
   const transcript = '/Users/x/.claude/projects/-p/0f7a.jsonl';
   const base = { rank: 1, timestamp: '2026-10-15T22:07:28Z', project: 'p', provider: 'claude', event_type: '',
     source: 'semantic', summary: 'a turn', transcript_path: transcript };

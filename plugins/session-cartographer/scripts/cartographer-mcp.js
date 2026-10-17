@@ -395,23 +395,24 @@ function sourceMix(hits) {
   return mix;
 }
 
-// Ids that live only in the semantic index (turn-<sid>-<idx>) or in a
-// transcript grep (transcript-…). `get` reads the event logs, so it answers
-// these "missing".
-const UNFETCHABLE = /^(turn|transcript)-/;
+// Ids whose record is a slice of a transcript: a conversation turn
+// (turn-<sid>-<idx>), which `get` fetches from the semantic index, or a line
+// from a transcript grep (transcript-…), which it cannot fetch at all.
+const TRANSCRIPT_SLICE = /^(turn|transcript)-/;
 
 /**
- * One hit as the model sees it, plus its transcript path when `get` cannot
- * fetch the id. That path is the only way to follow a conversation turn up,
- * and the text is all any client shows the model, so it goes here. A path
- * costs ~60 tokens, so the hits `get` can resolve leave theirs to `get`.
+ * One hit as the model sees it, plus its transcript path when the hit is a
+ * slice of a transcript. The context around a turn is in that transcript, and
+ * the path is the way in when the semantic index cannot answer `get`; the text
+ * is all any client shows the model, so it goes here. A path costs ~60 tokens,
+ * so event-log hits leave theirs to `get`.
  */
 function hitLines(hit) {
   const date = (hit.timestamp || '?').slice(0, 10);
   const type = hit.event_type ? `${hit.event_type} · ` : '';
   const lines = [`${String(hit.rank).padStart(2)}. ${date} · ${hit.project || '-'} · ${hit.provider || '?'} · ${type}`
     + `${clip(hit.summary, SUMMARY_CLIP)} · ${hit.event_id}`];
-  if (UNFETCHABLE.test(hit.event_id) && hit.transcript_path) lines.push(`    transcript: ${hit.transcript_path}`);
+  if (TRANSCRIPT_SLICE.test(hit.event_id) && hit.transcript_path) lines.push(`    transcript: ${hit.transcript_path}`);
   return lines;
 }
 
@@ -482,8 +483,8 @@ async function toolRecall(args, { signal }) {
     lines.push('');
     lines.push(`Summaries are truncated. Next: get(event_ids, call_id="${callId}") for full records and transcript paths;`
       + ` mark_used(event_ids, call_id="${callId}") for the hits that informed your answer.`
-      + (hits.some((hit) => UNFETCHABLE.test(hit.event_id))
-        ? ' turn-… hits are conversation turns get cannot fetch: read the transcript under them.'
+      + (hits.some((hit) => TRANSCRIPT_SLICE.test(hit.event_id))
+        ? ' turn-… hits are conversation turns: get returns the whole turn, and the transcript under it holds what came around it.'
         : ''));
   } else {
     lines.push('No results. Try the words the original work would have used (file, component, error text), drop'
@@ -813,8 +814,8 @@ const TOOLS = [
       'approach. Also before debugging something that looks familiar.',
       '',
       'Returns one line per hit (date · project · agent · event type · summary · event_id), the call_id and the',
-      'keyword/semantic source mix; a conversation-turn hit (turn-…) also prints its transcript path, which get',
-      'cannot fetch. Summaries are truncated: follow with get(event_ids, call_id) for full records and transcript',
+      'keyword/semantic source mix; a conversation-turn hit (turn-…) also prints its transcript path.',
+      'Summaries are truncated: follow with get(event_ids, call_id) for full records, whole turns and transcript',
       'paths, then mark_used(event_ids, call_id) for the hits that informed your answer.',
       '',
       'Query with the words the original work used (file, component, error text, commit phrasing), not a',
@@ -852,8 +853,9 @@ const TOOLS = [
       'comes back as its full JSON (session_id, files_changed and diff_shape where recorded) under a line naming',
       'its transcript: the archived path when Codex moved the session, flagged MISSING when it is gone.',
       'Ids that resolve to nothing are listed as missing, not dropped; say so rather than answering around the gap.',
-      'Transcript-turn ids (turn-…) live only in the semantic index and come back missing; read the transcript path',
-      'recall printed under them instead. Pass the call_id of the call that served the ids; omit it only for ids',
+      'A conversation turn (turn-…) comes back whole from the semantic index; if the index cannot answer it is',
+      'missing, and the transcript path recall printed under it is the way in. Pass the call_id of the call that',
+      'served the ids, so the fetch is credited to it; omit it only for ids',
       'from thread, facts or standup. Cost about 0.1 s and 600 tokens per commit record. A fetch records',
       'inspection, not use: still call mark_used for records you relied on.',
     ].join('\n'),

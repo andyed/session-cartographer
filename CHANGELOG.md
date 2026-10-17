@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### fix(search): --get records a fetch whatever happens to stdout, and fetches conversation turns
+
+Two ways lost the access row of a fetch an agent made exactly as the skill
+asks, found by abandonment-report.js in transcripts (docs/ABANDONMENT.md).
+`--get` printed the records and recorded the fetch afterwards, so
+`--get … | head` closed the pipe and SIGPIPE ended the script before the row
+was written. Three real calls passed `--call-id` and still left none. `--get`
+now resolves every id, records, and only then prints, so a closed pipe costs
+output, never the row. Conversation turns (`turn-…`) live only in the semantic
+index, so `--get` called every served turn missing and recorded nothing:
+about a sixth of served rows. A turn the five logs do not hold is now fetched
+in one batched point retrieval, by the same point id `index-event.sh` and
+`embed-events.js` write. Its payload is printed as the record and recorded
+like any other, in request order. With `CARTOGRAPHER_SEMANTIC=0`, no jq, or an
+unreachable index, the turn is missing as before, and Qdrant is not asked when
+the leg is pinned off. `transcript-…` ids, lines from a transcript grep, stay
+unfetchable and now say so. The MCP `get` and `recall` descriptions no longer
+claim `get` cannot fetch a turn; recall still prints a turn's transcript path.
+`get-access-recording.test.js` makes the pipe failure deterministic with a
+record larger than a pipe buffer. It checks the point id against the JS
+derivation through a stand-in Qdrant, and both defect tests failed before the
+fix.
+
 ### feat(scripts): abandonment-report.js reads what agents did with unused recall results
 
 `hit-rate-report.js` scores a call with no access row as 0: on 2026-10-17
