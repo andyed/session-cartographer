@@ -85,7 +85,14 @@ start_services() {
         log "Starting Qdrant..."
         mkdir -p "$QDRANT_STORAGE"
 
-        # Generate config file with custom storage path
+        # Generate config file with custom storage path.
+        # enable_cors is false because no browser talks to Qdrant: the Explorer
+        # proxies semantic search through Node (explorer/server), and every
+        # other client is a script. Qdrant here has no API key, and its CORS
+        # reflects any Origin, so leaving it on (Qdrant's default) lets any web
+        # page the browser opens try to read the corpus from :6333. Off stops
+        # reads, not blind writes: Qdrant 1.12.1 parses a text/plain POST, which
+        # needs no preflight, as JSON. Only an API key closes that.
         local config_file="$QDRANT_STORAGE/config.yaml"
         cat > "$config_file" <<EOF
 storage:
@@ -95,7 +102,7 @@ service:
   host: 127.0.0.1
   http_port: $QDRANT_PORT
   grpc_port: $((QDRANT_PORT + 1))
-  enable_cors: true
+  enable_cors: false
 telemetry_disabled: true
 EOF
 

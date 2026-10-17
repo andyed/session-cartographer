@@ -14,6 +14,19 @@ refused url as text. `event-card-links.test.js` fails if an `EventCard` href is
 not a `safeArtifactLink` result, and the browser harness renders a
 `javascript:` url and checks it appears as text with no anchor.
 
+### fix(services): the launcher starts Qdrant with CORS off
+
+`start-services.sh` wrote `enable_cors: true` into the Qdrant config it
+generates. No browser code calls Qdrant: the Explorer proxies it, the demo build
+reads static JSON, and every other client is a script. With CORS on, Qdrant
+reflects any `Origin` and approves a preflighted POST, and it has no API key
+here, so any web page could try to read the corpus. It is `false` now. CORS off
+stops reads only. Measured on Qdrant 1.12.1, a `text/plain` POST to
+`points/delete` (a request a page can send without a preflight) still deleted
+the point, so only an API key would close blind writes. docs/ADOPTING.md gives
+the environment variable for a Qdrant started some other way. Qdrant's own
+default is CORS on.
+
 ### fix(security): the API and Turbo port refuses a forged Host
 
 The UI host (:2527) has always refused a request whose `Host` is not a loopback
