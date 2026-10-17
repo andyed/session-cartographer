@@ -1,6 +1,40 @@
 # Archival recall — frecency and query-aware decay
 
-Status: plan, measurement not yet run · 2026-09-24
+Status: plan 2026-09-24 · age-curve gate built and first fix shipped 2026-10-16
+
+**2026-10-17, later.** The named record's rank is answered in the exemption:
+its candidates are multiplied by 3 after decay (`CARTOGRAPHER_DECAY_LOOKUP_LIFT`).
+Live known-item S@1 went 0.62 → 0.92 (S@10 234 → 240 of 240) with recency and
+both topical snapshots unchanged; on the as-of snapshot the CLI's known S@10
+went 165 → 180 of 180. The browse curve is untouched. docs/SCORING.md,
+"Lifting named records".
+
+**2026-10-17.** The browse curve is decided: exp stays. `age-curve.js` gained
+the third case kind the gate lacked, the nine graded `demo/truth` queries
+(`--truth`), and `--as-of`, which rebuilds the corpus as it stood when they were
+labeled. On that snapshot every power-law form with the exemption (ACT-R
+base-level d=0.3 and 0.5, t^-0.5) lost topical P@10 on two or three of nine
+queries and won none. Below roughly d/λ (12–21 days) a power law is the steeper
+curve, and a browse's material is there. What the power family wins, the named
+record at rank 1, is a question for the exemption. docs/SCORING.md has the
+tables.
+
+**2026-10-16.** Steps 1, 2 and the query-aware half of step 4 are done.
+`scripts/age-curve.js` is the gate below, run on both engines, and
+`tests/unit/age-curve-gate.test.js` runs it in CI on a synthetic corpus. The
+noise trim now runs before decay on both paths, which halved the archival items
+missing from the pool but did not lift them into the top 10. The arm that
+passed was specificity-conditioned decay in its simplest form: a query whose
+tokens all appear together in at most 10 candidates skips decay for those
+candidates, and everything else decays as before. Power-law and ACT-R
+base-level decay (d swept 0.05–0.5) did not pass alone; no d kept both the
+archive and the week. With the exemption they scored a little higher than exp
+on both gate metrics, but both metrics reward steepness, so exp stays the
+browse curve until the `demo/truth` set prices what steepness costs a topical
+browse. The numbers are in docs/SCORING.md. Frecency (step 3) and interleaving
+(step 5) are still open. The exemption shipped as the default without an
+interleaving run, because the recency cases are its guard and its browse-query
+behaviour is unchanged.
 
 Old material is unreachable by default. This document states the evidence,
 the design agreed on 2026-09-24, and the measurement that gates any ranking

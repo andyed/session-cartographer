@@ -11,7 +11,9 @@ BEGIN {
     b = 0.75
     # Tokenize the query
     nq = split(tolower(query), qterms, /[^a-z0-9]+/)
+    nq_distinct = 0
     for (i = 1; i <= nq; i++) {
+        if (qterms[i] != "" && !(qterms[i] in query_terms)) nq_distinct++
         if (qterms[i] != "") query_terms[qterms[i]] = 1
     }
     nresults = 0
@@ -229,7 +231,16 @@ NR == FNR {
     }
 
     if (score > 0) {
-        # Format TSV values: src, _rank_, key, ts, proj, summary, extras, etype
+        # full = the record contains every distinct query token, by presence
+        # alone. rank_fuse counts these to tell a lookup from a browse; the
+        # Explorer's scoreBM25 sets the same flag by the same rule. No df or
+        # idf enters it, so the per-log statistics here cannot make the two
+        # engines disagree about which records a query names.
+        covered = 0
+        for (t in query_terms) if (tf[t] > 0) covered++
+        full = (nq_distinct > 0 && covered == nq_distinct) ? 1 : 0
+
+        # Format TSV values: src, _rank_, key, ts, proj, summary, extras, etype, salience, full
 
         # Extract fields
         if (src == "transcript") {
@@ -258,7 +269,7 @@ NR == FNR {
 
             # Use negative score as a sort key placeholder since we want descending order
             # Transcripts have no salience score yet — default 0.5 (neutral).
-            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s", -score, "transcript:" extract(record, "type"), 0, key, ts, pdir, summary, extras, etype, "0.5")
+            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d", -score, "transcript:" extract(record, "type"), 0, key, ts, pdir, summary, extras, etype, "0.5", full)
         } else {
             key = extract(record, "event_id")
             if (key == "") key = extract(record, "milestone")
@@ -304,7 +315,7 @@ NR == FNR {
             gsub(/\\t/, " ", body)
             gsub(/  +/, " ", body)
 
-            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s", -score, src, 0, key, ts, proj, body, extras, etype, sal)
+            results[++nresults] = sprintf("%f\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d", -score, src, 0, key, ts, proj, body, extras, etype, sal, full)
         }
     }
 }
@@ -316,7 +327,7 @@ END {
     # configured retrieval window are intentionally out of scope. Allowing
     # every weak OR-match through previously produced tens of thousands of
     # fusion candidates.
-    # Output: src \t rank \t key \t ts \t proj \t summary \t extras \t etype \t salience
+    # Output: src \t rank \t key \t ts \t proj \t summary \t extras \t etype \t salience \t full
     if (nresults > 0) {
         result_limit = max_results + 0
         if (result_limit <= 0 || result_limit > nresults) result_limit = nresults

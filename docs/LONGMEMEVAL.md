@@ -122,9 +122,14 @@ Measured on the internal truth set, 2026-08-14, same corpus and same query set:
 | decay off | bm25 0.40 · hybrid 0.42 | 56% · 65% |
 
 A 4x apparent quality difference, entirely an artifact of label age.
-`scripts/eval-search.js` now forces `CARTOGRAPHER_DECAY_LAMBDA=0`. Any
-LongMemEval harness must do the same, and any published number must state which
-setting produced it.
+`scripts/eval-search.js` forced `CARTOGRAPHER_DECAY_LAMBDA=0` from then until
+2026-10-16, which kept the age penalty out of its numbers and so out of sight.
+It now measures the configuration it is given (the shipped ranking by default;
+`--lambda 0` for the decay-off arm), and the age penalty itself is measured by
+`scripts/age-curve.js`. A LongMemEval harness should still pin
+`CARTOGRAPHER_DECAY_LAMBDA=0`: the shipped lookup exemption spares only queries
+that name at most 10 candidates, and a benchmark's paraphrased questions mostly
+do not. Any published number must state which setting produced it.
 
 ## Known harness blockers
 

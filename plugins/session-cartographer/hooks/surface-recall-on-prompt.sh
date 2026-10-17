@@ -39,6 +39,12 @@
 # separates them: this one removes the empty queries and leaves the rest to the
 # agent, which is told to verify before relying on a hit.
 #
+# That replay predates the lookup exemption (2026-10-16) and lift (2026-10-17):
+# a prompt whose words all appear in at most 10 records now scores those records
+# undecayed and x3, so they clear this floor far more often (24 -> 73 of 139
+# replayed real lookups, docs/SCORING.md "Lifting named records"). Re-run the
+# replay before baking the hook in.
+#
 # Measurable: one row per evaluated prompt in $DEV/recall-on-prompt-trial.jsonl —
 # fired or why not, latency, counts, call_id. The search writes its own served
 # and search-call rows (purpose "prompt-cue"), including the pre-floor top_score
