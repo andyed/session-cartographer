@@ -59,10 +59,10 @@ Measured 2026-10-16 on the live corpus: 204,341 events, semantic leg off, an emp
 | Arm | Engine | Known S@10 | Known MRR | Absent | Recency S@10 | Recency MRR |
 |---|---|---|---|---|---|---|
 | **before** (041f3e1), exp λ=0.001 | API | 0.98 / 0.85 / 0.62 / 0.15 | 0.53 / 0.43 / 0.32 / 0.15 | 55 | 0.65 | 0.42 |
-| **before** (041f3e1), exp λ=0.001 | CLI | 0.93 / 0.88 / 0.65 / 0.23 † | 0.70 / 0.58 / 0.35 / 0.20 † | 26 † | pending | pending |
+| **before** (041f3e1), exp λ=0.001 | CLI | 0.93 / 0.88 / 0.65 / 0.22 | 0.70 / 0.58 / 0.35 / 0.19 | 29 | 0.65 | 0.37 |
 | before, λ=0 | API | 0.98 / 0.98 / 1.00 / 1.00 ‡ | 0.87 / 0.91 / 0.88 / 0.99 ‡ | 0 | 0.40 | 0.26 |
 | **after**, exp λ=0.001 + lookup exemption (shipped) | API | 0.98 / 1.00 / 0.98 / 1.00 | 0.54 / 0.71 / 0.79 / 0.89 | 0 | 0.65 | 0.42 |
-| **after**, shipped | CLI | pending | pending | pending | pending | pending |
+| **after**, shipped | CLI | paired subsample, below | | | | |
 | after, trim reordered, exemption off | API | 0.98 / 0.85 / 0.62 / 0.23 | 0.53 / 0.43 / 0.32 / 0.18 | 27 | 0.65 | 0.42 |
 | after, λ=0 | API | 0.35 / 0.43 / 0.63 / 0.85 | 0.21 / 0.30 / 0.38 / 0.52 | 0 | 0.03 | 0.03 |
 | power-law t^-0.5 (days, 1-day floor) | API | 0.98 / 0.77 / 0.62 / 0.30 | 0.67 / 0.39 / 0.32 / 0.21 | 6 | 0.72 | 0.44 |
@@ -78,8 +78,19 @@ Measured 2026-10-16 on the live corpus: 204,341 events, semantic leg off, an emp
 | claude-mem form, d=0.5 | API | 0.98 / 0.67 / 0.62 / 0.33 | 0.59 / 0.38 / 0.31 / 0.21 | 6 | 0.72 | 0.48 |
 | claude-mem form + exemption | API | 1.00 / 1.00 / 1.00 / 1.00 | 0.86 / 0.97 / 0.94 / 0.98 | 0 | 0.72 | 0.48 |
 
-† 236 of the 280 cases (the run was stopped to free the machine): all known items except the last four in the 90d+ bucket, and no recency cases. The checkpointed run resumes them.
 ‡ An artifact. Before the fix, the API path skipped the re-sort after salience whenever decay was off, so its λ=0 ranking was plain RRF. The CLI applies salience at ingestion and never had this. With salience applied, λ=0 is the row "after, λ=0".
+
+**Both engines, before and after, on the same cases.** The portable CLI costs about 17 s a query on this corpus, and five times that on a busy machine. So the post-fix CLI ran on a paired subsample: the first 30 cases of each bucket (all 60 under a week), and the first 30 recency cases. Each cell is that same set of cases, before → after.
+
+| Cases (n) | CLI S@10 | CLI MRR | API S@10 | API MRR |
+|---|---|---|---|---|
+| known <7d (60) | 0.93 → 0.93 | 0.70 → 0.71 | 0.98 → 0.98 | 0.53 → 0.54 |
+| known 7-30d (30) | 0.83 → 0.93 | 0.53 → 0.82 | 0.77 → 1.00 | 0.40 → 0.67 |
+| known 30-90d (30) | 0.67 → 0.97 | 0.29 → 0.92 | 0.60 → 0.97 | 0.29 → 0.83 |
+| known 90d+ (30) | 0.23 → 1.00 | 0.19 → 0.88 | 0.13 → 1.00 | 0.13 → 0.93 |
+| recency (30) | 0.73 → 0.73 | 0.42 → 0.42 | 0.70 → 0.70 | 0.47 → 0.47 |
+
+On the CLI, 12 of the 30 oldest targets were missing from the top 100 before the fix, and none after. The CLI misses the same 4 recent known items before and after; they do not depend on age.
 
 The ACT-R rows use base-level activation B = ln Σ_j t_j^-d over the event and each recorded reuse (Anderson & Schooler 1991). It enters as a factor e^B = Σ t_j^-d, because ACT-R activation adds to the log odds of retrieval. t is in days, floored and scaled to 1 at 30 minutes, and the separate reuse boost is off. The claude-mem rows use `ln(1 + t^-d + α Σ t_k^-d)` with α = 1 as the factor. Both read a frozen copy of the real access ledger as rehearsals. Only 3 of the 280 targets have any reuse in it, so these rows measure the event-age term, not the rehearsal term.
 
@@ -91,7 +102,7 @@ What the table says:
 
 ### Choosing the browse curve
 
-With the exemption on, the power-law family (power, ACT-R d=0.3–0.5, claude-mem) scored higher than exp on known-item MRR (0.86–0.99 against 0.54–0.89) and on recency (0.70–0.72 against 0.65). Exp stays the default anyway, for a measured reason. Both metrics here reward a steeper curve on non-exempt items: a steeper curve pushes recent partial matches down, under the undecayed named record, and orders a browse more strictly by date. At the limit, infinite decay would score perfectly on both. Neither metric can show what steepness costs a *topical* browse, a query like "shader palette" that wants relevant material rather than the latest. The steep candidates are also steep early: normalised at 30 minutes, ACT-R at d=0.5 weights an hour-old item 0.69 and a day-old one 0.14, where exp gives 0.999 and 0.976. Choosing between them needs a third case kind that rewards relevance among browse results: the graded `demo/truth` set through `scripts/eval-search.js`, which now measures the configuration it is given (`--lambda`, `--lookup-max`, one pinned engine per arm). Until that runs, the browse curve is the one that measurably lost nothing.
+With the exemption on, the power-law family (power, ACT-R d=0.3–0.5, claude-mem) scored higher than exp on known-item MRR (0.86–0.99 against 0.54–0.89) and on recency (0.70–0.72 against 0.65). Exp stays the default anyway, for a measured reason. Both metrics here reward a steeper curve on non-exempt items: a steeper curve pushes recent partial matches down, under the undecayed named record, and orders a browse more strictly by date. At the limit, infinite decay would score perfectly on both. Neither metric can show what steepness costs a *topical* browse, a query like "shader palette" that wants relevant material rather than the latest. The steep candidates are also steep early: normalised at 30 minutes, ACT-R at d=0.5 weights an hour-old item 0.69 and a day-old one 0.14, where exp gives 0.999 and 0.976. Choosing between them needs a third case kind that rewards relevance among browse results: the graded `demo/truth` set through `scripts/eval-search.js`, which now measures the configuration it is given (`--lambda`, `--lookup-max`, one pinned engine per arm). The shipped baseline to beat on that set (9 queries, 2026-10-16) is P@5 0.31 for the in-process API arm, and 0.20 / 0.22 for the CLI's bm25 and hybrid arms. Until a candidate is run against it, the browse curve stays the one that measurably lost nothing.
 
 On d itself: with the exemption the curve is flat from d=0.3 to 0.5, and ACT-R's canonical 0.5 sits on that plateau. Anderson & Schooler fit d to need probability, so the closest environmental estimate here is the access ledger. Its log-log slope of P(use | age), across 14 bins from 30 minutes to 330 days, is −0.79 (d ≈ 0.8). That is an upper bound: every use in the ledger is of a result the exp-decayed ranker chose to show.
 

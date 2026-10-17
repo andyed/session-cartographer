@@ -137,6 +137,25 @@ test('the switch is the count: widen lookupMax past a family and its recency cas
   assert.equal(s10By(cli, 'recency')['<7d'], 0);
 });
 
+test('a checkpointed subsample files each result under its own case index', async () => {
+  // The live harness resumes from per-case checkpoints keyed by index. A
+  // subsample run once ranked a filtered copy of the case list, so its indices
+  // named other cases: it skipped work it had not done and filed 89 results
+  // under the wrong case. Run one case out of the middle, with an unrelated
+  // index already "done", and check what comes back under which number.
+  const filed = new Map();
+  const target = 5;
+  const stale = { ...cases[0], rank: 1 };
+  await rankCli(CLI, cases, cliEnv(), {
+    only: new Set([0, target]),
+    done: new Map([[0, stale]]),
+    onResult: (i, r) => filed.set(i, r),
+  });
+  assert.deepEqual([...filed.keys()], [target], 'only the undone case in the subsample runs');
+  assert.equal(filed.get(target).id, cases[target].id);
+  assert.equal(filed.get(target).query, cases[target].query);
+});
+
 test('both engines mark the same records as containing every query token', () => {
   // The two scorers keep different corpus statistics (one global index here,
   // one per log in the awk), so the flag is defined by presence alone. If the

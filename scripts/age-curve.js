@@ -336,10 +336,11 @@ export function measurementEnv(devDir, overrides = {}) {
  * `done` and `onResult` checkpoint it as in rankApi; on a 200k-event corpus a
  * query costs ~17 s, so an interrupted run should lose only what was in flight.
  */
-export async function rankCli(cliPath, cases, env, { concurrency = 6, done = null, onResult = null } = {}) {
+export async function rankCli(cliPath, cases, env, { concurrency = 6, done = null, onResult = null, only = null } = {}) {
   const out = new Array(cases.length);
   const todo = [];
   for (let i = 0; i < cases.length; i++) {
+    if (only && !only.has(i)) continue;
     if (done?.has(i)) out[i] = done.get(i); else todo.push(i);
   }
   let next = 0;
@@ -516,16 +517,26 @@ async function worker(opts) {
     }
   }
   if (opts.engines.includes('cli') && !arm.apiOnly) {
-    const cliCases = opts.cliPerBucket ? cliSubsample(cases, opts.cliPerBucket) : cases;
+    // A subsample is a set of indices into the one case list, never a new
+    // list: checkpoint rows are keyed by index, so re-indexing a filtered
+    // array would file each result under another case's number.
+    const only = opts.cliPerBucket ? cliSubsample(cases, opts.cliPerBucket) : null;
     const file = checkpointPath(opts.state, root, armName, 'cli');
-    await rankCli(engine.cli, cliCases, measurementEnv(opts.state, armEnv(arm, opts.state)),
-      { concurrency: opts.concurrency, done: readCheckpoint(file), onResult: checkpointer(file) });
+    await rankCli(engine.cli, cases, measurementEnv(opts.state, armEnv(arm, opts.state)),
+      { concurrency: opts.concurrency, done: readCheckpoint(file), onResult: checkpointer(file), only });
   }
 }
 
+/** Indices of the first `perBucket` cases of each kind and bucket. */
 function cliSubsample(cases, perBucket) {
   const counts = {};
-  return cases.filter((c) => ((counts[`${c.kind}:${c.bucket}`] = (counts[`${c.kind}:${c.bucket}`] || 0) + 1) <= perBucket));
+  const only = new Set();
+  cases.forEach((c, i) => {
+    const key = `${c.kind}:${c.bucket}`;
+    counts[key] = (counts[key] || 0) + 1;
+    if (counts[key] <= perBucket) only.add(i);
+  });
+  return only;
 }
 
 function armEnv(arm, state) {
