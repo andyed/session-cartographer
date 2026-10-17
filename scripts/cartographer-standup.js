@@ -32,6 +32,23 @@ import { HOUR, fmtAge, readTail, COMMIT_RE, eventFiles, contentionKey, unmappedW
 import { isResolved } from './sentinels.js';
 import { codexRollouts, claudeTranscripts, codexHookTrust, unclaimedChanges, transcriptMentions, commandEvidence } from './standup-silence.js';
 
+/**
+ * Exit only after stdout has handed everything to the OS.
+ *
+ * On macOS Node writes to a pipe asynchronously, so process.exit() straight
+ * after a large write discards whatever the pipe had not yet taken, and the
+ * reader gets a prefix that ends mid-string. Measured 2026-10-16: a `--json`
+ * roster over 3d arrived cut at 131,041 bytes, and the MCP server's spawn of
+ * it failed to parse at byte 8,192 once a worktree's UNCLAIMED list grew. A
+ * write's callback runs only after every write queued before it has completed,
+ * so an empty write is the drain point. Falling off the end of the module is
+ * also safe (Node waits for pending writes); only an explicit exit is not.
+ */
+async function exitWhenFlushed(code) {
+  await new Promise((resolve) => process.stdout.write('', resolve));
+  process.exit(code);
+}
+
 function parseSince(s) {
   const m = String(s).match(/^(\d+(?:\.\d+)?)\s*([mhd])$/i);
   if (!m) return 6 * HOUR;
@@ -141,7 +158,7 @@ if (commitQuery) {
   if (!hits.length) {
     console.log(`No commit matching "${commitQuery}" in the last ${opt('since', '6h')} of the event log.`);
     console.log('Widen with --since 3d, or the commit predates hook coverage.');
-    process.exit(0);
+    await exitWhenFlushed(0);
   }
   for (const e of hits) {
     const c = parseCommit(e) || {};
@@ -166,7 +183,7 @@ if (commitQuery) {
     }
     console.log();
   }
-  process.exit(0);
+  await exitWhenFlushed(0);
 }
 
 // ---- roster -----------------------------------------------------------
@@ -361,7 +378,7 @@ if (asJson) {
       mentioned_by: (mentions.get(u.rel) || []).slice(0, 3).map((m) => ({ id: m.id, provider: m.provider, mentions: m.count, unlogged: !!m.unlogged })),
     })),
   }, null, 2));
-  process.exit(0);
+  await exitWhenFlushed(0);
 }
 
 // ---- render -----------------------------------------------------------

@@ -163,6 +163,38 @@ newline arrived whole every time, and 1025 tore about 60% of rows.
 - **CI** gains a macOS job that runs the append and rewrite races, then the
   unit suite.
 
+### fix(wrapup-coverage, cooccurrence-graph): output no longer cut through a pipe
+
+The same write-then-exit defect as standup's, in two more CLIs that skills read
+through pipes. `wrapup-coverage.js --json` exited straight after printing; on
+the live corpus `--limit 100000` piped to `wc -c` arrived cut at 65,536 bytes
+of about 728 KB, and its 10 KB default output is past 8,192 bytes, where one
+of standup's cuts under the MCP server fell. `cooccurrence-graph.js` exited
+after each `--related`, `--maneuvers` and `--signal` answer; `--signal` names
+every project behind a maneuver, 4.7 KB for the whole catalog today and growing
+with the project count. Both now wait for stdout to drain. `cli-pipe-drain.test.js`
+gains a case for each, over 256 KB: against the old scripts they failed 3 of 3
+runs, cut at 65,536 and 163,167 bytes. `hit-rate-report.js`, `trust-digest.js`
+and `infer-codex-project.js` were checked and left alone: hit-rate's `--json`
+falls off the end of the module, and their explicit exits print at most a fixed
+2.2 KB.
+
+### fix(standup): `--json` and `--commit` no longer lose their tail through a pipe
+
+`cartographer-standup.js` called `process.exit(0)` right after printing. On
+macOS Node writes to a pipe asynchronously, so the process ended before the
+pipe had taken everything. The reader got a prefix cut mid-string, and the exit
+code was 0. On the live corpus a 3-day `--json` roster of about 196 KB arrived
+cut at 131,041 bytes. The MCP server's `standup` tool reads that JSON through a
+pipe, so it failed to parse whenever a checkout's UNCLAIMED list grew. With 317
+modified tracked files, `mcp-server.test.js` failed at byte 65,536 on every
+run; on a clean tree it passed. Both exits now wait for stdout to drain.
+`cartographer-facts.js` and `session-digest.js` were already safe: facts never
+exits after writing, and the digest's `--day` path already waited on its write.
+`tests/unit/cli-pipe-drain.test.js` reads each CLI through a reader that stalls
+after the first chunk, with output past four times a pipe's capacity. Against
+the old standup it fails with output cut at 65,536 and about 131 KB.
+
 ### fix(mcp): tool results are text only, at about a third of the tokens
 
 The MCP server answered with compact text and, from protocol 2025-06-18 on,

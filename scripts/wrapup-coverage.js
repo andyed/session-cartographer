@@ -168,8 +168,12 @@ const result = {
   pending: pending.slice(0, LIMIT),
 };
 
+// On macOS Node writes to a pipe asynchronously, so exiting straight after the
+// write cut the JSON wherever the pipe filled, with exit 0: `--limit 100000`
+// on the live corpus arrived at 65,536 bytes. The write callback fires once
+// stdout has taken the text, so exiting after it cannot truncate.
 if (AS_JSON) {
-  console.log(JSON.stringify(result, null, 2));
+  await new Promise((resolve) => process.stdout.write(`${JSON.stringify(result, null, 2)}\n`, resolve));
   process.exit(0);
 }
 

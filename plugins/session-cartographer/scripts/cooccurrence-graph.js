@@ -225,6 +225,17 @@ const xferEdges = buildEdges(countPairs(signalProjects), projectSignalDF, N_sign
 
 // ─── Query modes (consumed by /remember orientation) — print and exit, no file write ───
 
+// Exit only after stdout has taken everything. On macOS Node writes to a pipe
+// asynchronously, so process.exit() straight after printing drops whatever the
+// pipe had not yet taken, and /remember reads a list cut mid-name with exit 0.
+// --signal's output grows with every project that runs a maneuver (4.7 KB for
+// the whole catalog on the live corpus, 2026-10-16). A write's callback runs
+// after every earlier write has completed, so an empty write is the drain point.
+async function exitWhenFlushed(code) {
+  await new Promise((resolve) => process.stdout.write('', resolve));
+  process.exit(code);
+}
+
 function neighbors(edges, node) {
   const out = [];
   for (const e of edges) {
@@ -255,33 +266,33 @@ if (RELATED !== null) {
     console.log(`Related threads — projects co-active with ${P} (shared days · G²):`);
     for (const n of nbrs.slice(0, KQ)) console.log(`  ${n.n.padEnd(30)} ${String(n.k).padStart(3)}d  G²=${n.llr}`);
   }
-  process.exit(0);
+  await exitWhenFlushed(0);
 }
 
 if (MANEUVERS_OF !== null) {
   const P = resolveProject(MANEUVERS_OF);
   const sigs = [...(signalProjects.entries())].filter(([, ps]) => ps.has(P)).map(([s]) => s);
-  if (!sigs.length) { console.log(`(no maneuvers detected for "${P}")`); process.exit(0); }
+  if (!sigs.length) { console.log(`(no maneuvers detected for "${P}")`); await exitWhenFlushed(0); }
   console.log(`Maneuvers in ${P}: ${sigs.sort().join(', ')}`);
   const peers = neighbors(xferEdges, P);
   if (peers.length) {
     console.log(`Shares a maneuver profile with (shared signals · G²):`);
     for (const p of peers.slice(0, KQ)) console.log(`  ${p.n.padEnd(30)} ${String(p.k).padStart(2)} shared  G²=${p.llr}`);
   }
-  process.exit(0);
+  await exitWhenFlushed(0);
 }
 
 if (SIGNAL_OF !== null) {
   // Inverse of --maneuvers (for /remember "how do I X"): fuzzy-match a maneuver → which projects run it + what it composes with.
   const lower = SIGNAL_OF.toLowerCase();
   const matched = [...signalProjects.keys()].filter((s) => s.toLowerCase().includes(lower) || lower.includes(s.toLowerCase()));
-  if (!matched.length) { console.log(`(no maneuver signal matching "${SIGNAL_OF}")`); process.exit(0); }
+  if (!matched.length) { console.log(`(no maneuver signal matching "${SIGNAL_OF}")`); await exitWhenFlushed(0); }
   for (const s of matched.sort()) {
     console.log(`${s} — run by: ${[...signalProjects.get(s)].sort().join(', ')}`);
     const comp = neighbors(compEdges, s);
     if (comp.length) console.log(`  composes with: ${comp.slice(0, KQ).map((c) => `${c.n} (G²=${c.llr})`).join(', ')}`);
   }
-  process.exit(0);
+  await exitWhenFlushed(0);
 }
 
 // ─── Emit JSON ───
