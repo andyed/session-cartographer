@@ -2,6 +2,13 @@
 
 Status: plan 2026-09-24 · age-curve gate built and first fix shipped 2026-10-16
 
+**2026-10-17, later.** The named record's rank is answered in the exemption:
+its candidates are multiplied by 3 after decay (`CARTOGRAPHER_DECAY_LOOKUP_LIFT`).
+Live known-item S@1 went 0.62 → 0.92 (S@10 234 → 240 of 240) with recency and
+both topical snapshots unchanged; on the as-of snapshot the CLI's known S@10
+went 165 → 180 of 180. The browse curve is untouched. docs/SCORING.md,
+"Lifting named records".
+
 **2026-10-17.** The browse curve is decided: exp stays. `age-curve.js` gained
 the third case kind the gate lacked, the nine graded `demo/truth` queries
 (`--truth`), and `--as-of`, which rebuilds the corpus as it stood when they were

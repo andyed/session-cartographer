@@ -343,7 +343,8 @@ before any probe means anything.
 - **Archival recall is fixed for lookups, not for browses.** Since 2026-10-16 a
   query whose tokens all appear together in at most 10 candidates is a lookup and
   those candidates skip time decay (docs/SCORING.md), so a near-exact match on an
-  old record comes back at any age. A broad query still decays, by design: an
+  old record comes back at any age. Since 2026-10-17 they are also lifted ×3, so
+  it usually comes back first. A broad query still decays, by design: an
   old record that shares only common words with it still ranks under recent
   ones. Reach it with `--since` / `--before`; do not read its absence as an
   indexing failure. `node scripts/age-curve.js` measures both cases on the live
