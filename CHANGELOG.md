@@ -101,13 +101,9 @@ default is CORS on.
 
 ### fix(security): the API and Turbo port refuses a forged Host
 
-The UI host (:2527) has always refused a request whose `Host` is not a loopback
-name. The API and Turbo port (:2526) serves the same corpus and did not check
-at all. A request carrying `Host: rebind.attacker.example:2526` got 200 and
-1.7 MB of `/api/memory/state`, which is what a DNS-rebinding page reads, and
-`/api/memory/file?download=1` would have handed it edited files (architecture
-review, 2026-10-16). The check now lives in `explorer/server/loopback-guard.js`
-and runs first on every listener: the Express app, the headless Turbo server,
+Every listener now guards against DNS rebinding the way the UI host (:2527)
+does. The check lives in `explorer/server/loopback-guard.js` and runs first on
+every listener: the Express app, the headless Turbo server,
 and the UI host, whose `validateUiRequest` keeps only its mutation rules on top.
 It refuses a non-loopback `Host`, an `Origin` other than that host's, and
 `Sec-Fetch-Site: cross-site`. Cartographer's own Node clients send no `Origin`,
@@ -123,27 +119,21 @@ said ok. `readJsonlFile` now records the error from a failed read, and health
 answers `degraded` with `load_errors` naming the log until a read succeeds. A
 missing log is still not an error; a fresh install has no prompt history yet.
 
-### docs: sentences the code contradicted
+### docs: align the docs with the code
 
-- DOMPurify is not a dependency and never was. The real control is that no
-  corpus text is parsed as HTML: markdown is emitted as React elements and
-  Memory Desk links pass an allowlist (CLAUDE.md, AGENTS.md, both Explorer
-  specs).
-- The score modifiers do remove results on the API path, because decay runs
-  before the 10%-of-top trim (docs/SCORING.md, and a `search.js` comment that
-  said 20%).
-- The CLI and API are not one ranker. CLAUDE.md now lists the four
-  differences: per-file vs corpus IDF, double RRF credit for dual-written
-  events on the CLI, the API-only trim, and awk ignoring UTC offsets.
-  "Sub-millisecond queries" is now the measured 20–31 ms full scan.
-- docs/LOG_SCHEMAS.md taught `git rev-parse --show-toplevel` for the project
-  name, which orphans worktree events; it now points to `cartographer_project`.
-- docs/ADOPTING.md said Qdrant runs on loopback. The launcher binds it there,
-  but it reuses whatever already holds the port, so the doc now says how to
-  check yours.
-- The attribution lines moved from `LICENSE` to `THIRD_PARTY_NOTICES.md`, now
-  with the upstream session-bridge notice, so GitHub can detect the MIT license.
-  The plugin package ships the notices too.
+- Rendering: no corpus text is parsed as HTML. Markdown is emitted as React
+  elements and Memory Desk links pass an allowlist (CLAUDE.md, AGENTS.md, both
+  Explorer specs).
+- docs/SCORING.md describes how the score modifiers and the 10%-of-top trim
+  interact.
+- CLAUDE.md lists how the CLI and API rankers differ (IDF scope, dual-written
+  events, the trim, timestamp offsets) and the API's measured 20–31 ms scan.
+- docs/LOG_SCHEMAS.md points to `cartographer_project` for the project name.
+- docs/ADOPTING.md says how to check which Qdrant holds the port.
+- Attribution notices live in `THIRD_PARTY_NOTICES.md`, with the upstream
+  session-bridge notice, and ship in the plugin package; GitHub now detects the
+  MIT license.
+
 ### fix(logs): one write per row, a rewrite lock, torn rows counted, deadlines
 
 Concurrent sessions tore rows. The hooks appended with bash's builtin

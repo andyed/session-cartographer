@@ -30,7 +30,7 @@ Both engines apply the same four steps, in this order, to the fused RRF score:
 
 **Salience** (write-time prior). Hooks stamp each event with a strategic-weight score in [0..1]: `/wrapup` milestones 0.9, feature/fix commits 0.7, research-paper fetches 0.7, neutral default 0.5, chore commits 0.4, routine bash 0.2. Multiplies directly into the RRF score.
 
-**Noise trim** (relevance). Items whose RRF × salience is under a tenth of the top item's are dropped. It is taken before any age weighting. Until 2026-10-16 the API path trimmed *after* decay, which cut old records for being old: a near-exact match on a 120-day-old record decays to ~6% of its score and fell under a tenth of a recent partial match. In the live measurement below, 50 of the 60 known items older than 90 days were not ranked low but absent from the pool. The CLI had no trim at all, so the two engines also disagreed about the pool.
+**Noise trim** (relevance). Items whose RRF × salience is under a tenth of the top item's are dropped. It is taken before any age weighting. Trimming after decay would cut old records for being old: a near-exact match on a 120-day-old record decays to ~6% of its score, under a tenth of a recent partial match. Taking the trim first keeps every relevant record in the pool, and both engines apply it the same way.
 
 **Time decay** (Ebbinghaus). `score *= exp(-lambda * hours_since_last_use)` with `CARTOGRAPHER_DECAY_LAMBDA` defaulting to 0.001 (~29-day half-life). "Last use" is the event timestamp — unless the event has recorded reuse accesses, in which case the most recent access counts instead (reuse refreshes recency). Power-law and ACT-R base-level forms were measured against it on 2026-10-17 and lost topical precision ("Choosing the browse curve", below).
 
@@ -47,7 +47,7 @@ Why a switch and not a gentler curve: fusion is rank-based, and RRF has almost n
 - **known**: a query built from a record's three highest-IDF tokens, kept when at most five documents contain all three. Success is that record in the top 10.
 - **recency**: two tokens that 15–400 records share across months, at least a third of them older than 30 days. Success is the newest of those records in the top 10. An arm that never decays fails these, so it cannot win the gate by switching decay off.
 
-`tests/unit/age-curve-gate.test.js` runs the same harness in CI over a synthetic corpus spanning 180 days. It first proves the fixture reproduces the loss: with the exemption off, both engines bury the archival items; with decay off, both lose the recency cases. Then it gates the shipped curve. Before the fix, the fixture gave S@10 of 1.00/1.00/0.50/0.00 by age on both engines. The same file holds the lift to rank 1, against rivals that win it when the lift is off.
+`tests/unit/age-curve-gate.test.js` runs the same harness in CI over a synthetic corpus spanning 180 days. It first proves the fixture reproduces the loss: with the exemption off, both engines bury the archival items; with decay off, both lose the recency cases. Then it gates the shipped curve. The same file holds the lift to rank 1, against rivals that win it when the lift is off.
 
 Run it over the real corpus, read-only (the logs are cloned to a temp dir, telemetry goes to `/dev/null`, and `--out` refuses a path inside the repository because the cases are corpus text):
 
@@ -60,13 +60,12 @@ Measured 2026-10-16 on the live corpus: 204,341 events, semantic leg off, an emp
 
 | Arm | Engine | Known S@10 | Known MRR | Absent | Recency S@10 | Recency MRR |
 |---|---|---|---|---|---|---|
-| **before** (041f3e1), exp λ=0.001 | API | 0.98 / 0.85 / 0.62 / 0.15 | 0.53 / 0.43 / 0.32 / 0.15 | 55 | 0.65 | 0.42 |
-| **before** (041f3e1), exp λ=0.001 | CLI | 0.93 / 0.88 / 0.65 / 0.22 | 0.70 / 0.58 / 0.35 / 0.19 | 29 | 0.65 | 0.37 |
-| before, λ=0 | API | 0.98 / 0.98 / 1.00 / 1.00 ‡ | 0.87 / 0.91 / 0.88 / 0.99 ‡ | 0 | 0.40 | 0.26 |
-| **after**, exp λ=0.001 + lookup exemption (shipped) | API | 0.98 / 1.00 / 0.98 / 1.00 | 0.54 / 0.71 / 0.79 / 0.89 | 0 | 0.65 | 0.42 |
-| **after**, shipped | CLI | paired subsample, below | | | | |
-| after, trim reordered, exemption off | API | 0.98 / 0.85 / 0.62 / 0.23 | 0.53 / 0.43 / 0.32 / 0.18 | 27 | 0.65 | 0.42 |
-| after, λ=0 | API | 0.35 / 0.43 / 0.63 / 0.85 | 0.21 / 0.30 / 0.38 / 0.52 | 0 | 0.03 | 0.03 |
+| exp λ=0.001, trim after decay, no exemption | API | 0.98 / 0.85 / 0.62 / 0.15 | 0.53 / 0.43 / 0.32 / 0.15 | 55 | 0.65 | 0.42 |
+| exp λ=0.001, no exemption | CLI | 0.93 / 0.88 / 0.65 / 0.22 | 0.70 / 0.58 / 0.35 / 0.19 | 29 | 0.65 | 0.37 |
+| **exp λ=0.001 + lookup exemption (shipped)** | API | 0.98 / 1.00 / 0.98 / 1.00 | 0.54 / 0.71 / 0.79 / 0.89 | 0 | 0.65 | 0.42 |
+| **shipped** | CLI | paired subsample, below | | | | |
+| exp λ=0.001, trim first, no exemption | API | 0.98 / 0.85 / 0.62 / 0.23 | 0.53 / 0.43 / 0.32 / 0.18 | 27 | 0.65 | 0.42 |
+| λ=0 (no decay) | API | 0.35 / 0.43 / 0.63 / 0.85 | 0.21 / 0.30 / 0.38 / 0.52 | 0 | 0.03 | 0.03 |
 | power-law t^-0.5 (days, 1-day floor) | API | 0.98 / 0.77 / 0.62 / 0.30 | 0.67 / 0.39 / 0.32 / 0.21 | 6 | 0.72 | 0.44 |
 | power-law + exemption | API | 1.00 / 1.00 / 1.00 / 1.00 | 0.76 / 0.92 / 0.90 / 0.96 | 0 | 0.72 | 0.44 |
 | ACT-R base-level, d=0.05 | API | 0.80 / 0.53 / 0.60 / 0.72 | 0.36 / 0.31 / 0.30 / 0.43 | 0 | 0.47 | 0.32 |
@@ -80,9 +79,7 @@ Measured 2026-10-16 on the live corpus: 204,341 events, semantic leg off, an emp
 | claude-mem form, d=0.5 | API | 0.98 / 0.67 / 0.62 / 0.33 | 0.59 / 0.38 / 0.31 / 0.21 | 6 | 0.72 | 0.48 |
 | claude-mem form + exemption | API | 1.00 / 1.00 / 1.00 / 1.00 | 0.86 / 0.97 / 0.94 / 0.98 | 0 | 0.72 | 0.48 |
 
-‡ An artifact. Before the fix, the API path skipped the re-sort after salience whenever decay was off, so its λ=0 ranking was plain RRF. The CLI applies salience at ingestion and never had this. With salience applied, λ=0 is the row "after, λ=0".
-
-**Both engines, before and after, on the same cases.** The portable CLI costs about 17 s a query on this corpus, and five times that on a busy machine. So the post-fix CLI ran on a paired subsample: the first 30 cases of each bucket (all 60 under a week), and the first 30 recency cases. Each cell is that same set of cases, before → after.
+**Both engines, without and with the exemption, on the same cases.** The portable CLI costs about 17 s a query on this corpus, and five times that on a busy machine. So the CLI ran on a paired subsample: the first 30 cases of each bucket (all 60 under a week), and the first 30 recency cases. Each cell is that same set of cases, no exemption → shipped.
 
 | Cases (n) | CLI S@10 | CLI MRR | API S@10 | API MRR |
 |---|---|---|---|---|
@@ -92,21 +89,21 @@ Measured 2026-10-16 on the live corpus: 204,341 events, semantic leg off, an emp
 | known 90d+ (30) | 0.23 → 1.00 | 0.19 → 0.88 | 0.13 → 1.00 | 0.13 → 0.93 |
 | recency (30) | 0.73 → 0.73 | 0.42 → 0.42 | 0.70 → 0.70 | 0.47 → 0.47 |
 
-On the CLI, 12 of the 30 oldest targets were missing from the top 100 before the fix, and none after. The CLI misses the same 4 recent known items before and after; they do not depend on age.
+On the CLI, 12 of the 30 oldest targets are missing from the top 100 without the exemption, and none with it. The 4 recent known items the CLI misses are missed by both, so they do not depend on age.
 
 The ACT-R rows use base-level activation B = ln Σ_j t_j^-d over the event and each recorded reuse (Anderson & Schooler 1991). It enters as a factor e^B = Σ t_j^-d, because ACT-R activation adds to the log odds of retrieval. t is in days, floored and scaled to 1 at 30 minutes, and the separate reuse boost is off. The claude-mem rows use `ln(1 + t^-d + α Σ t_k^-d)` with α = 1 as the factor. Both read a frozen copy of the real access ledger as rehearsals. Only 3 of the 280 targets have any reuse in it, so these rows measure the event-age term, not the rehearsal term.
 
 What the table says:
 
-- **The trim order was half the API loss.** Moving the trim before decay brings the 55 absent known items down to 27 and moves the oldest bucket's S@10 from 0.15 to 0.23. The items are back in the pool, but still ranked past the page.
+- **Trim order accounts for half the gap.** Taking the trim before decay cuts the absent known items from 55 to 27 and moves the oldest bucket's S@10 from 0.15 to 0.23. The items are back in the pool, but still ranked past the page.
 - **No single curve keeps both kinds of case.** Across the ACT-R sweep, d trades the archive for the week. At d=0.05 the oldest bucket reaches 0.72, but the 7-30d bucket falls to 0.53 and recency to 0.47. At d=0.5, recency is 0.70 and the oldest bucket 0.30. Power-law and claude-mem's form land in the same place.
-- **The exemption is what fixes the archive.** With it, every curve tested scores 0.97–1.00 in every bucket, and the shipped exp arm keeps recency exactly where it was (0.65).
+- **The exemption is what fixes the archive.** With it, every curve tested scores 0.97–1.00 in every bucket, and the shipped exp arm keeps recency at 0.65, the same as without it.
 
 ### Choosing the browse curve
 
 Decided 2026-10-17: **exp λ=0.001 stays the browse curve.** With the exemption on, the power-law family scored higher than exp on both gate metrics, but both reward a steeper curve on non-exempt items: it pushes recent partial matches under the undecayed named record, and orders a browse more strictly by date. At the limit, infinite decay would score perfectly on both. So the choice was made with a third case kind that rewards relevance among browse results.
 
-**The topical kind.** `scripts/age-curve.js --truth <dir>` adds the nine graded `demo/truth` queries (gitignored; they exist only in the maintainer's checkout) and scores each arm's top 50 through `scripts/truth-score.js`, the scorer `scripts/eval-search.js` now shares. The metrics are P@10 (unjudged counts as not relevant), judged P@10 (a condensed list: the first ten *labeled* results), and gain@10 (mean grade over the top grade). On the live corpus eight of the nine are browses, and one has ≤ 10 full matches. On the as-of snapshot below, six of the nine are lookups, naming 2–9 records each, so there the exemption ranks their named records the same way in every arm and the curves differ only on the rest. (Corrected 2026-10-17. This page said all nine were browses on both snapshots.)
+**The topical kind.** `scripts/age-curve.js --truth <dir>` adds the nine graded `demo/truth` queries (gitignored; they exist only in the maintainer's checkout) and scores each arm's top 50 through `scripts/truth-score.js`, the scorer `scripts/eval-search.js` now shares. The metrics are P@10 (unjudged counts as not relevant), judged P@10 (a condensed list: the first ten *labeled* results), and gain@10 (mean grade over the top grade). On the live corpus eight of the nine are browses, and one has ≤ 10 full matches. On the as-of snapshot below, six of the nine are lookups, naming 2–9 records each, so there the exemption ranks their named records the same way in every arm and the curves differ only on the rest.
 
 **Two snapshots, because the labels are dated.** They were written 2026-03-30 to 04-04 against sessions then a few days old. On today's corpus every labeled session is 199–205 days old, so the live snapshot only tests the long range, and newer work on each topic is unjudged by construction (about 9 of every top 10). `--as-of 2026-04-04T23:59:59Z` rebuilds the corpus as it stood when the labels were written: 17,851 events, timestamps shifted so that moment is "now", with the labeled sessions 4–10 days old and about half of each top 10 judged. The as-of snapshot is the one that tests a browse.
 
@@ -142,7 +139,7 @@ What the tables say:
 - **No candidate passes.** On the as-of snapshot every power-law form loses topical P@10 on two or three of the nine queries and wins none: 0.40–0.42 against 0.48, and gain@10 0.32–0.33 against 0.37. Nine queries cannot show that loss is significant (0 of 2 and 0 of 3 are not), but the rule asks a candidate to show it does not lose, and none can.
 - **The cost lands where a browse's material is.** In log-log terms exp(−λt) falls at a slope of λt, and t^-d at a constant d. With λ = 0.024 a day, exp is the gentler curve for anything younger than d/λ — 21 days at d=0.5, 12.5 days at d=0.3 — and the steeper one beyond. As of the labels' date the relevant sessions were 4–10 days old, inside that window. A week-old record weighed against yesterday's partial match keeps 0.87 of its score under exp, 0.56 under d=0.3 and 0.38 under d=0.5 or t^-0.5. Last-day rows took the freed slots: 2.8–3.7 of each top 10, against 1.1. The candidates' gain at P@5 (+2/−1) is the top of the list. The loss is below it.
 - **What the power family does win is the far tail and the named record's rank.** Live, where the labeled sessions are 200 days old, it lifts judged P@10 from 0.33 to 0.42–0.55, because there exp is the steeper curve (200 days against 30: 0.017 of the score kept, against 0.39–0.57). And it puts the named record at rank 1 far more often (live known S@1 0.85–0.98 at d=0.3, against 0.52–0.87), again by pushing recent partial matches down. The exemption already keeps every named record in the top 10. Lifting it to rank 1 is a question about the exemption, not about the browse curve, and "Lifting named records" below answers it without touching the curve.
-- **The first read of this was wrong, and the instrument was why.** With the matcher eval-search.js had used until then, the as-of snapshot put ACT-R d=0.3 ahead (P@10 0.58 against 0.56) and it was the only candidate passing the rule. Every one of its gains came from one-word matches: a two-word label about the timeline's legends credited a gaze-plot prompt from another project, which shared only the word "timeline", to the Explorer's concurrent-timeline feature, and 94 of the 142 labels have three content words or fewer. Steep curves put more recent one-word matches on the page, so the bug favoured exactly the arms under test. The matcher now needs at least two shared words, honours a label's `relevant: false`, and matches by `event_id` where the label has one (`tests/unit/truth-score.test.js`).
+- **The matcher decides which curve looks best.** A matcher that credits a single shared word puts ACT-R d=0.3 ahead on the as-of snapshot (P@10 0.58 against 0.56), and every one of those gains comes from one-word matches: a two-word label about the timeline's legends credits a gaze-plot prompt from another project, which shares only the word "timeline", and 94 of the 142 labels have three content words or fewer. Steep curves put more recent one-word matches on the page, so such a matcher favours exactly the arms under test. The matcher needs at least two shared words, honours a label's `relevant: false`, and matches by `event_id` where the label has one (`tests/unit/truth-score.test.js`).
 - **Not covered.** The semantic leg was off for every arm (the as-of snapshot cannot use it: the index carries real timestamps and everything written since). The power-law arms are seams of the in-process engine only. The rehearsal term of ACT-R is still unmeasured: 446 events in the ledger, 8 of the 289 live targets with any reuse.
 
 On d itself: ACT-R's d is fitted to need probability, so the nearest environmental estimate here is the access ledger. Its log-log slope of P(use | age), across 14 bins from 30 minutes to 330 days, is −0.79 (d ≈ 0.8). That is an upper bound, since every use in the ledger is of a result the exp-decayed ranker chose to show. Either way it points steeper than d=0.3–0.5, the direction this measurement found costly. So this corpus does not validate ACT-R's curve as the browse ranker's age weight: within the month it costs topical precision. Whether it describes how *use* falls off with age is a separate question, and the ledger cannot answer it while the ranker chooses what gets used.
@@ -156,7 +153,7 @@ node scripts/age-curve.js --state /tmp/curve-live --truth $T --engines api $ARMS
 node scripts/age-curve.js --state /tmp/curve-asof --truth $T --as-of 2026-04-04T23:59:59Z --engines api $ARMS
 ```
 
-`scripts/eval-search.js` reports the same scorer per engine, on the live corpus and the shipped ranking. Measured 2026-10-17 with the fixed matcher, 9 queries: P@5 0.09 for the CLI keyword arm, 0.11 for CLI hybrid, 0.11 for the in-process API with the semantic leg on; judged P@10 0.29–0.31 and session recall 11% on all three. The old matcher had reported 0.22 / 0.24 / 0.31 for the same ranking. Most of the difference is the one-word credit, though that run's API arm also lost its semantic leg on 4 of 9 queries. All three sit near the floor that label age sets: exp leaves a 200-day-old session 0.8% of its score, and with decay off the API's live P@10 is 0.26 (semantic off, table above).
+`scripts/eval-search.js` reports the same scorer per engine, on the live corpus and the shipped ranking. Measured 2026-10-17 with the two-word matcher, 9 queries: P@5 0.09 for the CLI keyword arm, 0.11 for CLI hybrid, 0.11 for the in-process API with the semantic leg on; judged P@10 0.29–0.31 and session recall 11% on all three. The old matcher had reported 0.22 / 0.24 / 0.31 for the same ranking. Most of the difference is the one-word credit, though that run's API arm also lost its semantic leg on 4 of 9 queries. All three sit near the floor that label age sets: exp leaves a 200-day-old session 0.8% of its score, and with decay off the API's live P@10 is 0.26 (semantic off, table above).
 
 **Promote-on-reuse** (read-time posterior). When `/remember` actually reads the transcript behind a result, it records the access via `--touch` into `access-ledger.jsonl`. At query time each accessed event gets `boost = 1 + w * Σ 1/sqrt(days_since_access)` capped at 2.0, with `w = CARTOGRAPHER_REUSE_WEIGHT` (default 0.3, 0 disables). The shape is ACT-R base-level activation: recent rehearsals count more, repeats compound with diminishing returns. Reused results show a `(used xN)` tag in CLI output and a `_reuseCount` field in the API. Events never touched score exactly as if the layer did not exist.
 

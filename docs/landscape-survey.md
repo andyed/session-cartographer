@@ -1,35 +1,29 @@
 # Coding-Agent Memory: Landscape Survey
 
-*Refreshed 2026-10-16. Star counts and push dates were read with `gh api` at
-2026-10-17 03:23 UTC (the evening of 2026-10-16 Pacific). Sources: a
-three-analyst competitive review dated 2026-10-16, which read GitHub and the web
-and ran no third-party code, plus the public
+*Updated 2026-10-16; first written 2026-03-26. Star counts and push dates come
+from the GitHub API (2026-10-17 03:23 UTC), platform features from the vendors'
+docs and the public
 [Claude Code changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md).
-[Method and limits](#method-and-limits) says which claims were re-checked. First
-written 2026-03-26; the March positioning is kept at the end and
-[marked superseded](#march-2026-positioning-superseded).*
+See [Sources](#sources).*
 
 ## Summary
 
-- **Session Cartographer (SC) sits in the crowded category:** passive recall over
-  what agent sessions did. claude-mem (101k stars) and agentmemory (29.6k) lead on
-  distribution. deja-vu (1.2k stars since July) is the closest match in scope.
-- **Four of the seven features SC described as its own now exist elsewhere:**
-  `/standup`'s file contention and commit attribution, session-bounded diffs,
-  `/trustmap` (Claude Code ships `/auto-mode-setup`), and worktree attribution.
-- **What remains SC's own is measurement.** Counts carry the event ids behind
-  them, with a delta that follows log arrival order rather than timestamps.
-  Recall served is joined exactly to recall used. Day digests check each logged
-  commit against git. The questions are not new; deja-vu also asks whether served
-  recall gets used. The mechanisms were not found elsewhere.
-- **The platforms are absorbing the rest.** Anthropic shipped agent view,
-  cross-session messaging, `/insights`, `/auto-mode-setup` and memory stores this
-  year; OpenAI replaced Chronicle with Computer History. Least likely to be
-  absorbed: cross-provider capture (neither vendor indexes the other's
-  transcripts) and measurement of whether memory gets used.
-- **Position:** measured memory for multi-agent work. SC counts what happened,
-  checks it against git, and measures whether recall gets used, locally, across
-  Claude Code, Codex and Hermes, with no LLM at capture.
+- **Five kinds of tool** help coding agents carry context between sessions:
+  memory the agent writes, passive recall of what sessions did, viewers and
+  analytics, commit provenance, and live coordination of concurrent sessions.
+- **Session Cartographer (SC) is passive recall for reinstating context.** Hooks
+  in Claude Code and Codex, plus a read-only adapter for Hermes, record what each
+  session did into local logs, with no LLM at capture. `/remember` and the
+  Explorer bring earlier reasoning back when a question calls for it.
+- **Alongside recall, SC answers questions about the work itself:** counts that
+  carry the event ids behind them, whether served recall got used, which logged
+  commits landed in git, and which live sessions are editing the same files.
+- **Nearby tools:** claude-mem and agentmemory are the largest passive-recall
+  projects; deja-vu, cass and Funes search sessions across several agents;
+  Entire and git-ai link commits to sessions.
+- **The platforms** ship memory and session tooling for their own agent. History
+  that spans Claude Code and Codex, and outlasts Claude Code's 30-day transcript
+  cleanup, is left to tools like SC.
 
 ## The five categories
 
@@ -42,11 +36,9 @@ written 2026-03-26; the March positioning is kept at the end and
 | 5 | Live multi-agent operations | Run, watch and coordinate concurrent sessions | Claude Code agent view, `SendMessage`/`ListAgents`, vibe-kanban, claude-squad | Led by the platforms |
 
 SC's core is category 2. `/standup` and the day digest reach into 4 and 5 without
-writing to either. The least crowded ground is auditing memory itself: counted
-facts, git-checked digests, and recall-use telemetry. Only deja-vu is nearby.
+writing to either.
 
-The March survey's seven categories fold into these five. Every March entry is
-kept below, with its March star count in parentheses.
+Star counts in parentheses are from March 2026.
 
 ## 1. Agent-written or LLM-distilled memory
 
@@ -111,19 +103,13 @@ Notes on this category:
   reports `recall_all@k` and excludes the 30 abstention questions, and 324 of the
   500 questions have more than one gold session. Recomputed from agentmemory's own
   [committed per-question results](https://github.com/rohitg00/agentmemory/blob/main/benchmark/data/longmemeval_results_hybrid.json)
-  (at `6a182c4`), `recall_all@5` is 82.1% and `recall_all@10` is 93.4%.
+  (at `6a182c4`), `recall_all@5` is 82.1% and `recall_all@10` is 93.4%; see also
   agentmemory's
-  [2026-10-09 baseline document](https://github.com/rohitg00/agentmemory/blob/main/docs/benchmarks/2026-10-09-evaluation-baseline.md)
-  is more careful than its README and makes no competitive claims. deja-vu
-  reports 97.2% R@5 on the same split (not checked). claude-mem publishes no
-  retrieval evaluation. LongMemEval is chat history, with no tool events,
-  commits, project scopes or counting questions; [LONGMEMEVAL.md](LONGMEMEVAL.md)
-  covers what a run would and would not show for SC.
-- **Silent failures.** The category's worst defects return a confident wrong
-  answer rather than an error. Examples: claude-mem's 90-day window above, and a
-  capture stall that ran for 20+ hours with every health check green
-  ([#4807](https://github.com/thedotmack/claude-mem/issues/4807)). SC has had
-  the same class of defect; see [SC's own gaps](#scs-own-gaps).
+  [2026-10-09 baseline document](https://github.com/rohitg00/agentmemory/blob/main/docs/benchmarks/2026-10-09-evaluation-baseline.md).
+  deja-vu reports 97.2% R@5 on the same split (not checked). LongMemEval is chat
+  history, with no tool events, commits, project scopes or counting questions;
+  [LONGMEMEVAL.md](LONGMEMEVAL.md) covers what a run would and would not show
+  for SC.
 - **Decay.** claude-mem added opt-in ACT-R base-level ranking on 2026-09-30
   ([`rank.ts`](https://github.com/thedotmack/claude-mem/blob/main/src/services/reinforcement/rank.ts)),
   with the frequency term off by default and no published validation.
@@ -191,10 +177,6 @@ and narrows `/standup`'s premise to checkouts that several sessions share.
 | [`/auto-mode-setup`](https://code.claude.com/docs/en/auto-mode-config) | Documented; not named in the public changelog | Drafts `autoMode.environment` from git remotes, the hosts, buckets and commands of recent sessions, and optionally shell history | Replaces most of `/trustmap` |
 | 30-day transcript cleanup | Default; referenced in v2.1.181 and v2.1.248 | Session transcripts are deleted after 30 days | SC keeps its own event record, which outlives it |
 | [Resume picker](https://code.claude.com/docs/en/sessions) | | Searches titles and PR URLs, not message bodies | Small |
-| Desktop transcript search | Observed 2026-10-16 | The Claude desktop app exposes a `search_session_transcripts` tool: full-text search across its session transcripts, tool output included | Category 2, for desktop sessions. Not found in public documentation |
-
-The March survey listed "Auto Dream" and "Session Memory" as native features.
-This refresh did not re-check either.
 
 ### OpenAI: Codex and ChatGPT
 
@@ -209,89 +191,27 @@ This refresh did not re-check either.
 Cursor removed its memories UI in 2.1.x and offers an export to `.mdc` rules
 ([forum](https://forum.cursor.com/t/are-my-memories-gone/144057)).
 
-## What is unique to SC, re-scored
+## How SC compares
 
-Earlier positioning described seven features as SC's own. Against the field as
-of 2026-10-16:
-
-| SC feature | Status | What remains SC's own | Who else does it |
-|---|---|---|---|
-| 1. [Facts](FACTS.md): counts kept separate from ranking, each bucket carrying sample `event_id`s, and a `delta` cursor over log position | **Partly unique** | The arrival-order delta cursor, which stays correct when backfills append old timestamps, and labelled z-scores (`z_status`) | Counting with drill-down: [cass](https://github.com/Dicklesworthstone/coding_agent_session_search) `timeline --json` and `--aggregate`. Totals only: claude-mem `/api/stats`. LLM-written: Claude Code `/insights` |
-| 2. Exact served → used recall telemetry ([`recall-join.js`](../scripts/recall-join.js)) | **Mechanism unique; question not** | The explicit `(call_id, event_id)` join between a served result and a use mark | [deja-vu `stats --impact`](https://github.com/vshulcz/deja-vu/blob/main/cmd/deja/stats_impact.go), since 2026-07-21, infers use from later transcripts; its code reads "Served is not used". SC's served log landed 2026-07-22, so neither has priority. [mem0](https://github.com/mem0ai/mem0) has an explicit feedback API |
-| 3. `/standup`: file contention between live sessions, and commit → session attribution | **Not unique** | Passive, cross-provider detection inside one shared checkout | Contention: [claude-context-sync](https://www.npmjs.com/package/claude-context-sync), [Tower](https://github.com/Rohanxmalik/Tower), [mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail) leases, Entire's uncommitted-work warning. Attribution: [Entire](https://github.com/entireio/cli), [git-ai](https://github.com/git-ai-project/git-ai), [brain0](https://github.com/Brain0-ai/brain0), deja-vu `blame`, agentmemory `memory_commit_lookup` |
-| 4. Day digest that checks each logged commit against git | **Partly unique** | The per-commit status: landed, moved, rewritten, or missing | [brain0](https://github.com/Brain0-ai/brain0) `today` with its drift check |
-| 5. Diff review bounded by a session's commits | **Not unique** | Bounding by time inside a checkout that several sessions share | [Entire](https://github.com/entireio/cli) checkpoints, brain0 per-prompt diffs, [agentacct](https://github.com/mikehasa/agentacct) receipts, [Tessera](https://github.com/horang-labs/tessera) and [agentglass](https://github.com/SirAllap/agentglass) worktree diffs |
-| 6. `/trustmap` | **Not unique: the platform ships it** | Codex data, weighting by use across the whole corpus, re-runs that propose only the delta, no LLM | Claude Code [`/auto-mode-setup`](https://code.claude.com/docs/en/auto-mode-config) |
-| 7. Worktree → repository attribution | **Commodity** | Nothing | Claude Code [auto memory](https://code.claude.com/docs/en/memory) ("shared across worktrees"); claude-mem [`WorktreeAdoption`](https://github.com/thedotmack/claude-mem/blob/main/src/services/infrastructure/WorktreeAdoption.ts), which also adopts merged worktrees, which SC does not; agentmemory via the git common dir; claude-code-history-viewer [worktree grouping](https://github.com/jhlee0409/claude-code-history-viewer/blob/main/src/utils/worktreeUtils.ts) |
-
-Two properties the original list left out:
-
-| Property | Status | Notes |
+| What you want to do | Session Cartographer | Related tools |
 |---|---|---|
-| Cross-provider capture, with no LLM at capture and nothing leaving the machine | **Not unique among third parties; durable against the platforms** | Funes, cass and deja-vu also index several agents' sessions. Neither Anthropic nor OpenAI is likely to index the other's transcripts. |
-| Long-horizon history | **Not unique; durable against the platforms** | Any tool that keeps its own copy outlives Claude Code's 30-day transcript cleanup. SC's event logs do. Its semantic index embeds only the first 1,200 characters of each turn, though, and full context still means reading the original transcript, which the cleanup can delete. |
+| Recall earlier work across agents | Hooks in Claude Code and Codex and a read-only Hermes adapter record raw events locally, with no LLM at capture; BM25 and semantic search fused with RRF | claude-mem (an LLM observer, about 15 hosts), agentmemory, deja-vu (42 harnesses), cass, Funes |
+| Count what happened | [Facts](FACTS.md): census, tempo and delta, each count carrying sample `event_id`s; delta follows log arrival order, so backfilled history does not read as new | cass `timeline --json` and `--aggregate`; Claude Code `/insights` (an LLM-written report) |
+| See whether recall gets used | Each served result joins to its use mark by `(call_id, event_id)` ([`recall-join.js`](../scripts/recall-join.js)) | [deja-vu `stats --impact`](https://github.com/vshulcz/deja-vu/blob/main/cmd/deja/stats_impact.go) infers use from later transcripts; [mem0](https://github.com/mem0ai/mem0) has a feedback API |
+| Know who else is working | `/standup`: live sessions, files two sessions both edit, the session behind a commit | [Entire](https://github.com/entireio/cli), [git-ai](https://github.com/git-ai-project/git-ai), [mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail), [claude-context-sync](https://www.npmjs.com/package/claude-context-sync), Claude Code agent view |
+| Review a day's work | Day digest that checks each logged commit against git: landed, moved, rewritten or missing | [brain0](https://github.com/Brain0-ai/brain0) `today` and its drift check |
+| Review one session's changes | Memory Desk diffs bounded by the session's commits | Entire checkpoints, brain0 per-prompt diffs, [Tessera](https://github.com/horang-labs/tessera) |
+| Configure auto mode from real usage | `/trustmap`, weighted by use across Claude Code and Codex, re-runnable as a delta | Claude Code [`/auto-mode-setup`](https://code.claude.com/docs/en/auto-mode-config) |
 
-## Where SC fits now
+## Sources
 
-- **Category 2, with read-only reach into 4 and 5.** The closest neighbor is
-  deja-vu, not Funes as the March survey said: deja-vu covers recall, commit blame
-  and recall-use telemetry across 42 harnesses.
-- **Frame:** measured memory for multi-agent work. The claim rests on mechanisms
-  the field lacks (rows 1, 2 and 4 above), not on features others also ship.
-- **Integrate rather than compete (not built).** Read-only source adapters for
-  claude-mem's SQLite store and agentmemory's store, on the
-  [`hermes-source.js`](../scripts/hermes-source.js) pattern, would let SC measure
-  memory people already run instead of asking them to replace it.
-
-### What the leaders do better
-
-- **Install.** `npx claude-mem install` sets up its whole stack. SC's keyword
-  recall needs no server, but semantic search needs Qdrant and an embedding server
-  set up by hand.
-- **Memory with no user action.** claude-mem injects recent notes at session start
-  by default. SC's start note is opt-in.
-- **A public evaluation harness.** agentmemory pins the dataset SHA and commits
-  per-question results. SC evaluates against a small internal truth set that
-  is not published.
-- **Lifecycle.** agentmemory supersedes, forgets and resolves contradictions. SC
-  does not; [LONGMEMEVAL.md](LONGMEMEVAL.md) lists this as a gap.
-- **Breadth.** claude-mem supports about 15 hosts and deja-vu 42. SC supports
-  three.
-
-### SC's own gaps
-
-As of 2026-10-16, SC had the same class of silent defect it criticizes above:
-
-- Recency decay ran before the score cutoff and pushed most known items older than
-  90 days out of the top 10. A fix, with an age-curve gate on both engines, is in
-  progress.
-- Concurrent appends over 1 KB could interleave on macOS, and six milestone rows
-  were torn. Single-write appends behind a lock are in progress.
-- `/api/health` reported `ok` even when a log failed to load. A fix is in progress.
-
-## Method and limits
-
-- **Who read what.** Three analysts read GitHub and the web: one on claude-mem
-  (at `b6f9742`), one on agentmemory (at `6a182c4`), and one on the rest of the
-  field. No third-party code was cloned or run, so runtime behaviour, performance
-  and retrieval quality are unchecked for every competitor.
-- **Re-checked by the review:** star counts and creation dates; deja-vu's
-  "Served is not used" comment; `/auto-mode-setup` and "shared across worktrees"
-  in the Claude Code docs; agentmemory's metrics, recomputed with `jq` from its
-  committed per-question file; claude-mem's defaults, read from source (observer
-  model, redaction off, 90-day search window); claude-mem issues #4770 and #4807.
-- **Re-checked for this refresh:** every star count and push date in this file
-  (`gh api`); Claude Code version numbers against the public changelog;
-  "shared across worktrees", `/auto-mode-setup` and the agent-teams overwrite
-  warning in the live docs; that each linked third-party file exists; the first
-  commits of deja-vu's `stats_impact.go` (2026-07-21) and SC's served log
-  (2026-07-22).
-- **Analyst-reported, not re-checked:** Entire's funding; npm download counts;
-  agentmemory's storage internals and its environment-key behaviour; deja-vu's
-  benchmark; claude-context-sync's behaviour; the `/insights` launch date; the
-  Codex memories, Chronicle and Computer History dates.
-- **Not covered:** low-star entrants (searches were ranked by stars); Windsurf,
-  Cline, Copilot, Gemini CLI and Antigravity memory features; Codex cloud tasks.
+- Star counts and push dates: the GitHub API, read 2026-10-17 03:23 UTC.
+- Platform features: the vendors' docs and the Claude Code changelog.
+- Project details: each project's repository and docs; claude-mem at `b6f9742`
+  and agentmemory at `6a182c4`. No third-party code was run, so runtime
+  behaviour and retrieval quality were not measured.
+- Not covered: low-star projects, and the memory features of Windsurf, Cline,
+  Copilot, Gemini CLI and Antigravity.
 
 ## References
 
@@ -308,64 +228,3 @@ As of 2026-10-16, SC had the same class of silent defect it criticizes above:
 - [Feature request: persistent memory](https://github.com/anthropics/claude-code/issues/14227)
   and [episodic vs procedural memory](https://github.com/anthropics/claude-code/issues/8209):
   community discussion
-
----
-
-## March 2026 positioning (superseded)
-
-> **Superseded on 2026-10-16** by the sections above. Kept as written on
-> 2026-03-26, with additions through 2026-09-23, so the history stays visible.
-> The March category tables are folded into the five categories above. These
-> claims below are no longer true:
->
-> - "No new databases, no background services": Turbo now runs as an optional
->   warm search service, and semantic search uses a local Qdrant.
-> - "Nobody else is building the cartography layer": deja-vu, cass, Entire and
->   brain0 each cover part of it.
-> - "Current `/remember` uses grep": it is BM25 in awk, fused with semantic results
->   by RRF.
-> - Funes as the closest neighbor: deja-vu is now closer.
-> - The embedding upgrade path was settled on Qdrant.
-
-### Where Session-Cartographer Fits
-
-**What we have now** (from the CCSB fork):
-- `/remember` — keyword search (grep+jq) across changelog, milestones, research log, transcripts
-- Unified changelog spec with event IDs and deep links
-- Energy visualization dashboard
-- Cooperative listening + peer auto-discovery (bridge features)
-- Deep link metadata for claude-code-history-viewer integration
-
-**What makes it different from everything above:**
-
-1. **Session mapping, not just memory.** Most projects store facts. We map the *topology* of sessions — which projects were touched, what energy went where, how sessions relate to each other over time.
-
-2. **Event-centric, not memory-centric.** The changelog spec treats session activity as a stream of events with IDs, deep links, and cross-references. This is closer to an activity log than a knowledge base.
-
-3. **Navigation over storage.** Deep links, history viewer integration, energy viz — the goal is helping you find and revisit past work, not stuffing context into the next session.
-
-4. **Lightweight infrastructure.** Shell scripts + JSONL + existing Qdrant (when we add embeddings). No new databases, no background services, no subscriptions.
-
-**Closest neighbors:**
-- **[claude-memory-context](https://github.com/malbers/claude-memory-context)** (Michael Albers) — A complementary write-forward memory practice. Its `current.md` handoffs, short memory index, typed files, `/savestate` verification, and explicit decision statuses offer useful lifecycle patterns for Cartographer's native-memory import and future handoffs. The two projects keep distinct storage and session-navigation models.
-- **[Funes](https://github.com/huggingface/funes)** — Closest retrieval-substrate neighbor: deterministic local ingestion across several agent formats, stored-block reconstruction, progressive indexing tiers, and hybrid reranking. Cartographer's advantage is the layer above retrieval: structured work events with stable IDs and deep links, project/time/type facets, user-to-next-user turn units, cross-project topology, a human Explorer, exact-use telemetry, and evidence-backed strategic promotion. Borrow its storage and adapter mechanics without collapsing Cartographer into transcript-only memory.
-- **episodic-memory** (obra) — Also does cross-session transcript search with embeddings. But it's memory-focused, not navigation-focused. No event IDs, no deep links, no energy viz.
-- **claude-history** (raine) — Also navigates past sessions. But it's a standalone TUI, not an agent skill. No semantic search.
-- **claude-code-history-viewer** — Complementary, not competitive. We generate the deep links and events it renders.
-
-**Relevant lifecycle reference:** Tree Ring Memory is not a drop-in provider or close product competitor. Its useful overlap is memory hygiene: evidence-backed promotion, stale/sensitive/contradictory-memory audits, explicit supersession/redaction/deletion, and distinct treatment of durable lessons, failed approaches, and unresolved seeds. Those ideas are prior art for Cartographer's event-lifecycle, `/wrapup`, and future audit work. Cartographer should retain its own strengths—passive cross-provider capture, append-only event provenance, transcript navigation, and continuous salience/decay/reuse ranking—rather than importing the ring hierarchy or a parallel SQLite/FTS store wholesale.
-
-**The gap we fill:** Nobody else is building the *cartography layer* — the map of where you've been, what you found, and how to get back there. The memory projects store knowledge. The viewers display transcripts. We connect the two with addressable events and navigable topology.
-
-### Potential Embedding Upgrade Path
-
-Current `/remember` uses grep. Upgrading to semantic search:
-
-| Option | Pros | Cons |
-|--------|------|------|
-| **Qdrant (notes2025 infra)** | Already running locally (port 6333), embedding server at 8890, proven with 21k+ browsing items | Couples to notes2025 runtime |
-| **sqlite-vec (episodic-memory pattern)** | Self-contained, no external services | Less capable than Qdrant, another DB to maintain |
-| **Transformers.js (local)** | No server dependency | Slower, M3 resource concerns |
-| **memsearch approach (Milvus)** | Battle-tested hybrid search | Heavy infrastructure for this use case |
-
-Recommended: **Qdrant as a service dependency, not a code dependency.** Call the existing embedding server at 8890, store in a dedicated Qdrant collection (`session-cartographer`). Keep notes2025 as infrastructure, not imported code.
