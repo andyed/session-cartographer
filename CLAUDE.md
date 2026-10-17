@@ -51,6 +51,7 @@ scripts/
   backfill-prompt-intents.js    — Tag already-indexed turns with prompt_intent (payload-only, no re-embed)
   prompt-intent-report.js       — Corpus-wide intent distribution + per-bucket sampling (retuning tool)
   hit-rate-report.js            — Joins served-log.jsonl + access-ledger.jsonl: search hit rate by rank/source/project
+  abandonment-report.js         — Read-only probe of no-access recall calls: reads transcripts to split unmarked use, good/bad abandonment and no-need, reports MRR with implicit use credited; gated on reproducing hit-rate-report.js (docs/ABANDONMENT.md)
   session-digest.js             — Compact per-session panel (tempo, commits, files, recall, dirty repos); used by /wrapup
   day-digest.js                 — One local day across all sessions, by project, commits checked against git (landed/moved/rewritten/missing, git-only); `session-digest.js --day`, --md receipt, --json contract
   digest-parts.js               — Commit parsing, edit-path resolution, repo state shared by both digests

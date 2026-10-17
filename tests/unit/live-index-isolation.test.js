@@ -82,6 +82,7 @@ const SELF = path.basename(fileURLToPath(import.meta.url));
 
 // Test files that name a reaching script only to read its source text.
 const READS_ONLY = {
+  'abandonment-report.test.js': 'names cartographer-search.sh inside transcript fixtures; spawns no search',
   'codex-memory-stale.test.js': 'reads cartographer-search.sh as text',
   'provider-adapters.test.js': 'reads cartographer-search.sh as text',
   'turbo-recall.test.js': 'reads cartographer-feed.sh as text',

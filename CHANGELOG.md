@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### feat(scripts): abandonment-report.js reads what agents did with unused recall results
+
+`hit-rate-report.js` scores a call with no access row as 0: on 2026-10-17
+that was 365 of 548 ordered `remember` calls. `scripts/abandonment-report.js`
+resolves each such call's transcript (subagent files and persisted tool output
+included), finds the recall's output by call_id, or by its query for output
+printed before call_ids were, and sorts the call. The categories are unmarked
+use (a later tool call names a served result, or follows a token first seen in
+its summary), good abandonment (the next text carries a summary's distinctive
+tokens), no-need (turn one, no memory cue), bad abandonment, empty and
+unresolved. Overlap must beat 99 same-project calls' summaries scored against
+the same output, and every call is re-run with decoy results to measure false
+positives. Before reporting, the probe reproduces hit-rate-report.js's
+first-access MRR on the same snapshot, and aborts if it differs. It writes no
+telemetry. Result: crediting implicit use moves `remember` MRR from 0.173 to
+0.193. Of the 191 readable no-access calls, 70% are bad abandonment and 4%
+good abandonment (docs/ABANDONMENT.md). Two recorder defects surfaced, both
+reproduced and left for a follow-up. `--get … | head` lets SIGPIPE end the
+script before the access row is written, and `--get` of a `turn-*` id records
+nothing. `normalizeLiteralPrompt` and `isNonPromptNoise` are now exported from
+`classify-prompt-intent.js`, so the probe shares its definition of a human
+prompt. `live-index-isolation.test.js` exempts the new test, which names the
+CLI only inside transcript fixtures.
+
 ### feat(security): Qdrant runs with an API key, and every client sends it
 
 CORS off (below) stopped web pages reading :6333 but not writing to it: Qdrant

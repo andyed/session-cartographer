@@ -117,7 +117,7 @@ export function classifyPromptIntent(message) {
   return literal ? promptIntentCategories.feedbackContext : promptIntentCategories.other;
 }
 
-function normalizeLiteralPrompt(message) {
+export function normalizeLiteralPrompt(message) {
   // Drop pasted-image markers ([Image #3], [Image: source: …]) before
   // anything else — they are not prose and otherwise route every screenshot
   // to content-creation. A prompt that was only image markers normalizes to
@@ -133,7 +133,7 @@ function normalizeLiteralPrompt(message) {
 // slash-command wrappers, background-task notifications, skill preambles,
 // compaction summaries, memory-observer prompts. None are human prompts, so
 // they route straight to "other" rather than polluting a real intent bucket.
-function isNonPromptNoise(literal) {
+export function isNonPromptNoise(literal) {
   if (/^<(task-notification|observed_from_primary_session|command-message|command-name|command-args|local-command-stdout|system-reminder|user-prompt-submit-hook)\b/u.test(literal)) {
     return true;
   }
