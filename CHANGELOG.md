@@ -5,7 +5,8 @@
 ### fix(logs): the rewrite lock lost rows on small CI runners
 
 `jsonl-lock.test.js` lost 1-2 rows per run on the 2-4 core CI runners (Linux and
-macOS) and never on a 16-core Mac. `replaceJsonl` announced `held` first and
+macOS). On a 16-core Mac it passed, and lost rows only when confined to the four
+efficiency cores under load. `replaceJsonl` announced `held` first and
 moved any leftover spool second. An appender that read `held` in between opened
 the spool. If it was descheduled before writing, the move renamed the spool,
 read it, appended it to the log and unlinked it, and the row then went into the
@@ -22,7 +23,15 @@ drains the spool it collected instead of leaving it for the next one.
 open the spool right after `held`, and the rewriter waits at its rename until
 the appender has finished. The pre-fix lock loses that row every time, and the
 fixed one keeps it. A second test checks that no spool is ever renamed while
-the state says `held`.
+the state says `held`. An appender now writes a row up to 8 times, not 3, when
+the state keeps changing under it (`APPEND_TRIES`, shared by both appenders).
+
+Measured on the efficiency cores (`taskpolicy -c background`, 4 busy loops, two
+runs at a time) with background disk throttling, the race test lost 9 rows in 3
+of 61 runs before the fix and none in 60 after (30 each under bash 3.2 and 5).
+With normal disk priority, all three race-prone files ran 30 times per bash
+with 0 rows lost and 0 failures. Before the fix, the git-commit file failed in
+cleanup in 9 of 20 runs.
 
 The hook tests that removed their temp directory right after a hook
 (`log-tool-use-git-commit`, `log-tool-use-bash-edits`, `transcript-verified`)
