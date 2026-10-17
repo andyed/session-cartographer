@@ -21,7 +21,7 @@ Reciprocal Rank Fusion scores are computed as `1/(60 + rank)` per source, summed
 
 ## Score modifiers (applied after fusion)
 
-Three multipliers adjust the fused RRF score before display. They reorder results; they never remove them.
+Three multipliers adjust the fused RRF score before display. On the CLI they only reorder results, unless you pass `--min-score`. On the API path (Explorer and Turbo, `explorer/server/search.js`) they also remove results, because all three run before the trim that drops everything scoring under 10% of the top result. For time decay this means an old event is cut rather than demoted once its decayed score falls under the cutoff. The 2026-10-16 architecture review measured this on 220 known-item queries over the live corpus with the semantic leg off. 51 of the 60 items older than 90 days were missing from the top 10, against 0 of 60 with decay off. The trim stays in place until the ranking fix lands. Until then, an old event missing from an API result may have been trimmed rather than never matched; the CLI, which has no relative trim, is the cross-check.
 
 **Salience** (write-time prior). Hooks stamp each event with a strategic-weight score in [0..1]: `/wrapup` milestones 0.9, feature/fix commits 0.7, research-paper fetches 0.7, neutral default 0.5, chore commits 0.4, routine bash 0.2. Multiplies directly into the RRF score.
 

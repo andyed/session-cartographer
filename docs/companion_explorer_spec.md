@@ -36,7 +36,7 @@ The Explorer has raw access to proprietary session transcripts. Hardening:
 
 1. **Localhost binding**: API and Vite servers strictly bind to `127.0.0.1` (never `0.0.0.0`). No LAN access.
 2. **Path traversal protection**: Transcript endpoint verifies resolved path is a descendant of `CARTOGRAPHER_TRANSCRIPTS_DIR`. Rejects `../` traversal.
-3. **XSS sanitization**: Transcript content through DOMPurify before rendering. Claude generates arbitrary code/markdown — treat as untrusted input.
+3. **No HTML rendering of corpus text**: Claude generates arbitrary code/markdown — treat as untrusted input. Markdown is emitted as React elements with an allowlist for links, never parsed as HTML; there is no DOMPurify (see [EXPLORER_SPEC.md](EXPLORER_SPEC.md)).
 
 ## Configurable Viewer Links
 

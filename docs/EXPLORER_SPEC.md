@@ -55,9 +55,9 @@ React at :2527 cannot query Qdrant at :6333 directly — CORS. The Node API at :
 
 The Explorer has raw access to session transcripts. Local-only hardening:
 
-1. **Localhost binding**: API and Vite servers bind to `127.0.0.1`, never `0.0.0.0`.
+1. **Localhost binding**: API and Vite servers bind to `127.0.0.1`, never `0.0.0.0`. Binding does not stop DNS rebinding, so the API, headless Turbo and the UI host also refuse a non-loopback `Host`, a foreign `Origin` and `Sec-Fetch-Site: cross-site` (`explorer/server/loopback-guard.js`).
 2. **Path traversal protection**: Transcript endpoint (`/api/transcript?path=...`) verifies the resolved path is a descendant of `CARTOGRAPHER_TRANSCRIPTS_DIR`. Reject anything reaching outside.
-3. **XSS sanitization**: Transcript content rendered through DOMPurify before injection. Claude generates arbitrary code/markdown — treat it as untrusted.
+3. **No HTML rendering of corpus text**: Claude generates arbitrary code/markdown — treat it as untrusted. There is no DOMPurify; nothing needs one, because no corpus text is parsed as HTML. The transcript and Memory Desk markdown renderers emit React elements, nothing uses `dangerouslySetInnerHTML`, and Memory Desk links pass `safeArtifactLink` (`http(s)`, `mailto`, `#` only). Other corpus URLs rely on React 19 blocking `javascript:` URLs. A render path that emits raw HTML must bring its own sanitizer.
 
 ## Node API (:2526)
 
@@ -70,7 +70,7 @@ The Explorer has raw access to session transcripts. Local-only hardening:
 | GET | `/api/events?project=...&since=...&limit=N` | Paginated event history |
 | GET | `/api/projects` | List of all projects seen in logs |
 | GET | `/api/stats` | Event counts by type, project, day |
-| GET | `/api/health` | Service health (JSONL files exist, Qdrant status) |
+| GET | `/api/health` | Service health: `status` is `degraded` when a log on disk failed its last read (`load_errors` names it), else `ok`; `files` (which logs exist), Qdrant and embedder reachability |
 
 ### SSE stream (`/api/stream`)
 
@@ -181,7 +181,7 @@ Force-directed graph of session relationships. Which sessions touched which proj
 
 - **React 19** + Vite
 - **Tailwind CSS** — dark theme
-- **DOMPurify** — transcript content sanitization
+- **No HTML sanitizer** — markdown renders as React elements (see Security)
 - **No state library** — `useReducer` + context
 - **No router** — tab switching, not pages
 

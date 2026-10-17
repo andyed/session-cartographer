@@ -306,8 +306,19 @@ serving over its file transport rather than failing — check
 
 - The Explorer API binds `127.0.0.1` explicitly (`explorer/server/index.js`), as
   does the Vite dev server (`explorer/vite.config.js`). Never `0.0.0.0`.
-- Qdrant and the embedding server are local binaries on loopback ports. No
-  hosted vector database, no embedding API.
+  Because a DNS-rebinding web page can still reach a loopback port, the API,
+  Turbo and the UI also refuse any request whose `Host` is not a loopback name,
+  and any cross-site one (`explorer/server/loopback-guard.js`).
+- Qdrant and the embedding server are local binaries. No hosted vector
+  database, no embedding API. Cartographer's launcher
+  (`scripts/start-services.sh`) starts Qdrant bound to `127.0.0.1` and
+  llama-server on its default host, `127.0.0.1`. It reuses a Qdrant or embedder
+  already listening on the port, whatever that one binds, and nothing in
+  Cartographer checks a service it did not start. Verify yours:
+  `lsof -nP -iTCP:6333 -sTCP:LISTEN` should show `127.0.0.1:6333`, not
+  `*:6333`. A Qdrant started some other way needs
+  `QDRANT__SERVICE__HOST=127.0.0.1` in its environment (or `service.host` in its
+  config), and it has no API key unless you set one.
 - Turbo recall and facts are loopback-only; where a sandbox denies the loopback
   connect, the fallback is a **file** spool under `.carto/turbo`, not a network
   call.

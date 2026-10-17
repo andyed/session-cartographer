@@ -552,13 +552,14 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   // the portable default for events written before the field existed.
   applySalience(fusedItems);
 
-  // Apply activation: time-decay + promote-on-reuse weighting.
-  // Applied after RRF fusion so it affects ranking but doesn't
-  // eliminate old results entirely (they still appear if relevant enough).
+  // Apply activation: time-decay + promote-on-reuse weighting, after RRF
+  // fusion. It runs before the trim below, so decay does remove old results:
+  // one whose decayed score falls under a tenth of the top is cut, not demoted
+  // (docs/SCORING.md has the measured loss).
   applyActivation(fusedItems, DECAY_LAMBDA);
 
-  // Trim noise tail — keep results with meaningful RRF score
-  // Threshold: items scoring below 20% of the top score are noise
+  // Trim noise tail: drop items scoring below 10% of the top score. The CLI
+  // has no relative trim; this is one of the ways the two engines differ.
   if (fusedItems.length > 0) {
     const topScore = fusedItems[0]._score;
     const minScore = topScore * 0.1;

@@ -84,20 +84,20 @@ tests/private/                  — Gitignored: test cases, fixtures, benchmarks
 - **Hooks call `index-event.sh` for real-time Qdrant indexing.** Qdrant remains optional, but failures are recorded in `.carto/index-errors.jsonl` and return nonzero so backfills do not checkpoint incomplete sessions. Novelty rejects are recorded separately in `.carto/index-rejects.jsonl`; synchronous callers opt into a JSON receipt with `CARTOGRAPHER_INDEX_RECEIPT=1`.
 - **Turbo opt-in is user-global and provider-neutral.** Claude Code and Codex read the same `~/.config/session-cartographer/config.json`; do not add separate agent settings as competing sources of truth. Ordinary recall may use HTTP or the sandbox-safe private file transport, while control operations retain the portable CLI path.
 - **Turbo awareness is guidance, not automatic retrieval.** When the shared preference is active, SessionStart may remind the agent to use `remember` for tasks that depend on prior work. Do not turn that into unconditional startup search; measure deduplicated session exposures against explicit result use.
-- **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Path traversal protection on transcript endpoints. DOMPurify on rendered content.
+- **Explorer binds to 127.0.0.1 only.** Never 0.0.0.0. Binding does not stop DNS rebinding, so every listener (the API, headless Turbo, the UI host) also refuses a non-loopback `Host`, a foreign `Origin` and `Sec-Fetch-Site: cross-site` through `explorer/server/loopback-guard.js`; `api-loopback-guard.test.js` and `turbo-loopback-guard.test.js` send a forged Host to each port. Path traversal protection on transcript endpoints. Rendered content is never parsed as HTML, and there is no DOMPurify: markdown is emitted as React elements, nothing uses `dangerouslySetInnerHTML`, and Memory Desk markdown links pass `safeArtifactLink` (`http(s)`, `mailto`, `#` only). A render path that emits raw HTML must bring its own sanitizer.
 - **Ports:** 2526 (API), 2527 (UI), 6333 (Qdrant), 8890 (embeddings).
 - **`project-families.json` is gitignored.** Run `generate-families.sh` to bootstrap from event logs.
 - **Enrichment scripts modify `changelog.jsonl` in place.** Back up before running on large datasets.
 - **Retrieval telemetry is exact for new calls.** Served rows and `--touch` records share `call_id`; purpose, session, and provider are carried alongside it. `access-ledger.jsonl` is append-only. Do not rewrite it in place, and keep the CLI/API activation implementations in sync. Legacy inference is report-only and opt-in.
-- **RRF score cutoff at 10% of top score** to trim the semantic noise tail.
+- **The API path cuts at 10% of the top score** to trim the semantic noise tail. The cut runs after salience and decay, so it removes old results as well as noise (docs/SCORING.md). The CLI has no relative cut.
 - **Diff-shape quadrant labels:** bootstrap, construct, surgical, rework. Not "dangerous."
 
 ## Two Search Paths
 
 1. **CLI** (`cartographer-search.sh`): bash + awk BM25. Used by `/remember` skill. No server needed.
-2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, sub-millisecond queries. Used by the Explorer UI (`/carto`). Proxies Qdrant for semantic search.
+2. **API** (`explorer/server/`): JS BM25 + Express. In-memory index, but `scoreBM25` scans every document: 20–31 ms median per query over ~203k events (measured 2026-10-16). Used by the Explorer UI (`/carto`) and Turbo. Proxies Qdrant for semantic search.
 
-Both use the same scoring algorithm (BM25 k1=1.2, b=0.75) and fusion strategy (RRF k=60).
+Both use BM25 (k1=1.2, b=0.75) and RRF (k=60), but they are not one ranker. The CLI computes IDF per log file, and the API over the deduplicated corpus. The CLI sums RRF credit for both copies of a dual-written event, and the API credits one. The API trims under 10% of the top score after decay, and the CLI does not. The awk timestamp parser ignores UTC offsets, and the API's does not. CLAUDE.md lists each difference.
 
 ## How Codex should use this
 
