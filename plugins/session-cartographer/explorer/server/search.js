@@ -11,6 +11,7 @@ import { epochMsFromTimestamp, scoreBM25 } from './bm25.js';
 import { projectMatcher } from './project-filter.js';
 import { isResolved } from '../../scripts/sentinels.js';
 import { cachedCodexMemoryStale } from '../../scripts/codex-memory-stale.js';
+import { qdrantFetch } from '../../scripts/qdrant-auth.js';
 
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
@@ -61,7 +62,7 @@ async function getEmbedding(text) {
 const SEMANTIC_SCORE_THRESHOLD = 0.3;
 
 async function qdrantSearch(body) {
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+  const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -552,13 +553,14 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   // the portable default for events written before the field existed.
   applySalience(fusedItems);
 
-  // Apply activation: time-decay + promote-on-reuse weighting.
-  // Applied after RRF fusion so it affects ranking but doesn't
-  // eliminate old results entirely (they still appear if relevant enough).
+  // Apply activation: time-decay + promote-on-reuse weighting, after RRF
+  // fusion. It runs before the trim below, so decay does remove old results:
+  // one whose decayed score falls under a tenth of the top is cut, not demoted
+  // (docs/SCORING.md has the measured loss).
   applyActivation(fusedItems, DECAY_LAMBDA);
 
-  // Trim noise tail — keep results with meaningful RRF score
-  // Threshold: items scoring below 20% of the top score are noise
+  // Trim noise tail: drop items scoring below 10% of the top score. The CLI
+  // has no relative trim; this is one of the ways the two engines differ.
   if (fusedItems.length > 0) {
     const topScore = fusedItems[0]._score;
     const minScore = topScore * 0.1;

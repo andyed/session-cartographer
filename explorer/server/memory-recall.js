@@ -12,6 +12,7 @@
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
 import { firstResolved, isResolved } from '../../scripts/sentinels.js';
+import { qdrantFetch } from '../../scripts/qdrant-auth.js';
 import { buildRecallIndex, parseJsonl } from '../../scripts/recall-join.js';
 import { eventEpochMs } from './event-time.js';
 import { internalsSourcePaths } from './internals-aggregate.js';
@@ -152,13 +153,13 @@ export async function fetchIndexedEvents(ids, { env = process.env, timeoutMs = 1
   const url = env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
   const collection = env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
   try {
-    const response = await fetch(`${url}/collections/${encodeURIComponent(collection)}/points`, {
+    const response = await qdrantFetch(`${url}/collections/${encodeURIComponent(collection)}/points`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids: ids.map(qdrantPointId), with_payload: true, with_vector: false }),
       signal: AbortSignal.timeout(timeoutMs),
       redirect: 'error',
-    });
+    }, { env });
     if (!response.ok) return { status: 'unavailable', events: [] };
     const body = await response.json();
     const wanted = new Set(ids);

@@ -31,6 +31,18 @@ export const LOG_FILES = Object.fromEntries(
   Object.entries(LOG_FILE_NAMES).map(([source, name]) => [source, join(DEV_DIR, name)]),
 );
 
+// Path → the error code the last read of that file threw. readJsonlFile answers
+// [] for an unreadable log so one bad file cannot stop the load, which also hid
+// the failure: /api/health reported "ok" over a corpus missing a whole log. A
+// missing file is not a failure (a fresh install has no prompt history yet),
+// and a later successful read clears the entry.
+const readErrors = new Map();
+
+/** The error code from the last failed read of `filePath`, or null. */
+export function lastReadError(filePath) {
+  return readErrors.get(filePath) ?? null;
+}
+
 /**
  * Read all events from a JSONL file. Skips malformed lines (mid-flush writes).
  */
@@ -38,7 +50,10 @@ export function readJsonlFile(filePath) {
   let content;
   try {
     content = readFileSync(filePath, 'utf-8');
-  } catch {
+    readErrors.delete(filePath);
+  } catch (error) {
+    if (error.code === 'ENOENT') readErrors.delete(filePath);
+    else readErrors.set(filePath, error.code || error.message || 'read failed');
     return [];
   }
 

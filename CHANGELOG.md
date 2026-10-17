@@ -2,6 +2,102 @@
 
 ## Unreleased
 
+### feat(security): Qdrant runs with an API key, and every client sends it
+
+CORS off (below) stopped web pages reading :6333 but not writing to it: Qdrant
+1.12.1 parses a `text/plain` POST, which needs no preflight, as JSON, and such a
+POST to `points/delete` removed the point. `start-services.sh` now generates a
+key on first start, keeps it in `$CARTOGRAPHER_QDRANT_STORAGE/api-key` (mode
+600), and writes it into its config (now also mode 600) as `service.api_key`.
+Against that Qdrant the same POST gets 401, and so does the preflight a page
+would need to add the header. Every client sends the key as the `api-key`
+header: the indexer, the CLI, the Explorer API and its `/api/health` probe,
+Turbo, `semantic-search.js`, `embed-events.js`, the backfill and repair scripts,
+and the `/wrapup` read-back. They resolve it through one module per language,
+`scripts/qdrant-auth.js` and `qdrant-auth.sh`: `CARTOGRAPHER_QDRANT_API_KEY`
+when set, else the launcher's key file, which is sent only to a loopback URL.
+Nothing needs exporting, and with no key configured every request is what it
+was before. The key is never printed, put in a URL, or written to a log row.
+A refused key now reads as `qdrant_unauthorized` in `index-errors.jsonl` and
+`qdrant_error: "unauthorized"` in `/api/health` rather than as Qdrant being
+down. A Qdrant the launcher did not start is not changed; the launcher warns
+when one answers without a key. `qdrant-api-key.test.js` runs every client
+against a recorder with an env key, a file key and no key, and checks the
+header on each request; `qdrant-start-services-key.test.js` sends the blind
+write to a launcher-started Qdrant and expects 401 (it skips without a `qdrant`
+binary; set `CARTOGRAPHER_TEST_QDRANT_BIN`).
+
+### fix(explorer): event urls link only through the allowlist
+
+`EventCard` put a corpus `url` straight into `href` in three places (the link
+icon, a commit's "view on GitHub", the detail's url line). The url is whatever a
+hook or agent recorded, and React 19 rewrites only a `javascript:` href, so
+`data:`, `file:` and relative values went through. One did in the live corpus: a
+bare slug rendered as a broken link relative to the Explorer. The card now uses
+the Memory Desk's `safeArtifactLink` (`http(s)`, `mailto`, `#`) and shows a
+refused url as text. `event-card-links.test.js` fails if an `EventCard` href is
+not a `safeArtifactLink` result, and the browser harness renders a
+`javascript:` url and checks it appears as text with no anchor.
+
+### fix(services): the launcher starts Qdrant with CORS off
+
+`start-services.sh` wrote `enable_cors: true` into the Qdrant config it
+generates. No browser code calls Qdrant: the Explorer proxies it, the demo build
+reads static JSON, and every other client is a script. With CORS on, Qdrant
+reflects any `Origin` and approves a preflighted POST, and it has no API key
+here, so any web page could try to read the corpus. It is `false` now. CORS off
+stops reads only. Measured on Qdrant 1.12.1, a `text/plain` POST to
+`points/delete` (a request a page can send without a preflight) still deleted
+the point, so only an API key would close blind writes. docs/ADOPTING.md gives
+the environment variable for a Qdrant started some other way. Qdrant's own
+default is CORS on.
+
+### fix(security): the API and Turbo port refuses a forged Host
+
+The UI host (:2527) has always refused a request whose `Host` is not a loopback
+name. The API and Turbo port (:2526) serves the same corpus and did not check
+at all. A request carrying `Host: rebind.attacker.example:2526` got 200 and
+1.7 MB of `/api/memory/state`, which is what a DNS-rebinding page reads, and
+`/api/memory/file?download=1` would have handed it edited files (architecture
+review, 2026-10-16). The check now lives in `explorer/server/loopback-guard.js`
+and runs first on every listener: the Express app, the headless Turbo server,
+and the UI host, whose `validateUiRequest` keeps only its mutation rules on top.
+It refuses a non-loopback `Host`, an `Origin` other than that host's, and
+`Sec-Fetch-Site: cross-site`. Cartographer's own Node clients send no `Origin`,
+so they pass unchanged. `api-loopback-guard.test.js` and
+`turbo-loopback-guard.test.js` send forged requests to each listener over raw
+HTTP, and each fails against the unguarded code.
+
+### fix(api): `/api/health` reports a failed log instead of `ok`
+
+`/api/health` hard-coded `status: 'ok'`. A log that exists but cannot be read
+loads as zero events, so the corpus could be missing a whole log while health
+said ok. `readJsonlFile` now records the error from a failed read, and health
+answers `degraded` with `load_errors` naming the log until a read succeeds. A
+missing log is still not an error; a fresh install has no prompt history yet.
+
+### docs: sentences the code contradicted
+
+- DOMPurify is not a dependency and never was. The real control is that no
+  corpus text is parsed as HTML: markdown is emitted as React elements and
+  Memory Desk links pass an allowlist (CLAUDE.md, AGENTS.md, both Explorer
+  specs).
+- The score modifiers do remove results on the API path, because decay runs
+  before the 10%-of-top trim (docs/SCORING.md, and a `search.js` comment that
+  said 20%).
+- The CLI and API are not one ranker. CLAUDE.md now lists the four
+  differences: per-file vs corpus IDF, double RRF credit for dual-written
+  events on the CLI, the API-only trim, and awk ignoring UTC offsets.
+  "Sub-millisecond queries" is now the measured 20–31 ms full scan.
+- docs/LOG_SCHEMAS.md taught `git rev-parse --show-toplevel` for the project
+  name, which orphans worktree events; it now points to `cartographer_project`.
+- docs/ADOPTING.md said Qdrant runs on loopback. The launcher binds it there,
+  but it reuses whatever already holds the port, so the doc now says how to
+  check yours.
+- The attribution lines moved from `LICENSE` to `THIRD_PARTY_NOTICES.md`, now
+  with the upstream session-bridge notice, so GitHub can detect the MIT license.
+  The plugin package ships the notices too.
+
 ### fix(mcp): tool results are text only, at about a third of the tokens
 
 The MCP server answered with compact text and, from protocol 2025-06-18 on,

@@ -1,7 +1,9 @@
 # Third-Party Notices
 
-This project incorporates portions of third-party software. Full license texts are
-reproduced below.
+This project incorporates portions of third-party software, both under the MIT
+License. Portions are derived from claude-code-session-bridge by Shreyas Patil, and
+portions are adapted from claude-devtools by matt1398. Full license texts are
+reproduced below. The project's own license is in [LICENSE](LICENSE).
 
 ---
 
@@ -65,6 +67,33 @@ SOFTWARE.
 
 ## claude-code-session-bridge
 
-**Source:** by Shreyas Patil
+**Source:** https://github.com/PatilShreyas/claude-code-session-bridge, by Shreyas Patil
 **License:** MIT
-*(See LICENSE file for full text)*
+**What was derived:** the original search, which began as a fork of this project
+(see Credits in the README).
+
+**MIT License (claude-code-session-bridge):**
+
+```
+MIT License
+
+Copyright (c) 2026 Shreyas Patil
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

@@ -197,7 +197,8 @@ if [ "$INDEX_OUTCOME" = "indexed" ]; then
   POINT_ID=$(printf '%s' "$WRAPUP_RECEIPT" | jq -r '.index.point_id // empty')
   QDRANT_URL="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
   COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
-  VERIFIED_EVENT_ID=$(curl -sf "$QDRANT_URL/collections/$COLLECTION/points/$POINT_ID" \
+  # qdrant-curl.sh adds the api-key header when a Qdrant key is configured.
+  VERIFIED_EVENT_ID=$("$ROOT/scripts/qdrant-curl.sh" -sf "$QDRANT_URL/collections/$COLLECTION/points/$POINT_ID" \
     | jq -r '.result.payload.event_id // empty')
   if [ "$VERIFIED_EVENT_ID" = "$EVENT_ID" ]; then
     echo "verified indexed: $EVENT_ID"

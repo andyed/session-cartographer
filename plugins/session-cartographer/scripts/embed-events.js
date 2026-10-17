@@ -14,6 +14,7 @@
  *   CARTOGRAPHER_EMBED_URL    — embedding endpoint (default: http://localhost:8890/v1/embeddings)
  *   CARTOGRAPHER_EMBED_MODEL  — model name (default: mxbai-embed-large)
  *   CARTOGRAPHER_QDRANT_URL   — Qdrant endpoint (default: http://localhost:6333)
+ *   CARTOGRAPHER_QDRANT_API_KEY — optional api-key header (scripts/qdrant-auth.js)
  *   CARTOGRAPHER_COLLECTION   — collection name (default: session-cartographer)
  */
 
@@ -22,6 +23,7 @@ import { join } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'crypto';
 import { ensureCollection as bootstrapCollection, VECTOR_SIZE } from './qdrant-collection.js';
+import { qdrantFetch } from './qdrant-auth.js';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
@@ -115,7 +117,7 @@ async function ensureCollection() {
 
 async function getExistingIds() {
   if (REINDEX) return new Set();
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/scroll`, {
+  const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points/scroll`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ limit: 100000, with_payload: false, with_vector: false }),
@@ -126,7 +128,7 @@ async function getExistingIds() {
 }
 
 async function upsertBatch(points) {
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points`, {
+  const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ points }),
@@ -139,7 +141,7 @@ async function upsertBatch(points) {
 // Prediction error gate: query for the most similar existing point.
 // Returns the top-1 cosine similarity score, or 0 if collection is empty.
 async function queryTopSimilar(vector) {
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+  const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ vector, limit: 1, with_payload: false }),
@@ -153,7 +155,7 @@ async function queryTopSimilar(vector) {
 async function main() {
   // Check services are running
   try {
-    await fetch(QDRANT_URL);
+    await qdrantFetch(QDRANT_URL);
   } catch {
     console.error(`Qdrant not reachable at ${QDRANT_URL}`);
     process.exit(1);

@@ -253,4 +253,5 @@ The co-occurrence graph was inspired by DeepBlueDynamics'
 work of Trey Grainger and Erik Hatcher; Cartographer ranks structured session
 entities with Dunning's log-likelihood ratio (G²).
 
-[MIT](LICENSE).
+[MIT](LICENSE). Notices for the adapted third-party code are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

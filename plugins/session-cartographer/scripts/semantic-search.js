@@ -10,8 +10,11 @@
  *   CARTOGRAPHER_EMBED_URL    — embedding endpoint (default: http://localhost:8890/v1/embeddings)
  *   CARTOGRAPHER_EMBED_MODEL  — model name (default: mxbai-embed-large)
  *   CARTOGRAPHER_QDRANT_URL   — Qdrant endpoint (default: http://localhost:6333)
+ *   CARTOGRAPHER_QDRANT_API_KEY — optional api-key header (scripts/qdrant-auth.js)
  *   CARTOGRAPHER_COLLECTION   — collection name (default: session-cartographer)
  */
+
+import { qdrantFetch } from './qdrant-auth.js';
 
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
 const EMBED_MODEL = process.env.CARTOGRAPHER_EMBED_MODEL || 'mxbai-embed-large';
@@ -64,7 +67,7 @@ async function search(vector) {
     };
   }
 
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+  const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

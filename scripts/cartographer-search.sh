@@ -28,6 +28,9 @@
 #                                  on the call that auto-started it). Pair with
 #                                  --no-turbo for a keyword-only answer.
 #   CARTOGRAPHER_QDRANT_URL      — default: http://localhost:6333
+#   CARTOGRAPHER_QDRANT_API_KEY  — optional; sent as the api-key header. Without
+#                                  it, the key file start-services.sh writes is
+#                                  used for a loopback URL (scripts/qdrant-auth.sh)
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
 #   CARTOGRAPHER_COLLECTION      — default: session-cartographer
@@ -535,6 +538,17 @@ CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 # still on disk, which reads as "transcript missing" unless this root is scanned.
 CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
+# The api-key header for every Qdrant request, when a key applies. Sourced only
+# when present, like the registry below: a runtime lagging the repo loses the
+# key (and with it the semantic leg against a keyed Qdrant), not every query.
+QDRANT_AUTH_LIB="$(dirname "$0")/qdrant-auth.sh"
+if [ -f "$QDRANT_AUTH_LIB" ]; then
+  # shellcheck source=./qdrant-auth.sh
+  . "$QDRANT_AUTH_LIB"
+  cartographer_qdrant_auth "$QDRANT"
+else
+  qdrant_curl() { curl "$@"; }
+fi
 
 # Resolve project aliases through the single registry resolver. The registry
 # path is NOT hardcoded here any more: a user-level registry under
@@ -913,7 +927,7 @@ semantic_search_to_tsv() {
   # corpus rows from a live Qdrant rather than whatever happens to be running.
   [ "${CARTOGRAPHER_SEMANTIC:-}" = "0" ] && return 1
   $HAS_JQ || return 1
-  curl -sf "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
+  qdrant_curl -sf "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
   curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1
 
   local embed_response
@@ -993,7 +1007,7 @@ semantic_search_to_tsv() {
   fi
 
   local results
-  results=$(curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
+  results=$(qdrant_curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
     -H "Content-Type: application/json" \
     -d "$search_body" 2>/dev/null)
   # `curl -sf` fails the same way for "this server cannot do datetime ranges"
@@ -1011,7 +1025,7 @@ semantic_search_to_tsv() {
       search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --argjson m "$must_norange" \
         '{vector: $v, limit: $l, with_payload: true, filter: {must: $m}}')
     fi
-    results=$(curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
+    results=$(qdrant_curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
       -H "Content-Type: application/json" \
       -d "$search_body" 2>/dev/null)
   fi

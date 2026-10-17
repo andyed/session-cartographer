@@ -102,7 +102,10 @@ async function port() {
     type: ['git_commit', 'research_search', 'milestone_session_end'][i],
     summary, transcript_path: explorerTranscript, cwd: corpus, provider: 'claude',
     // The commit's hash renders in a card's detail, a colour of its own.
-    ...(i === 0 ? { commit_hash: 'a1b2c3d4e5f60718' } : {}),
+    ...(i === 0 ? { commit_hash: 'a1b2c3d4e5f60718', url: 'https://github.com/example/fixture/commit/a1b2c3d4e5f60718' } : {}),
+    // A corpus url the link allowlist refuses: React 19 would rewrite it to a
+    // blocking javascript: href, so the card must render it as text instead.
+    ...(i === 1 ? { url: 'javascript:window.cardLinkExecuted=true' } : {}),
   }));
   // A second agent in the same window: the Explorer rendered a half-Codex
   // corpus as if it were one agent, so the fixture has to contain both or the
@@ -644,6 +647,13 @@ async function port() {
         await commitCard.getByText('a1b2c3d', { exact: true }).waitFor();
         const detail = await classic('main > div:not(.hidden) .result-list', 'card detail', { grounds: ['#0a0a0f'] });
         assert.ok(detail.some(entry => entry.text === 'a1b2c3d'), `${phase}: the detail probe measured no commit hash`);
+        // Corpus urls reach href only through the allowlist: the commit's
+        // https url is a link, and a javascript: url is text with no anchor.
+        assert.equal(await commitCard.getByRole('link', { name: 'view on GitHub' }).getAttribute('href'), 'https://github.com/example/fixture/commit/a1b2c3d4e5f60718', `${phase}: the commit's https url did not link`);
+        const refusedCard = legacy.locator('main > div:not(.hidden) .result-list > [data-event-id="explorer-event-1"]');
+        await refusedCard.getByRole('button', { name: 'more', exact: true }).click();
+        await refusedCard.getByText('url: javascript:window.cardLinkExecuted=true', { exact: true }).waitFor();
+        assert.equal(await refusedCard.locator('a[href^="javascript:" i]').count(), 0, `${phase}: a refused url was rendered as a link`);
         // Repeated summaries collapse under "+N similar", and a long result set
         // ends in "show more": session-0's 38 identical "Modified: field.js"
         // rows produce both. ("working" is in over half the corpus, so BM25
@@ -1220,7 +1230,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
-    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links, the Day view matching the command-line event, session and commit counts with its local-midnight window, 8:1 text and stale-backend notice; the inspector hand-off row at 44px with a keyboard focus ring in Working memory and the Timeline; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
+    console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links, the Day view matching the command-line event, session and commit counts with its local-midnight window, 8:1 text and stale-backend notice; the inspector hand-off row at 44px with a keyboard focus ring in Working memory and the Timeline; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, event-card urls linked only through the allowlist, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);
     throw error;

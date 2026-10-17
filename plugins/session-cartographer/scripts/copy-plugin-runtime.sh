@@ -23,6 +23,8 @@ find "$ROOT/scripts" -maxdepth 1 -type f -exec cp {} "$PLUGIN/scripts/" \;
 cp "$ROOT/package.json" "$PLUGIN/package.json"
 cp "$ROOT/project-registry.json" "$PLUGIN/project-registry.json"
 cp "$ROOT/LICENSE" "$PLUGIN/LICENSE"
+# The upstream MIT notices for the adapted code travel with the code that ships.
+cp "$ROOT/THIRD_PARTY_NOTICES.md" "$PLUGIN/THIRD_PARTY_NOTICES.md"
 
 cp "$ROOT/explorer/package.json" "$ROOT/explorer/package-lock.json" "$PLUGIN/explorer/"
 cp "$ROOT/explorer/index.html" "$ROOT/explorer/postcss.config.js" "$PLUGIN/explorer/"
