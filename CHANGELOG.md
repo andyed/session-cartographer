@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### feat(hermes): read the dashboard chat, and keep each reply with its prompt
+
+Hermes 0.22 records a conversation in the dashboard's Chat tab with source
+`tui`. `hermes-source.js` now reads it by default, and the example policy lists
+it; a policy file that names its own `sources` must add it. `cli` stays out: on
+2026-10-22, 90 of the 96 `cli` sessions that passed the conversation filter
+were one templated `hermes -z` web search each.
+
+Turn grouping follows two of Hermes's own rules. A `user` row Hermes writes
+itself opens no turn and is not indexed. These rows are the max-iterations
+nudge, background-process notices, subagent completions and model switches,
+matched with Hermes's own pattern plus `display_kind`. The reply that follows
+stays with the prompt that asked for it. A row compacted twice is one turn,
+because copies share role, content and timestamp, which is Hermes's identity
+key. On 2026-10-22, one 832-message dashboard chat reads as 6 turns where it
+read as 11, and 101 desktop sessions as 506 turns where they read as 598. No
+human prompt lost its turn. Sessions already indexed keep their old turns
+until they are re-read (`--full`).
+
 ### fix(logs): the rewrite lock keeps every row under contention
 
 `jsonl-lock.test.js` lost 1-2 rows per run on the 2-4 core CI runners (Linux and

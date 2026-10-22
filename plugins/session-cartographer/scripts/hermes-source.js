@@ -99,6 +99,22 @@ const SETTLE_SECONDS = 3600;
 // the same prompt exists once compacted and once active. Short texts ("go",
 // "continue") legitimately repeat and are never treated as copies.
 const DUPLICATE_MIN_CHARS = 20;
+// Hermes writes some `user` rows itself: the nudge when a reply hits its tool
+// budget, background-process notices, and subagent completions. None is a
+// prompt. Opening a turn on one cuts the human's prompt off from the reply it
+// produced, and indexing one indexes a tool result under another role. On
+// 2026-10-22 they opened 4 of the 11 turns in one dashboard chat, and about a
+// hundred turns across older desktop sessions. The pattern is Hermes's own
+// (hermes_state_timeline.py `_SYNTHETIC_PROMPT`, plus context_compressor.py
+// `MAX_ITERATIONS_SUMMARY_REQUEST`); `display_kind` marks some newer rows, never all.
+const SYNTHETIC_PROMPT = new RegExp('^\\s*(?:'
+  + '\\[IMPORTANT: Background process '
+  + '|\\[ASYNC (?:DELEGATION )?(?:BATCH )?COMPLETE\\b'
+  + '|A background fan-out of \\d+ subagent\\(s\\) you dispatched earlier has finished\\.'
+  + '|A background subagent you dispatched earlier has finished\\.'
+  + "|You've reached the maximum number of tool-calling iterations allowed\\."
+  + ')', 'i');
+const SYNTHETIC_DISPLAY_KINDS = new Set(['async_delegation_complete', 'model_switch']);
 // Novelty-gate thresholds handed to index-event.sh (its default is 0.85).
 // Turns turn it off, as retro-index.sh does: a grown turn re-indexed under
 // its own id matches itself at ~1.0. Artifact sections keep a gate, but only
@@ -177,7 +193,10 @@ export function loadConfig(configPath) {
   }
 
   const hermesHome = expandHome(raw.hermes_home || '~/.hermes');
-  const sources = raw.sources ?? ['desktop', 'acp', 'subagent', 'cron'];
+  // `tui` is the dashboard's Chat tab (Hermes 0.22+), a human conversation like
+  // `desktop`. `cli` stays out: on 2026-10-22, 90 of the 96 `cli` sessions
+  // that passed the conversation filter were one templated `hermes -z` web search each.
+  const sources = raw.sources ?? ['desktop', 'tui', 'acp', 'subagent', 'cron'];
   if (!Array.isArray(sources) || sources.some((s) => typeof s !== 'string')) {
     throw new HermesSourceError('config.sources must be an array of Hermes session sources');
   }
@@ -331,6 +350,13 @@ export function hash8(text) {
   return crypto.createHash('sha256').update(text).digest('hex').slice(0, 8);
 }
 
+/** A `user` row Hermes wrote itself, not one the human typed. */
+export function isSyntheticPrompt(m) {
+  if (m.role !== 'user') return false;
+  if (SYNTHETIC_DISPLAY_KINDS.has(m.display_kind)) return true;
+  return typeof m.content === 'string' && SYNTHETIC_PROMPT.test(m.content);
+}
+
 // ─── Turns ──────────────────────────────────────────────────────────────────
 
 /**
@@ -343,6 +369,12 @@ export function hash8(text) {
  *   - inactive rows that were never compacted: the user rewound past them.
  *   - active copies of a compacted user/assistant message: compaction
  *     re-inserted them (41 prompts across 18 sessions in the reference corpus).
+ *   - a compacted row repeating an earlier compacted row's role, content and
+ *     timestamp: a re-inserted copy that the next compaction compacted again
+ *     (34 user/assistant pairs on 2026-10-22). The timestamp is Hermes's own
+ *     identity key, and it is what keeps a prompt the user really repeated.
+ *   - user rows Hermes wrote itself (`isSyntheticPrompt`). They open no turn,
+ *     so the reply that follows stays with the prompt that asked for it.
  * Compacted originals ARE kept — they are the real conversation.
  */
 export function buildTurns(messages, { redact, bodyMax = DEFAULT_TURN_BODY_MAX, devRoot = '' } = {}) {
@@ -356,6 +388,7 @@ export function buildTurns(messages, { redact, bodyMax = DEFAULT_TURN_BODY_MAX, 
 
   const turns = [];
   const workdirVotes = new Map();
+  const compactedSeen = new Set();
   let current = null;
   let redacted = 0;
   let skipped = 0;
@@ -377,6 +410,12 @@ export function buildTurns(messages, { redact, bodyMax = DEFAULT_TURN_BODY_MAX, 
       skipped += 1;
       continue;
     }
+    if (m.compacted && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string') {
+      const identity = `${m.role}\u0000${m.timestamp}\u0000${m.content}`;
+      if (compactedSeen.has(identity)) { skipped += 1; continue; }
+      compactedSeen.add(identity);
+    }
+    if (isSyntheticPrompt(m)) { skipped += 1; continue; }
 
     for (const rel of pathCandidatesIn(m.tool_calls, devRoot)) {
       workdirVotes.set(rel, (workdirVotes.get(rel) || 0) + 1);
@@ -593,7 +632,7 @@ export function readMessages(db, sessionId) {
   return db.prepare(`
     SELECT id, role, content, tool_calls, timestamp,
            ${opt('active', 'active', 1)}, ${opt('compacted', 'compacted', 0)},
-           ${opt('_compressed_summary', 'compressed_summary', 0)}
+           ${opt('_compressed_summary', 'compressed_summary', 0)}, ${opt('display_kind', 'display_kind', 'NULL')}
       FROM messages WHERE session_id = ? ORDER BY timestamp, id`).all(sessionId)
     .map((m) => ({ ...m, active: Number(m.active) === 1, compacted: Number(m.compacted) === 1,
       compressed_summary: Number(m.compressed_summary) === 1 }));
