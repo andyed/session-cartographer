@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### fix(index): send request bodies to curl on stdin
+
+On Windows, `index-event.sh` failed 297 of 418 Codex turns in a BIGFU backfill
+(2026-10-27), for two reasons in the same line of code. Windows' native curl
+re-encodes non-ASCII argument bytes, so `-d "$BODY"` turned every curly quote
+or accent into ill-formed UTF-8, and the embedder answered 400. The same body
+sent on stdin got 200. And a Windows command line stops at about 32K
+characters, which the upsert overran with a 1024-float vector and a turn
+summary of up to 50K passed to jq and curl as arguments ("Argument list too
+long"). The failure was reported as `qdrant_upsert_failed`.
+
+The embedding request, its retry and the upsert now pipe their bodies to
+`curl --data-binary @-`. The upsert's vector and summary reach jq on stdin,
+and an empty payload is reported as `upsert_request_invalid` instead of
+surfacing as an upsert failure. `cartographer-search.sh` sends its query
+embedding the same way, because a query with an accent never reached the
+semantic leg. After the change the same backfill indexed every remaining turn,
+0 failures. The stand-in curl in `tests/unit/index-event-outcomes.test.js`
+reads `--data-binary @-`.
+
 ### fix(catch-up): reclaim a lock left by a killed run
 
 `catch-up-transcripts.sh` takes `.carto/transcript-catch-up.lock` with
