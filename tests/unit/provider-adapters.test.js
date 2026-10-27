@@ -67,6 +67,42 @@ describe('Codex transcript adapter', () => {
     assert.doesNotMatch(turns[0].summary, /duplicate display event/);
     assert.match(turns[1].summary, /Can Claude read it/);
   });
+
+  test('splits turns on item_completed UserMessage records (codex-cli 0.164)', () => {
+    const userItem = (timestamp, text) => ({
+      timestamp, ordinal: 1, type: 'event_msg',
+      payload: { type: 'item_completed', turn_id: 't', item: { type: 'UserMessage', id: 'u', content: [{ type: 'text', text, text_elements: [] }] } },
+    });
+    const turns = normalizeCodex([
+      { timestamp: '2026-10-25T02:58:00Z', type: 'session_meta', payload: { id: 'codex-session' } },
+      { timestamp: '2026-10-25T02:58:19Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '# AGENTS.md instructions' }] } },
+      userItem('2026-10-25T02:58:20Z', 'Brainstorm sidebars for the ultrawide'),
+      { timestamp: '2026-10-25T02:58:30Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Try Seelen UI' }] } },
+      { timestamp: '2026-10-25T02:58:31Z', type: 'event_msg', payload: { type: 'item_completed', turn_id: 't', item: { type: 'AgentMessage', id: 'a', content: [{ type: 'text', text: 'duplicate display item' }] } } },
+      userItem('2026-10-25T03:10:00Z', 'Install it'),
+      { timestamp: '2026-10-25T03:10:05Z', type: 'response_item', payload: { type: 'custom_tool_call', name: 'exec', input: 'winget install Seelen' } },
+    ]);
+
+    assert.equal(turns.length, 2);
+    assert.equal(turns[0].timestamp, '2026-10-25T02:58:20Z');
+    assert.match(turns[0].summary, /ultrawide.*Seelen UI/);
+    assert.doesNotMatch(turns[0].summary, /AGENTS\.md|duplicate display item/);
+    assert.match(turns[1].summary, /Install it.*winget install Seelen/);
+  });
+
+  test('a file with both prompt kinds keeps one turn per prompt', () => {
+    const turns = normalizeCodex([
+      { timestamp: '2026-10-25T00:00:00Z', type: 'session_meta', payload: { id: 'codex-session' } },
+      { timestamp: '2026-10-25T00:00:01Z', type: 'event_msg', payload: { type: 'user_message', message: 'First' } },
+      { timestamp: '2026-10-25T00:00:01Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: 'First' }] } } },
+      { timestamp: '2026-10-25T00:00:02Z', type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'One' }] } },
+      { timestamp: '2026-10-25T00:01:00Z', type: 'event_msg', payload: { type: 'user_message', message: 'Second' } },
+      { timestamp: '2026-10-25T00:01:00Z', type: 'event_msg', payload: { type: 'item_completed', item: { type: 'UserMessage', content: [{ type: 'text', text: 'Second' }] } } },
+    ]);
+
+    assert.equal(turns.length, 2);
+    assert.match(turns[1].summary, /Second/);
+  });
 });
 
 describe('Codex project inference', () => {

@@ -1,11 +1,13 @@
 #!/usr/bin/awk -f
 # codex-transcript-to-turns.awk — Normalize a Codex rollout JSONL to turns.
 #
-# Codex currently records user prompts as event_msg/user_message and retained
-# assistant messages/tool activity as response_item records. This adapter owns
-# that unstable wire format and emits the same provider-neutral turn documents
-# as transcript-to-turns.awk. Consumers must depend on the output schema, not
-# either provider's raw transcript representation.
+# Codex records user prompts as event_msg/user_message, or, from builds seen in
+# 2026-10 (codex-cli 0.164), as event_msg/item_completed carrying a UserMessage
+# item. Retained assistant messages/tool activity are response_item records.
+# This adapter owns that unstable wire format and emits the same
+# provider-neutral turn documents as transcript-to-turns.awk. Consumers must
+# depend on the output schema, not either provider's raw transcript
+# representation.
 
 function json_escape(s,    out) {
     out = s
@@ -91,7 +93,13 @@ BEGIN {
 }
 
 {
-    is_user = ($0 ~ /^\{"timestamp"[^}]*"type":"event_msg"/ && $0 ~ /"type":"user_message"/)
+    # The first prompt record kind seen fixes this file's turn boundary, so a
+    # build that writes both kinds never counts one turn twice.
+    is_legacy_user = ($0 ~ /^\{"timestamp"[^}]*"type":"event_msg"/ && $0 ~ /"type":"user_message"/)
+    is_item_user = ($0 ~ /^\{"timestamp"[^}]*"type":"event_msg"/ && $0 ~ /"type":"item_completed"/ && $0 ~ /"item":\{"type":"UserMessage"/)
+    if (user_kind == "" && is_legacy_user) user_kind = "legacy"
+    if (user_kind == "" && is_item_user) user_kind = "item"
+    is_user = (is_legacy_user && user_kind == "legacy") || (is_item_user && user_kind == "item")
     is_message = ($0 ~ /^\{"timestamp"[^}]*"type":"response_item"/ && $0 ~ /"type":"message"/ && $0 ~ /"role":"assistant"/)
     is_tool = ($0 ~ /^\{"timestamp"[^}]*"type":"response_item"/ && $0 ~ /"type":"(custom_tool_call|custom_tool_call_output|function_call|function_call_output)"/)
     if (!is_user && !is_message && !is_tool) next

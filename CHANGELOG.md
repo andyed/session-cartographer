@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### fix(codex): read prompts from item_completed UserMessage records
+
+codex-cli 0.164 (on BIGFU, 2026-10) no longer writes `event_msg/user_message`.
+A prompt now arrives as an `event_msg/item_completed` whose item is a
+`UserMessage`. The Codex turn adapter split turns only on the old record, so
+every rollout from that build produced zero turns: `retro-index.sh` reported
+"Backfilled 0 turns" for all 60 Codex sessions on the box, with no error, and
+the Seelen UI setup done across several of them could not be recalled at all.
+
+`codex-transcript-to-turns.awk` now accepts either record as the turn
+boundary. The first kind seen in a file fixes the boundary for that file, so a
+build that writes both never counts one turn twice, and a file in the old
+format splits exactly as before. One real rollout went from 0 turns to 42.
+`tests/unit/provider-adapters.test.js` covers the new format and a file
+carrying both.
+
 ### fix(hooks): tell the user when jq is missing
 
 Every hook reads its payload with jq and exits 0 without it, by design: a
