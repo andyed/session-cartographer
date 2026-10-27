@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### fix(catch-up): reclaim a lock left by a killed run
+
+`catch-up-transcripts.sh` takes `.carto/transcript-catch-up.lock` with
+`mkdir` and removes it in an EXIT trap. A run killed before the trap fires
+leaves the lock behind, and every later run then exits at the `mkdir` without
+a word. On Windows that is routine, because a hook's children die with the
+agent session's job object. BIGFU's catch-up sat behind a lock from
+2026-10-17 18:16 to 2026-10-27, so no Codex transcript was indexed for ten
+days and nothing reported it.
+
+A lock older than `CARTOGRAPHER_CATCHUP_LOCK_MAX_AGE_SECONDS` (default 21600,
+6 h) is now reclaimed. The age comes from `date -r`, which GNU and BSD date
+both read. `tests/unit/catch-up-lock.test.js` checks that a fresh lock still
+makes the next run step aside and that a 7-hour-old one is reclaimed.
+
 ### fix(codex): read prompts from item_completed UserMessage records
 
 codex-cli 0.164 (on BIGFU, 2026-10) no longer writes `event_msg/user_message`.
