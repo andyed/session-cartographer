@@ -7,6 +7,9 @@ on:
       - main
 
 jobs:
+  windows-hooks:
+    uses: ./.github/workflows/windows-hooks.yml
+
   explorer:
     uses: ./.github/workflows/explorer-checks.yml
 

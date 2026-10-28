@@ -9,11 +9,14 @@ permissions:
   contents: write
 
 jobs:
+  windows-hooks:
+    uses: ./.github/workflows/windows-hooks.yml
+
   explorer:
     uses: ./.github/workflows/explorer-checks.yml
 
   release:
-    needs: explorer
+    needs: [explorer, windows-hooks]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

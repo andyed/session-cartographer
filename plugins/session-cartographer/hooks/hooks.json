@@ -6,19 +6,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/warn-missing-jq-on-start.sh",
-            "timeout": 2
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" warn-missing-jq-on-start.sh 2000",
+            "timeout": 7
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/start-transcript-catch-up.sh",
-            "timeout": 5,
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" start-transcript-catch-up.sh 5000",
+            "timeout": 10,
             "statusMessage": "Refreshing shared session history"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/surface-turbo-on-start.sh",
-            "timeout": 2
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" surface-turbo-on-start.sh 2000",
+            "timeout": 7
           }
         ]
       },
@@ -26,7 +26,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/surface-focus-on-start.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" surface-focus-on-start.sh 10000",
+            "timeout": 15
           }
         ]
       }
@@ -37,8 +38,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-edit-collision.sh",
-            "timeout": 3
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" check-edit-collision.sh 3000",
+            "timeout": 8
           }
         ]
       }
@@ -49,7 +50,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-research.sh 10000",
+            "timeout": 15
           }
         ]
       },
@@ -58,7 +60,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-research.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-research.sh 10000",
+            "timeout": 15
           }
         ]
       },
@@ -67,7 +70,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-tool-use.sh 10000",
+            "timeout": 15
           }
         ]
       },
@@ -76,7 +80,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-tool-use.sh 10000",
+            "timeout": 15
           }
         ]
       }
@@ -87,7 +92,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-tool-use.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-tool-use.sh 10000",
+            "timeout": 15
           }
         ]
       }
@@ -97,7 +103,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-session-milestones.sh 10000",
+            "timeout": 15
           }
         ]
       }
@@ -107,7 +114,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-compact-summary.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-compact-summary.sh 10000",
+            "timeout": 15
           }
         ]
       }
@@ -117,7 +125,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-session-milestones.sh 1000",
+            "timeout": 3
           }
         ]
       }
@@ -127,7 +136,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-session-milestones.sh 10000",
+            "timeout": 15
           }
         ]
       }
@@ -137,7 +147,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/log-session-milestones.sh"
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-session-milestones.sh 10000",
+            "timeout": 15
           }
         ]
       }
