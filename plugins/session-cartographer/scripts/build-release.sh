@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-VERSION=${1:-$(node -p "require('$ROOT/package.json').version")}
+VERSION=${1:-$(node -p 'require(process.argv[1]).version' "$ROOT/package.json")}
 VERSION=${VERSION#v}
 
 case "$VERSION" in
@@ -49,9 +49,7 @@ find "$BUNDLE" \( -name '.DS_Store' -o -name 'CLAUDE.md' \) -delete
 ARCHIVE="$OUT/$BASENAME.tar.gz"
 CHECKSUM="$ARCHIVE.sha256"
 tar -C "$WORK" -czf "$ARCHIVE" "$BASENAME"
-(
-  cd "$OUT"
-  shasum -a 256 "$(basename "$ARCHIVE")" > "$(basename "$CHECKSUM")"
-)
+node -e 'const fs = require("node:fs"), crypto = require("node:crypto"), path = require("node:path");
+  process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex") + "  " + path.basename(process.argv[1]) + "\n");' "$ARCHIVE" > "$CHECKSUM"
 
 printf '%s\n' "$ARCHIVE" "$CHECKSUM"

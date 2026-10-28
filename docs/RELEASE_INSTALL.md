@@ -1,5 +1,9 @@
 # Session Cartographer unified release bundle
 
+Plugin hooks require Node.js 22 or newer on PATH, Bash (Git for Windows on
+Windows), and jq. After updating, restart the agent and review the changed
+hook commands; every registration invokes `node` and `run-hook.cjs`.
+
 This archive is a self-contained local marketplace for Claude Code and Codex.
 It is the same artifact for both agents; install only the section you use, or
 install both to give them one shared history.

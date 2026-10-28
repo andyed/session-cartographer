@@ -14,6 +14,10 @@
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="$DEV/session-milestones.jsonl"
 CHANGELOG="$DEV/changelog.jsonl"
+# Without jq there is nothing this hook can read. The SessionStart notice
+# (warn-missing-jq-on-start.sh) has told the user; exit quietly like every
+# other hook, rather than erroring on each turn.
+command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat)
 case "$0" in */*) HOOK_DIR="${0%/*}" ;; *) HOOK_DIR=. ;; esac
 . "$HOOK_DIR/common.sh"

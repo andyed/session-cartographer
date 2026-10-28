@@ -1030,10 +1030,12 @@ semantic_search_to_tsv() {
   curl -sf "${probe[@]}" "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1
 
   local embed_response
-  embed_response=$(curl -sf "${call[@]}" "$EMBED_URL" \
+  # On stdin, not -d: Windows' curl re-encodes non-ASCII arguments (see
+  # index-event.sh), so a query with an accent or a curly quote got a 400.
+  embed_response=$(jq -n -c --arg m "$EMBED_MODEL" --arg q "Represent this sentence for retrieval: $QUERY" \
+      '{model: $m, input: $q}' | curl -sf "${call[@]}" "$EMBED_URL" \
     -H "Content-Type: application/json" \
-    -d "$(jq -n --arg m "$EMBED_MODEL" --arg q "Represent this sentence for retrieval: $QUERY" \
-      '{model: $m, input: $q}')" 2>/dev/null) || return 1
+    --data-binary @- 2>/dev/null) || return 1
 
   local vector
   vector=$(echo "$embed_response" | jq -c '.data[0].embedding // empty' 2>/dev/null)

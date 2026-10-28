@@ -13,6 +13,7 @@ LAST_RUN="$STATE_DIR/transcript-catch-up.last"
 LOG_FILE="$STATE_DIR/transcript-catch-up.jsonl"
 INTERVAL="${CARTOGRAPHER_CATCHUP_INTERVAL_SECONDS:-900}"
 LIMIT_DAYS="${CARTOGRAPHER_CATCHUP_LIMIT_DAYS:-7}"
+LOCK_MAX_AGE="${CARTOGRAPHER_CATCHUP_LOCK_MAX_AGE_SECONDS:-21600}"
 PROVIDER="codex"
 FORCE=0
 
@@ -32,7 +33,16 @@ if [ "$FORCE" -eq 0 ] && [ -f "$LAST_RUN" ]; then
   [ $((now - last)) -lt "$INTERVAL" ] && exit 0
 fi
 
-mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+# A run killed before its EXIT trap leaves the lock behind, and every later run
+# would stop here without a word. On Windows that is routine: the hook's
+# children die with the agent session's job object. BIGFU's catch-up sat behind
+# one such lock from 2026-10-17 to 10-27. Reclaim a lock older than any real run.
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+  lock_mtime=$(date -r "$LOCK_DIR" +%s 2>/dev/null || echo "$now")
+  [ $((now - lock_mtime)) -gt "$LOCK_MAX_AGE" ] || exit 0
+  rmdir "$LOCK_DIR" 2>/dev/null
+  mkdir "$LOCK_DIR" 2>/dev/null || exit 0
+fi
 trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
 
 start_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
