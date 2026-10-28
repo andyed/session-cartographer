@@ -23,6 +23,8 @@ set -o pipefail
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CHANGELOG="$DEV/changelog.jsonl"
 INDEXER="$(dirname "$0")/index-event.sh"
+. "$(dirname "$0")/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 
 PROJECT_FILTER=""
 SINCE=""
@@ -185,11 +187,11 @@ process_repo() {
         --arg files "$files" \
         --argjson diff_shape "$diff_shape" \
         '{event_id: $eid, timestamp: $ts, type: $type, project: $project, summary: $summary, commit_hash: $hash, author: $author, url: $url, files_changed: $files, diff_shape: $diff_shape, related_ids: []}')
-      if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
+      if [ -n "$CHANGELOG_EVENT" ]; then cartographer_append "$CHANGELOG" "$CHANGELOG_EVENT"; fi
 
       # Real-time indexing
       if [ -x "$INDEXER" ]; then
-        [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" 2>/dev/null &
+        [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" >/dev/null 2>&1 &
       fi
     fi
 

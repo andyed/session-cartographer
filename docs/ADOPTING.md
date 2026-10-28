@@ -306,8 +306,43 @@ serving over its file transport rather than failing — check
 
 - The Explorer API binds `127.0.0.1` explicitly (`explorer/server/index.js`), as
   does the Vite dev server (`explorer/vite.config.js`). Never `0.0.0.0`.
-- Qdrant and the embedding server are local binaries on loopback ports. No
-  hosted vector database, no embedding API.
+  Because a DNS-rebinding web page can still reach a loopback port, the API,
+  Turbo and the UI also refuse any request whose `Host` is not a loopback name,
+  and any cross-site one (`explorer/server/loopback-guard.js`).
+- Qdrant and the embedding server are local binaries. No hosted vector
+  database, no embedding API. Cartographer's launcher
+  (`scripts/start-services.sh`) starts Qdrant bound to `127.0.0.1`, with CORS
+  off and an API key, and llama-server on its default host, `127.0.0.1`. It
+  reuses a Qdrant or embedder already listening on the port, whatever that one
+  binds, and only warns when a reused Qdrant answers without a key. Verify
+  yours: `lsof -nP -iTCP:6333 -sTCP:LISTEN` should show `127.0.0.1:6333`, not
+  `*:6333`. Qdrant's CORS is on by default and reflects any `Origin`, so any
+  web page your browser opens can try to read the corpus from :6333. No
+  browser code needs Qdrant; the Explorer proxies it. CORS off stops reads,
+  not blind writes: Qdrant 1.12.1 parses a `text/plain` POST as JSON, and a
+  page can send one without a preflight, so with CORS off and no key such a
+  POST to `/points/delete` still deleted points. An API key closes that: the
+  same POST gets 401, and so does the preflight a page would need to add the
+  `api-key` header itself.
+- **The Qdrant API key.** On first start the launcher generates a random key,
+  keeps it in `$CARTOGRAPHER_QDRANT_STORAGE/api-key` (default
+  `~/Documents/dev/qdrant-storage/api-key`, mode 600), and writes it into the
+  generated config (also mode 600) as `service.api_key`. Every client (the
+  hooks' indexer, `/remember`, the Explorer, Turbo, the backfill scripts)
+  sends it as the `api-key` header, and reads that file on its own, so there
+  is nothing to export. It is never printed, put in a URL or written to an
+  event row. To choose the key, set `CARTOGRAPHER_QDRANT_API_KEY` before the
+  launcher's first start; it is written to the same file. If you moved the
+  storage dir, export `CARTOGRAPHER_QDRANT_STORAGE` (or
+  `CARTOGRAPHER_QDRANT_API_KEY_FILE`) where your agents run too. A key read
+  from the file is sent only to a loopback Qdrant URL; one set in
+  `CARTOGRAPHER_QDRANT_API_KEY` goes wherever `CARTOGRAPHER_QDRANT_URL` points.
+- **A Qdrant you started yourself** needs `QDRANT__SERVICE__HOST=127.0.0.1`,
+  `QDRANT__SERVICE__ENABLE_CORS=false` and `QDRANT__SERVICE__API_KEY=<key>` in
+  its environment (or `service.host`, `service.enable_cors` and
+  `service.api_key` in its config), and the same key in
+  `CARTOGRAPHER_QDRANT_API_KEY` wherever Cartographer runs. Any other tool
+  that shares that Qdrant then needs the key as well.
 - Turbo recall and facts are loopback-only; where a sandbox denies the loopback
   connect, the fallback is a **file** spool under `.carto/turbo`, not a network
   call.
@@ -389,8 +424,8 @@ Every count ships with a bounded sample of the `event_id`s behind it, so you can
 check it rather than trust it:
 
 ```bash
-# ids are comma-separated; the query argument is ignored, so any placeholder works
-bash scripts/cartographer-search.sh x --get chg-1f2a,tul-04c1
+# ids are comma-separated; --get needs no query (an old leading placeholder is ignored)
+bash scripts/cartographer-search.sh --get chg-1f2a,tul-04c1
 ```
 
 Full request/response contract, bounds, and error table:

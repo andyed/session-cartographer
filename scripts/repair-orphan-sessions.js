@@ -29,11 +29,12 @@
  *   node scripts/repair-orphan-sessions.js --write --reindex
  *   node scripts/repair-orphan-sessions.js --file <path>
  */
-import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'fs';
+import { writeFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 import { buildSessionWindows, defaultPaths, toSortedList } from './session-windows.js';
 import { isResolved } from './sentinels.js';
 import { createMatcher } from './session-match.js';
+import { replaceJsonl, snapshotJsonl } from './jsonl-lock.js';
 
 const args = process.argv.slice(2);
 const valueAfter = (flag, fallback) => {
@@ -98,7 +99,8 @@ const providerFor = (path, existing) => {
 // Only repaired lines are reserialized; every other line is passed through
 // byte-for-byte so the diff is exactly the repair.
 
-const rawLines = readFileSync(TARGET, 'utf-8').split('\n');
+const raw = snapshotJsonl(TARGET);
+const rawLines = raw.toString('utf8').split('\n');
 const outLines = [...rawLines];
 
 const stats = {
@@ -234,12 +236,14 @@ if (repaired === 0) {
 }
 
 const backup = `${TARGET}.bak-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
-copyFileSync(TARGET, backup);
-writeFileSync(TARGET, outLines.join('\n'));
+writeFileSync(backup, raw);
+// Under the rewrite lock, carrying rows appended since the read
+// (scripts/jsonl-lock.js); a truncate-and-write here lost them.
+const { carried_rows: carried } = replaceJsonl(TARGET, { original: raw, body: outLines.join('\n') });
 
 if (!AS_JSON) {
   console.log(`\nBackup:  ${backup}`);
-  console.log(`Updated: ${TARGET} (${repaired} repaired)`);
+  console.log(`Updated: ${TARGET} (${repaired} repaired, ${carried} appended row(s) carried)`);
 }
 
 if (DO_REINDEX) {

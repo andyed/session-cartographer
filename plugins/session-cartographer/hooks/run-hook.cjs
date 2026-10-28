@@ -6,7 +6,7 @@ const os = require('node:os');
 const { spawn, execFile } = require('node:child_process');
 const HOOKS = new Set(['check-edit-collision.sh', 'log-compact-summary.sh', 'log-research.sh',
   'log-session-milestones.sh', 'log-tool-use.sh', 'start-transcript-catch-up.sh',
-  'surface-focus-on-start.sh', 'surface-turbo-on-start.sh', 'warn-missing-jq-on-start.sh']);
+  'surface-focus-on-start.sh', 'surface-recall-on-prompt.sh', 'surface-turbo-on-start.sh', 'warn-missing-jq-on-start.sh']);
 const MAX_ACTIVE = 8;
 const COOLDOWN_MS = 30000;
 function resolveBash(platform = process.platform, env = process.env, exists = fs.existsSync) {

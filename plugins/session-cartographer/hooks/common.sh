@@ -54,6 +54,43 @@ detect_provider_from() {
   fi
 }
 
+# cartographer_resolved <value>
+#
+# True when <value> is a real identifier: isResolved() in scripts/sentinels.js,
+# for hooks that cannot import it. Absence is spelled "" or "unknown", trimmed
+# and in any case. "unknown" is truthy and equal to itself, so a hook that keys
+# on it with `[ -n ]` merges every unattributed session into one phantom.
+# Parameter expansion and a case pattern only: no process.
+cartographer_resolved() {
+  local v="$1"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  case "$v" in
+    ''|[Uu][Nn][Kk][Nn][Oo][Ww][Nn]) return 1 ;;
+  esac
+  return 0
+}
+
+# cartographer_session_id
+#
+# Sets CARTO_SESSION_ID and CARTO_SESSION_SOURCE from the chain
+# cartographer-search.sh reads — CARTOGRAPHER_SESSION_ID, CLAUDE_SESSION_ID,
+# CLAUDE_CODE_SESSION_ID, CODEX_SESSION_ID — taking the first resolved value,
+# not the first non-empty one: a ${a:-$b} chain lets "unknown" shadow a real id.
+# A hook that calls a search must name the session the search will name, or its
+# own rows cannot be joined to the served rows; this is that one reading.
+cartographer_session_id() {
+  local var
+  CARTO_SESSION_ID=""; CARTO_SESSION_SOURCE=""
+  for var in CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID; do
+    if cartographer_resolved "${!var:-}"; then
+      CARTO_SESSION_ID="${!var}"; CARTO_SESSION_SOURCE="$var"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # cartographer_script <filename>
 #
 # Resolve a Cartographer script from a self-contained release plugin, a source
@@ -189,6 +226,76 @@ cartographer_head_c() {
   _s=$(cartographer_bytes "$1
 " "$2")
   printf '%s' "$_s"
+}
+
+# cartographer_append <file> <row>
+#
+# Append <row> and a newline to <file> in ONE write(2), so rows from
+# concurrent sessions cannot interleave. A plain `printf '%s\n' "$row" >> f`
+# does not promise that: bash line-buffers its stdout through a 1024-byte
+# buffer on macOS (BUFSIZ; glibc's is 8192), so a longer row leaves in several
+# writes and another session's row lands between them. Measured 2026-10-16 with
+# 8 writers × 400 rows on macOS, bash 3.2 and 5.3 alike: a row of exactly 1024
+# bytes with its newline arrived whole every time, 1025 tore ~60% of rows, and
+# session-milestones.jsonl held 6 rows spliced at byte 1025. Linux CI never
+# saw it, because 8 KB covers every row there.
+#
+# So a row that fits the buffer keeps the builtin (no process), and only a
+# longer one pays a cat, reading a here-string that bash has fully written
+# (a temp file under 3.2, a pipe under 5.x) and writing it back in one call:
+# clean to 70 KB in the same test. Measured on the live logs, 99.5% of
+# tool-use rows and 99.3% of changelog rows fit the builtin, and 42% of
+# milestone rows do not. <row> may hold several newline-joined rows; they
+# go out together. Under LC_ALL=C, ${#} counts bytes, not characters.
+#
+# A rewriter replacing <file> (scripts/jsonl-lock.js) says so in
+# "<file>.rewrite": "held <pid> <gen> ..." while it works and
+# "released - <gen> ..." after, where <gen> counts rewrites. While a live pid
+# holds it the row goes to "<file>.spool", which the rewriter appends once it
+# has finished, since a row written into the copy it is replacing would vanish
+# with it. The state is read again after the write. If the next rewrite (gen
+# one past the first read) holds the log, it has not yet made its last look at
+# the old file and the row is in hand. Any other change means a rewrite may
+# have finished reading wherever the row went, so it is written again to
+# wherever a row goes now. Delivery is at least once: readers fold a repeated
+# event_id, and nothing restores a lost row. A grace period alone did not
+# hold: tests/unit/jsonl-lock.test.js lost rows at load average 160 to a cat
+# that opened the old file before the rename and wrote after the last look,
+# and again at 434 when the second read skipped without the generation, a
+# whole rewrite having finished inside one write. Builtins only (read, kill
+# -0, test): this costs a hook no process. A held state whose pid is gone is
+# ignored, so a crashed rewriter cannot divert every later row.
+cartographer_append() {
+  local _f="$1" _row="$2" _t _n _k1 _p1 _g1 _r1 _k2 _p2 _g2 _r2 _try=0
+  local _set="${LC_ALL+set}" _lc="${LC_ALL-}"
+  LC_ALL=C
+  _n=${#_row}
+  if [ -n "$_set" ]; then LC_ALL="$_lc"; else unset LC_ALL; fi
+  while :; do
+    _k1=; _p1=; _g1=; _r1=
+    read -r _k1 _p1 _g1 _r1 2>/dev/null < "$_f.rewrite"
+    _t="$_f"
+    [ "$_k1" = held ] && kill -0 "$_p1" 2>/dev/null && _t="$_f.spool"
+    if [ "$_n" -lt 1024 ]; then
+      printf '%s\n' "$_row" >> "$_t" || return
+    else
+      # Errors from the cat attempt are dropped and the builtin retried, so a
+      # failure is reported once, by the same write the hooks always made: an
+      # unwritable log, or a here-string bash 3.2 could not put in TMPDIR.
+      cat 2>/dev/null >> "$_t" <<< "$_row" || printf '%s\n' "$_row" >> "$_t" || return
+    fi
+    _k2=; _p2=; _g2=; _r2=
+    read -r _k2 _p2 _g2 _r2 2>/dev/null < "$_f.rewrite"
+    [ "$_k1 $_p1 $_g1 $_r1" = "$_k2 $_p2 $_g2 $_r2" ] && return 0
+    if [ "$_t" = "$_f" ] && [ "$_k2" = held ] && kill -0 "$_p2" 2>/dev/null; then
+      case "$_g1" in '') _g1=0 ;; *[!0-9]*) _g1=x ;; esac
+      case "$_g2" in ''|*[!0-9]*) _g2=x ;; esac
+      [ "$_g1" != x ] && [ "$_g2" != x ] && [ "$_g2" -eq $((_g1 + 1)) ] && return 0
+    fi
+    # At most 8 writes, the same cap as appendJsonl (scripts/jsonl-lock.js).
+    _try=$((_try + 1))
+    [ "$_try" -lt 8 ] || return 0
+  done
 }
 
 # cartographer_event_id

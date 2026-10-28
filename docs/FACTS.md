@@ -524,8 +524,8 @@ Each bucket in `census.by_*` and `delta.summary.by_*` carries up to `sample`
 feed straight into:
 
 ```bash
-# ids are comma-separated; the query argument is ignored, so any placeholder works
-scripts/cartographer-search.sh x --get chg-1f2a,chg-1f88,tul-04c1
+# ids are comma-separated; --get needs no query (an old leading placeholder is ignored)
+scripts/cartographer-search.sh --get chg-1f2a,chg-1f88,tul-04c1
 ```
 
 `--get` prints the complete untruncated record for each id and reports missing

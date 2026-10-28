@@ -8,6 +8,7 @@ import { executeRecall, recallHealth, recallIndexGeneration } from '../explorer/
 import { RecallContractError } from '../explorer/server/recall-contract.js';
 import { executeFacts } from '../explorer/server/facts.js';
 import { createMemoryHandler } from '../explorer/server/memory.js';
+import { refuseNonLoopback } from '../explorer/server/loopback-guard.js';
 import {
   FACTS_CONTRACT_VERSION,
   FACTS_VERBS,
@@ -200,6 +201,9 @@ if (!spoolOnly) {
     touchActivity();
     openResponses += 1;
     res.on('close', () => { openResponses -= 1; touchActivity(); });
+    // Before any route: this port serves the same corpus as the UI host, so it
+    // refuses a rebound or cross-site request the same way (loopback-guard.js).
+    if (refuseNonLoopback(req, res)) return;
     if (await handleMemory(req, res)) return;
     if (req.method === 'GET' && req.url === '/api/recall/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });

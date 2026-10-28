@@ -1,30 +1,47 @@
 # Session Cartographer
 
-Shared, searchable session history for **Claude Code and Codex**. Recover a
-past decision, find the session behind a change, or pick up work after an absence.
-Both agents contribute to the same local history and can recall each other's work.
+**Reinstate context and work across sessions.** Return to a line of thought,
+recover why a decision was made, or bring an insight from another conversation
+into the task at hand.
 
-Hooks write JSONL events. Search, the Explorer, and session digests are independent
-ways to read them; keyword recall needs no server, and semantic search is optional.
+Context accumulates through the work itself. Cartographer makes captured activity
+and retained conversations searchable, so you can recover the context a question
+calls for, whenever it arises. Follow an idea across sessions, revisit an earlier
+investigation, and connect work whose relationship only becomes apparent later.
+You can work organically without preparing a starting context for every future
+session.
 
-[Try the Explorer demo](https://andyed.github.io/session-cartographer/) ·
+Claude Code and Codex contribute to the same local history and can recall each
+other's work; a read-only adapter brings Hermes history into the corpus too.
+Use `/remember` to find the earlier reasoning and follow it back to its source
+conversation, or browse the Explorer to reconnect with a thread of work.
+
 [Download a release](https://github.com/andyed/session-cartographer/releases) ·
-[Setup guide](docs/SETUP.md) · [Changelog](CHANGELOG.md)
+[Setup guide](docs/SETUP.md) · [Changelog](CHANGELOG.md) ·
+[Related projects](docs/landscape-survey.md)
 
-![Explorer activity: session field, activity traces, and token comparison](docs/screenshots/memory-activity.png)
+<!-- The "Try the Explorer demo" link is out of the opening until gh-pages is
+     rebuilt: the live build predates the Memory Desk and serves real March
+     activity. Restore it here after the rebuild. -->
 
-*Real recorded activity, with project and file names replaced for these screenshots.*
+![One day of concurrent agent sessions, one column per project](docs/screenshots/timeline.png)
+
+*One day of recorded work: 51 tasks across nine projects. Project names are
+randomized for this screenshot.*
+
+Capture requires no LLM, and keyword recall needs no server. Semantic search and
+the Explorer are optional. The default setup keeps your history on your machine.
 
 ## What you can do
 
 | Task | Skill | Result |
 | --- | --- | --- |
-| Recover context | `/remember <question>` | Ranked evidence with links back to source transcripts |
-| Orient on a project | `/remember --project <name>` | Recent work, related projects, and recurring procedures |
-| Browse visually | `/carto` | Explorer search, timeline, transcripts, and the Memory Desk |
+| Reinstate context | `/remember <question>` | Earlier reasoning from across sessions, with links to the source conversations |
+| Return to a project | `/remember --project <name>` | Recent work, related projects, and recurring procedures to help pick up the thread |
+| Explore a thread of work | `/carto` | Search, timelines, and transcripts for moving between session contexts |
+| Preserve what emerged | `/wrapup` | Decisions, discoveries, and unfinished questions made easier to return to |
+| Revisit an investigation | `/investigate <bug>` | Earlier diagnoses brought into the current investigation, with hypotheses tracked through verification |
 | Check concurrent work | `/standup` | Recent peer activity, shared-file edits, and commit attribution |
-| Preserve a decision | `/wrapup` | A session digest plus decisions, discoveries, and unfinished work |
-| Investigate a bug | `/investigate <bug>` | Prior diagnoses and a new hypothesis tracked through verification |
 | Speed up recall | `/turbo` | Enable, inspect, or disable the shared warm search service |
 
 These are Claude Code command names. In Codex, invoke the corresponding skill,
@@ -38,7 +55,8 @@ from recorded usage. See [auto-mode guidance](docs/AUTO_MODE.md).
 
 ## Install
 
-**Requirements:** bash and jq. Every hook reads its payload with jq, and
+**Requirements:** Node.js 22 or newer, bash, and jq. Node runs the hook launcher;
+Git for Windows supplies bash on Windows. Every hook reads its payload with jq, and
 without it the plugin installs cleanly but captures nothing. Install jq with
 `winget install jqlang.jq` (Windows), `brew install jq` (macOS), or
 `apt install jq` (Debian/Ubuntu). On Windows, Git Bash supplies bash. A
@@ -104,7 +122,9 @@ Turbo** when needed. Opening the page directly does not start that backend.
 
 ## Everyday use
 
-Ask `/remember` a concrete question, then narrow by project or date when needed:
+Start with the context you need now: a decision to revisit, an investigation to
+resume, or an idea you remember exploring elsewhere. Ask `/remember` a concrete
+question, then narrow by project or date when useful:
 
 ```text
 /remember why did we change the retry policy
@@ -132,7 +152,9 @@ bounded feeds for other agents, and briefings are described in
 
 ### Memory Desk and digests
 
-![Concurrent sessions grouped by project over a shared time range](docs/screenshots/timeline.png)
+![Explorer activity: session field, activity traces, and token comparison](docs/screenshots/memory-activity.png)
+
+*Real recorded activity, with project and file names replaced for these screenshots.*
 
 The Explorer's **Memory Desk** is an evolving workspace for returning to tasks
 and inspecting their evidence. It includes:
@@ -228,6 +250,27 @@ focused on Latin scripts. Semantic search broadens matching but does not guarant
 that every relevant session will rank. See [scoring](docs/SCORING.md),
 [rank fusion](docs/RANK_FUSION.md), and [archival recall](docs/ARCHIVAL_RECALL.md).
 
+## Evaluation
+
+Cartographer records which results it serves and which agents explicitly use,
+and checks activity against source history. Evaluation covers retrieval,
+capture coverage, and adoption; these are separate measures.
+
+<details>
+<summary>Measurement history, findings, and fixes</summary>
+
+Measured on the author's own corpus: one person's Claude Code and Codex work,
+March to October 2026.
+
+| Result | How it was measured |
+| --- | --- |
+| **736 events, not 1.** A scheduled agent asked ranked search what happened in a 24-hour window and got 1 event back. | A deterministic count over the same window found 736 events, 22 sessions, and 20 commits and pushes across four repositories. Counting is now its own API, and every count ships sample event ids so it can be checked with `--get`. See [Facts](docs/FACTS.md#why-now). |
+| **43 of 125 landed commits** were missing from the session logs on 2026-09-26. | The day digest checks every logged commit against git; its 125 matched an independent `git log` count, repository by repository. Over 26–27 September, 23 of the 46 missing commits traced to a bug in the commit hook itself, which logged at most one commit per call; fixed in 0.8.1. See the [changelog](CHANGELOG.md#featdigest-a-day-digest-checked-against-git). |
+| **287 of 1,350 Claude Code sessions (21%)** called recall at all in the 30 days to 2026-10-15. Codex recalled in 1 of 59 sessions that saw the startup nudge. | Counted from Cartographer's retrieval telemetry, which records the session and call id behind every result it serves. Recall already answered quickly (p90 377 ms), so the gap was reach, not speed; recall now also ships as MCP tools. See [MCP](docs/MCP.md#why). |
+| **9 of 60 records older than 90 days** reached the top 10 when looked up by their own words; time decay let recent material outrank them. After the fix, 60 of 60. | `scripts/age-curve.js` on the live corpus on 2026-10-16: 204,341 events, 240 known items in four age buckets, 40 recency cases, semantic leg off. For the 90-day-plus bucket, the warm engine's top-10 hit rate went from 0.15 to 1.00, and recency stayed at 0.65. On a paired subsample of 30 cases, the portable CLI went from 0.23 to 1.00. A CI gate on a synthetic corpus now holds the curve. See [Scoring](docs/SCORING.md#the-age-curve-the-gate). |
+
+</details>
+
 ## Development and reference
 
 Use Node 22 for development and CI parity. The public unit suite is:
@@ -259,4 +302,5 @@ The co-occurrence graph was inspired by DeepBlueDynamics'
 work of Trey Grainger and Erik Hatcher; Cartographer ranks structured session
 entities with Dunning's log-likelihood ratio (G²).
 
-[MIT](LICENSE).
+[MIT](LICENSE). Notices for the adapted third-party code are in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

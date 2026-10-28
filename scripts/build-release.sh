@@ -31,6 +31,9 @@ cp "$ROOT/.claude-plugin/marketplace.json" "$BUNDLE/.claude-plugin/marketplace.j
 mkdir -p "$PLUGIN/.claude-plugin" "$PLUGIN/.codex-plugin" "$PLUGIN/skills"
 cp "$ROOT/plugins/session-cartographer/.claude-plugin/plugin.json" "$PLUGIN/.claude-plugin/plugin.json"
 cp "$ROOT/plugins/session-cartographer/.codex-plugin/plugin.json" "$PLUGIN/.codex-plugin/plugin.json"
+# Claude Code reads the plugin-root .mcp.json; Codex reads the mcpServers entry
+# in its own manifest, which overrides this file there (docs/MCP.md).
+cp "$ROOT/plugins/session-cartographer/.mcp.json" "$PLUGIN/.mcp.json"
 cp -R "$ROOT/plugins/session-cartographer/hooks" "$PLUGIN/hooks"
 for skill_file in "$ROOT"/plugins/session-cartographer/skills/*/SKILL.md; do
   skill=$(basename "$(dirname "$skill_file")")

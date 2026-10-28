@@ -12,6 +12,7 @@
 // Usage: node scripts/migrate-point-ids.js [--apply] [--batch 500]
 
 import { createHash } from 'crypto';
+import { qdrantFetch } from './qdrant-auth.js';
 const QDRANT = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const COLLECTION = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
 const APPLY = process.argv.includes('--apply');
@@ -45,7 +46,7 @@ function djb2(str) {
 }
 
 async function q(path, body, method = 'POST') {
-  const r = await fetch(`${QDRANT}/collections/${COLLECTION}${path}`, {
+  const r = await qdrantFetch(`${QDRANT}/collections/${COLLECTION}${path}`, {
     method, headers: { 'Content-Type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });

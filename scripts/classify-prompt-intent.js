@@ -117,7 +117,7 @@ export function classifyPromptIntent(message) {
   return literal ? promptIntentCategories.feedbackContext : promptIntentCategories.other;
 }
 
-function normalizeLiteralPrompt(message) {
+export function normalizeLiteralPrompt(message) {
   // Drop pasted-image markers ([Image #3], [Image: source: …]) before
   // anything else — they are not prose and otherwise route every screenshot
   // to content-creation. A prompt that was only image markers normalizes to
@@ -133,7 +133,7 @@ function normalizeLiteralPrompt(message) {
 // slash-command wrappers, background-task notifications, skill preambles,
 // compaction summaries, memory-observer prompts. None are human prompts, so
 // they route straight to "other" rather than polluting a real intent bucket.
-function isNonPromptNoise(literal) {
+export function isNonPromptNoise(literal) {
   if (/^<(task-notification|observed_from_primary_session|command-message|command-name|command-args|local-command-stdout|system-reminder|user-prompt-submit-hook)\b/u.test(literal)) {
     return true;
   }
@@ -309,8 +309,170 @@ function isBroadActionRequestPrompt(normalized) {
   return broadAction;
 }
 
+// ─── Recall cues ─────────────────────────────────────────────────────────────
+//
+// A recall cue is a prompt that points at shared history the current context
+// cannot see: "thought we fixed this?", "did we implement that?", "not sure
+// where we tried that (which agent)". Measured 2026-10-15 over 30 days of
+// Claude transcripts: 72 mid-session prompts carried one, and the agent ran
+// recall after 4 of them. hooks/surface-recall-on-prompt.sh runs the search on
+// a cue, so the agent no longer has to remember that a recall skill exists.
+//
+// Kept apart from classifyPromptIntent on purpose. A cue is orthogonal to
+// intent ("thought we fixed the wheel?" is a bug report AND a cue), and an
+// eighteenth intent would change the keys already stored on indexed turns.
+//
+// Each cue is a named pattern so the trial log can say which one fired; a
+// pattern that only produces noise is then visible and removable by name.
+// Strong cues name the past outright (another session, last time, where we
+// left off). Weak cues ("did we", "didn't we", "we already") are just as often
+// about the last five minutes, so an in-session marker vetoes them.
+const RECALL_CUES = [
+  // Temporal adjectives only. "the other agent" / "another session" in this
+  // corpus names a session running right now ("let the other session do the
+  // sidecar"), which is /standup's question, not recall's.
+  { name: 'previous-session', strong: true,
+    re: /\b(previous|prior|earlier|last|past|older) (claude |codex )?(sessions?|conversations?|chats?|threads?|agents?)\b/u },
+  { name: 'which-agent', strong: true,
+    re: /\bwhich (agent|session|conversation|chat|thread|claude|codex)\b/u },
+  // Not "where you left off": that is the desktop app's resume message.
+  { name: 'left-off', strong: true,
+    re: /\b(where|what) (we|i) left off\b|\bpick (it |this |that |things )?(back )?up where\b|\bwhere were we\b/u },
+  { name: 'last-time', strong: true,
+    re: /(?<!for the )\blast time\b/u },
+  { name: 'temporal', strong: true,
+    re: /\b(yesterday|last (week|night|nite|month)|the other day|earlier today|(a few|couple( of)?|two|three) days ago)\b/u },
+  { name: 'thought-we', strong: true,
+    re: /\bthought it (was|were|had been|'d been) (fixed|done|solved|resolved|working|handled|gone|removed)\b|\bthought (we|you|i) ((had|have|already|were|was|'d) )*(fix|fixed|had|did|done|built|added|implemented|solved|resolved|handled|tried|made|decided|determined|established|concluded|agreed|settled|ruled|found|showed|proved|confirmed|figured|removed|changed|shipped|landed|merged|addressed|covered|dealt|sorted|killed|dropped|got rid|switched|moved|wired|turned)\b/u },
+  { name: 'remember-when', strong: true,
+    re: /\b(do you|you|i|we|can'?t|don'?t|cannot|do not|not sure i|trying to) (remember|recall)\b(?! to\b)/u },
+  { name: 'used-to-work', strong: true,
+    re: /\bused to (work|be (fine|working|fast|right|there))\b|\bwas working (before|yesterday|last week|earlier)\b/u },
+  { name: 'seen-before', strong: true,
+    re: /\b(we|i)('ve| have| had)? (seen|done|had|hit|fixed|solved|built|tried|discussed|handled) (this|that|it|something (like|similar)( to)?( this| that)?)( \w+){0,3} before\b|\b(like|as) (we|i) did (it |this |that )?(before|earlier|previously)\b/u },
+  { name: 'i-think-we', strong: true,
+    re: /\bi think (we|you) (already |previously |once )?(made|built|had|added|fixed|wrote|created|tried|did|decided|implemented|discussed|solved|investigated|wired|shipped|landed|measured|set up)\b/u },
+  { name: 'we-already', strong: false,
+    re: /\b(we|i|you)('ve| have| had|'d)? already (have|ahve|had|got|built|tried|did|done|made|fixed|added|implemented|discussed|decided|looked|wrote|written|solved|covered|shipped|landed|investigated|measured|tested|ruled|went)\b/u },
+  { name: 'what-decided', strong: false,
+    re: /\bwhat (did|have|had) we (decide|decided|conclude|concluded|agree|agreed|land on|landed on|settle on|settled on|choose|chose|pick|picked|go with|went with|end up|ended up|call|called|name|named|learn|learned)\b|\bwhat was (the|our) (decision|conclusion|verdict|outcome)\b/u },
+  { name: 'did-we', strong: false,
+    re: /\b(did|have|had) we (ever |already |actually |previously |once |really |not |never )?(implement|implemented|add|added|build|built|fix|fixed|try|tried|decide|decided|ship|shipped|land|landed|discuss|discussed|change|changed|remove|removed|write|wrote|written|make|made|create|created|measure|measured|investigate|investigated|figure|figured|solve|solved|settle|settled|agree|agreed|rename|renamed|document|documented|wire|wired|set up|port|ported|record|recorded|release|released|benchmark|benchmarked|use|used|have|had|see|seen|hit|end up|ended up|consider|considered|evaluate|evaluated|explore|explored|talk|talked|cover|covered|handle|handled|get rid|drop|dropped|kill|killed|lose|lost|revert|reverted|disable|disabled|address|addressed)\b/u },
+  // "why didn't we …" is a complaint about the present, not a question about
+  // the past ("why the hell didn't we do this hours ago").
+  { name: 'didnt-we', strong: false,
+    re: /(?<!\bwhy( \w+){0,2} )\b(didn'?t|did not|haven'?t|have not|hadn'?t) we\b/u },
+  { name: 'do-we-have', strong: false,
+    re: /\b(do|don'?t|dont|do not) we (already |still )?(have|ahve) (a|an|any|one|the|some|this|that|something|anything)\b/u },
+  { name: 'we-tried', strong: false,
+    re: /\bwe (tried|attempted) (to|this|that|it)\b|\bwe had (this|it|that) (working|before|fixed|done|solved)\b|\bwe had (this|it)[.!?]*$/u },
+  { name: 'where-we-tried', strong: false,
+    re: /\b(where|when|how) (we|i) (tried|did|put|saw|discussed|wrote|left|found|fixed|solved|decided|added|implemented|built|set up|handled|measured|tested|looked)\b/u },
+  { name: 'previously', strong: false,
+    re: /\bpreviously\b/u },
+  { name: 'again', strong: false,
+    re: /\b(broken|broke|breaking|regressed|regressing|failing|crashing|happening|flaking|back) again\b/u },
+];
+
+// "did we just break it", "what did we decide above" — the referent is in the
+// visible conversation, and recall would only repeat it.
+const IN_SESSION_MARKER = /\b(we|you) just\b|\bjust now\b|\babove\b|\b(in|earlier in) this (session|conversation|chat|thread)\b/u;
+
+// Agent-runtime messages that arrive as user prompts and read like cues: the
+// desktop app's resume nudge, Codex's approval-review transcript deltas.
+const RECALL_NOISE = /^(the app was quit while you were working|the following is the codex agent history|\[\d+\] (assistant|user)\b)/u;
+
+// Past this length a prompt is a pasted spec, log, or brief, and a cue inside it
+// is usually quoted material rather than the user asking. A pasted session brief
+// carries "previous session" and "where we left off" as examples, and would
+// otherwise fire on every paste.
+export const RECALL_CUE_MAX_CHARS = 1200;
+
+/**
+ * Name the recall cue in a prompt, or return null.
+ *
+ * Returns { cue, strong, match } for the first pattern that matches, where
+ * `match` is the matched span (lowercased). Tooling noise (anything starting
+ * with "<", compaction continuations, skill preambles) is never a cue, and
+ * neither is a prompt that already invokes /remember itself.
+ */
+export function recallCue(message) {
+  const literal = normalizeLiteralPrompt(String(message ?? '')).replace(/[\u2018\u2019]/gu, "'");
+  if (!literal || literal.startsWith('<') || isNonPromptNoise(literal) || RECALL_NOISE.test(literal)) return null;
+  if (literal.length > RECALL_CUE_MAX_CHARS) return null;
+  if (/(^|\s)[./]remember\b/u.test(literal)) return null;
+  const inSession = IN_SESSION_MARKER.test(literal);
+  for (const { name, strong, re } of RECALL_CUES) {
+    const found = literal.match(re);
+    if (!found) continue;
+    if (!strong && inSession) continue;
+    return { cue: name, strong, match: found[0] };
+  }
+  return null;
+}
+
+export function isRecallCuePrompt(message) {
+  return recallCue(message) !== null;
+}
+
+// Words that carry no topic once the cue is gone. "didn't we fix this already?"
+// leaves nothing to search for: a query built from it matches "fix" across the
+// whole corpus and returns confident noise.
+const TOPICLESS = new Set(`
+  a about after again agent all already also am an and another any are as at be been before
+  being both but by can claude codex could did didn didnt do does doesn don dont done earlier
+  either ever fix fixed for from get go going got had has have haven havent he her here him his
+  how i if in into is isn it its just last least let like made make maybe me might more most
+  much my no nor not now of off ok okay on once one only or other our out over please previous
+  previously really same see seen session she should so some still such sure than that the their
+  them then there these they thing things think this those thought though time to too tried try
+  up us use used very was wasn we were what when where which while who why will with would yet
+  you your yeah yes hey hmm um
+`.trim().split(/\s+/u));
+
+/**
+ * The search query for a cued prompt: the prompt minus the cue span, with
+ * whitespace collapsed, capped at `max` characters. `topic` counts the words
+ * that survive the stoplist; zero means there is nothing to search for.
+ */
+export function recallQuery(message, cue, max = 240) {
+  let text = String(message ?? '')
+    .replace(/\[image\b[^\]]*\]/giu, ' ')
+    .replace(/[\u2018\u2019]/gu, "'")
+    .replace(/\s+/gu, ' ')
+    .trim();
+  if (cue?.match) {
+    const at = text.toLowerCase().indexOf(cue.match);
+    if (at >= 0) text = `${text.slice(0, at)} ${text.slice(at + cue.match.length)}`.replace(/\s+/gu, ' ').trim();
+  }
+  text = text.replace(/^[\s,.;:!?-]+|[\s,;:-]+$/gu, '');
+  if (text.length > max) text = text.slice(0, max).replace(/\s+\S*$/u, '');
+  const topic = (text.toLowerCase().match(/[a-z0-9][a-z0-9_.-]*/gu) || [])
+    .filter((word) => word.length >= 3 && !TOPICLESS.has(word.replace(/'.*$/u, '')))
+    .length;
+  return { query: text, topic };
+}
+
+// CLI: --recall-cue reads one prompt on stdin and prints
+// "<cue>\t<strong|weak>\t<topic words>\t<query>" when it carries a cue, nothing
+// otherwise. Exit status is 0 either way so a hook can tell "no cue" (empty)
+// from "classifier failed" (non-zero). Stdin, not argv: prompts run to
+// kilobytes and a shell hook should not have to quote them.
+async function recallCueCli() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  const prompt = Buffer.concat(chunks).toString('utf8');
+  const cue = recallCue(prompt);
+  if (!cue) return;
+  const { query, topic } = recallQuery(prompt, cue);
+  const oneLine = query.replace(/[\t\r\n]+/gu, ' ');
+  process.stdout.write(`${cue.cue}\t${cue.strong ? 'strong' : 'weak'}\t${topic}\t${oneLine}\n`);
+}
+
 // CLI: print "<key>\t<label>" for a prompt passed as arguments.
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1] && process.argv[2] === '--recall-cue') {
+  await recallCueCli();
+} else if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const input = process.argv.slice(2).join(' ');
   if (!input) {
     console.error('Usage: node classify-prompt-intent.js "<prompt text>"');

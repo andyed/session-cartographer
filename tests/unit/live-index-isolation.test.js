@@ -82,6 +82,7 @@ const SELF = path.basename(fileURLToPath(import.meta.url));
 
 // Test files that name a reaching script only to read its source text.
 const READS_ONLY = {
+  'abandonment-report.test.js': 'names cartographer-search.sh inside transcript fixtures; spawns no search',
   'codex-memory-stale.test.js': 'reads cartographer-search.sh as text',
   'provider-adapters.test.js': 'reads cartographer-search.sh as text',
   'turbo-recall.test.js': 'reads cartographer-feed.sh as text',
@@ -178,14 +179,21 @@ function tripwire() {
     return dev;
   };
 
-  // log-compact-summary.sh detaches the indexer with nohup, so it can land
-  // after the hook exits. The others hold the hook's stdout until they finish.
+  // Every hook detaches the indexer, so it lands after the hook exits. Wait
+  // for the indexer to finish, not for its first request: the stand-in curl
+  // fails every call, and the indexer's last act is then one row in
+  // .carto/index-errors.jsonl. Reading the URLs at the first request let a
+  // still-running indexer write into dev/ while fresh() removed it for the
+  // next run, or carry its URL into that run's log.
   const urls = async () => {
-    for (let waited = 0; waited < 5000; waited += 50) {
-      if (fs.existsSync(log)) return fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+    const done = path.join(dev, '.carto', 'index-errors.jsonl');
+    for (let waited = 0; waited < 20000; waited += 50) {
+      if (fs.existsSync(done) && fs.readFileSync(done, 'utf8').includes('\n')) {
+        return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
+      }
       await sleep(50);
     }
-    return [];
+    return fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
   };
 
   return { dir, env, fresh, urls };

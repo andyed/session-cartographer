@@ -27,6 +27,7 @@
  * consumer (bootstrap-project-registry.js) needed the same answer.
  */
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * Docker-style auto-generated worktree names: `adjective-surname-hex`.
@@ -83,4 +84,20 @@ export function isNonProject(name, names = nonProjectNames()) {
   if (!value) return true;
   if (names.has(value)) return true;
   return WORKTREE_NAME.test(value) || AGENT_WORKTREE_NAME.test(value);
+}
+
+// CLI for shell hooks, which cannot import this module:
+//   node non-projects.js --is-non-project <name>
+// exits 0 when <name> is not a project, 1 when it is, 2 on bad usage. The
+// workspace root is CARTOGRAPHER_DEV_DIR (default ~/Documents/dev), the same
+// root every other reader resolves. surface-recall-on-prompt.sh asks this before
+// scoping a search: a session started in the workspace root resolves to `dev`,
+// and `--project dev` is a substring filter that matches unrelated projects.
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  if (process.argv[2] !== '--is-non-project' || process.argv.length !== 4) {
+    console.error('Usage: node non-projects.js --is-non-project <name>');
+    process.exit(2);
+  }
+  const devDir = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME || '', 'Documents', 'dev');
+  process.exit(isNonProject(process.argv[3], nonProjectNames(process.env, devDir)) ? 0 : 1);
 }

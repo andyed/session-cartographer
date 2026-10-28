@@ -2,6 +2,10 @@
 # cartographer-search.sh — Unified search across all Claude Code session history.
 #
 # Usage: cartographer-search.sh <query> [--project NAME] [--limit N] [--format text|jsonl]
+#        cartographer-search.sh --get IDS | --touch IDS | --thread ID   (no query needed)
+#
+# Flags and the query may appear in any order; "--" ends flag parsing. Run with
+# --help for the full flag list.
 #
 # Searches (in order):
 #   1. Qdrant semantic search (if available)
@@ -24,10 +28,18 @@
 #                                  on the call that auto-started it). Pair with
 #                                  --no-turbo for a keyword-only answer.
 #   CARTOGRAPHER_QDRANT_URL      — default: http://localhost:6333
+#   CARTOGRAPHER_QDRANT_API_KEY  — optional; sent as the api-key header. Without
+#                                  it, the key file start-services.sh writes is
+#                                  used for a loopback URL (scripts/qdrant-auth.sh)
 #   CARTOGRAPHER_EMBED_URL       — default: http://localhost:8890/v1/embeddings
 #   CARTOGRAPHER_EMBED_MODEL     — default: mxbai-embed-large
 #   CARTOGRAPHER_COLLECTION      — default: session-cartographer
-#   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~30-day half-life)
+#   CARTOGRAPHER_DECAY_LAMBDA    — time-decay rate (default: 0.001, ~29-day half-life)
+#   CARTOGRAPHER_DECAY_LOOKUP_MAX — a query whose tokens all appear together in at
+#                                  most this many candidates is a lookup, and those
+#                                  candidates are not decayed (default: 10; 0 = off)
+#   CARTOGRAPHER_DECAY_LOOKUP_LIFT — those candidates' scores are multiplied by this
+#                                  (default: 3; 1 = off; under 1 reads as 3)
 #   CARTOGRAPHER_SERVED_LOG      — default: $DEV/served-log.jsonl (every displayed result)
 #   CARTOGRAPHER_ACCESS_LEDGER   — default: $DEV/access-ledger.jsonl (every --touch)
 #   CARTOGRAPHER_SEARCH_CALL_LOG — default: $DEV/.carto/search-calls.jsonl (standard calls)
@@ -64,6 +76,12 @@ clock_ms() {
 REQUEST_STARTED_MS=$(clock_ms)
 REQUEST_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
+# cartographer_append: the one-write JSONL append the hooks use. Concurrent
+# sessions search at once, and a row that leaves in two writes can be split
+# by another session's row (hooks/common.sh has the measurement).
+. "$(dirname "$0")/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
+
 append_portable_call_log() {
   local timestamp="$1"
   local requested_backend="$2"
@@ -72,14 +90,24 @@ append_portable_call_log() {
   local result_count="$5"
   local fallback_reason="$6"
   local fallback_detail="$7"
-  local log_dir
+  local log_dir floor_top="" floor_below=0 row
+
+  # Written by the fusion awk; absent when fusion never ran. "-" is its
+  # spelling of "no candidates": a tab is IFS whitespace, so a leading empty
+  # field would be swallowed and the count read as the score.
+  if [ -s "$TMPDIR/floor.tsv" ]; then
+    IFS=$'\t' read -r floor_top floor_below < "$TMPDIR/floor.tsv" || true
+    [ "$floor_top" != "-" ] || floor_top=""
+  fi
 
   [ -n "$SEARCH_CALL_LOG" ] || return 0
   case "$SEARCH_CALL_LOG" in
     */*) log_dir=${SEARCH_CALL_LOG%/*}; mkdir -p "$log_dir" 2>/dev/null || true ;;
   esac
 
-  if ! { LC_ALL=C awk \
+  # The row is built first and appended in one write: awk writes its own
+  # output through a 4 KB stdio buffer, which a long query can overflow.
+  row=$(LC_ALL=C awk \
     -v timestamp="$timestamp" -v call_id="$CALL_ID" \
     -v request_started_at="$REQUEST_STARTED_AT" -v request_started_ms="$REQUEST_STARTED_MS" \
     -v results_served_ms="$PORTABLE_ENDED_MS" \
@@ -89,7 +117,8 @@ append_portable_call_log() {
     -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
     -v result_count="$result_count" -v elapsed_ms="$elapsed_ms" \
     -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" \
-    -v fallback_detail="$fallback_detail" '
+    -v fallback_detail="$fallback_detail" \
+    -v min_score="$MIN_SCORE" -v floor_top="$floor_top" -v floor_below="${floor_below:-0}" '
       function esc(value) {
         gsub(/\\/, "\\\\", value)
         gsub(/"/, "\\\"", value)
@@ -102,30 +131,93 @@ append_portable_call_log() {
       BEGIN {
         fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
         detail = fallback_detail == "" ? "null" : quoted(fallback_detail)
-        printf "{\"timestamp\":%s,\"request_started_at\":%s,\"results_served_at\":%s,\"request_started_ms\":%.0f,\"results_served_ms\":%.0f,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"attribution_status\":%s,\"session_source\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s}\n", \
+        # min_score/top_score/below_min_score match turbo-search-client.js.
+        floor = min_score == "" ? "null" : sprintf("%s", min_score + 0)
+        top = floor_top == "" ? "null" : sprintf("%.6f", floor_top + 0)
+        printf "{\"timestamp\":%s,\"request_started_at\":%s,\"results_served_at\":%s,\"request_started_ms\":%.0f,\"results_served_ms\":%.0f,\"call_id\":%s,\"requested_backend\":%s,\"selected_backend\":\"cli\",\"transport\":\"process\",\"purpose\":%s,\"session_id\":%s,\"provider\":%s,\"attribution_status\":%s,\"session_source\":%s,\"query\":%s,\"project\":%s,\"since\":%s,\"before\":%s,\"result_count\":%d,\"elapsed_ms\":%d,\"stages_ms\":{\"total\":%d},\"index_generation\":null,\"semantic_status\":\"unknown\",\"fallback_reason\":%s,\"fallback_detail\":%s,\"min_score\":%s,\"top_score\":%s,\"below_min_score\":%d}\n", \
           quoted(timestamp), quoted(request_started_at), quoted(timestamp), request_started_ms + 0, results_served_ms + 0, \
           quoted(call_id), quoted(requested_backend), quoted(purpose), \
           quoted(session_id), quoted(provider), quoted(attribution_status), quoted(session_source), \
           quoted(query), quoted(project), quoted(since), \
-          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail
+          quoted(before), result_count + 0, elapsed_ms + 0, stage_total_ms + 0, fallback, detail, \
+          floor, top, floor_below + 0
       }
-    ' >> "$SEARCH_CALL_LOG"; } 2>/dev/null; then
+    ' 2>/dev/null)
+  if [ -z "$row" ] || ! { cartographer_append "$SEARCH_CALL_LOG" "$row"; } 2>/dev/null; then
     echo "cartographer-search: warning: cannot write search-call telemetry at $SEARCH_CALL_LOG; continuing" >&2
   fi
   return 0
 }
 
-QUERY="${1:?Usage: cartographer-search.sh \"<query>\" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
-       WHEN: today | yesterday | \"this morning\" | \"this afternoon\" | \"this evening\" | \"this week\" | \"last week\" | \"this month\" | \"last month\" | 7d | 2h | 30m | 1w | 2026-04-20
+print_usage() {
+  cat <<'USAGE'
+Usage: cartographer-search.sh "<query>" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--min-score X] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
+       Flags and the query may come in any order. The first words that are not flags form the query (several unquoted words are joined with single spaces). "--" ends flag parsing, so a query that starts with "--" is: cartographer-search.sh --project NAME -- "--force flag". "--flag=value" works for every flag that takes a value.
+       WHEN: today | yesterday | "this morning" | "this afternoon" | "this evening" | "this week" | "last week" | "this month" | "last month" | 7d | 2h | 30m | 1w | 2026-04-20
        Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
-       --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. The query argument is ignored when --thread is set (pass any placeholder).
-       --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. Missing ids are reported, not silently dropped. The query argument is ignored (pass any placeholder).
-       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. No query is needed (a leading "_" placeholder from older callers is accepted and ignored).
+       --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. A conversation turn (turn-…) comes from the semantic index. Missing ids are reported, not silently dropped. No query is needed ("_" accepted and ignored).
+       --purpose KIND: telemetry purpose (remember, focus, feed, eval, audit, manual, mcp, prompt-cue). Defaults to CARTOGRAPHER_PURPOSE or manual.
+       --min-score X: drop results whose fused score (the "score" field in jsonl output) is below X, before anything is shown, served, or added to the delta-serving list. For callers that act only on a confident hit, such as the prompt-cue hook.
        --call-id ID: search-call identifier printed with results. Carry it to --get/--touch for exact attribution; without it, only unambiguous same-session, same-purpose provenance is credited.
        --turbo / --no-turbo: use or bypass warm Explorer recall for this standard query. A shared user preference otherwise applies across Claude and Codex.
-       --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. The query argument is ignored (pass any placeholder).}"
-shift
+       --touch EVENT_IDS: record result use (comma-separated ids, in access order) in the access ledger and exit. Called by /remember after actually using a result — reuse refreshes recency and boosts future ranking. No query is needed ("_" accepted and ignored).
+USAGE
+}
+
+# ─── Argument parsing ───
+# Flags are recognised in any position. An LLM caller naturally writes
+#   cartographer-search.sh --project NAME --since 10d "milestone decision"
+# and the old parser, which took $1 as the query, searched for the literal
+# "--project", dropped the scope, and returned another project's results with
+# nothing reporting a problem. The same parser also silently discarded every
+# unrecognised token, so a mistyped flag or a stray word changed the search the
+# same way. This one accepts or refuses; it never discards.
+#
+# - The query is the words that are not flags. "--" ends flag parsing, so a
+#   query that really starts with "--" is still searchable.
+# - Several non-flag words are JOINED with single spaces rather than rejected.
+#   Unquoted `cartographer-search.sh milestone decision --project x` is the
+#   natural spelling for an agent, and the old behaviour kept only "milestone"
+#   and dropped the rest in silence, which is the worse failure. Joining can
+#   over-include a stray word, but the joined query is echoed in the results
+#   header and written to the telemetry rows, so a wrong guess is visible;
+#   rejecting would cost a round trip on every unquoted multi-word query, whose
+#   intent is unambiguous.
+# - A token that looks like a flag but is not one ("--projct", "-p") is an
+#   error, not query text: a flag dropped into the query is exactly the silent
+#   failure above. "--" is the escape for text that genuinely starts with it.
+# - A flag that takes a value and finds none (or finds another flag) fails
+#   naming that flag. An explicit empty value (--project "") stays accepted.
+# - --get / --touch / --thread need no query. A leading "_" placeholder is how
+#   older callers satisfied the old required argument; positional words are
+#   ignored alongside those three, as the placeholder always was.
+VALUE_FLAGS=" --project --limit --format --since --before --intent --thread --get --touch --call-id --purpose "
+SWITCH_FLAGS=" --transcript --no-transcript --all --reset-served --turbo --no-turbo "
+
+is_flag_name() {
+  # "" would match the double space where the two lists meet.
+  [ -n "$1" ] || return 1
+  case "$VALUE_FLAGS$SWITCH_FLAGS" in
+    *" $1 "*) return 0 ;;
+  esac
+  return 1
+}
+
+# Called as `need_value "$@"` with the flag first. Exits; it is not a subshell.
+need_value() {
+  if [ $# -lt 2 ] || [ "$2" = "--" ] || is_flag_name "$2"; then
+    echo "cartographer-search: $1 requires a value" >&2
+    exit 2
+  fi
+}
+
+add_query_word() {
+  QUERY="${QUERY:+$QUERY }$1"
+}
+
+QUERY=""
 
 LIMIT=15
 FUSION_DEPTH=500
@@ -139,6 +231,7 @@ THREAD_ID=""
 GET_IDS=""
 TOUCH_IDS=""
 CALL_ID=""
+MIN_SCORE=""
 PURPOSE="${CARTOGRAPHER_PURPOSE:-manual}"
 TURBO_FLAG=""
 # Transcript fallback is expensive (turn-grouping awk runs per-query on raw
@@ -149,27 +242,52 @@ TURBO_FLAG=""
 INCLUDE_TRANSCRIPTS=0
 OUTPUT_FORMAT="text"
 while [ $# -gt 0 ]; do
-  case "$1" in
-    --project)        PROJECT="$2"; shift 2 ;;
-    --limit)          LIMIT="$2"; shift 2 ;;
-    --format)         OUTPUT_FORMAT="$2"; shift 2 ;;
+  arg="$1"
+  # --flag=value spelling, only for flags that take a value. Rewritten to the
+  # two-argument form so the cases below stay the single definition.
+  case "$arg" in
+    --*=*)
+      case "$VALUE_FLAGS" in
+        *" ${arg%%=*} "*) set -- "${arg%%=*}" "${arg#*=}" "${@:2}"; arg="$1" ;;
+      esac
+      ;;
+  esac
+  case "$arg" in
+    --)
+      shift
+      for word in "$@"; do add_query_word "$word"; done
+      break ;;
+    -h|--help)        print_usage; exit 0 ;;
+    --project)        need_value "$@"; PROJECT="$2"; shift 2 ;;
+    --limit)          need_value "$@"; LIMIT="$2"; shift 2 ;;
+    --format)         need_value "$@"; OUTPUT_FORMAT="$2"; shift 2 ;;
     --transcript)     INCLUDE_TRANSCRIPTS=1; shift ;;
     --no-transcript)  INCLUDE_TRANSCRIPTS=0; shift ;;
-    --since)          SINCE="$2"; shift 2 ;;
-    --before)         BEFORE="$2"; shift 2 ;;
-    --intent)         INTENT="$2"; shift 2 ;;
+    --since)          need_value "$@"; SINCE="$2"; shift 2 ;;
+    --before)         need_value "$@"; BEFORE="$2"; shift 2 ;;
+    --intent)         need_value "$@"; INTENT="$2"; shift 2 ;;
     --all)            ALL_MODE=1; shift ;;
     --reset-served)   RESET_SERVED=1; shift ;;
-    --thread)         THREAD_ID="$2"; shift 2 ;;
-    --get)            GET_IDS="$2"; shift 2 ;;
-    --touch)          TOUCH_IDS="$2"; shift 2 ;;
-    --call-id)        CALL_ID="$2"; shift 2 ;;
-    --purpose)        PURPOSE="$2"; shift 2 ;;
+    --thread)         need_value "$@"; THREAD_ID="$2"; shift 2 ;;
+    --get)            need_value "$@"; GET_IDS="$2"; shift 2 ;;
+    --touch)          need_value "$@"; TOUCH_IDS="$2"; shift 2 ;;
+    --call-id)        need_value "$@"; CALL_ID="$2"; shift 2 ;;
+    --min-score)      need_value "$@"; MIN_SCORE="$2"; shift 2 ;;
+    --purpose)        need_value "$@"; PURPOSE="$2"; shift 2 ;;
     --turbo)          TURBO_FLAG=1; shift ;;
     --no-turbo)       TURBO_FLAG=0; shift ;;
-    *) shift ;;
+    --*|-[A-Za-z])
+      echo "cartographer-search: unknown option '$arg' (to search for text that starts with a dash, put -- before the query)" >&2
+      exit 2 ;;
+    *)                add_query_word "$arg"; shift ;;
   esac
 done
+
+if [ -z "$THREAD_ID$GET_IDS$TOUCH_IDS" ] && [ -z "$QUERY" ]; then
+  echo "cartographer-search: no query given" >&2
+  print_usage >&2
+  exit 2
+fi
 
 case "$OUTPUT_FORMAT" in
   text|jsonl) ;;
@@ -180,11 +298,15 @@ case "$OUTPUT_FORMAT" in
 esac
 
 case "$PURPOSE" in
-  remember|focus|feed|eval|audit|manual) ;;
-  *) echo "Error: --purpose must be remember, focus, feed, eval, audit, or manual" >&2; exit 2 ;;
+  remember|focus|feed|eval|audit|manual|mcp|prompt-cue) ;;
+  *) echo "Error: --purpose must be remember, focus, feed, eval, audit, manual, mcp, or prompt-cue" >&2; exit 2 ;;
 esac
 case "$CALL_ID" in
   *[!A-Za-z0-9_.:-]*|-) echo "Error: malformed --call-id '$CALL_ID'" >&2; exit 2 ;;
+esac
+case "$MIN_SCORE" in
+  '') ;;
+  *[!0-9.]*|*.*.*|.) echo "Error: --min-score must be a non-negative decimal, got '$MIN_SCORE'" >&2; exit 2 ;;
 esac
 
 # CLAUDE_CODE_SESSION_ID is the variable Claude Code actually exports to tool
@@ -422,6 +544,14 @@ if [ -n "$ACTIVE_SESSION_ID" ] && [ "$ALL_MODE" -eq 0 ]; then
 fi
 
 DECAY_LAMBDA="${CARTOGRAPHER_DECAY_LAMBDA:-0.001}"
+# Same variable, default and fallback as rankingFromEnv() in
+# explorer/server/search.js. A wildcard query sets it to 0 below: an expansion
+# names every matching vocabulary term, which no record contains all of.
+LOOKUP_MAX="${CARTOGRAPHER_DECAY_LOOKUP_MAX:-10}"
+case "$LOOKUP_MAX" in ''|*[!0-9]*) LOOKUP_MAX=10 ;; esac
+# rankingFromEnv() reads a value under 1 as the default too; the awk does that.
+LOOKUP_LIFT="${CARTOGRAPHER_DECAY_LOOKUP_LIFT:-3}"
+case "$LOOKUP_LIFT" in ''|*[!0-9.]*|*.*.*|.) LOOKUP_LIFT=3 ;; esac
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
@@ -430,6 +560,17 @@ CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 # still on disk, which reads as "transcript missing" unless this root is scanned.
 CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
+# The api-key header for every Qdrant request, when a key applies. Sourced only
+# when present, like the registry below: a runtime lagging the repo loses the
+# key (and with it the semantic leg against a keyed Qdrant), not every query.
+QDRANT_AUTH_LIB="$(dirname "$0")/qdrant-auth.sh"
+if [ -f "$QDRANT_AUTH_LIB" ]; then
+  # shellcheck source=./qdrant-auth.sh
+  . "$QDRANT_AUTH_LIB"
+  cartographer_qdrant_auth "$QDRANT"
+else
+  qdrant_curl() { curl "$@"; }
+fi
 
 # Resolve project aliases through the single registry resolver. The registry
 # path is NOT hardcoded here any more: a user-level registry under
@@ -547,7 +688,7 @@ record_accesses() {
       echo "cartographer-search: warning: could not resolve access attribution" >&2
       return 0
     }
-  if ! { printf '%s\n' "$records" >> "$ACCESS_LEDGER"; } 2>/dev/null; then
+  if ! { cartographer_append "$ACCESS_LEDGER" "$records"; } 2>/dev/null; then
     echo "cartographer-search: warning: cannot write access ledger at $ACCESS_LEDGER" >&2
   fi
   printf '%s\n' "$records" | jq -r 'select(.call_id == null)
@@ -591,6 +732,21 @@ fi
 # Fetch telemetry describes inspection, not meaningful use. Only an exact,
 # compatible originating call is attributed; an unserved/ambiguous id is still
 # fetched and recorded without a call_id, so it earns no search-call credit.
+
+# The Qdrant point id of an event: the first 13 hex digits of its SHA-256 as an
+# integer (52 bits). Must equal cartographer_point_id() in index-event.sh and
+# hashToInt() in embed-events.js, or --get asks for a point no indexer wrote;
+# tests/unit/get-access-recording.test.js checks the id it sends.
+cartographer_point_id() {
+  local _hex
+  if command -v shasum >/dev/null 2>&1; then
+    _hex=$(printf '%s' "$1" | shasum -a 256 | cut -c1-13)
+  else
+    _hex=$(printf '%s' "$1" | sha256sum | cut -c1-13)
+  fi
+  printf '%s' "$((16#$_hex))"
+}
+
 if [ -n "$GET_IDS" ]; then
   get_logs=""
   for f in "$DEV/changelog.jsonl" "$DEV/research-log.jsonl" \
@@ -640,19 +796,79 @@ if [ -n "$GET_IDS" ]; then
     LC_ALL=C grep -h -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
   fi
 
+  # Resolve every id before printing any, and record the fetch before the first
+  # byte goes out. A reader that stops early (`--get … | head`) closes the pipe,
+  # and the next write ends this script by SIGPIPE: printing first lost the
+  # access row of fetches agents made exactly as the skill asks, --call-id and
+  # all (three calls found in transcripts, docs/ABANDONMENT.md). A closed pipe
+  # now costs output, never the row. record.N holds the Nth id's record.
+  get_index=0
   for gid in $get_ids; do
-    line=$(LC_ALL=C awk -v want="$gid" '
+    get_index=$((get_index + 1))
+    LC_ALL=C awk -v want="$gid" '
           {
             if (match($0, /"event_id"[[:space:]]*:[[:space:]]*"/)) {
               v = substr($0, RSTART + RLENGTH)
               sub(/".*/, "", v)
               if (v == want) { print; exit }
             }
-          }' "$GET_TMP/candidates")
+          }' "$GET_TMP/candidates" > "$GET_TMP/record.$get_index"
+  done
+
+  # Conversation turns (turn-<sid>-<idx>) are written to the semantic index and
+  # never to the five logs, so --get used to call every served turn missing and
+  # record nothing: about a sixth of served rows. One batched retrieval now
+  # fetches the turns the logs did not hold, by the point id the indexers
+  # write; its payload is the turn's record. Skipped when the semantic leg is
+  # pinned off or jq is absent. An unreachable index leaves the turns missing.
+  if [ "${CARTOGRAPHER_SEMANTIC:-}" != "0" ] && command -v jq >/dev/null 2>&1; then
+    get_points=""
+    get_index=0
+    for gid in $get_ids; do
+      get_index=$((get_index + 1))
+      case "$gid" in
+        turn-*) [ -s "$GET_TMP/record.$get_index" ] \
+                  || get_points="${get_points:+$get_points,}$(cartographer_point_id "$gid")" ;;
+      esac
+    done
+    if [ -n "$get_points" ]; then
+      qdrant_curl -sf --connect-timeout 1 --max-time "${CARTOGRAPHER_HTTP_MAX_TIME:-5}" \
+        "$QDRANT/collections/$COLLECTION/points" -H "Content-Type: application/json" \
+        -d "{\"ids\":[$get_points],\"with_payload\":true,\"with_vector\":false}" \
+        > "$GET_TMP/turns.json" 2>/dev/null || : > "$GET_TMP/turns.json"
+      get_index=0
+      for gid in $get_ids; do
+        get_index=$((get_index + 1))
+        case "$gid" in turn-*) ;; *) continue ;; esac
+        [ -s "$GET_TMP/record.$get_index" ] && continue
+        jq -c --arg id "$gid" '[.result[]? | .payload | select(.event_id == $id)][0] // empty' \
+          "$GET_TMP/turns.json" > "$GET_TMP/record.$get_index" 2>/dev/null || : > "$GET_TMP/record.$get_index"
+      done
+    fi
+  fi
+
+  # In request order, so access_ordinal still says which id was asked for first.
+  get_index=0
+  for gid in $get_ids; do
+    get_index=$((get_index + 1))
+    [ -s "$GET_TMP/record.$get_index" ] && get_redeemed="${get_redeemed:+$get_redeemed }$gid"
+  done
+  if [ -n "$get_redeemed" ]; then
+    record_accesses result_fetched "$get_redeemed" "$now_iso" "get-${now_iso}-$$"
+  fi
+
+  get_index=0
+  for gid in $get_ids; do
+    get_index=$((get_index + 1))
+    line=$(cat "$GET_TMP/record.$get_index")
 
     echo "=== $gid ==="
     if [ -z "$line" ]; then
-      echo "(no event with that id in $DEV/*.jsonl — it may have aged out, live only in Qdrant as a transcript turn, or not exist)"
+      case "$gid" in
+        turn-*) echo "(no event with that id in $DEV/*.jsonl or the semantic index — the index may be unreachable or pinned off, or the turn never indexed)" ;;
+        transcript-*) echo "(no event with that id: a transcript-… hit is a line from a transcript grep, not a stored event; read the transcript it names)" ;;
+        *) echo "(no event with that id in $DEV/*.jsonl — it may have aged out, or not exist)" ;;
+      esac
       echo ""
       get_missing=$((get_missing + 1))
       continue
@@ -694,12 +910,7 @@ if [ -n "$GET_IDS" ]; then
     fi
     echo ""
     get_found=$((get_found + 1))
-    get_redeemed="${get_redeemed:+$get_redeemed }$gid"
   done
-
-  if [ -n "$get_redeemed" ]; then
-    record_accesses result_fetched "$get_redeemed" "$now_iso" "get-${now_iso}-$$"
-  fi
 
   echo "($get_found fetched, $get_missing missing)"
   [ "$get_found" -eq 0 ] && exit 1
@@ -733,6 +944,7 @@ exec 1> "$OUTPUT_PIPE"
 GREP_QUERY="$QUERY"
 AWK_QUERY="$QUERY"
 if echo "$QUERY" | grep -q '\*'; then
+  LOOKUP_MAX=0
   # Build grep pattern for file matching
   GREP_QUERY=$(echo "$QUERY" | sed 's/\*/[a-z0-9]*/g')
 
@@ -808,14 +1020,20 @@ semantic_search_to_tsv() {
   # corpus rows from a live Qdrant rather than whatever happens to be running.
   [ "${CARTOGRAPHER_SEMANTIC:-}" = "0" ] && return 1
   $HAS_JQ || return 1
-  curl -sf "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
-  curl -sf "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1
+  # A deadline on every request: a service that accepts and never answers held
+  # this leg, and the search waiting on it, with no limit. Budgets as in
+  # index-event.sh, measured at load average 68 (probes ~65 ms, an embedding
+  # 0.2-0.8 s); CARTOGRAPHER_HTTP_MAX_TIME raises the call budget.
+  local probe=(--connect-timeout 1 --max-time 2)
+  local call=(--connect-timeout 1 --max-time "${CARTOGRAPHER_HTTP_MAX_TIME:-5}")
+  qdrant_curl -sf "${probe[@]}" "$QDRANT/collections/$COLLECTION" >/dev/null 2>&1 || return 1
+  curl -sf "${probe[@]}" "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1 || return 1
 
   local embed_response
   # On stdin, not -d: Windows' curl re-encodes non-ASCII arguments (see
   # index-event.sh), so a query with an accent or a curly quote got a 400.
   embed_response=$(jq -n -c --arg m "$EMBED_MODEL" --arg q "Represent this sentence for retrieval: $QUERY" \
-      '{model: $m, input: $q}' | curl -sf "$EMBED_URL" \
+      '{model: $m, input: $q}' | curl -sf "${call[@]}" "$EMBED_URL" \
     -H "Content-Type: application/json" \
     --data-binary @- 2>/dev/null) || return 1
 
@@ -889,18 +1107,21 @@ semantic_search_to_tsv() {
       '{vector: $v, limit: $l, with_payload: true, filter: {must: $m}}')
   fi
 
-  local results
-  results=$(curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
+  local results status
+  results=$(qdrant_curl -sf "${call[@]}" "$QDRANT/collections/$COLLECTION/points/search" \
     -H "Content-Type: application/json" \
     -d "$search_body" 2>/dev/null)
+  status=$?
   # `curl -sf` fails the same way for "this server cannot do datetime ranges"
   # and "Qdrant is down", so retry once without the range before giving up.
   # Dropping the leg outright would be a regression against the pre-pushdown
   # behaviour on older servers: rank_fuse's awk temporal filter still trims the
   # window, so an unbounded query is degraded but not wrong. If Qdrant is
   # genuinely unreachable the retry fails too and we return 1 as before.
-  # Mirrors the 4xx retry in explorer/server/search.js:semanticSearch().
-  if [ -z "$results" ] && [ "$range_cond" != "{}" ]; then
+  # Mirrors the 4xx retry in explorer/server/search.js:semanticSearch(). Not
+  # after a timeout (curl exit 28): a server too slow to answer once is not
+  # refusing the range, and a second wait would double the leg's cost.
+  if [ -z "$results" ] && [ "$range_cond" != "{}" ] && [ "$status" -ne 28 ]; then
     if [ "$must_norange" = "[]" ]; then
       search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" \
         '{vector: $v, limit: $l, with_payload: true}')
@@ -908,7 +1129,7 @@ semantic_search_to_tsv() {
       search_body=$(jq -n --argjson v "$vector" --argjson l "$depth" --argjson m "$must_norange" \
         '{vector: $v, limit: $l, with_payload: true, filter: {must: $m}}')
     fi
-    results=$(curl -sf "$QDRANT/collections/$COLLECTION/points/search" \
+    results=$(qdrant_curl -sf "${call[@]}" "$QDRANT/collections/$COLLECTION/points/search" \
       -H "Content-Type: application/json" \
       -d "$search_body" 2>/dev/null)
   fi
@@ -1048,14 +1269,15 @@ rank_fuse_and_display() {
   # codex_memory_stale mirrors CODEX_MEMORY_STALE_RELATIVE in
   # codex-memory-stale.js; tests/unit/codex-memory-stale.test.js pins them.
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
+      -v lookup_max="$LOOKUP_MAX" -v lookup_lift="$LOOKUP_LIFT" -v noise_trim=0.1 \
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
       -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
       -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
       -v codex_memory_stale="$DEV/.carto/codex-memory-stale-ids.txt" \
-      -v served_log="$SERVED_LOG" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
+      -v served_log="${SERVED_LOG:+$TMPDIR/served-rows.jsonl}" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
       -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
       -v session_attribution="$SESSION_ATTRIBUTION" -v session_source="$SESSION_SOURCE" \
-      -v output_format="$OUTPUT_FORMAT" '
+      -v output_format="$OUTPUT_FORMAT" -v min_score="${MIN_SCORE:-0}" -v floor_out="$TMPDIR/floor.tsv" '
   # Stable O(n log n) merge sort over order[] using score_map[]. The old
   # insertion sort was acceptable for tiny corpora, but common project terms
   # can generate tens of thousands of keyword candidates.
@@ -1189,6 +1411,14 @@ rank_fuse_and_display() {
       if (before_epoch + 0 > 0 && ts_epoch > before_epoch + 0) next
     }
 
+    # ─── Lookup candidates ───
+    # bm25-search.awk sets column 10 when the record contains every query
+    # token. Counted here, after scope, window and stale filtering and before
+    # delta serving, so what a query names does not depend on what this
+    # session was already shown. lookupExemption() in explorer/server/search.js
+    # counts the same set.
+    if (($10 + 0) == 1) full_key[key] = 1
+
     # ─── Delta-serving suppression ───
     # Drop already-served event_ids so iterative /remember calls in the
     # same session surface fresh material rather than re-returning the
@@ -1228,6 +1458,41 @@ rank_fuse_and_display() {
     # Sort by RRF score without allowing query breadth to make fusion quadratic.
     merge_sort_order(1, n, order, sort_scratch, rrf_score, stable_rank)
 
+    # ─── Relative noise trim, on relevance ───
+    # Drop what scores under noise_trim of the best RRF x salience score,
+    # before any age weighting — trimNoise() in explorer/server/search.js. The
+    # API trimmed after decay until 2026-10-16 and so cut old records for
+    # their age; this path had no trim at all, so the engines also disagreed
+    # about the pool. Sorted, so the survivors are a prefix.
+    if (n > 0 && noise_trim + 0 > 0) {
+      trim_floor = rrf_score[order[1]] * noise_trim
+      while (n > 0 && rrf_score[order[n]] < trim_floor) n--
+    }
+
+    # ─── Lookup exemption ───
+    # Between 1 and lookup_max candidates hold every query token: the query
+    # names them, and age is no evidence against a named record. They skip the
+    # decay below; everything else decays. Why a switch and not a gentler
+    # curve is measured in lookupExemption() in explorer/server/search.js.
+    # On this path, measured 2026-10-16 on 204k live events (paired cases):
+    # S@10 for known items older than 90 days went 0.23 -> 1.00 (12 of 30
+    # absent from the top 100 -> 0), 30-90 days 0.67 -> 0.97, and the newest
+    # record on recency cases stayed at 0.73.
+    nfull = 0
+    for (fk in full_key) nfull++
+    exempt_on = (lookup_max + 0 > 0 && nfull >= 1 && nfull <= lookup_max + 0)
+    # ─── Lookup lift ───
+    # Skipping decay keeps a named record on the page but not first: RRF is
+    # flat, so a recent 0.8-salience milestone sharing part of the query
+    # outranks a 0.4 web fetch holding all of it. Named candidates are
+    # multiplied by lookup_lift after decay — liftNamed() in
+    # explorer/server/search.js, where the measurement is. A score change, not
+    # a sort tier, so --min-score below still stops at a sorted boundary.
+    # On this path, measured 2026-10-17 on the corpus as of 2026-04-04 (17,851
+    # events, 180 known items, 19 recency cases): known S@1 106 -> 173 and
+    # S@10 165 -> 180, no case ranked lower, recency unchanged.
+    if (lookup_lift + 0 < 1) lookup_lift = 3
+
     # ─── Activation: Ebbinghaus time-decay + promote-on-reuse ───
     # score *= exp(-lambda * hours_since_last_use) * reuse_boost
     #
@@ -1248,7 +1513,7 @@ rank_fuse_and_display() {
         factor *= boost
         resort_needed = 1
       }
-      if (decay_lambda + 0 > 0 && now_epoch + 0 > 0) {
+      if (decay_lambda + 0 > 0 && now_epoch + 0 > 0 && !(exempt_on && (k in full_key))) {
         event_epoch = ts_to_epoch(timestamp[k])
         if (event_epoch > 0) {
           if (acc_last[k] + 0 > event_epoch) event_epoch = acc_last[k] + 0
@@ -1257,6 +1522,10 @@ rank_fuse_and_display() {
           factor *= exp(-decay_lambda * hours)
           resort_needed = 1
         }
+      }
+      if (exempt_on && (k in full_key) && lookup_lift + 0 != 1) {
+        factor *= lookup_lift
+        resort_needed = 1
       }
       if (factor != 1.0) rrf_score[k] = rrf_score[k] * factor
     }
@@ -1434,16 +1703,28 @@ rank_fuse_and_display() {
 
     # ─── Display top results ───
     shown = 0
+    below_floor = 0
     for (i = 1; i <= n && shown < limit; i++) {
       k = order[i]
+      # --min-score: order[] is sorted by score, so the first result under the
+      # floor ends the list. Count what the limit would have admitted, so the
+      # call log can say how many slots the floor emptied.
+      if (min_score + 0 > 0 && rrf_score[k] + 0 < min_score + 0) {
+        below_floor = n - i + 1
+        if (below_floor > limit - shown) below_floor = limit - shown
+        break
+      }
       # Reuse marker: events with recorded accesses show a visible (used xN)
       # tag — the glass-box cue for why a result may rank above fresher ones.
       reuse_tag = (acc_n[k] + 0 > 0) ? sprintf(" (used x%d)", acc_n[k]) : ""
+      # score is the fused value the ranking used (RRF x salience x activation),
+      # the same quantity the warm path reports. --min-score and the prompt-cue
+      # hook both read it, so the two paths must emit it on one scale.
       if (output_format == "jsonl") {
-        printf "{\"call_id\":\"%s\",\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"rank\":%d,\"extras\":\"%s\"}\n", \
+        printf "{\"call_id\":\"%s\",\"timestamp\":\"%s\",\"source\":\"%s\",\"event_id\":\"%s\",\"summary\":\"%s\",\"project\":\"%s\",\"event_type\":\"%s\",\"salience\":%.3f,\"score\":%.6f,\"rank\":%d,\"extras\":\"%s\"}\n", \
           json_escape(call_id), json_escape(timestamp[k]), json_escape(sources[k]), json_escape(k), \
           json_escape(summaries[k]), json_escape(project[k]), json_escape(etype_map[k]), \
-          salience_map[k] + 0, shown + 1, json_escape(extra[k])
+          salience_map[k] + 0, rrf_score[k] + 0, shown + 1, json_escape(extra[k])
       } else {
         printf "[%s] [%s] %s%s\n", timestamp[k], sources[k], k, reuse_tag
 
@@ -1495,6 +1776,16 @@ rank_fuse_and_display() {
         printf "{\"timestamp\":\"%s\",\"call_id\":\"%s\",\"purpose\":\"%s\",\"session_id\":\"%s\",\"provider\":\"%s\",\"attribution_status\":\"%s\",\"session_source\":\"%s\",\"query\":\"%s\",\"event_id\":\"%s\",\"rank\":%d,\"source\":\"%s\",\"project\":\"%s\",\"backend\":\"cli\"}\n", \
           serve_ts, call_id, purpose, esc_sid, esc_prov, session_attribution, session_source, esc_q, k, i, esc_src, esc_proj >> served_log
       }
+    }
+
+    # The best score before the floor, for the call log: a caller that
+    # abstains never sees it, and it is the number a floor is retuned against.
+    if (floor_out != "") {
+      if (n > 0) printf "%.6f\t%d\n", rrf_score[order[1]] + 0, below_floor > floor_out
+      else printf "-\t0\n" > floor_out
+    }
+    if (output_format == "text" && below_floor > 0) {
+      printf "(min-score: %d result%s under %s dropped)\n", below_floor, (below_floor == 1 ? "" : "s"), min_score
     }
 
     # Surface a hint when delta-serving suppressed material so the user
@@ -1773,6 +2064,7 @@ if [ "$TURBO_ENABLED" = "1" ]; then
       --format "$OUTPUT_FORMAT" \
       --purpose "$PURPOSE" \
       --call-id "$CALL_ID" \
+      --min-score "$MIN_SCORE" \
       --request-started-ms "$REQUEST_STARTED_MS" \
       --session-id "$CONTEXT_SESSION_ID" \
       --provider "$CONTEXT_PROVIDER" \
@@ -1839,6 +2131,13 @@ if [ "$TURBO_HANDLED" = "0" ]; then
 
   cat "$TMPDIR/keyword_results.tsv" "$TMPDIR/semantic_results.tsv" | rank_fuse_and_display
   [ $? -eq 0 ] && FOUND=1
+  # The fusion awk wrote this call's served rows beside its other output; one
+  # append puts them in the shared log, where awk's own buffered writes
+  # could leave them split by another session's rows.
+  if [ -n "$SERVED_LOG" ] && [ -s "$TMPDIR/served-rows.jsonl" ]; then
+    cartographer_append "$SERVED_LOG" "$(< "$TMPDIR/served-rows.jsonl")" 2>/dev/null \
+      || echo "cartographer-search: warning: cannot write served log at $SERVED_LOG" >&2
+  fi
 
   PORTABLE_ENDED_MS=$(clock_ms)
   PORTABLE_RESULT_COUNT=$(wc -l < "$SERVED_OUT" 2>/dev/null | tr -d ' ')

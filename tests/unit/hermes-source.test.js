@@ -40,20 +40,20 @@ function makeDb(file, sessions) {
       message_count INTEGER DEFAULT 0);
     CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, role TEXT NOT NULL,
       content TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL NOT NULL, active INTEGER NOT NULL DEFAULT 1,
-      compacted INTEGER NOT NULL DEFAULT 0, _compressed_summary INTEGER NOT NULL DEFAULT 0);`);
+      compacted INTEGER NOT NULL DEFAULT 0, _compressed_summary INTEGER NOT NULL DEFAULT 0, display_kind TEXT);`);
   const insS = db.prepare('INSERT INTO sessions (id, source, title, started_at, ended_at, cwd, git_repo_root, parent_session_id) VALUES (?,?,?,?,?,?,?,?)');
-  const insM = db.prepare('INSERT INTO messages (session_id, role, content, tool_calls, timestamp, active, compacted, _compressed_summary) VALUES (?,?,?,?,?,?,?,?)');
+  const insM = db.prepare('INSERT INTO messages (session_id, role, content, tool_calls, timestamp, active, compacted, _compressed_summary, display_kind) VALUES (?,?,?,?,?,?,?,?,?)');
   for (const s of sessions) {
     insS.run(s.id, s.source, s.title ?? null, s.started_at ?? T0, s.ended_at ?? T0 + 600, s.cwd ?? null, s.git_repo_root ?? null, s.parent ?? null);
     s.messages.forEach((m, i) => insM.run(s.id, m.role, m.content ?? null, m.tool_calls ?? null,
-      m.timestamp ?? (s.started_at ?? T0) + i, m.active ?? 1, m.compacted ?? 0, m.summary ?? 0));
+      m.timestamp ?? (s.started_at ?? T0) + i, m.active ?? 1, m.compacted ?? 0, m.summary ?? 0, m.display_kind ?? null));
   }
   db.close();
 }
 
 const call = (name, args = {}) => JSON.stringify([{ id: 'c1', type: 'function', function: { name, arguments: JSON.stringify(args) } }]);
 
-function fixture({ devRoot = '/nowhere/dev', exclude = [], redact = ['acme internal'], extra = [] } = {}) {
+function fixture({ devRoot = '/nowhere/dev', exclude = [], redact = ['acme internal'], extra = [], sources = ['desktop', 'cron'] } = {}) {
   const home = tempDir('carto-hermes-home-');
   makeDb(path.join(home, 'state.db'), [
     {
@@ -110,7 +110,7 @@ function fixture({ devRoot = '/nowhere/dev', exclude = [], redact = ['acme inter
   const configPath = path.join(home, 'hermes.json');
   fs.writeFileSync(configPath, JSON.stringify({
     hermes_home: home,
-    sources: ['desktop', 'cron'],
+    sources,
     default_project: 'agent',
     path_projects: {},
     cron_projects: { aaaaaaaaaaaa: 'digests' },
@@ -183,6 +183,73 @@ describe('hermes-source turn contract', () => {
     assert.doesNotMatch(text, /abandoned/);
     assert.match(text, /Second real prompt/);
   });
+
+  test('a row compacted twice is one turn; a prompt really repeated later is two', () => {
+    const ask = 'having lots of fun with the light show, audit accuracy';
+    // Ordered as readMessages orders them (timestamp, id). Rows 9 and 10 are the
+    // next compaction's copies of 1 and 2: same role, content and timestamp.
+    const { turns } = buildTurns([
+      { id: 1, role: 'user', content: ask, timestamp: T0, compacted: true },
+      { id: 9, role: 'user', content: ask, timestamp: T0, compacted: true },
+      { id: 2, role: 'assistant', content: 'Auditing the palette now', timestamp: T0 + 1, compacted: true },
+      { id: 10, role: 'assistant', content: 'Auditing the palette now', timestamp: T0 + 1, compacted: true },
+      { id: 11, role: 'user', content: ask, timestamp: T0 + 60, compacted: true },
+      { id: 12, role: 'assistant', content: 'Second audit pass', timestamp: T0 + 61, compacted: true },
+    ], { redact: makeRedactor([]) });
+    assert.deepEqual(turns.map((t) => t.rowid), [1, 11], 'the copy opens no turn; the later repeat does');
+    assert.equal(turns[0].body, `${ask} Auditing the palette now`, 'the copied reply is not doubled');
+    assert.equal(turns[1].body, `${ask} Second audit pass`);
+  });
+
+  test('user rows Hermes wrote itself open no turn, so the reply stays with the prompt that asked for it', () => {
+    const { turns } = buildTurns([
+      { id: 1, role: 'user', content: 'Add visuals to the story', timestamp: T0, active: true },
+      { id: 2, role: 'assistant', content: '', tool_calls: call('image_generate'), timestamp: T0 + 1, active: true },
+      { id: 3, role: 'tool', content: TOOL_RESULT, timestamp: T0 + 2, active: true },
+      { id: 4, role: 'user', timestamp: T0 + 3, active: true,
+        content: "You've reached the maximum number of tool-calling iterations allowed. Please provide a final response summarizing what you've found and accomplished so far, without calling any more tools." },
+      { id: 5, role: 'assistant', content: 'Built a three-image pilot', timestamp: T0 + 4, active: true },
+      { id: 6, role: 'user', timestamp: T0 + 5, active: true,
+        content: '[IMPORTANT: Background process proc_1 matched watch pattern "Server at".\nCommand: npm start]' },
+      { id: 7, role: 'assistant', content: 'Preview server is live', timestamp: T0 + 6, active: true },
+      { id: 8, role: 'user', timestamp: T0 + 7, active: true,
+        content: '[ASYNC DELEGATION BATCH COMPLETE — deleg_1] A background fan-out of 3 subagent(s) you dispatched earlier has finished. SUBAGENT-OUTPUT-SENTINEL' },
+      { id: 9, role: 'user', content: 'Model changed for this chat', display_kind: 'model_switch', timestamp: T0 + 8, active: true },
+      { id: 10, role: 'assistant', content: 'Folded the three reviews', timestamp: T0 + 9, active: true },
+      // A human prompt Hermes wraps (an invoked skill) is still a prompt.
+      { id: 11, role: 'user', timestamp: T0 + 10, active: true,
+        content: '[IMPORTANT: The user has invoked the "work" skill, indicating they want you to follow its instructions.] land it' },
+      { id: 12, role: 'assistant', content: 'Landed', timestamp: T0 + 11, active: true },
+    ], { redact: makeRedactor([]) });
+    assert.deepEqual(turns.map((t) => t.rowid), [1, 11], 'only the two human prompts open turns');
+    assert.equal(turns[0].body,
+      'Add visuals to the story Built a three-image pilot Preview server is live Folded the three reviews [tools: image_generate]');
+    assert.doesNotMatch(JSON.stringify(turns), /maximum number|Background process|SUBAGENT-OUTPUT-SENTINEL|Model changed/);
+  });
+
+  test('a dashboard chat (`tui`) ingests like a desktop chat once the policy lists it', async () => {
+    const extra = [{
+      id: 'dash-1', source: 'tui', title: 'Explore the light show',
+      messages: [
+        { role: 'user', content: 'Audit the light show' },
+        { role: 'assistant', content: '', tool_calls: call('read_file') },
+        { role: 'tool', content: TOOL_RESULT },
+        // Marked only by display_kind, so this also proves readMessages carries the column.
+        { role: 'user', content: 'Switched this chat to a faster model', display_kind: 'model_switch' },
+        { role: 'assistant', content: 'Palette audit done' },
+        { role: 'user', content: 'Ship it' },
+        { role: 'assistant', content: 'Shipped' },
+      ],
+    }];
+    const unlisted = await run(fixture({ extra }));
+    assert.equal(sessionUnit(unlisted.units, 'dash-1'), undefined, 'not read unless the policy lists tui');
+    const { units } = await run(fixture({ extra, sources: ['desktop', 'cron', 'tui'] }));
+    const unit = sessionUnit(units, 'dash-1');
+    assert.equal(unit.rows[0].hermes_source, 'tui');
+    assert.match(unit.rows[0].summary, /^Hermes tui session — Explore the light show: Audit the light show/);
+    assert.deepEqual(unit.docs.map((d) => d.summary),
+      ['Audit the light show Palette audit done [tools: read_file]', 'Ship it Shipped']);
+  });
 });
 
 describe('hermes-source cron runs', () => {
@@ -249,6 +316,16 @@ describe('hermes-source privacy', () => {
     const cfg = path.join(dir, 'hermes.json');
     fs.writeFileSync(cfg, JSON.stringify({ hermes_home: home }));
     return assert.rejects(collect(loadConfig(cfg)), (err) => err instanceof HermesSourceError && /openclaw/.test(err.message));
+  });
+
+  test('without a sources list, the policy reads the dashboard chat and leaves out one-shot cli calls', () => {
+    const dir = tempDir('carto-hermes-cfg-');
+    const cfg = path.join(dir, 'hermes.json');
+    fs.writeFileSync(cfg, JSON.stringify({ hermes_home: dir }));
+    const { sources } = loadConfig(cfg);
+    assert.ok(sources.has('tui'), 'tui');
+    assert.ok(sources.has('desktop'), 'desktop');
+    assert.ok(!sources.has('cli'), 'cli');
   });
 
   test('refuses to run without an explicit policy file', () => {

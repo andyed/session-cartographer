@@ -363,3 +363,20 @@ test('a commit with no session says so instead of printing undefined', () => {
   // commit into one phantom "session" and count them as siblings.
   assert.doesNotMatch(out, /commits from this session/);
 });
+
+test('--roster keeps the roster and contention, and says the silence checks did not run', () => {
+  // The SessionStart note runs this on every session start. A skipped check
+  // must read as null, never as an empty list a reader takes for "all clear".
+  const { dir, repo } = build();
+  const full = JSON.parse(run(dir, ['--since', '6h', '--json']));
+  const roster = JSON.parse(run(dir, ['--since', '6h', '--json', '--roster']));
+  assert.ok(Array.isArray(full.unclaimed_changes) && full.silent !== null, 'the full run computes both');
+  assert.equal(roster.silent, null);
+  assert.equal(roster.unclaimed_changes, null);
+  assert.deepEqual(roster.sessions.map((s) => s.id), full.sessions.map((s) => s.id));
+  assert.deepEqual(roster.contention, full.contention);
+  // recent_files: newest first. BETA touched shared.js, then also-shared.js.
+  const beta = roster.sessions.find((s) => s.id === BETA);
+  assert.deepEqual(beta.recent_files.map((f) => path.basename(f)), ['also-shared.js', 'shared.js']);
+  assert.ok(beta.recent_files.every((f) => f.startsWith(fs.realpathSync(repo))), 'absolute, canonical paths');
+});

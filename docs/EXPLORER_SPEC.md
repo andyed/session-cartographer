@@ -49,15 +49,16 @@ source.onmessage = (e) => {
 
 ### Why proxy Qdrant through Node
 
-React at :2527 cannot query Qdrant at :6333 directly — CORS. The Node API at :2526 proxies semantic search and runs BM25 keyword search, fusing both via RRF.
+The browser never queries Qdrant at :6333 (Security, item 4). The Node API at :2526 proxies semantic search and runs BM25 keyword search, fusing both via RRF.
 
 ## Security
 
 The Explorer has raw access to session transcripts. Local-only hardening:
 
-1. **Localhost binding**: API and Vite servers bind to `127.0.0.1`, never `0.0.0.0`.
+1. **Localhost binding**: API and Vite servers bind to `127.0.0.1`, never `0.0.0.0`. Binding does not stop DNS rebinding, so the API, headless Turbo and the UI host also refuse a non-loopback `Host`, a foreign `Origin` and `Sec-Fetch-Site: cross-site` (`explorer/server/loopback-guard.js`).
 2. **Path traversal protection**: Transcript endpoint (`/api/transcript?path=...`) verifies the resolved path is a descendant of `CARTOGRAPHER_TRANSCRIPTS_DIR`. Reject anything reaching outside.
-3. **XSS sanitization**: Transcript content rendered through DOMPurify before injection. Claude generates arbitrary code/markdown — treat it as untrusted.
+3. **No HTML rendering of corpus text**: Claude generates arbitrary code/markdown — treat it as untrusted. There is no DOMPurify; nothing needs one, because no corpus text is parsed as HTML. The transcript and Memory Desk markdown renderers emit React elements, nothing uses `dangerouslySetInnerHTML`, and every corpus URL that becomes an `href` (Memory Desk links, `EventCard`'s event `url`) passes `safeArtifactLink` (`http(s)`, `mailto`, `#` only); a refused one renders as text. React 19 rewrites only a `javascript:` href, so it is not relied on. A render path that emits raw HTML must bring its own sanitizer.
+4. **Qdrant is not for browsers**: no Explorer code, demo build included, calls :6333; semantic search goes through the API. `scripts/start-services.sh` therefore runs Qdrant with `enable_cors: false` and an API key. Qdrant's CORS default is on, reflecting any `Origin`, so with it on any web page could try to read the corpus. CORS off stops reads only: Qdrant 1.12.1 parses a `text/plain` POST, which needs no preflight, as JSON, so a page could still send blind writes such as `points/delete`. The key closes that: the same POST gets 401, and so does the preflight a page would need to attach the header itself. The launcher generates the key on first start into `$CARTOGRAPHER_QDRANT_STORAGE/api-key` (mode 600) and writes it into its config as `service.api_key`; the API's Qdrant calls (`search.js`, `memory-recall.js`, the `/api/health` probe) and every script send it as the `api-key` header through `scripts/qdrant-auth.js` or `qdrant-auth.sh`, reading that file or `CARTOGRAPHER_QDRANT_API_KEY`. A file key goes only to a loopback Qdrant URL. `qdrant-start-services-key.test.js` sends the blind write to a launcher-started Qdrant and expects 401; `qdrant-api-key.test.js` checks that every client sends the header.
 
 ## Node API (:2526)
 
@@ -70,7 +71,7 @@ The Explorer has raw access to session transcripts. Local-only hardening:
 | GET | `/api/events?project=...&since=...&limit=N` | Paginated event history |
 | GET | `/api/projects` | List of all projects seen in logs |
 | GET | `/api/stats` | Event counts by type, project, day |
-| GET | `/api/health` | Service health (JSONL files exist, Qdrant status) |
+| GET | `/api/health` | Service health: `status` is `degraded` when a log on disk failed its last read (`load_errors` names it), else `ok`; `logs` counts torn rows (`malformed` in total, and per log `malformed_lines`, `appended_malformed`) with each log's rewrite state and `spooled_rows`, without changing `status` (`/api/recall/health` serves the same `load_errors` and `logs`); `files` (which logs exist), Qdrant and embedder reachability, and `qdrant_error: "unauthorized"` when Qdrant answered 401/403 (a missing or wrong API key, not an outage) |
 
 ### SSE stream (`/api/stream`)
 
@@ -181,7 +182,7 @@ Force-directed graph of session relationships. Which sessions touched which proj
 
 - **React 19** + Vite
 - **Tailwind CSS** — dark theme
-- **DOMPurify** — transcript content sanitization
+- **No HTML sanitizer** — markdown renders as React elements (see Security)
 - **No state library** — `useReducer` + context
 - **No router** — tab switching, not pages
 

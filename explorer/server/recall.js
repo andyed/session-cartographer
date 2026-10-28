@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { computeFacets, hybridSearch, parseTimeArg } from './search.js';
-import { CORPUS_ROOT } from './jsonl.js';
+import { CORPUS_ROOT, logHealth } from './jsonl.js';
 import {
   RECALL_CONTRACT_VERSION,
   RecallContractError,
@@ -101,6 +101,12 @@ export function recallHealth({ events, index, watch = null }) {
     // `cartographer-turbo.js status` compares these with the disk to show
     // whether the index is still growing with the logs.
     watch,
+    // The same two fields /api/health serves: `load_errors` for a log that
+    // failed its last read, and `logs` for rows loaded, malformed lines (torn
+    // rows) at load and appended since, and rewrite state. A malformed line is
+    // two records nobody can recall, so it is reported rather than skipped.
+    // `status` stays "ok" here: turbo-entry and the internals route key on it.
+    ...logHealth(),
     process: {
       pid: process.pid,
       rss: process.memoryUsage().rss,

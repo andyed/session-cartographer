@@ -10,10 +10,11 @@
 //   node scripts/enrich-sessions.js --write          # Update changelog.jsonl in place
 //   node scripts/enrich-sessions.js --write --reindex # Also re-index updated events in Qdrant
 
-import { readFileSync, writeFileSync } from 'fs';
+import { writeFileSync } from 'fs';
 import { dirname } from 'path';
 import { execSync } from 'child_process';
-import { buildSessionWindows, defaultPaths, readJsonl, toSortedList } from './session-windows.js';
+import { buildSessionWindows, defaultPaths, toSortedList } from './session-windows.js';
+import { replaceJsonl, snapshotJsonl } from './jsonl-lock.js';
 import { ownerNames, isOwnEvent } from './ownership.js';
 
 const OWNERS = ownerNames();
@@ -55,12 +56,15 @@ function findSession(timestamp, project) {
 
 // ─── Step 4: Enrich changelog events ───
 
-const events = readJsonl(CHANGELOG);
+// Line by line over the bytes as read, so replaceJsonl can check them at write
+// time. A row that does not parse, or that nothing changes, is kept byte for
+// byte: re-serializing every parsed row silently dropped the torn ones.
+const raw = snapshotJsonl(CHANGELOG);
 let enriched = 0;
 let alreadyHad = 0;
 let unmatched = 0;
 
-const updatedEvents = events.map(e => {
+function enrich(e) {
   if (e.session_id) {
     alreadyHad++;
     // Even events with session_id might be missing transcript_path
@@ -91,6 +95,15 @@ const updatedEvents = events.map(e => {
     unmatched++;
   }
   return e;
+}
+
+const outLines = raw.toString('utf8').split('\n').map((line) => {
+  if (!line.trim()) return line;
+  let e;
+  try { e = JSON.parse(line); } catch { return line; }
+  const before = enriched;
+  enrich(e);
+  return enriched === before ? line : JSON.stringify(e);
 });
 
 console.log(`Already had session_id: ${alreadyHad}`);
@@ -100,13 +113,13 @@ console.log(`Unmatched: ${unmatched}`);
 if (doWrite) {
   // Backup
   const backup = CHANGELOG + '.bak';
-  writeFileSync(backup, readFileSync(CHANGELOG));
+  writeFileSync(backup, raw);
   console.log(`Backup: ${backup}`);
 
-  // Write enriched changelog
-  const output = updatedEvents.map(e => JSON.stringify(e)).join('\n') + '\n';
-  writeFileSync(CHANGELOG, output);
-  console.log(`Updated: ${CHANGELOG}`);
+  // Under the rewrite lock, carrying rows appended since the read
+  // (scripts/jsonl-lock.js). Those rows are new and are not enriched.
+  const { carried_rows: carried } = replaceJsonl(CHANGELOG, { original: raw, body: outLines.join('\n') });
+  console.log(`Updated: ${CHANGELOG}${carried ? ` (${carried} row(s) appended during the run carried across)` : ''}`);
 
   if (doReindex) {
     console.log('Re-indexing into Qdrant...');

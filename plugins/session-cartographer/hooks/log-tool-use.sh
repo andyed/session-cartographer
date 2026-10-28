@@ -772,13 +772,18 @@ emit_row() {
   tool_row=${rows%%"$nl"*}
   changelog_event=${rows#*"$nl"}
 
-  printf '%s\n' "$tool_row" >> "$LOG_FILE"
-  printf '%s\n' "$changelog_event" >> "$CHANGELOG"
+  cartographer_append "$LOG_FILE" "$tool_row"
+  cartographer_append "$CHANGELOG" "$changelog_event"
 
   # Real-time indexing (silent fail if services aren't running)
   INDEXER=$(cartographer_script index-event.sh)
   if [ -x "$INDEXER" ]; then
-    printf '%s\n' "$changelog_event" | "$INDEXER" &
+    # Detached from the hook's stdout and stderr. The indexer outlives the
+    # hook, and a reader that waits for EOF on the hook's pipes waits for it
+    # too: Node's 'close' fired at 2.1 s for a hook whose 2 s background child
+    # kept them, and at 0.1 s once it was redirected. Its stdin is the event;
+    # bash gives the rest of a background pipeline /dev/null.
+    printf '%s\n' "$changelog_event" | "$INDEXER" >/dev/null 2>&1 &
   fi
 }
 

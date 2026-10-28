@@ -11,13 +11,47 @@ import { epochMsFromTimestamp, scoreBM25 } from './bm25.js';
 import { projectMatcher } from './project-filter.js';
 import { isResolved } from '../../scripts/sentinels.js';
 import { cachedCodexMemoryStale } from '../../scripts/codex-memory-stale.js';
+import { qdrantFetch } from '../../scripts/qdrant-auth.js';
 
 const QDRANT_URL = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
 const EMBED_URL = process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings';
 const EMBED_MODEL = process.env.CARTOGRAPHER_EMBED_MODEL || 'mxbai-embed-large';
 const COLLECTION = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
 const RRF_K = 60;
-const DECAY_LAMBDA = parseFloat(process.env.CARTOGRAPHER_DECAY_LAMBDA || '0.001');
+// Fused items scoring under this fraction of the top are dropped as noise.
+// The fraction is taken over relevance (RRF x salience), never over the
+// age-weighted score — see the trim in hybridSearch.
+const NOISE_TRIM = 0.1;
+
+/**
+ * Ranking parameters, read at call time like semanticEnabled() below, so a
+ * test or harness that sets the environment after import is honoured.
+ *
+ *   lambda     exponential decay per hour (CARTOGRAPHER_DECAY_LAMBDA, 0.001 ≈
+ *              a 29-day half-life; 0 disables decay).
+ *   lookupMax  CARTOGRAPHER_DECAY_LOOKUP_MAX, default 10: when between 1 and
+ *              this many candidates contain every query token, the query is a
+ *              lookup and those candidates are not decayed. 0 disables.
+ *   lookupLift CARTOGRAPHER_DECAY_LOOKUP_LIFT, default 3: those candidates'
+ *              scores are then multiplied by this (liftNamed). 1 disables; a
+ *              value under 1, or not a number, reads as the default.
+ *
+ * scripts/cartographer-search.sh reads the same three variables with the same
+ * defaults; keep the two in sync.
+ */
+export function rankingFromEnv(env = process.env) {
+  const lambda = Number.parseFloat(env.CARTOGRAPHER_DECAY_LAMBDA || '0.001');
+  const lookupMax = Number.parseInt(env.CARTOGRAPHER_DECAY_LOOKUP_MAX || '10', 10);
+  // Digits with at most one dot, as the CLI's `case` accepts; parseFloat would
+  // read "2x" as 2 where the CLI falls back to 3.
+  const liftRaw = env.CARTOGRAPHER_DECAY_LOOKUP_LIFT || '3';
+  const lookupLift = /^[0-9]*\.?[0-9]*$/.test(liftRaw) && liftRaw !== '.' ? Number(liftRaw) : NaN;
+  return {
+    lambda: Number.isFinite(lambda) && lambda > 0 ? lambda : 0,
+    lookupMax: Number.isFinite(lookupMax) ? Math.max(0, lookupMax) : 10,
+    lookupLift: Number.isFinite(lookupLift) && lookupLift >= 1 ? lookupLift : 3,
+  };
+}
 
 // Promote-on-reuse access ledger — written by the CLI's --touch when /remember
 // actually reads the transcript behind a result. Mirrors the activation layer
@@ -38,11 +72,25 @@ const REUSE_WEIGHT = parseFloat(process.env.CARTOGRAPHER_REUSE_WEIGHT || '0.3');
 // const is fixed before an importing test can set the variable.
 const semanticEnabled = () => process.env.CARTOGRAPHER_SEMANTIC !== '0';
 
+// One deadline for the whole semantic leg: the embedding, the search, and the
+// range retry share it. Without one, an embedder that accepted the connection
+// and never answered held the request open with no limit. 3 s sits under the
+// 4 s Turbo client budget (TURBO_TIMEOUT_DEFAULT_MS), so a stalled leg still
+// leaves time for the keyword answer to arrive; missing that budget costs the
+// caller the portable CLI. An embedding measured 0.2-0.8 s at load average 68
+// on 2026-10-16, and a filtered search 4-16 ms with the payload indexes.
+// Read at call time, like semanticEnabled.
+const semanticTimeoutMs = () => {
+  const ms = Number(process.env.CARTOGRAPHER_SEMANTIC_TIMEOUT_MS);
+  return Number.isFinite(ms) && ms > 0 ? ms : 3000;
+};
+
 /**
  * Get embedding vector for a query string.
  */
-async function getEmbedding(text) {
+async function getEmbedding(text, signal) {
   const res = await fetch(EMBED_URL, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -60,8 +108,9 @@ async function getEmbedding(text) {
  */
 const SEMANTIC_SCORE_THRESHOLD = 0.3;
 
-async function qdrantSearch(body) {
-  const res = await fetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+async function qdrantSearch(body, signal) {
+  const res = await qdrantFetch(`${QDRANT_URL}/collections/${COLLECTION}/points/search`, {
+    signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -106,7 +155,8 @@ async function semanticSearch(query, { project, limit, sinceMs = null, beforeMs 
   // Say so without spending an embedding call or a round trip.
   if (project && projectValues && projectValues.length === 0) return [];
 
-  const vector = await getEmbedding(query);
+  const signal = AbortSignal.timeout(semanticTimeoutMs());
+  const vector = await getEmbedding(query, signal);
 
   const body = { vector, limit, with_payload: true, score_threshold: SEMANTIC_SCORE_THRESHOLD };
   const must = [];
@@ -146,7 +196,7 @@ async function semanticSearch(query, { project, limit, sinceMs = null, beforeMs 
 
   let data;
   try {
-    data = await qdrantSearch(body);
+    data = await qdrantSearch(body, signal);
   } catch (error) {
     // A 4xx means this Qdrant rejected the request itself — an older server
     // without datetime range support, or a payload schema that forbids the
@@ -158,7 +208,7 @@ async function semanticSearch(query, { project, limit, sinceMs = null, beforeMs 
     if (!hasRange || !(error.status >= 400 && error.status < 500)) throw error;
     body.filter = must.length > 1 ? { must: must.slice(0, -1) } : undefined;
     if (!body.filter) delete body.filter;
-    data = await qdrantSearch(body);
+    data = await qdrantSearch(body, signal);
   }
 
   return (data.result || []).map((hit, i) => ({
@@ -267,7 +317,9 @@ function bucketBySource(items) {
   return [...buckets.entries()].map(([source, list]) => ({ source, list }));
 }
 
-function rrfFuseMany(ladders, limit) {
+// `exemptIds` (fusion ids) come back as `exempt`, a Set of the output items
+// themselves, so activation can find them without a field on the response.
+function rrfFuseMany(ladders, limit, exemptIds = null) {
   const scores = new Map();
   for (const { source, list } of ladders) {
     for (let rank = 0; rank < list.length; rank++) {
@@ -278,18 +330,96 @@ function rrfFuseMany(ladders, limit) {
         entry.score += rrfScore;
         entry.sources.add(source);
       } else {
-        scores.set(id, { score: rrfScore, sources: new Set([source]), event });
+        scores.set(id, { id, score: rrfScore, sources: new Set([source]), event });
       }
     }
   }
-  return [...scores.values()]
+  const exempt = new Set();
+  const items = [...scores.values()]
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
-    .map((entry) => ({
-      ...entry.event,
-      _score: entry.score,
-      _sources: [...entry.sources].join('+'),
-    }));
+    .map((entry) => {
+      const item = {
+        ...entry.event,
+        _score: entry.score,
+        _sources: [...entry.sources].join('+'),
+      };
+      if (exemptIds?.has(entry.id)) exempt.add(item);
+      return item;
+    });
+  return { items, exempt };
+}
+
+/**
+ * The candidates a lookup names, or null when the query is a browse.
+ *
+ * A query names a record when only a handful of candidates contain all of its
+ * tokens: a colleague's name plus "feedback", a commit subject half-remembered, the three odd
+ * words of a decision. Age says nothing about whether that record is the
+ * answer, so those candidates are not decayed. A query whose tokens many
+ * records share — "deploy fix", "shader" — is a browse, and for a browse
+ * recency is the right tiebreak, so everything decays as before.
+ *
+ * Why a switch and not a gentler curve: fusion is rank-based, and RRF has
+ * almost no dynamic range. Rank 1 in one ladder scores 1/61, rank 10 scores
+ * 1/70, and a rank-1 partial match in another ladder scores 1/61 too. A known
+ * item survives the top 10 only if its age multiplier stays within a few
+ * percent of 1, so any decay strong enough to order a browse by recency
+ * buries old lookups, whatever its shape. Measured 2026-10-16 on 204k live
+ * events (semantic leg off; 240 known items, 60 per age bucket; 40 recency
+ * cases), known-item S@10 by age <7d/7-30d/30-90d/90d+, recency S@10 last:
+ *
+ *   exp λ=0.001, as shipped before      0.98/0.85/0.62/0.15   0.65
+ *   power-law t^-0.5                    0.98/0.77/0.62/0.30   0.72
+ *   ACT-R base-level, d=0.05            0.80/0.53/0.60/0.72   0.47
+ *   ACT-R base-level, d=0.5             0.97/0.70/0.60/0.30   0.70
+ *   no decay (salience applied)         0.35/0.43/0.63/0.85   0.03
+ *   exp λ=0.001 + this exemption        0.98/1.00/0.98/1.00   0.65
+ *
+ * No single curve keeps both kinds of case; d trades the archive for the
+ * week. With the exemption every curve tested reaches 0.97-1.00 in every
+ * bucket. Exp stays the browse curve, decided 2026-10-17 with a third case
+ * kind, since both metrics above reward a steeper curve: the nine graded
+ * demo/truth queries, on the corpus as it stood when they were labeled
+ * (their sessions then 4-10 days old). Every power-law form with the
+ * exemption (ACT-R base-level d=0.3 and 0.5, t^-0.5) lost topical P@10 on
+ * two or three queries and won none, 0.40-0.42 against 0.48. Below about
+ * d/λ (12-21 days) a power law is the steeper curve, and that is where a
+ * browse's material lives (docs/SCORING.md, "Choosing the browse curve").
+ *
+ * The count is over every keyword candidate that survived scope, window and
+ * stale-memory filtering, before FUSION_DEPTH and before delta serving (which
+ * the client applies afterwards), so what a query names does not depend on
+ * what this session was already shown. The CLI's rank_fuse counts the same
+ * set from bm25-search.awk's `full` column.
+ */
+function lookupExemption(keywordPool, lookupMax) {
+  if (!(lookupMax > 0)) return null;
+  const full = new Set();
+  for (const entry of keywordPool) {
+    if (!entry.full) continue;
+    full.add(entry.id);
+    if (full.size > lookupMax) return null;
+  }
+  return full.size > 0 ? full : null;
+}
+
+/**
+ * Relative noise trim over relevance: drop items scoring under NOISE_TRIM of
+ * the best RRF x salience score. It runs before activation on purpose. Run
+ * after decay, as it did until 2026-10-16, it removed old items for their age
+ * rather than their relevance: a near-exact match on a 120-day-old record
+ * decays to ~6% of its score and fell under a tenth of a recent partial
+ * match's, so it left the pool entirely. In the live measurement 51 of 60
+ * known items older than 90 days missed the top 10, and 50 of those were not
+ * ranked low but absent.
+ */
+function trimNoise(items) {
+  let top = 0;
+  for (const item of items) if (item._score > top) top = item._score;
+  if (!(top > 0)) return items;
+  const floor = top * NOISE_TRIM;
+  return items.filter((item) => item._score >= floor);
 }
 
 /**
@@ -320,13 +450,73 @@ function loadAccessLedger() {
     if (!id || isNaN(ts)) continue;
     // Floor ~30min — guards div-by-zero and clock skew
     const days = Math.max(0.02, (now - ts) / 86400e3);
-    const entry = map.get(id) || { n: 0, lastMs: 0, sum: 0 };
+    const entry = map.get(id) || { n: 0, lastMs: 0, sum: 0, times: [] };
     entry.n += 1;
     entry.lastMs = Math.max(entry.lastMs, ts);
     entry.sum += 1 / Math.sqrt(days);
+    entry.times.push(ts);
     map.set(id, entry);
   }
   return map;
+}
+
+function applySalience(items) {
+  for (const item of items) {
+    const salience = Number(item.salience);
+    item._score *= Number.isFinite(salience) ? salience : 0.5;
+  }
+  return items;
+}
+
+/**
+ * Multiply the candidates a lookup names by `lift` (default 3) after decay.
+ *
+ * Skipping decay keeps a named record on the page; it does not put it first.
+ * RRF is flat (1/61 for a rank-1 hit in any ladder) and a week of exp decay
+ * costs 15%, so salience decides. Of the 92 known items the exemption
+ * alone left off rank 1 on the live corpus, 78 lost to a record that did not
+ * hold every query token: 72 of those were salience 0.7-0.8, mostly milestones
+ * (median age 7.6 days), against targets at 0.25-0.5, mostly web fetches. The
+ * other 14 lost to another named record, which no lift reorders. Measured
+ * 2026-10-17 (semantic leg off, 206,896 live events, 240 known items, 60 per
+ * age bucket), known-item S@1 pooled, S@10 pooled:
+ *
+ *   exemption only, as shipped 2026-10-16   148/240 = 0.62   234/240
+ *   lift 1.5                                208/240 = 0.87   239/240
+ *   lift 2                                  217/240 = 0.90   240/240
+ *   lift 3                                  221/240 = 0.92   240/240
+ *   lift-first (every named item on top)    222/240 = 0.93   240/240
+ *
+ * No case lost rank under any lift, the 40 recency cases ranked identically
+ * (none is a lookup), and the graded topical queries scored the same P@10 on
+ * both the live corpus and the corpus as of their labeling (P@5 rose on two,
+ * fell on none). The power-law curves that reached S@1 0.85-0.98 did it by
+ * decaying everything else harder, which cost topical P@10 0.06-0.08; this
+ * leaves the browse curve alone (docs/SCORING.md, "Lifting named records").
+ *
+ * A number is a fixed factor. 'first', reachable only through hybridSearch's
+ * `ranking` option, is the smallest factor that puts every named candidate
+ * above every other item, computed per query; scripts/age-curve.js measures it
+ * as the family's ceiling. Either way it is a score change, not a sort tier:
+ * the CLI's --min-score stops at the first row under the floor while
+ * turbo-search-client.js filters, so scores out of rank order would make the
+ * two engines drop different rows.
+ */
+function liftNamed(items, exempt, lift) {
+  if (!exempt?.size || lift === 1 || lift == null) return;
+  let factor = lift;
+  if (lift === 'first') {
+    let topOther = 0;
+    let minNamed = Infinity;
+    for (const item of items) {
+      if (exempt.has(item)) minNamed = Math.min(minNamed, item._score);
+      else topOther = Math.max(topOther, item._score);
+    }
+    if (!(minNamed > 0) || !Number.isFinite(minNamed)) return;
+    factor = Math.max(1, (topOther / minNamed) * 1.000001);
+  }
+  if (!(Number.isFinite(factor) && factor > 0) || factor === 1) return;
+  for (const item of items) if (exempt.has(item)) item._score *= factor;
 }
 
 /**
@@ -337,28 +527,31 @@ function loadAccessLedger() {
  * whichever is newer — reuse refreshes recency. reuse_boost =
  * 1 + REUSE_WEIGHT * Σ 1/sqrt(days_since_access), capped at 2.0 so reuse
  * breaks ties without overpowering relevance. Events with no recorded
- * access score exactly as before. Mirrors the awk activation block in
- * scripts/cartographer-search.sh — keep the two in sync.
+ * access score exactly as before. Items in `exempt` (the candidates a lookup
+ * names, see lookupExemption) keep the reuse boost, skip the decay and take
+ * the lookup lift (liftNamed). Mirrors
+ * the awk activation block in scripts/cartographer-search.sh — keep the two in
+ * sync.
+ *
+ * `decay` is an evaluation seam: scripts/age-curve.js passes an alternative
+ * curve through hybridSearch's `ranking` option to measure it. It receives
+ * { hours, eventHours, accessHours } — the reuse-refreshed age, the event's
+ * own age, and the age of every recorded access — and returns the factor, so
+ * a candidate like ACT-R base-level activation can fold rehearsals in itself;
+ * such an arm passes `reuseBoost: false` to switch the separate boost off.
+ * Production callers pass none and get exp(-lambda * hours) with the boost.
  */
-function applySalience(items) {
-  for (const item of items) {
-    const salience = Number(item.salience);
-    item._score *= Number.isFinite(salience) ? salience : 0.5;
-  }
-  return items;
-}
-
-function applyActivation(items, lambda) {
-  const accesses = REUSE_WEIGHT > 0 ? loadAccessLedger() : new Map();
-  if (lambda <= 0 && accesses.size === 0) return items;
+function applyActivation(items, { lambda, decay = null, exempt = null, reuseBoost = true, lookupLift = 1 }) {
+  const accesses = REUSE_WEIGHT > 0 || decay ? loadAccessLedger() : new Map();
+  const decaying = Boolean(decay) || lambda > 0;
   const now = Date.now();
   for (const item of items) {
     const acc = accesses.get(item.event_id);
-    if (acc) {
+    if (acc && reuseBoost && REUSE_WEIGHT > 0) {
       item._score *= Math.min(2.0, 1 + REUSE_WEIGHT * acc.sum);
       item._reuseCount = acc.n;
     }
-    if (lambda > 0) {
+    if (decaying && !exempt?.has(item)) {
       const rawTs = item.timestamp;
       let epoch = 0;
       if (typeof rawTs === 'string' && rawTs.startsWith('20')) {
@@ -368,13 +561,21 @@ function applyActivation(items, lambda) {
         if (!isNaN(num)) epoch = num > 1e12 ? num : num * 1000;
       }
       if (epoch > 0) {
+        const eventHours = Math.max(0, (now - epoch) / 3600000);
         if (acc && acc.lastMs > epoch) epoch = acc.lastMs;
-        const hours = (now - epoch) / 3600000;
-        item._score *= Math.exp(-lambda * Math.max(0, hours));
+        const hours = Math.max(0, (now - epoch) / 3600000);
+        item._score *= decay
+          ? decay({ hours, eventHours, accessHours: acc ? acc.times.map((t) => Math.max(0, (now - t) / 3600000)) : [] })
+          : Math.exp(-lambda * hours);
       }
     }
   }
-  // Re-sort after activation adjustment
+  liftNamed(items, exempt, lookupLift);
+  // Re-sort after activation adjustment. Always, even with nothing to weigh:
+  // salience has already changed the scores since fusion sorted them, and the
+  // early return that used to sit here left a λ=0 ranking in pre-salience
+  // order — so the warm path ignored salience exactly when decay was off,
+  // while the CLI, which applies salience at ingestion, did not.
   items.sort((a, b) => b._score - a._score);
   return items;
 }
@@ -467,9 +668,13 @@ export function computeFacets(items) {
 /**
  * Run hybrid search: BM25 + optional Qdrant, fused via RRF.
  * Returns full fusion pool (up to 500) + facets. Client paginates.
+ *
+ * `ranking` overrides rankingFromEnv() field by field ({ lambda, lookupMax,
+ * decay, reuseBoost, lookupLift }); only scripts/age-curve.js and tests pass it.
  */
-export async function hybridSearch(index, query, { project = '', sinceMs = null, beforeMs = null } = {}) {
+export async function hybridSearch(index, query, { project = '', sinceMs = null, beforeMs = null, ranking = null } = {}) {
   const started = performance.now();
+  const { lambda, lookupMax, decay = null, reuseBoost = true, lookupLift = 1 } = { ...rankingFromEnv(), ...(ranking || {}) };
   const FUSION_DEPTH = 500;
   // Native Codex memory imports are append-only revisions. The small derived
   // id list suppresses replaced/removed versions in both search ladders.
@@ -534,10 +739,11 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
     .filter((entry) => !staleMemory.has(entry.event?.event_id));
 
   const keywordLadders = bucketBySource(keywordPool.slice(0, FUSION_DEPTH));
+  let exempt = null;
   if (semanticPool.length > 0 || keywordLadders.length > 0) {
     const ladders = [...keywordLadders];
     if (semanticPool.length > 0) ladders.push({ source: 'semantic', list: semanticPool.slice(0, FUSION_DEPTH) });
-    fusedItems = rrfFuseMany(ladders, FUSION_DEPTH);
+    ({ items: fusedItems, exempt } = rrfFuseMany(ladders, FUSION_DEPTH, lookupExemption(keywordPool, lookupMax)));
   }
 
   // Weight by write-time salience before activation, exactly as the portable
@@ -552,18 +758,15 @@ export async function hybridSearch(index, query, { project = '', sinceMs = null,
   // the portable default for events written before the field existed.
   applySalience(fusedItems);
 
-  // Apply activation: time-decay + promote-on-reuse weighting.
-  // Applied after RRF fusion so it affects ranking but doesn't
-  // eliminate old results entirely (they still appear if relevant enough).
-  applyActivation(fusedItems, DECAY_LAMBDA);
+  // Trim the noise tail on relevance, then weigh by age. The order is the
+  // fix: trimming after decay cut old records for being old (trimNoise).
+  fusedItems = trimNoise(fusedItems);
 
-  // Trim noise tail — keep results with meaningful RRF score
-  // Threshold: items scoring below 20% of the top score are noise
-  if (fusedItems.length > 0) {
-    const topScore = fusedItems[0]._score;
-    const minScore = topScore * 0.1;
-    fusedItems = fusedItems.filter(item => item._score >= minScore);
-  }
+  // Activation: time-decay + promote-on-reuse. It reorders the trimmed pool
+  // and removes nothing. A lookup's named candidates skip the decay
+  // (lookupExemption) and are lifted (liftNamed); everything else decays as
+  // before.
+  applyActivation(fusedItems, { lambda, decay, exempt, reuseBoost, lookupLift });
   const fusionMs = performance.now() - fusionStarted;
 
   return {

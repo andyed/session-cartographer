@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ProjectBadge from './ProjectBadge';
 import AgentBadge from './AgentBadge';
 import SourceBadge from './SourceBadge';
+import { safeArtifactLink } from './memory-artifact.js';
 import { HUE, NEUTRAL, QUADRANT_HUES } from '../lib/palette.js';
 
 // 2×2 grid icon: active quadrant highlighted, others dim.
@@ -113,6 +114,12 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
 
   if (!summary) summary = event.event_id || '';
 
+  // A corpus url is whatever a hook or agent wrote, so it reaches href only
+  // through the Memory Desk's allowlist (http(s), mailto, #). React 19
+  // rewrites a javascript: href and passes every other scheme through; a
+  // refused url still reads as text. extractedUrl is event.url when present.
+  const href = safeArtifactLink(extractedUrl);
+
   // Click handler: open transcript if available, using summary text as highlight
   const handleCardClick = (e) => {
     // Don't intercept clicks on links, buttons, or interactive elements
@@ -156,10 +163,11 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         {/* Diff shape quadrant indicator (Tier 3) */}
         {event.diff_shape?.quadrant && <QuadrantIcon quadrant={event.diff_shape.quadrant} shape={event.diff_shape} />}
 
-        {/* URL indicator — link icon with hover tooltip */}
-        {extractedUrl && (
+        {/* URL indicator — link icon with hover tooltip. A refused url gets
+            no icon; the card's detail shows it as text. */}
+        {href && (
           <a
-            href={extractedUrl}
+            href={href}
             target="_blank"
             rel="noopener"
             title={extractedUrl}
@@ -230,14 +238,18 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
             <div>
               commit: <span style={{ color: HUE.commit }}>{event.commit_hash.slice(0, 7)}</span>
               {event.url && (
-                <> — <a href={event.url} target="_blank" rel="noopener" className="text-link hover:underline">view on GitHub</a></>
+                <> — {href
+                  ? <a href={href} target="_blank" rel="noopener" className="text-link hover:underline">view on GitHub</a>
+                  : event.url}</>
               )}
             </div>
           )}
           {event.author && <div>author: {event.author}</div>}
           {!event.commit_hash && event.url && (
             <div>
-              url: <a href={event.url} target="_blank" rel="noopener" className="text-link hover:underline">{event.url}</a>
+              url: {href
+                ? <a href={href} target="_blank" rel="noopener" className="text-link hover:underline">{event.url}</a>
+                : event.url}
             </div>
           )}
           {event.deeplink && <div>deeplink: {event.deeplink}</div>}

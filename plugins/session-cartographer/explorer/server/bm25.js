@@ -166,6 +166,16 @@ export function scoreBM25(index, query, { project, limit = 15, sinceMs = null, b
 
   const windowed = sinceMs !== null || beforeMs !== null;
 
+  // `full` marks a document containing every distinct query token: the
+  // candidates a query names outright. hybridSearch counts them to tell a
+  // lookup from a browse (see lookupExemption there). bm25-search.awk emits
+  // the same flag as its tenth column, by the same rule: presence only, no
+  // corpus statistics, so the two engines agree on which documents are full
+  // even though their idf differs (one global index here, one per log there).
+  // A wildcard expands to every matching vocabulary term, which no document
+  // contains all of, so a wildcard query names nothing.
+  const distinctTokens = hasWildcard ? [] : [...new Set(queryTokens)];
+
   for (const [id, doc] of index.docs) {
     if (!matchesProject(doc.event.project)) continue;
 
@@ -199,7 +209,8 @@ export function scoreBM25(index, query, { project, limit = 15, sinceMs = null, b
     }
 
     if (score > 0) {
-      results.push({ id, score, event: doc.event });
+      const full = distinctTokens.length > 0 && distinctTokens.every((t) => doc.tf.has(t));
+      results.push({ id, score, event: doc.event, full });
     }
   }
 

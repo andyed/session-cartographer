@@ -7,6 +7,8 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="${CARTOGRAPHER_MILESTONES:-$DEV/session-milestones.jsonl}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 INDEXER="${CARTOGRAPHER_INDEXER:-$SCRIPT_DIR/index-event.sh}"
+. "$SCRIPT_DIR/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 
 wrapper_failure() {
   local stage="$1"
@@ -40,6 +42,19 @@ DESCRIPTION=$(printf '%s' "$INPUT" | jq -r '.description // empty')
   || { wrapper_failure "not_session_wrapup" 65; exit $?; }
 [ -n "$DESCRIPTION" ] || { wrapper_failure "missing_description" 65; exit $?; }
 
+# One line per text field, at the source. The pipeline is line-based, and the
+# SessionStart note lists unresolved[] items one per line, so a newline inside
+# the synthesis or an item would split it there. Empty items are dropped so an
+# empty list stays [] rather than [""]. Retries normalize the same way, so the
+# idempotency check below still compares like with like.
+INPUT=$(printf '%s' "$INPUT" | jq -c '
+  def flat: if type == "string" then gsub(" *[\\r\\n\\t]+ *"; " ") | gsub("^ +| +$"; "") else . end;
+  .description |= flat
+  | if has("key_insight") then .key_insight |= flat else . end
+  | reduce ("decisions", "unresolved") as $k (.;
+      if (.[$k] | type) == "array" then .[$k] |= map(flat | select(. != "")) else . end)') \
+  || { wrapper_failure "normalize_failed" 65; exit $?; }
+
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null \
   || { wrapper_failure "milestone_directory_unwritable" 73; exit $?; }
 
@@ -47,8 +62,10 @@ mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null \
 # reuse the durable line. The same id with different content is a collision and
 # must not silently rewrite append-only history.
 EXISTING=""
-if [ -f "$LOG_FILE" ]; then
-  EXISTING=$(LC_ALL=C grep -F "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" 2>/dev/null | head -1)
+# A rewrite in progress spools new rows beside the log (scripts/jsonl-lock.js),
+# so a retry looks there as well.
+if [ -f "$LOG_FILE" ] || [ -f "$LOG_FILE.spool" ]; then
+  EXISTING=$(LC_ALL=C grep -hsF "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" "$LOG_FILE.spool" | head -1)
 fi
 
 if [ -n "$EXISTING" ]; then
@@ -58,9 +75,9 @@ if [ -n "$EXISTING" ]; then
     || { wrapper_failure "event_id_conflict" 65 "conflict"; exit $?; }
   LOG_OUTCOME="already_present"
 else
-  printf '%s\n' "$(printf '%s' "$INPUT" | jq -c .)" >> "$LOG_FILE" \
+  cartographer_append "$LOG_FILE" "$(printf '%s' "$INPUT" | jq -c .)" \
     || { wrapper_failure "milestone_write_failed" 73; exit $?; }
-  LC_ALL=C grep -F "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" >/dev/null 2>&1 \
+  LC_ALL=C grep -qsF "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" "$LOG_FILE.spool" \
     || { wrapper_failure "milestone_verify_failed" 74; exit $?; }
   LOG_OUTCOME="written"
 fi

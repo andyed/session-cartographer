@@ -3,6 +3,10 @@
 Session Cartographer works with Claude Code, Codex, or both. Search itself has
 two service levels:
 
+Plugin hooks require Node.js 22 or newer on PATH, Bash (Git for Windows on
+Windows), and jq. Hook commands invoke `node hooks/run-hook.cjs`; never register
+a `.sh` file as a Windows executable.
+
 1. **Keyword search only** — zero dependencies beyond bash + jq (`winget install jqlang.jq`,
    `brew install jq`, or `apt install jq`; Git Bash supplies bash on Windows)
 2. **Semantic search** — requires Qdrant binary + llama.cpp embedding server
@@ -55,8 +59,7 @@ Every count comes with a bounded sample of the `event_id`s behind it, so you can
 verify it instead of trusting it:
 
 ```bash
-# the query argument is ignored, so any placeholder works
-bash scripts/cartographer-search.sh x --get <event-id>,<event-id>
+bash scripts/cartographer-search.sh --get <event-id>,<event-id>
 ```
 
 Three things worth knowing before you build on it:
@@ -82,6 +85,28 @@ bash scripts/start-services.sh
 ```
 
 Stop with `bash scripts/start-services.sh --stop`.
+
+The launcher starts Qdrant on `127.0.0.1` with CORS off and an API key. On
+first start it generates the key, stores it in
+`$CARTOGRAPHER_QDRANT_STORAGE/api-key` (default
+`~/Documents/dev/qdrant-storage/api-key`, mode 600) and writes it into the
+generated `config.yaml` (also mode 600) as `service.api_key`; later starts
+reuse it. Every client reads that file and sends the key as the `api-key`
+header, so nothing needs exporting. The key closes a hole CORS leaves open:
+with CORS off and no key, a web page could still delete points with a
+`text/plain` POST, which needs no preflight
+([ADOPTING.md](ADOPTING.md#what-leaves-your-machine) has the measurement).
+
+To use a key of your own, set `CARTOGRAPHER_QDRANT_API_KEY` before a start;
+the launcher writes it into the config and the key file. If you moved the
+storage dir with `CARTOGRAPHER_QDRANT_STORAGE`, export that variable (or
+`CARTOGRAPHER_QDRANT_API_KEY_FILE`) wherever your agents run, or they will not
+find the key. Running Qdrant yourself instead? Give it
+`QDRANT__SERVICE__API_KEY=<key>` and export the same value as
+`CARTOGRAPHER_QDRANT_API_KEY`. A Qdrant that answers 401 shows up as
+`qdrant_unauthorized` in `.carto/index-errors.jsonl` and as
+`qdrant_error: "unauthorized"` in the Explorer's `/api/health`, not as an
+outage.
 
 ### Codex: allow the local services
 
@@ -118,7 +143,9 @@ chmod +x qdrant
 sudo mv qdrant /usr/local/bin/  # or add to PATH
 ```
 
-Runs on port 6333 by default. No Docker needed.
+Runs on port 6333 by default. No Docker needed. Started on its own, Qdrant
+has CORS on and no API key; start it with `scripts/start-services.sh`, or see
+the Quick start above for the settings to give it.
 
 ### 2. Embedding server (llama.cpp)
 
@@ -184,10 +211,19 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_EMBED_URL` | `http://localhost:8890/v1/embeddings` | OpenAI-compatible embedding endpoint |
 | `CARTOGRAPHER_EMBED_MODEL` | `mxbai-embed-large` | Embedding model name |
 | `CARTOGRAPHER_QDRANT_URL` | `http://localhost:6333` | Qdrant REST endpoint |
+| `CARTOGRAPHER_QDRANT_API_KEY` | unset | Qdrant API key, sent as the `api-key` header to whatever `CARTOGRAPHER_QDRANT_URL` names. Unset, the key file below is used |
+| `CARTOGRAPHER_QDRANT_API_KEY_FILE` | `$CARTOGRAPHER_QDRANT_STORAGE/api-key` | Where `start-services.sh` keeps the key and clients read it. A key from this file is sent only to a loopback URL |
+| `CARTOGRAPHER_QDRANT_STORAGE` | `~/Documents/dev/qdrant-storage` | The launcher's Qdrant data, config and key file |
 | `CARTOGRAPHER_COLLECTION` | `session-cartographer` | Qdrant collection name |
 | `CARTOGRAPHER_LOG_TOOL_USE` | `false` | Set `true` to log Edit/Write/Bash + git commits |
 | `CARTOGRAPHER_REUSE_WEIGHT` | `0.3` | Promote-on-reuse activation weight (`0` disables) |
-| `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to auto-surface project orientation (related threads + maneuvers) on session start — opt-in, dormant by default |
+| `CARTOGRAPHER_FOCUS_ON_START` | `0` | Set `1` to inject a start note: the latest /wrapup's open threads, repo state, and live peer sessions in this project. Opt-in, dormant by default |
+| `CARTOGRAPHER_RECALL_ON_PROMPT` | `0` | Set `1` to run recall when a prompt carries a memory cue and inject the top hits — opt-in trial, dormant by default (see [Recall on memory cues](#recall-on-memory-cues-trial)) |
+| `CARTOGRAPHER_RECALL_ON_PROMPT_BUDGET_MS` | `1500` | Hard time budget for that search; past it the search is killed and the hook abstains |
+| `CARTOGRAPHER_RECALL_ON_PROMPT_MIN_SCORE` | `0.010` | Fused-score floor a hit must clear to be injected (passed to the search as `--min-score`) |
+| `CARTOGRAPHER_RECALL_ON_PROMPT_LOG` | `$CARTOGRAPHER_DEV_DIR/recall-on-prompt-trial.jsonl` | One row per evaluated prompt: fired or why not, latency, counts, `call_id` |
+| `CARTOGRAPHER_FILE_HISTORY_ON_EDIT` | `0` | Set `1` to add a file's history to the agent's context before its first edit in a session — opt-in trial, dormant by default (see [File history on first edit](#file-history-on-first-edit-trial)) |
+| `CARTOGRAPHER_FILE_HISTORY_DAYS` | `14` | How far back a commit, peer edit or wrapup counts for that note; diagnoses have no age limit |
 | `CARTOGRAPHER_AUTO_CATCHUP` | `1` | Set `0` to disable the background Codex transcript catch-up on session start |
 | `CARTOGRAPHER_CATCHUP_INTERVAL_SECONDS` | `900` | Minimum interval between successful automatic catch-up runs |
 | `CARTOGRAPHER_CATCHUP_LIMIT_DAYS` | `7` | Recent transcript window scanned by automatic catch-up |
@@ -217,6 +253,65 @@ run a search or show a recurring user-facing banner. Exposure receipts are
 deduplicated per session in `.carto/turbo-awareness.jsonl`; join their session
 ids to search-call and access telemetry when evaluating whether awareness led
 to useful recall.
+
+### Recall on memory cues (trial)
+
+Agents rarely reach for recall mid-session. Over 30 days of Claude transcripts
+(measured 2026-10-15), 72 prompts carried a memory cue — "thought we fixed
+this?", "did we implement that?", "not sure where we tried that (which agent)"
+— and the agent recalled after 4 of them. `surface-recall-on-prompt.sh` is a
+UserPromptSubmit hook for Claude Code and Codex that runs the search at the
+cue instead:
+
+```bash
+export CARTOGRAPHER_RECALL_ON_PROMPT=1   # in the environment that launches the agent
+```
+
+In Claude Code the variable can also go in the `env` block of
+`~/.claude/settings.json`. Hooks run from the installed plugin, so a checkout
+change reaches them only after the plugin is updated.
+
+When a prompt matches one of the named cues in `recallCue()`
+(`scripts/classify-prompt-intent.js`), the hook removes the cue phrase, searches
+the remaining topic in the session's project over the last 30 days, and injects
+up to three single-line hits with their event ids and the `call_id` to carry to
+`--get` and `--touch`. It stays silent on the first prompt of a session
+(SessionStart covers turn one), on slash commands, on text that starts with
+`<`, on compaction continuations, on a cue with no topic left ("didn't we fix
+this?"), when the search outruns its budget, and when no hit clears the score
+floor. Sessions started in the workspace root or the home directory search every
+project rather than scoping to `dev`.
+
+The floor is applied inside the search (`--min-score`), so the served rows and
+the session's delta-serving list hold exactly what the agent was shown, and a
+weak hit the agent never saw is not suppressed from its next `/remember`.
+Searches carry `purpose: "prompt-cue"`; their search-call rows record
+`min_score`, `top_score` (the best score before the floor) and
+`below_min_score`. To judge the trial, read the trial log: `reason` says why
+each prompt fired or abstained, and `call_id` joins a fired row to its served
+and access rows, so "the agent touched what the hook surfaced" is countable.
+Cue rows keep the prompt and the query, which is enough to replay them against
+recall when the floor is retuned.
+
+### File history on first edit (trial)
+
+`CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1`: before the first edit of a file in a
+session, add up to two lines to the agent's context: a /investigate diagnosis
+that names the file (open or confirmed) and the most recent commit to it by
+another session, each with an event id for `/remember --get`. Silent when there
+is nothing; never blocks an edit. Later edits of the same file cost one
+state-file read. `CARTOGRAPHER_FILE_HISTORY_DAYS` (default 14) sets how far
+back a commit, peer edit or wrapup counts; diagnoses have no age limit.
+Evaluations are logged to `$CARTOGRAPHER_DEV_DIR/file-history-on-edit-trial.jsonl`.
+Uses `rg` when installed.
+
+### MCP tools
+
+The plugin also registers an MCP server (`scripts/cartographer-mcp.js`) that
+gives agents `recall`, `get`, `mark_used`, `thread`, `orient`, `facts` and
+`standup` as typed tools. Registration per client, what session identity each
+client passes, and the manual Codex `config.toml` block are in
+[MCP.md](MCP.md).
 
 ### Codex hook trust
 

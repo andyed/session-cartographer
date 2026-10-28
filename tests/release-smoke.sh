@@ -23,6 +23,9 @@ PLUGIN="$BUNDLE/plugins/session-cartographer"
 for required in \
   "$PLUGIN/.codex-plugin/plugin.json" \
   "$PLUGIN/.claude-plugin/plugin.json" \
+  "$PLUGIN/.mcp.json" \
+  "$PLUGIN/scripts/cartographer-mcp.js" \
+  "$PLUGIN/scripts/facts-render.js" \
   "$PLUGIN/hooks/hooks.json" \
   "$PLUGIN/hooks/codex-hooks.json" \
   "$PLUGIN/hooks/log-compact-summary.sh" \
@@ -84,6 +87,17 @@ RESULT=$(CARTOGRAPHER_DEV_DIR="$DEV" \
   bash "$PLUGIN/scripts/cartographer-search.sh" "self contained release" --limit 5)
 printf '%s' "$RESULT" | LC_ALL=C grep -q 'evt-release-smoke'
 
+# Prove the bundled MCP server answers a handshake without a source checkout.
+MCP_TOOLS=$(printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"release-smoke","version":"0"}}}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | CARTOGRAPHER_DEV_DIR="$DEV" node "$PLUGIN/scripts/cartographer-mcp.js" \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=s.trim().split("\n").map(JSON.parse).find(m=>m.id===2);console.log(r.result.tools.map(t=>t.name).join(","))})')
+[ "$MCP_TOOLS" = "recall,get,mark_used,thread,orient,facts,standup" ] || {
+  echo "Bundled MCP server listed: $MCP_TOOLS" >&2
+  exit 1
+}
+
 # When Codex is available (developer machines), exercise the real local
 # marketplace and managed-cache install path. GitHub-hosted runners currently
 # skip this block and still validate the exact archive contents above.
@@ -97,6 +111,7 @@ if command -v codex >/dev/null 2>&1; then
   [ -f "$INSTALLED/explorer/server/index.js" ]
   [ -f "$INSTALLED/skills/setup/SKILL.md" ]
   [ -f "$INSTALLED/skills/turbo/SKILL.md" ]
+  CODEX_HOME="$CODEX_HOME" codex mcp list | LC_ALL=C grep -q '^cartographer '
 fi
 
 # Exercise Claude Code's managed-cache path when its CLI is available. A

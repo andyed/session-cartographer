@@ -45,10 +45,11 @@
  * log and the profile but not semantic search. A --qdrant flag here would match
  * nothing and report success, which is worse than not offering it.
  */
-import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'fs';
+import { writeFileSync, existsSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
+import { replaceJsonl, snapshotJsonl } from './jsonl-lock.js';
 
 const args = process.argv.slice(2);
 const DO_WRITE = args.includes('--write');
@@ -90,7 +91,8 @@ function main() {
       if (!AS_JSON) console.log(`skip ${TARGET} (not found)`);
       continue;
     }
-    const lines = readFileSync(TARGET, 'utf8').split('\n').filter(Boolean);
+    const raw = snapshotJsonl(TARGET);
+    const lines = raw.toString('utf8').split('\n').filter(Boolean);
     const out = [];
     let removed = 0;
     for (const line of lines) {
@@ -109,9 +111,11 @@ function main() {
     summary.files.push({ file: TARGET, rows: lines.length, removed, remaining: out.length });
     if (DO_WRITE && removed > 0) {
       const backup = `${TARGET}.bak-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
-      copyFileSync(TARGET, backup);
-      writeFileSync(TARGET, out.join('\n') + '\n');
-      if (!AS_JSON) console.log(`  wrote ${TARGET} (${removed} removed; backup ${backup})`);
+      writeFileSync(backup, raw);
+      // Under the rewrite lock, carrying rows appended since the read
+      // (scripts/jsonl-lock.js); a truncate-and-write here lost them.
+      const { carried_rows: carried } = replaceJsonl(TARGET, { original: raw, body: out.join('\n') + '\n' });
+      if (!AS_JSON) console.log(`  wrote ${TARGET} (${removed} removed; ${carried} appended row(s) carried; backup ${backup})`);
     }
   }
 

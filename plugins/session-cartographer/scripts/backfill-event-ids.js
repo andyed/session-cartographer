@@ -18,6 +18,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { stableEventId } from '../explorer/server/stable-event-id.js';
+import { replaceJsonl, snapshotJsonl } from './jsonl-lock.js';
 
 const DEV = process.env.CARTOGRAPHER_DEV_DIR || path.join(process.env.HOME, 'Documents', 'dev');
 const WRITE = process.argv.includes('--write');
@@ -55,7 +56,8 @@ for (const name of LOGS) {
   const file = path.join(DEV, name);
   if (!fs.existsSync(file)) continue;
 
-  const original = fs.readFileSync(file, 'utf8');
+  const raw = snapshotJsonl(file);
+  const original = raw.toString('utf8');
   const lines = original.split('\n');
   const out = [];
   let assigned = 0;
@@ -106,9 +108,9 @@ for (const name of LOGS) {
 
   if (WRITE && assigned > 0) {
     const backup = `${file}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`;
-    fs.copyFileSync(file, backup);
+    fs.writeFileSync(backup, raw);
 
-    let rewritten = out.join('\n');
+    const rewritten = out.join('\n');
     const before = original.split('\n').filter((l) => l !== '').length;
     const after = rewritten.split('\n').filter((l) => l !== '').length;
     if (before !== after) {
@@ -116,30 +118,17 @@ for (const name of LOGS) {
     }
 
     // These logs take roughly a write a minute across concurrent sessions, and
-    // hooks append while this runs. A plain read-then-rename would drop
-    // anything written in that window with no error and no way to notice.
-    // Re-read at the last moment and carry any new tail across. The original
-    // content is a strict prefix of the current file when the only change was
-    // an append; if it is not, another writer rewrote the file and this script
-    // must not clobber that.
-    const current = fs.readFileSync(file, 'utf8');
-    let carried = 0;
-    if (current !== original) {
-      if (!current.startsWith(original)) {
-        throw new Error(`${name}: file changed in a way that is not an append while rewriting; aborting. Backup at ${backup}`);
-      }
-      const tail = current.slice(original.length);
-      rewritten += tail;
-      carried = tail.split('\n').filter((l) => l !== '').length;
-    }
+    // hooks append while this runs. replaceJsonl takes the rewrite lock, checks
+    // that the file still begins with what was read here (another rewriter's
+    // work is never clobbered), and carries every row appended since across
+    // (scripts/jsonl-lock.js).
+    const moved = replaceJsonl(file, { original: raw, body: rewritten });
+    const carried = moved.carried_rows + moved.late_rows + moved.spooled_rows;
 
-    const tmp = `${file}.tmp-${process.pid}`;
-    fs.writeFileSync(tmp, rewritten);
-    fs.renameSync(tmp, file);
-
+    // At least that many: sessions keep appending once the lock is released.
     const finalRows = fs.readFileSync(file, 'utf8').split('\n').filter((l) => l !== '').length;
-    if (finalRows !== before + carried) {
-      throw new Error(`${name}: post-write row count ${finalRows} != expected ${before + carried}. Backup at ${backup}`);
+    if (finalRows < before + carried) {
+      throw new Error(`${name}: post-write row count ${finalRows} < expected ${before + carried}. Backup at ${backup}`);
     }
     report[report.length - 1].carried = carried;
     report[report.length - 1].backup = backup;

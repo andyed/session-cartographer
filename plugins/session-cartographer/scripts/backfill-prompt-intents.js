@@ -23,6 +23,7 @@
  *
  * Environment:
  *   CARTOGRAPHER_QDRANT_URL      — default: http://localhost:6333
+ *   CARTOGRAPHER_QDRANT_API_KEY  — optional api-key header (scripts/qdrant-auth.js)
  *   CARTOGRAPHER_COLLECTION      — default: session-cartographer
  *   CARTOGRAPHER_TRANSCRIPTS_DIR — default: ~/.claude/projects
  */
@@ -30,6 +31,7 @@ import fs from 'fs';
 import path from 'path';
 import readline from 'readline';
 import { classifyPromptIntent } from './classify-prompt-intent.js';
+import { qdrantFetch } from './qdrant-auth.js';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const QDRANT = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
@@ -41,7 +43,7 @@ const SCROLL_PAGE = 10000;   // points per scroll request
 const PAYLOAD_CHUNK = 500;   // point ids per set-payload request
 
 async function qdrant(pathSuffix, body) {
-  const res = await fetch(`${QDRANT}${pathSuffix}`, {
+  const res = await qdrantFetch(`${QDRANT}${pathSuffix}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

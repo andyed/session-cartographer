@@ -38,3 +38,26 @@ jobs:
       - name: Verify repository marketplace install
         shell: bash
         run: bash tests/source-marketplace-smoke.sh
+
+  # The hooks run under macOS's /bin/bash 3.2, whose builtin printf leaves a
+  # row over 1 KB in several writes; glibc's 8 KB buffer covers every row, so
+  # the torn rows of 2026-10-16 could not happen on the Linux job above. The
+  # append and rewrite races run first, on their own, so a failure there is
+  # named before the rest of the suite.
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Explorer dependencies
+        run: npm ci --prefix explorer --no-audit --no-fund
+
+      - name: Run append and rewrite race tests
+        run: node --test tests/unit/jsonl-append-concurrency.test.js tests/unit/jsonl-lock.test.js
+
+      - name: Run unit tests
+        run: node --test tests/unit/*.test.js

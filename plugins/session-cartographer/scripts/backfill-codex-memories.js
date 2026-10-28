@@ -8,6 +8,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { codexMemoryStalePath } from './codex-memory-stale.js';
+import { appendJsonl } from './jsonl-lock.js';
 
 const args = new Set(process.argv.slice(2));
 const dryRun = args.has('--dry-run');
@@ -166,8 +167,7 @@ if (dryRun) {
 }
 if (additions.length) {
   mkdirSync(dev, { recursive: true });
-  const { appendFileSync } = await import('node:fs');
-  appendFileSync(logPath, additions.map((event) => JSON.stringify(event)).join('\n') + '\n');
+  appendJsonl(logPath, additions.map((event) => JSON.stringify(event)).join('\n') + '\n');
   for (const event of additions) {
     if (!history.has(event.memory_key)) history.set(event.memory_key, []);
     history.get(event.memory_key).push(event);

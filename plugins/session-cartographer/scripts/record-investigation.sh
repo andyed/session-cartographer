@@ -20,6 +20,8 @@ DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="${CARTOGRAPHER_CHANGELOG:-$DEV/changelog.jsonl}"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 INDEXER="${CARTOGRAPHER_INDEXER:-$SCRIPT_DIR/index-event.sh}"
+. "$SCRIPT_DIR/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 
 fail() {
   jq -n -c --arg stage "$1" --arg eid "${EVENT_ID:-}" --arg log "${2:-not_written}" \
@@ -94,8 +96,10 @@ esac
 
 # ── Durable write, then index ──────────────────────────────────────────────
 mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null || fail log_directory_unwritable not_written 73
-printf '%s\n' "$EVENT" >> "$LOG_FILE" || fail log_write_failed not_written 73
-LC_ALL=C grep -F "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" >/dev/null 2>&1 || fail log_verify_failed not_written 74
+# One write (hooks/common.sh). During a rewrite of the log the row is spooled
+# beside it (scripts/jsonl-lock.js), so the read-back looks there too.
+cartographer_append "$LOG_FILE" "$EVENT" || fail log_write_failed not_written 73
+LC_ALL=C grep -qsF "\"event_id\":\"$EVENT_ID\"" "$LOG_FILE" "$LOG_FILE.spool" || fail log_verify_failed not_written 74
 
 [ -f "$INDEXER" ] || fail indexer_missing written 69
 INDEX_STATUS=0

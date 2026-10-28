@@ -14,7 +14,7 @@ Every event across all log types should include:
 | `timestamp` | ISO 8601 | yes | UTC timestamp |
 | `type` | string | yes | Event type (see per-log tables below) |
 | `provider` | string | recommended | Producer provenance: `claude`, `codex`, or `unknown`; never an index partition |
-| `project` | string | yes | Git repo basename or directory basename |
+| `project` | string | yes | Real project name from `cartographer_project` (the main repository's basename, even inside a worktree; the directory basename outside git) |
 | `session_id` | string | recommended | Provider session UUID |
 | `cwd` | string | optional | Working directory at event time |
 | `transcript_path` | string | **required** | Path to session transcript JSONL — this is how search results link to full context |
@@ -28,10 +28,23 @@ EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 
 ### Resolving project name
 
+Do not derive it from `git rev-parse --show-toplevel`. Inside a git worktree
+the toplevel is the worktree's own directory, so every event is filed under a
+name that disappears when the worktree is pruned; that orphaned about 5,700
+events before the hooks were fixed. Use the shared resolver, which reads the
+git *common* dir, so a worktree resolves to its parent repository. Outside git
+it falls back to the directory's basename.
+
 ```bash
-GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-PROJECT=$(basename "${GIT_REPO:-$CWD}")
+# CARTO is a Session Cartographer checkout or the installed plugin root
+# ($CLAUDE_PLUGIN_ROOT inside a plugin hook); the script finds common.sh in both.
+CARTO="$HOME/Documents/dev/session-cartographer"
+PROJECT=$("$CARTO/scripts/cartographer-project.sh" "$CWD")
 ```
+
+A hook that runs on every tool call can skip the fork by sourcing the library
+(`hooks/common.sh` in the plugin root, `plugins/session-cartographer/hooks/common.sh`
+in a checkout) and calling `cartographer_project "$CWD"` directly.
 
 ## changelog.jsonl
 

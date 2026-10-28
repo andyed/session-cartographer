@@ -1,108 +1,137 @@
 #!/bin/bash
-# SessionStart hook (TRIAL, opt-in): auto-surface project orientation on entering a project.
+# SessionStart hook (opt-in): a start note an agent can act on at turn one.
 #
-# Injects the co-occurrence graph's two orientation lenses as session context, so the
-# cross-thread connections surface without a manual /remember --project:
-#   --related   <project>  → other projects co-active with this one (research threads)
-#   --maneuvers <project>  → recurring technical procedures this project runs
+# 78% of recall happens on a session's first turn (measured 2026-10-15), because
+# this note is what the agent reads there. So it carries what an agent needs
+# before its first move in the project it is starting in:
+#   - the latest /wrapup's open threads (its unresolved[]), with the event id to
+#     --get the record: 78 of 368 wrapups had ever been read back (2026-10-15);
+#   - the checkout's branch, uncommitted path count and unpushed commit count;
+#   - other sessions active in this project in the last 2 h, from the standup
+#     roster (cartographer-standup.js --roster) and the files they last touched.
+# It replaced co-active projects and maneuver names. Of the 41 notes shown in the
+# 30 days to 2026-10-15, no later search named a maneuver, and the 4 that named a
+# related project were an all-projects scope or the session's own task. Both
+# lenses still run in /remember --project, which the note points to. They also
+# cost ~1.8 s a start: each call rebuilt the co-occurrence graph from the logs.
 #
-# DORMANT BY DEFAULT. Trial it:   export CARTOGRAPHER_FOCUS_ON_START=1   (then launch claude)
-#   Stop:      unset CARTOGRAPHER_FOCUS_ON_START
-#   Bake out:  remove this file + its SessionStart block in hooks.json
-#   Bake in:   flip the gate below to default-on, add a CHANGELOG line, drop a combined
-#              --orient mode into cooccurrence-graph.js to halve the two-call startup cost.
+# Shown when there is something new: a wrapup newer than the last one shown for
+# this project, or a live peer. Silent on a repeat with neither. Every evaluation,
+# shown or not, appends one row to $DEV/focus-on-start-trial.jsonl.
 #
-# Measurable: appends one line per fire to $DEV/focus-on-start-trial.jsonl (separate from the
-# main event pipeline) — lets us measure how often startup orientation has something to say.
+# DORMANT BY DEFAULT. Enable: export CARTOGRAPHER_FOCUS_ON_START=1
+# Silent-fail: missing jq ends it; missing git, node or logs leave their part out.
+# Env: CARTOGRAPHER_FOCUS_ON_START (gate), CARTOGRAPHER_DEV_DIR (default ~/Documents/dev),
+#      CARTOGRAPHER_MILESTONES (wrapup log), CARTOGRAPHER_START_NOTE_WINDOW (peers, default 2h),
+#      CARTOGRAPHER_START_NOTE_BUDGET (note cap in characters, default 800).
 #
-# Silent-fail by design: missing node/jq/graph/logs → exit 0, never block session startup.
-# Env: CARTOGRAPHER_FOCUS_ON_START (gate), CARTOGRAPHER_DEV_DIR (overrides ~/Documents/dev)
+# Cost (2026-10-15, macOS, bash 3.2, load average ~25): ~130 ms and 9 processes
+# (one jq for the payload, one for the note, git twice, or three times without an
+# upstream, node once for the roster, rg|tail twice), against ~1.8 s and 22 for
+# the graph-lens note. ~100 ms of it is node starting the roster, which runs in
+# the background while git and the log lookups run. Gate off: ~7 ms.
 
-# Gate first, before touching stdin — the dormant path costs ~a bash spawn for everyone else.
+# Gate first, before touching stdin: the dormant path costs a bash start and nothing else.
 [ "${CARTOGRAPHER_FOCUS_ON_START:-0}" = "1" ] || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
 
-command -v node >/dev/null 2>&1 || exit 0
-command -v jq   >/dev/null 2>&1 || exit 0
+case "$0" in */*) HOOK_DIR=${0%/*} ;; *) HOOK_DIR=. ;; esac
+. "$HOOK_DIR/common.sh" 2>/dev/null || exit 0
+NOTE_JQ="$HOOK_DIR/start-note.jq"
+[ -f "$NOTE_JQ" ] || exit 0
 
-INPUT=$(cat)
-SOURCE=$(echo "$INPUT" | jq -r '.source // empty')
-. "$(dirname "$0")/common.sh"
-PROVIDER=$(detect_provider "$INPUT")
-# Fire on any session start EXCEPT compaction (which already re-injects its own summary).
-# Skip-one rather than whitelist: robust to whatever 'source' value a new session reports.
+IFS= read -r -d '' INPUT
+# One jq for every payload field.
+FIELDS=$(printf '%s' "$INPUT" | jq -r '[.source, .cwd, .session_id, .transcript_path, .turn_id, .model]
+  | map(if . == null then "" else tostring end) | @sh' 2>/dev/null)
+[ -n "$FIELDS" ] || exit 0
+eval "set -- $FIELDS"
+SOURCE=$1 CWD=$2 SID=$3
+PROVIDER=$(detect_provider_from "$4" "$5" "$6")
+
+# Compaction re-injects its own summary. Skip-one rather than whitelist, so a new
+# source value still gets a note.
 case "$SOURCE" in compact) exit 0 ;; esac
-
-CWD=$(echo "$INPUT" | jq -r '.cwd // empty')
 [ -n "$CWD" ] || exit 0
 
-DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
-
-# Project name from the repo (basename of git toplevel, else cwd basename) — same as the
-# milestones hook. The graph's resolveProject() tolerates partials/aliases from here.
-GIT_REPO=$(cd "$CWD" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
-. "$(dirname "$0")/common.sh"; PROJECT=$(cartographer_project "$CWD")
+# The real project, never the worktree directory: --git-common-dir, one git call.
+cartographer_repo "$CWD"
+PROJECT=$CARTO_PROJECT TOPLEVEL=$CARTO_TOPLEVEL
 [ -n "$PROJECT" ] || exit 0
 
-# Abstain on home-dir / non-project buckets — launching from ~ resolves PROJECT to "andyed",
-# which co-occurs with everything and yields a generic, repetitive banner (75% of trial fires).
-# Early exit also skips the ~500ms graph build for these.
+# Abstain on home-dir and workspace buckets: launching from ~ resolves to "andyed",
+# which co-occurs with everything (75% of the first trial's fires).
 case "$PROJECT" in
   andyed|home|dev|Documents|Documents-dev|Users|Users-andyed|Downloads|Desktop|Library|tmp|workspace) exit 0 ;;
 esac
 
-# Locate the graph builder through the same release/source resolver as the
-# indexing hooks. A missing graph remains a silent optional-feature failure.
-GRAPH=$(cartographer_script cooccurrence-graph.js)
-[ -n "$GRAPH" ] || exit 0
-
-# Two lenses (~250ms each). The script prints a "(no ...)" sentinel when a lens is empty.
-REL=$(node "$GRAPH" --related "$PROJECT" 2>/dev/null)
-MAN=$(node "$GRAPH" --maneuvers "$PROJECT" 2>/dev/null)
-
-# Compact related threads to one line of "name(Nd)", top 5. LC_ALL=C: headers carry unicode (·, —, G²).
-REL_LINE=""
-case "$REL" in
-  "Related threads"*)
-    REL_LINE=$(echo "$REL" | LC_ALL=C awk 'NR>1 && NF && c<5 { printf "%s%s(%s)", sep, $1, $2; sep=", "; c++ } END { print "" }')
-    ;;
-esac
-
-# The maneuver header line is already compact: "Maneuvers in <project>: a, b, c".
-MAN_LINE=""
-case "$MAN" in
-  "Maneuvers in"*) MAN_LINE=$(echo "$MAN" | head -1 | sed 's/^Maneuvers in [^:]*: //') ;;
-esac
-
-# Trial telemetry — one line per fire, including abstentions, so the no-signal rate is visible.
-# 'shown' = we actually injected: fired AND not already surfaced for this project today (the same
-# banner every launch is wallpaper). Tunable: delete the PRIOR/shown block to surface every launch.
-TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-TODAY=$(date -u +"%Y-%m-%d")
+DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
+MILESTONES="${CARTOGRAPHER_MILESTONES:-$DEV/session-milestones.jsonl}"
 TRIAL="$DEV/focus-on-start-trial.jsonl"
-FIRED="false"; { [ -n "$REL_LINE" ] || [ -n "$MAN_LINE" ]; } && FIRED="true"
-SHOWN="false"
-if [ "$FIRED" = "true" ]; then
-  PRIOR=$(LC_ALL=C grep "\"project\":\"$PROJECT\"" "$TRIAL" 2>/dev/null | LC_ALL=C grep '"shown":true' | LC_ALL=C grep "\"$TODAY" | tail -1)
-  [ -z "$PRIOR" ] && SHOWN="true"
+WINDOW="${CARTOGRAPHER_START_NOTE_WINDOW:-2h}"
+BUDGET="${CARTOGRAPHER_START_NOTE_BUDGET:-800}"
+
+# Peers first: the roster is the slowest part (~100 ms, mostly node's start and
+# the changelog tail), so it runs in the background on fd 3 while git and the
+# log lookups below run, and jq reads it from there at the end.
+STANDUP=""
+command -v node >/dev/null 2>&1 && STANDUP=$(cartographer_script cartographer-standup.js)
+if [ -n "$STANDUP" ]; then
+  exec 3< <(CARTOGRAPHER_DEV_DIR="$DEV" node "$STANDUP" --roster --json \
+    --project "$PROJECT" --since "$WINDOW" --me "${SID:-none}" 2>/dev/null)
+else
+  exec 3</dev/null
 fi
-jq -n -c --arg ts "$TS" --arg project "$PROJECT" --arg source "$SOURCE" --arg provider "$PROVIDER" \
-   --arg rel "$REL_LINE" --arg man "$MAN_LINE" --argjson fired "$FIRED" --argjson shown "$SHOWN" \
-   '{timestamp:$ts, project:$project, provider:$provider, source:$source, related:$rel, maneuvers:$man, fired:$fired, shown:$shown}' \
-   >> "$TRIAL" 2>/dev/null
 
-# Inject only the first surfacing per project per day — silent on repeats and no-signal starts.
-[ "$SHOWN" = "true" ] || exit 0
+# Repo state. GIT_OPTIONAL_LOCKS=0: status must not take index.lock in a checkout
+# where other sessions are committing.
+GIT_STATUS="" LOCAL_ONLY=""
+if [ -n "$TOPLEVEL" ]; then
+  GIT_STATUS=$(GIT_OPTIONAL_LOCKS=0 git -C "$CWD" status --porcelain=v2 --branch 2>/dev/null)
+  case "$GIT_STATUS" in
+    *"# branch.ab "*) ;;
+    *"# branch.oid "[0-9a-f]*)
+      LOCAL_ONLY=$(git -C "$CWD" rev-list --count HEAD --not --remotes 2>/dev/null) ;;
+  esac
+fi
 
-CTX="[carto auto-focus · ${PROJECT}]"
-[ -n "$REL_LINE" ] && CTX="${CTX}
-Related threads (co-active projects): ${REL_LINE}"
-[ -n "$MAN_LINE" ] && CTX="${CTX}
-Maneuvers it runs: ${MAN_LINE}"
-CTX="${CTX}
-→ Run /remember --project ${PROJECT} for full orientation (recent milestones, commits, research)."
+# The last <n> lines of <file> matching ERE <pattern>. rg when present: BSD grep
+# takes ~80 ms over the 12 MB milestone log, rg ~10 ms.
+tail_match() {
+  [ -f "$1" ] || return 0
+  if command -v rg >/dev/null 2>&1; then
+    rg --no-config -N --no-filename -e "$3" "$1" 2>/dev/null | tail -n "$2"
+  else
+    LC_ALL=C grep -E -e "$3" "$1" 2>/dev/null | tail -n "$2"
+  fi
+}
 
-# Inject as SessionStart context.
-jq -n --arg ctx "$CTX" \
-  '{hookSpecificOutput:{hookEventName:"SessionStart", additionalContext:$ctx}}'
+# Project names reach a regex here. Dots are escaped without a process; any other
+# metacharacter (rare in a directory name) takes one sed.
+case "$PROJECT" in
+  *[!A-Za-z0-9._-]*) P_RE=$(printf '%s' "$PROJECT" | LC_ALL=C sed 's/[][\\.*^$+?(){}|/]/\\&/g') ;;
+  *) P_RE=${PROJECT//./\\.} ;;
+esac
 
+# The newest wrapup candidates: either key order, either JSON spacing (45 wrapups
+# were written by a non-compact writer). jq picks the newest by timestamp.
+WRAPS=$(tail_match "$MILESTONES" 5 "\"session_wrapup\".*\"project\": ?\"$P_RE\"|\"project\": ?\"$P_RE\".*\"session_wrapup\"")
+# The last row shown for this project; its wrapup_id is what "new" is measured against.
+PRIOR=$(tail_match "$TRIAL" 1 "\"project\":\"$P_RE\",.*\"shown\":true")
+
+RESULT=$(jq -n -R -r -f "$NOTE_JQ" \
+  --arg project "$PROJECT" --arg sid "$SID" --arg source "$SOURCE" --arg provider "$PROVIDER" \
+  --arg wraps "$WRAPS" --arg prior "$PRIOR" --arg status "$GIT_STATUS" --arg localonly "$LOCAL_ONLY" \
+  --arg window "$WINDOW" --arg budget "$BUDGET" <&3 2>/dev/null)
+exec 3<&-
+
+# Line 1 is the trial row, line 2 the hook output. A silent note prints an empty
+# line 2, which command substitution strips along with the newline before it.
+NL='
+'
+ROW=${RESULT%%"$NL"*}
+case "$RESULT" in *"$NL"*) OUT=${RESULT#*"$NL"} ;; *) OUT="" ;; esac
+case "$ROW" in "{"*) ;; *) exit 0 ;; esac
+cartographer_append "$TRIAL" "$ROW" 2>/dev/null
+[ -n "$OUT" ] && printf '%s\n' "$OUT"
 exit 0

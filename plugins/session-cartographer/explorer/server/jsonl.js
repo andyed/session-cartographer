@@ -2,6 +2,7 @@ import { readFileSync, statSync, watch, openSync, readSync, closeSync } from 'fs
 import { basename, dirname, join } from 'path';
 import { homedir } from 'os';
 import { createHash } from 'node:crypto';
+import { lockStatus } from '../../scripts/jsonl-lock.js';
 
 const DEV_DIR = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents', 'dev');
 // The warm service indexes exactly one corpus, fixed at spawn time. Consumers
@@ -31,27 +32,135 @@ export const LOG_FILES = Object.fromEntries(
   Object.entries(LOG_FILE_NAMES).map(([source, name]) => [source, join(DEV_DIR, name)]),
 );
 
+// How many malformed line numbers a report keeps. Enough to find them with
+// `sed -n`; the count is the number that matters.
+const MALFORMED_SAMPLE = 10;
+
+// Path → the report from the last read of that searched log, plus malformed
+// rows the watcher has met since (appended_malformed). Every read of a log
+// records here, readJsonlFile included, and a later read replaces the entry, so
+// a log that failed and was then fixed reads healthy again. Only searched logs
+// are tracked: the Explorer also reads transcripts through readJsonlFile, and
+// those are not the corpus.
+const readReports = new Map();
+const searchedLogs = new Set(Object.values(LOG_FILES));
+
+function trackLogs(logFiles) {
+  for (const filePath of Object.values(logFiles)) searchedLogs.add(filePath);
+}
+
 /**
- * Read all events from a JSONL file. Skips malformed lines (mid-flush writes).
+ * Read a JSONL file: its events, and a report of what was not one.
+ *
+ * A line that does not parse is counted, not just skipped. These were torn
+ * rows, two sessions' appends spliced together mid-row (hooks/common.sh has the
+ * cause), and skipping them silently hid both records: six sat in
+ * session-milestones.jsonl with every health check green. A file that exists
+ * but cannot be read is reported the same way, never as an empty log. Only a
+ * missing file is empty, and the report says absent.
+ *
+ * @returns {{events: object[], report: {rows: number, malformed: number,
+ *   malformed_lines: number[], read_error: ({code: string, message: string}|null),
+ *   absent: boolean}}}
  */
-export function readJsonlFile(filePath) {
+export function readJsonlWithReport(filePath) {
+  const report = { rows: 0, malformed: 0, malformed_lines: [], read_error: null, absent: false };
   let content;
   try {
     content = readFileSync(filePath, 'utf-8');
-  } catch {
-    return [];
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      report.absent = true;
+    } else {
+      report.read_error = { code: error.code || 'EREAD', message: error.message };
+      console.error(`[jsonl] cannot read ${filePath}: ${error.message}`);
+    }
+    if (searchedLogs.has(filePath)) readReports.set(filePath, { ...report, appended_malformed: 0 });
+    return { events: [], report };
   }
 
   const events = [];
-  for (const line of content.split('\n')) {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
     if (!line.trim()) continue;
     try {
       events.push(JSON.parse(line));
     } catch {
-      // Incomplete write — Claude is mid-flush. Skip.
+      // The final line can be a row still being written; it is complete next
+      // read. Anything before it ended with a newline and is torn for good.
+      if (i === lines.length - 1) continue;
+      report.malformed += 1;
+      if (report.malformed_lines.length < MALFORMED_SAMPLE) report.malformed_lines.push(i + 1);
     }
   }
-  return events;
+  report.rows = events.length;
+  if (searchedLogs.has(filePath)) readReports.set(filePath, { ...report, appended_malformed: 0 });
+  if (report.malformed) {
+    console.error(`[jsonl] ${filePath}: ${report.malformed} malformed line(s), first at line ${report.malformed_lines[0]}`);
+  }
+  return { events, report };
+}
+
+/** Read all events from a JSONL file. See readJsonlWithReport for what is skipped. */
+export function readJsonlFile(filePath) {
+  return readJsonlWithReport(filePath).events;
+}
+
+/**
+ * The error code from the last failed read of `filePath`, or null. A missing
+ * file is not a failure (a fresh install has no prompt history yet), and a
+ * later successful read clears it.
+ */
+export function lastReadError(filePath) {
+  return readReports.get(filePath)?.read_error?.code ?? null;
+}
+
+/**
+ * What the last read and the watcher found in each searched log.
+ *
+ * A read failure is reported once, in `load_errors` (source → error code): it
+ * is the field /api/health's `status` keys on, and a per-log copy of it would
+ * be a second answer to the same question. `sources` holds what only a
+ * per-log view can say, `{path, rows, malformed, appended_malformed,
+ * malformed_lines, absent}`, null for a log not read yet; `malformed` totals
+ * the torn rows across them.
+ */
+export function logQuality(logFiles = LOG_FILES) {
+  const sources = {};
+  const loadErrors = {};
+  let malformed = 0;
+  for (const [source, filePath] of Object.entries(logFiles)) {
+    const report = readReports.get(filePath);
+    if (!report) { sources[source] = null; continue; }
+    const { read_error: readError, ...counts } = report;
+    if (readError) loadErrors[source] = readError.code;
+    sources[source] = { path: filePath, ...counts, malformed_lines: [...report.malformed_lines] };
+    malformed += report.malformed + report.appended_malformed;
+  }
+  return { load_errors: loadErrors, malformed, sources };
+}
+
+/**
+ * The two log fields both health endpoints serve, `{load_errors, logs}`:
+ * logQuality, with each log's rewrite state added under `logs`: the lock a
+ * rewriter holds and the rows spooled beside the log meanwhile
+ * (scripts/jsonl-lock.js). Spooled rows are not in the log yet, so a count
+ * that stays above zero after a rewrite has finished is rows waiting on
+ * `jsonl-lock.js drain`. Served by /api/health and /api/recall/health.
+ */
+export function logHealth(logFiles = LOG_FILES) {
+  const { load_errors: loadErrors, malformed, sources } = logQuality(logFiles);
+  let spooled = 0;
+  for (const [source, filePath] of Object.entries(logFiles)) {
+    const { lock, state, spooled_rows: rows } = lockStatus(filePath);
+    spooled += rows;
+    sources[source] = {
+      ...(sources[source] ?? { path: filePath, unread: true }),
+      rewrite_lock: lock, rewrite_state: state, spooled_rows: rows,
+    };
+  }
+  return { load_errors: loadErrors, logs: { malformed, spooled_rows: spooled, sources } };
 }
 
 // Low-signal event types to hide from timeline (still searchable via BM25)
@@ -185,6 +294,7 @@ export function mergeDuplicateEvent(existing, event, source) {
  * Deduplicates by event_id (same event in changelog + domain log).
  */
 export function readAllEvents(logFiles = LOG_FILES) {
+  trackLogs(logFiles);
   const all = [];
   // Keep a direct reference to the first stored event for each id. The event
   // corpus intentionally overlaps across changelog and domain logs; looking
@@ -317,6 +427,7 @@ function lastLineEnd(filePath, size) {
  *                     behaviour: stale in memory, no signal.
  */
 export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
+  trackLogs(logFiles);
   const offsets = {};
   const boundaries = {};
   const handlers = {};
@@ -440,7 +551,11 @@ export function watchFiles(onNewEvents, onRewrite, logFiles = LOG_FILES) {
           try {
             newEvents.push(normalizeEvent({ ...JSON.parse(line), _source: source }));
           } catch {
-            // Mid-flush write — skip
+            // Only complete lines reach here, so this is a torn row, not one
+            // still being written. Counted for the health endpoints.
+            const report = readReports.get(filePath);
+            if (report) report.appended_malformed += 1;
+            console.error(`[jsonl] ${filePath}: malformed row among those appended after byte ${offsets[source] - complete}`);
           }
         }
 

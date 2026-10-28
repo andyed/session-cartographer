@@ -1,5 +1,5 @@
 import express from 'express';
-import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, isHighSignal, CORPUS_ROOT, mergeDuplicateEvent } from './jsonl.js';
+import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, logHealth, isHighSignal, CORPUS_ROOT, mergeDuplicateEvent } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
 import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js';
@@ -15,7 +15,9 @@ import {
 import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { summarizeSessions } from './sessions.js';
 import { createInternalsHandler } from './internals-route.js';
+import { guardLoopback } from './loopback-guard.js';
 import { ensurePayloadIndexes, missingPayloadIndexes, PAYLOAD_INDEXES } from '../../scripts/qdrant-collection.js';
+import { qdrantFetch } from '../../scripts/qdrant-auth.js';
 import { accessSync, constants, existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
@@ -33,6 +35,10 @@ function indexEventsById(list) {
  */
 export function createExplorerApp() {
   const app = express();
+  // First, so a rebound or cross-site request is refused before its body is
+  // parsed. The headless Turbo server binds this same port and runs the same
+  // guard (loopback-guard.js); the UI host checks again before mounting this app.
+  app.use(guardLoopback);
   app.use(express.json({ limit: '1mb' }));
 
   let events;
@@ -109,6 +115,12 @@ export function createExplorerApp() {
   });
 
   let indexBootstrap = null;
+  // `status` covers the keyword corpus this process serves: "degraded" when a
+  // log that exists failed its last read, so the events it holds are missing
+  // from every answer (`load_errors` names it). Torn rows are counted in
+  // `logs` without changing it: they are history a repair script restores, not
+  // a log that is down. Qdrant and the embedder are optional and report their
+  // own fields.
   app.get('/api/health', async (_req, res) => {
     const files = {};
     for (const [source, path] of Object.entries(LOG_FILES)) {
@@ -119,14 +131,21 @@ export function createExplorerApp() {
         files[source] = false;
       }
     }
+    const { load_errors: loadErrors, logs } = logHealth();
 
     let qdrant = false;
+    let qdrantRefused = false;
     let payloadIndexes = null;
     try {
       const qdrantUrl = process.env.CARTOGRAPHER_QDRANT_URL || 'http://localhost:6333';
       const collection = process.env.CARTOGRAPHER_COLLECTION || 'session-cartographer';
-      const r = await fetch(`${qdrantUrl}/collections/${collection}`);
+      // Probes get a deadline: a wedged service would otherwise hold the
+      // health answer open with no limit (both answer in ~65 ms at load 68).
+      const r = await qdrantFetch(`${qdrantUrl}/collections/${collection}`, { signal: AbortSignal.timeout(2000) });
       qdrant = r.ok;
+      // A keyed Qdrant refusing a missing or wrong key is up, not down; say
+      // which, or `qdrant: false` sends the user looking for a dead process.
+      qdrantRefused = r.status === 401 || r.status === 403;
       if (r.ok) {
         // This is the existence check an upgraded install reaches before any
         // reindex, so it is where a collection that predates the payload
@@ -150,12 +169,17 @@ export function createExplorerApp() {
     let embed = false;
     try {
       const r = await fetch(
-        (process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings').replace('/v1/embeddings', '/health')
+        (process.env.CARTOGRAPHER_EMBED_URL || 'http://localhost:8890/v1/embeddings').replace('/v1/embeddings', '/health'),
+        { signal: AbortSignal.timeout(2000) },
       );
       embed = r.ok;
     } catch {}
 
-    res.json({ status: 'ok', events: events.length, files, qdrant, payload_indexes: payloadIndexes, embed });
+    res.json({
+      status: Object.keys(loadErrors).length ? 'degraded' : 'ok',
+      events: events.length, files, load_errors: loadErrors, logs, qdrant, payload_indexes: payloadIndexes, embed,
+      ...(qdrantRefused ? { qdrant_error: 'unauthorized' } : {}),
+    });
   });
 
   app.get('/api/recall/health', (_req, res) => {

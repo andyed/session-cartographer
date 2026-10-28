@@ -4,6 +4,8 @@
 set -u
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+. "$(dirname "$0")/cartographer-common.sh" 2>/dev/null \
+  || cartographer_append() { printf '%s\n' "$2" >> "$1"; }
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 STATE_DIR="$DEV/.carto"
 LOCK_DIR="$STATE_DIR/transcript-catch-up.lock"
@@ -62,16 +64,16 @@ if [ -n "$HERMES_CONFIG" ] && [ -f "$HERMES_CONFIG" ]; then
   h_status=$?
   h_end=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   h_summary=$(printf '%s\n' "$h_output" | tail -1)
-  jq -n -c --arg start "$h_start" --arg end "$h_end" \
+  h_row=$(jq -n -c --arg start "$h_start" --arg end "$h_end" \
     --arg summary "$h_summary" --argjson status "$h_status" \
-    '{started_at:$start,finished_at:$end,provider:"hermes",status:$status,summary:$summary}' \
-    >> "$LOG_FILE" 2>/dev/null || true
+    '{started_at:$start,finished_at:$end,provider:"hermes",status:$status,summary:$summary}' 2>/dev/null)
+  if [ -n "$h_row" ]; then cartographer_append "$LOG_FILE" "$h_row" 2>/dev/null || true; fi
 fi
 
-jq -n -c --arg start "$start_ts" --arg end "$end_ts" --arg provider "$PROVIDER" \
+run_row=$(jq -n -c --arg start "$start_ts" --arg end "$end_ts" --arg provider "$PROVIDER" \
   --arg summary "$summary" --argjson status "$status" \
-  '{started_at:$start,finished_at:$end,provider:$provider,status:$status,summary:$summary}' \
-  >> "$LOG_FILE" 2>/dev/null || true
+  '{started_at:$start,finished_at:$end,provider:$provider,status:$status,summary:$summary}' 2>/dev/null)
+if [ -n "$run_row" ]; then cartographer_append "$LOG_FILE" "$run_row" 2>/dev/null || true; fi
 
 if [ "$status" -eq 0 ]; then
   printf '%s\n' "$now" > "$LAST_RUN"

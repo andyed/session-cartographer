@@ -40,10 +40,12 @@
  * the logs alone leaves every semantic hit still pointing at the pre-archive
  * path. --qdrant repairs that side under the same one-file/one-basename policy.
  */
-import { readFileSync, writeFileSync, existsSync, copyFileSync, readdirSync, statSync } from 'fs';
+import { writeFileSync, existsSync, readdirSync } from 'fs';
 import { join, basename } from 'path';
 import { homedir } from 'os';
 import { defaultPaths } from './session-windows.js';
+import { qdrantFetch } from './qdrant-auth.js';
+import { replaceJsonl, RewriteConflictError, snapshotJsonl } from './jsonl-lock.js';
 
 const args = process.argv.slice(2);
 const valueAfter = (flag, fallback) => {
@@ -92,8 +94,8 @@ for (const TARGET of (DO_QDRANT ? [] : TARGETS)) {
   // logs on every tool use. A read-modify-write therefore races live writers:
   // anything appended between the read and the write would be silently dropped.
   // Record the size we read, and refuse to write if the file grew.
-  const sizeAtRead = statSync(TARGET).size;
-  const lines = readFileSync(TARGET, 'utf8').split('\n');
+  const raw = snapshotJsonl(TARGET);
+  const lines = raw.toString('utf8').split('\n');
   const out = [];
   let fileRepaired = 0;
 
@@ -126,15 +128,18 @@ for (const TARGET of (DO_QDRANT ? [] : TARGETS)) {
   perFile.push({ file: TARGET, repaired: fileRepaired });
 
   if (DO_WRITE && fileRepaired > 0) {
-    const sizeNow = statSync(TARGET).size;
-    if (sizeNow !== sizeAtRead) {
+    // Rows a live session appends meanwhile are carried across under the
+    // rewrite lock (scripts/jsonl-lock.js); only a change that is not an
+    // append, another rewriter's, stops the write.
+    const backup = `${TARGET}.bak-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+    writeFileSync(backup, raw);
+    try {
+      const { carried_rows: carried } = replaceJsonl(TARGET, { original: raw, body: out.join('\n') });
+      if (!AS_JSON) console.log(`  wrote ${TARGET} (${fileRepaired} repaired; ${carried} appended row(s) carried; backup ${backup})`);
+    } catch (error) {
+      if (!(error instanceof RewriteConflictError)) throw error;
       stats.raced++;
-      console.error(`  SKIPPED ${TARGET}: grew ${sizeAtRead} → ${sizeNow} bytes during the run (a live session is appending). Re-run when quiet.`);
-    } else {
-      const backup = `${TARGET}.bak-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
-      copyFileSync(TARGET, backup);
-      writeFileSync(TARGET, out.join('\n'));
-      if (!AS_JSON) console.log(`  wrote ${TARGET} (${fileRepaired} repaired; backup ${backup})`);
+      console.error(`  SKIPPED ${TARGET}: ${error.message}. Re-run.`);
     }
   }
 }
@@ -150,7 +155,7 @@ if (DO_QDRANT) {
       filter: { must: [{ key: 'transcript_path', match: { text: 'codex/sessions' } }] },
     };
     if (offset !== null) body.offset = offset;
-    const res = await fetch(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
+    const res = await qdrantFetch(`${QDRANT}/collections/${COLLECTION}/points/scroll`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     }).then(r => r.json()).catch(() => null);
     const pts = res?.result?.points || [];
@@ -176,7 +181,7 @@ if (DO_QDRANT) {
     for (const [target, ids] of byTarget) {
       for (let i = 0; i < ids.length; i += 500) {
         const chunk = ids.slice(i, i + 500);
-        const ok = await fetch(`${QDRANT}/collections/${COLLECTION}/points/payload?wait=true`, {
+        const ok = await qdrantFetch(`${QDRANT}/collections/${COLLECTION}/points/payload?wait=true`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ payload: { transcript_path: target }, points: chunk }),
         }).then(r => r.ok).catch(() => false);
@@ -211,7 +216,7 @@ if (AS_JSON) {
     console.log('\n  sample:');
     for (const s of samples.slice(0, 4)) console.log(`    ${s.event_id}\n      ${s.from}\n   →  ${s.to}`);
   }
-  if (stats.raced) console.log(`\n  ${stats.raced} file(s) skipped: appended to mid-run. Re-run when sessions are quiet.`);
+  if (stats.raced) console.log(`\n  ${stats.raced} file(s) skipped: rewritten by something else mid-run. Re-run.`);
   // The Turbo watcher (explorer/server/jsonl.js) tracks byte offsets and only
   // ever reads the tail: it detects truncation, but an in-place rewrite of
   // history is invisible to it. A warm server therefore keeps serving the

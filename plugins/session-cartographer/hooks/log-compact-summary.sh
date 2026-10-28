@@ -93,7 +93,7 @@ EVENT_JSON=$(jq -n -c \
   '{event_id:$eid, timestamp:$ts, type:"derived_compaction_summary", provider:$provider, session_id:$session, project:$project, cwd:$cwd, transcript_path:$transcript, deeplink:$deeplink, summary:$summary, summary_hash:$hash, summary_truncated:$truncated, compaction_trigger:$trigger, canonical:false, noise_class:"compaction_echo", derived_from:{kind:"claude_postcompact", session_id:$session, transcript_path:$transcript}, related_ids:[], salience:0.35}
    + if $parent_id != "" then {parent_event_id:$parent_id} else {} end') || exit 0
 
-printf '%s\n' "$EVENT_JSON" >> "$CHANGELOG"
+cartographer_append "$CHANGELOG" "$EVENT_JSON"
 
 # Both follow-ups are detached and optional. Compaction continuity must never
 # depend on local embedding services or a historical backfill completing.

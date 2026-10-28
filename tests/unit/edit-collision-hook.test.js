@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { withoutTrialGates } from './helpers/trial-gates.js';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const HOOK = path.join(ROOT, 'plugins/session-cartographer/hooks/check-edit-collision.sh');
@@ -38,7 +39,7 @@ function runHook(dev, payload, env = {}) {
     cwd: ROOT,
     input: JSON.stringify(payload),
     encoding: 'utf8',
-    env: { ...process.env, CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_ROOT: ROOT, TMPDIR: tmp, ...env },
+    env: { ...withoutTrialGates(process.env), CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_ROOT: ROOT, TMPDIR: tmp, ...env },
   });
   return { ...result, tmp };
 }
@@ -126,7 +127,7 @@ test('Codex apply_patch targets are read from patch headers', () => {
 
 test('malformed input fails open', () => {
   const { dev } = workspace();
-  const r = spawnSync('bash', [HOOK], { cwd: ROOT, input: 'not json', encoding: 'utf8', env: { ...process.env, CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_ROOT: ROOT } });
+  const r = spawnSync('bash', [HOOK], { cwd: ROOT, input: 'not json', encoding: 'utf8', env: { ...withoutTrialGates(process.env), CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_ROOT: ROOT } });
   assert.equal(r.status, 0);
   assert.equal(r.stdout, '');
 });

@@ -325,12 +325,44 @@ test('record-wrapup refuses an event-id collision with different content', () =>
   assert.equal(readJsonl(path.join(h.dev, 'session-milestones.jsonl')).length, 1);
 });
 
+test('record-wrapup writes every text field on one line and drops empty threads', () => {
+  // The SessionStart note lists unresolved[] one item per line, and the logs are
+  // line-based: a newline inside an item would split it into two threads there.
+  const h = harness();
+  const event = {
+    event_id: 'evt-record-flat',
+    milestone: 'session_wrapup',
+    session_id: 'session-record-flat',
+    description: 'First line.\nSecond line.',
+    key_insight: 'One\tinsight',
+    decisions: ['Kept the cursor\n  for both callers'],
+    unresolved: ['Verify the retry budget\non staging', '', '  '],
+  };
+  const first = h.runWrapup(event);
+  assert.equal(first.status, 0, first.stderr);
+  const raw = fs.readFileSync(path.join(h.dev, 'session-milestones.jsonl'), 'utf8');
+  assert.equal(raw.trim().split('\n').length, 1);
+  const [row] = readJsonl(path.join(h.dev, 'session-milestones.jsonl'));
+  assert.equal(row.description, 'First line. Second line.');
+  assert.equal(row.key_insight, 'One insight');
+  assert.deepEqual(row.decisions, ['Kept the cursor for both callers']);
+  assert.deepEqual(row.unresolved, ['Verify the retry budget on staging']);
+  // A retry of the same raw event normalizes the same way and is not a conflict.
+  const retry = h.runWrapup(event);
+  assert.equal(retry.status, 0, retry.stderr);
+  assert.equal(JSON.parse(retry.stdout).log_outcome, 'already_present');
+});
+
 test('wrapup skill consumes the receipt and verifies by configured event id', () => {
   const skill = fs.readFileSync(WRAPUP_SKILL, 'utf8');
   assert.match(skill, /record-wrapup\.sh/);
   assert.match(skill, /\.index\.outcome/);
   assert.match(skill, /CARTOGRAPHER_QDRANT_URL/);
   assert.match(skill, /VERIFIED_EVENT_ID.*EVENT_ID/);
+  // The read-back must carry the Qdrant key, or a keyed Qdrant answers 401
+  // and every wrapup reports a verification failure for an event that landed.
+  assert.match(skill, /VERIFIED_EVENT_ID=\$\("\$ROOT\/scripts\/qdrant-curl\.sh"/);
+  assert.doesNotMatch(skill, /\$\(curl [^)]*\$QDRANT_URL/);
   assert.doesNotMatch(skill, /NOT INDEXED/);
   assert.doesNotMatch(skill, /\| bash "\$ROOT\/scripts\/index-event\.sh"/);
 });

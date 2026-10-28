@@ -14,6 +14,9 @@ VERSION=$(node -p "require('$ROOT/package.json').version")
 for required in \
   "$PLUGIN/.codex-plugin/plugin.json" \
   "$PLUGIN/.claude-plugin/plugin.json" \
+  "$PLUGIN/.mcp.json" \
+  "$PLUGIN/scripts/cartographer-mcp.js" \
+  "$PLUGIN/scripts/facts-render.js" \
   "$PLUGIN/hooks/hooks.json" \
   "$PLUGIN/hooks/codex-hooks.json" \
   "$PLUGIN/hooks/surface-turbo-on-start.sh" \
@@ -56,6 +59,7 @@ done
 cmp -s "$ROOT/package.json" "$PLUGIN/package.json"
 cmp -s "$ROOT/project-registry.json" "$PLUGIN/project-registry.json"
 cmp -s "$ROOT/LICENSE" "$PLUGIN/LICENSE"
+cmp -s "$ROOT/THIRD_PARTY_NOTICES.md" "$PLUGIN/THIRD_PARTY_NOTICES.md"
 
 for source in \
   "$ROOT/explorer/package.json" \

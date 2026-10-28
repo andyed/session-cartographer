@@ -12,7 +12,7 @@ const require = createRequire(import.meta.url);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HOOK_DIR = path.join(ROOT, 'plugins/session-cartographer/hooks');
 const LAUNCHER = path.join(HOOK_DIR, 'run-hook.cjs');
-const { resolveBash, acquireSlot, launchHook } = require(LAUNCHER);
+const { resolveBash, acquireSlot, launchHook, HOOKS } = require(LAUNCHER);
 function scratch(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'carto hooks spaces é-'));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -24,6 +24,7 @@ test('both providers explicitly launch Node for every hook, including archive/Se
     assert.ok(config.hooks.SessionEnd);
     for (const [event, groups] of Object.entries(config.hooks)) for (const group of groups) for (const hook of group.hooks) {
       assert.match(hook.command, /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/hooks\/run-hook\.cjs" [a-z-]+\.sh \d+$/);
+      assert.ok(HOOKS.has(hook.command.split(' ').at(-2)), 'every registered hook must be allowed by the launcher');
       const budget = Number(hook.command.split(' ').at(-1));
       if (event === 'SessionEnd') {
         assert.equal(hook.timeout, 3, 'Codex caps SessionEnd at three seconds');

@@ -59,6 +59,20 @@ Do not skip the arrays as a shortcut — nothing downstream can recover them fro
 the paragraph. Measured across 508 descriptions, explicit decision markers
 appear in about 4%, so no later parser can reconstruct what you did not record.
 
+`unresolved[]` is also the hand-off. The next session to start in this project
+gets the latest wrapup's items in its SessionStart note
+(`hooks/surface-focus-on-start.sh`), one per line and cut at 100 characters,
+with this event's id so it can `--get` the rest. Write each item for that
+reader, an agent at its first turn that has not seen this conversation:
+
+- one open thread per item, on one line;
+- the next action or the open question first, then the evidence: "Verify X on
+  the Windows box", not "The Windows box has not been tried";
+- name the file, command, branch or id it concerns;
+- what is left to do, not what was done. The paragraph covers what was done.
+
+An empty list says "nothing left open", so leave it empty only when that is true.
+
 ## Step 1: Write the milestone
 
 Generate a one-paragraph synthesis of the session. Be specific — name the files, the commits, the discoveries. No filler.
@@ -115,6 +129,8 @@ DECISIONS=$(printf '%s\n' \
   "DECISION_ONE" \
   "DECISION_TWO" \
   | jq -R . | jq -s 'map(select(length > 0))')
+# Each open thread on its own line: the next session's start note lists them
+# one per line, so lead with the action and keep each under ~100 characters.
 UNRESOLVED=$(printf '%s\n' \
   "OPEN_THREAD_ONE" \
   | jq -R . | jq -s 'map(select(length > 0))')
@@ -171,7 +187,7 @@ printf '%s\n' "$WRAPUP_RECEIPT" | jq .
 [ "$WRAPUP_STATUS" -eq 0 ] || echo "index/write status: $WRAPUP_STATUS" >&2
 ```
 
-Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph. It must be a **single line** — the pipeline is TSV/line-based and a literal newline splits the row.
+Replace `SESSION_SYNTHESIS_HERE` with your synthesis paragraph. It must be a **single line** — the pipeline is TSV/line-based and a literal newline splits the row. `record-wrapup.sh` flattens any newline or tab left in the synthesis, `key_insight` or an array item to a space before writing, so a stray one costs formatting, not the row.
 
 ## Step 2: Confirm it landed
 
@@ -181,7 +197,8 @@ if [ "$INDEX_OUTCOME" = "indexed" ]; then
   POINT_ID=$(printf '%s' "$WRAPUP_RECEIPT" | jq -r '.index.point_id // empty')
   QDRANT_URL="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
   COLLECTION="${CARTOGRAPHER_COLLECTION:-session-cartographer}"
-  VERIFIED_EVENT_ID=$(curl -sf "$QDRANT_URL/collections/$COLLECTION/points/$POINT_ID" \
+  # qdrant-curl.sh adds the api-key header when a Qdrant key is configured.
+  VERIFIED_EVENT_ID=$("$ROOT/scripts/qdrant-curl.sh" -sf "$QDRANT_URL/collections/$COLLECTION/points/$POINT_ID" \
     | jq -r '.result.payload.event_id // empty')
   if [ "$VERIFIED_EVENT_ID" = "$EVENT_ID" ]; then
     echo "verified indexed: $EVENT_ID"

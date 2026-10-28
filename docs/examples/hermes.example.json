@@ -1,6 +1,6 @@
 {
   "hermes_home": "~/.hermes",
-  "sources": ["desktop", "acp", "subagent", "cron"],
+  "sources": ["desktop", "tui", "acp", "subagent", "cron"],
   "min_user_prompts": 2,
   "default_project": "hermes",
   "path_projects": {

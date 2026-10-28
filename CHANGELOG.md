@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.8.4 (2026-10-28)
+
+### fix(hooks): execute Windows hooks through an explicit, bounded launcher
+
+Bare shell-script registrations could open repeated Windows app-picker dialogs,
+including when a Codex chat was archived. Both providers now invoke a Node
+launcher that resolves Bash explicitly, hides the child window, bounds
+concurrency, and terminates timed-out process trees. SessionEnd stays within
+Codex's three-second cap. Shell sources use LF on every platform, and release
+publication now requires the Windows launcher regression gate. See
+[the release notes](docs/releases/v0.8.4.md) for recovery and hook reapproval.
 
 ### fix(index): send request bodies to curl on stdin
 
@@ -75,6 +85,443 @@ README's Install section opens with the requirement (bash and jq; Git Bash
 supplies bash on Windows) and `docs/SETUP.md` says the same.
 `tests/unit/missing-jq-notice.test.js` runs the hooks under a PATH with no jq
 on it and, where jq is installed, with it present.
+
+### feat(hermes): read the dashboard chat, and keep each reply with its prompt
+
+Hermes 0.22 records a conversation in the dashboard's Chat tab with source
+`tui`. `hermes-source.js` now reads it by default, and the example policy lists
+it; a policy file that names its own `sources` must add it. `cli` stays out: on
+2026-10-22, 90 of the 96 `cli` sessions that passed the conversation filter
+were one templated `hermes -z` web search each.
+
+Turn grouping follows two of Hermes's own rules. A `user` row Hermes writes
+itself opens no turn and is not indexed. These rows are the max-iterations
+nudge, background-process notices, subagent completions and model switches,
+matched with Hermes's own pattern plus `display_kind`. The reply that follows
+stays with the prompt that asked for it. A row compacted twice is one turn,
+because copies share role, content and timestamp, which is Hermes's identity
+key. On 2026-10-22, one 832-message dashboard chat reads as 6 turns where it
+read as 11, and 101 desktop sessions as 506 turns where they read as 598. No
+human prompt lost its turn. Sessions already indexed keep their old turns
+until they are re-read (`--full`).
+
+### fix(logs): the rewrite lock keeps every row under contention
+
+`jsonl-lock.test.js` lost 1-2 rows per run on the 2-4 core CI runners (Linux and
+macOS). On a 16-core Mac it passed, and lost rows only when confined to the four
+efficiency cores under load. `replaceJsonl` announced `held` first and
+moved any leftover spool second. An appender that read `held` in between opened
+the spool. If it was descheduled before writing, the move renamed the spool,
+read it, appended it to the log and unlinked it, and the row then went into the
+unlinked file. The appender's second read of the state still said `held`, the
+same as its first, so it never wrote the row again. A spool is now moved only
+while the state does not say `held`: a dead rewriter's spool is moved by
+`acquireRewriteLock` before it announces the hold, and the live spool after the
+release. Every look the rewriter takes (the late sweep of the old file, each
+spool drain) now reads complete rows only, since a trailing fragment is a write
+still landing and its appender writes the row again. A rewrite that fails now
+drains the spool it collected instead of leaving it for the next one.
+
+`jsonl-lock.test.js` forces the interleaving: a slowed `cat` makes the appender
+open the spool right after `held`, and the rewriter waits at its rename until
+the appender has finished. The pre-fix lock loses that row every time, and the
+fixed one keeps it. A second test checks that no spool is ever renamed while
+the state says `held`. An appender now writes a row up to 8 times, not 3, when
+the state keeps changing under it (`APPEND_TRIES`, shared by both appenders).
+
+Measured on the efficiency cores (`taskpolicy -c background`, 4 busy loops, two
+runs at a time) with background disk throttling, the race test lost 9 rows in 3
+of 61 runs before the fix and none in 60 after (30 each under bash 3.2 and 5).
+With normal disk priority, all three race-prone files ran 30 times per bash
+with 0 rows lost and 0 failures. Before the fix, the git-commit file failed in
+cleanup in 9 of 20 runs.
+
+The hook tests that removed their temp directory right after a hook
+(`log-tool-use-git-commit`, `log-tool-use-bash-edits`, `transcript-verified`)
+raced the indexer, which is now detached and outlives the hook. CI failed in
+cleanup with `ENOTEMPTY`. They run with `NO_INDEXER_ENV`
+(`tests/unit/helpers/offline-index.js`), a `CARTOGRAPHER_ROOT` whose
+`index-event.sh` does nothing. `live-index-isolation.test.js`, which needs the
+real indexer, now waits for it to finish (its error row), not for its first
+request.
+
+### fix(search): --get records a fetch whatever happens to stdout, and fetches conversation turns
+
+Two ways lost the access row of a fetch an agent made exactly as the skill
+asks, found by abandonment-report.js in transcripts (docs/ABANDONMENT.md).
+`--get` printed the records and recorded the fetch afterwards, so
+`--get … | head` closed the pipe and SIGPIPE ended the script before the row
+was written. Three real calls passed `--call-id` and still left none. `--get`
+now resolves every id, records, and only then prints, so a closed pipe costs
+output, never the row. Conversation turns (`turn-…`) live only in the semantic
+index, so `--get` called every served turn missing and recorded nothing:
+about a sixth of served rows. A turn the five logs do not hold is now fetched
+in one batched point retrieval, by the same point id `index-event.sh` and
+`embed-events.js` write. Its payload is printed as the record and recorded
+like any other, in request order. With `CARTOGRAPHER_SEMANTIC=0`, no jq, or an
+unreachable index, the turn is missing as before, and Qdrant is not asked when
+the leg is pinned off. `transcript-…` ids, lines from a transcript grep, stay
+unfetchable and now say so. The MCP `get` and `recall` descriptions no longer
+claim `get` cannot fetch a turn; recall still prints a turn's transcript path.
+`get-access-recording.test.js` makes the pipe failure deterministic with a
+record larger than a pipe buffer. It checks the point id against the JS
+derivation through a stand-in Qdrant, and both defect tests failed before the
+fix.
+
+### feat(scripts): abandonment-report.js reads what agents did with unused recall results
+
+`hit-rate-report.js` scores a call with no access row as 0: on 2026-10-17
+that was 365 of 548 ordered `remember` calls. `scripts/abandonment-report.js`
+resolves each such call's transcript (subagent files and persisted tool output
+included), finds the recall's output by call_id, or by its query for output
+printed before call_ids were, and sorts the call. The categories are unmarked
+use (a later tool call names a served result, or follows a token first seen in
+its summary), good abandonment (the next text carries a summary's distinctive
+tokens), no-need (turn one, no memory cue), bad abandonment, empty and
+unresolved. Overlap must beat 99 same-project calls' summaries scored against
+the same output, and every call is re-run with decoy results to measure false
+positives. Before reporting, the probe reproduces hit-rate-report.js's
+first-access MRR on the same snapshot, and aborts if it differs. It writes no
+telemetry. Result: crediting implicit use moves `remember` MRR from 0.173 to
+0.193. Of the 191 readable no-access calls, 70% are bad abandonment and 4%
+good abandonment (docs/ABANDONMENT.md). Two recorder defects surfaced, both
+reproduced and left for a follow-up. `--get … | head` lets SIGPIPE end the
+script before the access row is written, and `--get` of a `turn-*` id records
+nothing. `normalizeLiteralPrompt` and `isNonPromptNoise` are now exported from
+`classify-prompt-intent.js`, so the probe shares its definition of a human
+prompt. `live-index-isolation.test.js` exempts the new test, which names the
+CLI only inside transcript fixtures.
+
+### feat(security): Qdrant runs with an API key, and every client sends it
+
+CORS off (below) stopped web pages reading :6333 but not writing to it: Qdrant
+1.12.1 parses a `text/plain` POST, which needs no preflight, as JSON, and such a
+POST to `points/delete` removed the point. `start-services.sh` now generates a
+key on first start, keeps it in `$CARTOGRAPHER_QDRANT_STORAGE/api-key` (mode
+600), and writes it into its config (now also mode 600) as `service.api_key`.
+Against that Qdrant the same POST gets 401, and so does the preflight a page
+would need to add the header. Every client sends the key as the `api-key`
+header: the indexer, the CLI, the Explorer API and its `/api/health` probe,
+Turbo, `semantic-search.js`, `embed-events.js`, the backfill and repair scripts,
+and the `/wrapup` read-back. They resolve it through one module per language,
+`scripts/qdrant-auth.js` and `qdrant-auth.sh`: `CARTOGRAPHER_QDRANT_API_KEY`
+when set, else the launcher's key file, which is sent only to a loopback URL.
+Nothing needs exporting, and with no key configured every request is what it
+was before. The key is never printed, put in a URL, or written to a log row.
+A refused key now reads as `qdrant_unauthorized` in `index-errors.jsonl` and
+`qdrant_error: "unauthorized"` in `/api/health` rather than as Qdrant being
+down. A Qdrant the launcher did not start is not changed; the launcher warns
+when one answers without a key. `qdrant-api-key.test.js` runs every client
+against a recorder with an env key, a file key and no key, and checks the
+header on each request; `qdrant-start-services-key.test.js` sends the blind
+write to a launcher-started Qdrant and expects 401 (it skips without a `qdrant`
+binary; set `CARTOGRAPHER_TEST_QDRANT_BIN`).
+
+### fix(explorer): event urls link only through the allowlist
+
+`EventCard` put a corpus `url` straight into `href` in three places (the link
+icon, a commit's "view on GitHub", the detail's url line). The url is whatever a
+hook or agent recorded, and React 19 rewrites only a `javascript:` href, so
+`data:`, `file:` and relative values went through. One did in the live corpus: a
+bare slug rendered as a broken link relative to the Explorer. The card now uses
+the Memory Desk's `safeArtifactLink` (`http(s)`, `mailto`, `#`) and shows a
+refused url as text. `event-card-links.test.js` fails if an `EventCard` href is
+not a `safeArtifactLink` result, and the browser harness renders a
+`javascript:` url and checks it appears as text with no anchor.
+
+### fix(services): the launcher starts Qdrant with CORS off
+
+`start-services.sh` wrote `enable_cors: true` into the Qdrant config it
+generates. No browser code calls Qdrant: the Explorer proxies it, the demo build
+reads static JSON, and every other client is a script. With CORS on, Qdrant
+reflects any `Origin` and approves a preflighted POST, and it has no API key
+here, so any web page could try to read the corpus. It is `false` now. CORS off
+stops reads only. Measured on Qdrant 1.12.1, a `text/plain` POST to
+`points/delete` (a request a page can send without a preflight) still deleted
+the point, so only an API key would close blind writes. docs/ADOPTING.md gives
+the environment variable for a Qdrant started some other way. Qdrant's own
+default is CORS on.
+
+### fix(security): the API and Turbo port refuses a forged Host
+
+Every listener now guards against DNS rebinding the way the UI host (:2527)
+does. The check lives in `explorer/server/loopback-guard.js` and runs first on
+every listener: the Express app, the headless Turbo server,
+and the UI host, whose `validateUiRequest` keeps only its mutation rules on top.
+It refuses a non-loopback `Host`, an `Origin` other than that host's, and
+`Sec-Fetch-Site: cross-site`. Cartographer's own Node clients send no `Origin`,
+so they pass unchanged. `api-loopback-guard.test.js` and
+`turbo-loopback-guard.test.js` send forged requests to each listener over raw
+HTTP, and each fails against the unguarded code.
+
+### fix(api): `/api/health` reports a failed log instead of `ok`
+
+`/api/health` hard-coded `status: 'ok'`. A log that exists but cannot be read
+loads as zero events, so the corpus could be missing a whole log while health
+said ok. `readJsonlFile` now records the error from a failed read, and health
+answers `degraded` with `load_errors` naming the log until a read succeeds. A
+missing log is still not an error; a fresh install has no prompt history yet.
+
+### docs: align the docs with the code
+
+- Rendering: no corpus text is parsed as HTML. Markdown is emitted as React
+  elements and Memory Desk links pass an allowlist (CLAUDE.md, AGENTS.md, both
+  Explorer specs).
+- docs/SCORING.md describes how the score modifiers and the 10%-of-top trim
+  interact.
+- CLAUDE.md lists how the CLI and API rankers differ (IDF scope, dual-written
+  events, the trim, timestamp offsets) and the API's measured 20–31 ms scan.
+- docs/LOG_SCHEMAS.md points to `cartographer_project` for the project name.
+- docs/ADOPTING.md says how to check which Qdrant holds the port.
+- Attribution notices live in `THIRD_PARTY_NOTICES.md`, with the upstream
+  session-bridge notice, and ship in the plugin package; GitHub now detects the
+  MIT license.
+
+### fix(logs): one write per row, a rewrite lock, torn rows counted, deadlines
+
+Concurrent sessions tore rows. The hooks appended with bash's builtin
+`printf '%s\n' "$row" >> log`, which on macOS writes through a 1024-byte line
+buffer, so a longer row left in several `write(2)` calls and another session's
+row landed between them. `session-milestones.jsonl` held six such lines (three
+pairs of session-end milestones, spliced at byte 1025), and readers skipped
+them without a word. Linux CI never saw it: glibc's buffer is 8 KB. Measured
+with 8 writers × 400 rows on macOS, bash 3.2 and 5.3 alike: 1024 bytes with the
+newline arrived whole every time, and 1025 tore about 60% of rows.
+
+- **`cartographer_append`** (`hooks/common.sh`) is the one append, used by every
+  hook and shell writer (`scripts/cartographer-common.sh` sources it into
+  `scripts/`). A row that fits 1024 bytes keeps the builtin, and a longer one
+  goes through one `cat` of a here-string, clean to 70 KB. That is 99.5% of
+  tool-use rows and 99.3% of changelog rows, so the hot hooks keep their
+  process counts: 7 for `npm test`, 2 for the Stop no-op, unchanged and byte
+  identical to the golden capture. The cat path costs ~5-6 ms at load average
+  370, the builtin path +0.17 ms. The search script's awk-written served rows
+  and call rows, which went out through awk's 4 KB buffer, are appended the same
+  way.
+- **Rewrite lock** (`scripts/jsonl-lock.js`). Every in-place rewriter
+  (`enrich-sessions`, `repair-orphan-sessions`, `prune-contentless-milestones`,
+  `repair-transcript-paths`, `backfill-event-ids`, `migrate-project-attribution`,
+  `repair-foreign-commit-sessions`, `enrich-diff-shapes.sh`) now replaces by temp
+  + rename under `<log>.lock`, and carries every row appended since its read. The
+  first four truncated and rewrote, losing whatever arrived meanwhile.
+  `enrich-sessions` also dropped every row it could not parse, and now keeps it.
+  Appenders read `<log>.rewrite` with builtins (no process), spool to
+  `<log>.spool` while a live rewriter holds the log, and write a row again if a
+  rewrite may have finished reading where it went. Delivery is at least once. A
+  grace period alone lost rows in the race test at load average 160 and 434, and
+  the generation-checked second read loses none. Readers fold the rare row
+  written twice by event id.
+- **Torn rows are counted**, not skipped. `readJsonlWithReport` in
+  `explorer/server/jsonl.js`, and the watcher, count malformed lines per log
+  with their line numbers. A read failure is recorded and logged, not returned
+  as an empty log. `/api/health` and `/api/recall/health` serve the same two
+  fields: `load_errors` (above), the one place a failed read is reported, and
+  `logs`, with `malformed` totalled and, per log, rows, `malformed`,
+  `malformed_lines`, `appended_malformed`, `absent`, the rewrite state and
+  `spooled_rows`. Torn rows leave `status` alone: they are history to repair,
+  not a log that is down. Only `/api/health` answers `degraded`, for a
+  `load_errors` entry; `/api/recall/health` keeps `ok`, which Turbo's clients
+  key on.
+- **`scripts/repair-torn-rows.js`** splits a torn run back into its records.
+  Chunks fall at fixed 1024-byte boundaries, so cutting is deterministic, and
+  only an assignment in which every row parses is accepted. All three live pairs
+  parse two ways (their tails are interchangeable), and the changelog copy of
+  each milestone, whose summary names its counts, decides. It is a dry run by
+  default; `--write` backs up and replaces under the lock.
+- **Deadlines.** Every curl in `index-event.sh` and `cartographer-search.sh` has
+  `--connect-timeout 1` and `--max-time 2` (probes) or 5 (calls), and the
+  Qdrant ones still go through `qdrant_curl`, so they carry the API key
+  (above) as well. The Explorer's Qdrant calls pass their signal through
+  `qdrantFetch` the same way. A payload
+  index build gets 30 s. `CARTOGRAPHER_HTTP_MAX_TIME` raises the call budget. A
+  search that timed out is no longer retried without its range. The semantic
+  leg in `explorer/server/search.js` shares one `AbortSignal.timeout` of 3 s,
+  under Turbo's 4 s client budget (`CARTOGRAPHER_SEMANTIC_TIMEOUT_MS`), and the
+  health probes have 2 s. The background indexer is detached from the hook's
+  stdout and stderr: Node's `close` waited 2.1 s for a hook whose 2 s
+  background child held them, and 0.1 s once they were redirected.
+- **CI** gains a macOS job that runs the append and rewrite races, then the
+  unit suite.
+
+### fix(wrapup-coverage, cooccurrence-graph): output no longer cut through a pipe
+
+The same write-then-exit defect as standup's, in two more CLIs that skills read
+through pipes. `wrapup-coverage.js --json` exited straight after printing; on
+the live corpus `--limit 100000` piped to `wc -c` arrived cut at 65,536 bytes
+of about 728 KB, and its 10 KB default output is past 8,192 bytes, where one
+of standup's cuts under the MCP server fell. `cooccurrence-graph.js` exited
+after each `--related`, `--maneuvers` and `--signal` answer; `--signal` names
+every project behind a maneuver, 4.7 KB for the whole catalog today and growing
+with the project count. Both now wait for stdout to drain. `cli-pipe-drain.test.js`
+gains a case for each, over 256 KB: against the old scripts they failed 3 of 3
+runs, cut at 65,536 and 163,167 bytes. `hit-rate-report.js`, `trust-digest.js`
+and `infer-codex-project.js` were checked and left alone: hit-rate's `--json`
+falls off the end of the module, and their explicit exits print at most a fixed
+2.2 KB.
+
+### fix(standup): `--json` and `--commit` no longer lose their tail through a pipe
+
+`cartographer-standup.js` called `process.exit(0)` right after printing. On
+macOS Node writes to a pipe asynchronously, so the process ended before the
+pipe had taken everything. The reader got a prefix cut mid-string, and the exit
+code was 0. On the live corpus a 3-day `--json` roster of about 196 KB arrived
+cut at 131,041 bytes. The MCP server's `standup` tool reads that JSON through a
+pipe, so it failed to parse whenever a checkout's UNCLAIMED list grew. With 317
+modified tracked files, `mcp-server.test.js` failed at byte 65,536 on every
+run; on a clean tree it passed. Both exits now wait for stdout to drain.
+`cartographer-facts.js` and `session-digest.js` were already safe: facts never
+exits after writing, and the digest's `--day` path already waited on its write.
+`tests/unit/cli-pipe-drain.test.js` reads each CLI through a reader that stalls
+after the first chunk, with output past four times a pipe's capacity. Against
+the old standup it fails with output cut at 65,536 and about 131 KB.
+
+### fix(mcp): tool results are text only, at about a third of the tokens
+
+The MCP server answered with compact text and, from protocol 2025-06-18 on,
+the same answer as `structuredContent`. Clients do not show the model both.
+Claude Code 2.1.277 and Codex 0.160 send it the serialized `structuredContent`
+and drop the text; Hermes 0.21 sends both. So in Claude Code the model got the
+JSON, with full summaries, transcript paths, session ids, salience and cwd per
+hit. A 3-hit recall cost about 1,600 tokens against the ~210 its description
+promised. Measured on the live corpus with the same queries and ids:
+
+| Call | Claude Code / Codex, before → after | Hermes, before → after |
+|---|---|---|
+| `recall`, 3 hits | 3,272 → 1,201 chars (~1,600 → ~590 tokens) | 4,645 → 1,227 chars |
+| `recall`, 10 hits | 9,864 → 3,274 chars (~4,700 → ~1,650 tokens) | 13,159 → 3,320 chars |
+| `get`, 3 ids | 3,814 → 3,766 chars (~1,900 tokens) | 8,387 → 4,006 chars |
+
+Every tool now returns text only and declares no `outputSchema`, which Claude
+Code's client would reject without `structuredContent`. Nothing read the JSON
+except the model. The text gains the one thing only the JSON had: a turn hit
+(`turn-…`, semantic index only, so `get` answers it "missing") prints its
+transcript path under its line. `get` names each transcript once, on its own
+line with its archived/MISSING state, instead of again inside the record, and
+drops the per-record line that repeated the record's time, project and type.
+`standup` no longer runs its CLI a second time for JSON. The `recall`
+description now states the measured cost, about 600 tokens for 3 hits and
+1,650 for 10. The old "about 70 tokens per hit" assumed ~4 characters per
+token, and these lines (hashes, ids, paths) tokenize at ~2. The
+`call_id` is in every recall and orient header and in the next-step line, and
+`cartographer-search.sh` is still the only telemetry writer. Tests now read
+results the way the clients do and bound the payload, with a 6,000-character
+record that an unclipped answer cannot fit. See docs/MCP.md, "What each client
+shows the model".
+
+### feat(hooks): opt-in recall on memory cues (UserPromptSubmit)
+
+Agents do not call recall mid-session. Measured 2026-10-15 over 30 days: 287
+of 1,350 Claude sessions recalled at all, 224 of them on the first turn where
+the SessionStart nudge sits; of 72 mid-session prompts carrying a memory cue,
+the agent recalled after 4; Codex recalled in 1 of 59 sessions that saw the
+nudge. Recall was already fast (p90 377 ms after 0.8.3), so the gap was the
+call, not the cost.
+
+`hooks/surface-recall-on-prompt.sh`, registered for Claude Code and Codex and
+dormant unless `CARTOGRAPHER_RECALL_ON_PROMPT=1`, runs the search where the
+cue happens. Cue detection is `recallCue()` in
+`scripts/classify-prompt-intent.js`: 19 named, rule-based patterns ("thought
+we fixed", "did we ship", "last time", "which agent"), with weak cues vetoed by
+in-session markers ("did we just", "above") and nothing past 1,200 characters,
+so a pasted brief that quotes cue phrases does not fire. Over 6,867
+mid-session prompts in the same 30 days it fired on 22 (0.3%), nearly all
+genuine on review. The first prompt of a session, slash commands, `<`-prefixed
+tooling text, compaction continuations and cues with no topic left are skipped.
+On a cue the hook searches the session's project for 30 days under a hard
+1.5 s budget, killing the search's process group past it, and injects at most
+three single-line hits with the `call_id` for `--get`/`--touch`, in about 600
+characters. Every evaluated prompt writes one row to
+`recall-on-prompt-trial.jsonl` saying whether it fired and why not.
+
+### feat(search): `score` on jsonl rows, and `--min-score`
+
+Both backends now print the fused score they ranked by on `--format jsonl`
+rows. `--min-score X` drops results under it before anything is shown, served
+or added to the delta-serving list, and the call row records `min_score`,
+`top_score` (the best score before the floor) and `below_min_score`. A caller
+that filtered afterwards would leave served rows for results nobody saw and
+put those ids on the session's delta-serving list, hiding them from the next
+`/remember`. The prompt-cue hook uses a floor of 0.010, chosen from 19 real cue
+prompts replayed with scores re-based to each prompt's time: relevant top hits
+scored 0.0112-0.0219, the three with nothing behind them 0.0059-0.0077, and
+judged-irrelevant hits overlapped the relevant band, so the floor removes only
+empty queries. `prompt-cue` is a new `--purpose`.
+
+### fix(search): cartographer-search.sh accepts flags in any position
+
+The script took $1 as the query and silently discarded every token it did not
+recognise. `search.sh --project X --since 10d "query"` searched for the literal
+"--project", dropped the scope, and returned other projects' results with no
+error: 3 logged queries began with "--" and 7 flag-first invocations appeared
+in 30 days of transcripts. A value flag as the last argument spun forever.
+
+Flags now parse anywhere. The non-flag words form the query (several are
+joined with single spaces); `--` ends flag parsing; `--flag=value` works.
+A value flag with no value, an unknown `--option` or `-x`, and a plain search
+with no query exit 2 with a one-line message and write no telemetry.
+`--get`, `--touch` and `--thread` need no query; a leading `_` is still
+accepted and ignored. `-h`/`--help` prints the usage.
+
+### feat(mcp): recall as typed MCP tools
+
+Recall was reachable only through skills that wrap bash: an agent had to
+decide to load a skill, resolve the plugin root and build a command line, and
+Codex recalled in 1 of 59 sessions that saw the startup nudge.
+`scripts/cartographer-mcp.js` (no dependencies) exposes `recall`, `get`,
+`mark_used`, `thread`, `orient`, `facts` and `standup` as MCP tools. The
+plugin registers it for Claude Code (`.mcp.json`) and Codex (its own
+`mcpServers` entry in `.codex-plugin/plugin.json`, because Codex does not
+expand `${CLAUDE_PLUGIN_ROOT}` in a plugin's MCP args), and `build-release.sh`
+ships `.mcp.json`. Recall still goes through `cartographer-search.sh`, which
+remains the single telemetry writer, under the new purpose `mcp`
+(`hit-rate-report.js --purpose mcp`). The server refuses any argument its
+schema does not declare, so a model-supplied `session_id` reaches no row.
+Claude Code gives the server `CLAUDE_CODE_SESSION_ID` (stale after `/clear`
+or `--resume`); Codex 0.160 and Hermes give it no session id, so their rows say
+`attribution_status: "no_session"` and delta serving is off for them. `thread`
+is a full pass over the changelog and takes 10-20 s. See docs/MCP.md.
+
+### feat(hooks): the start note carries open threads, repo state and live peers
+
+With `CARTOGRAPHER_FOCUS_ON_START=1`, the SessionStart note now shows the
+latest `/wrapup`'s `unresolved[]` threads with its event id for `--get`. Older
+wrapups fall back to their `Unfinished:`/`Open:` clause. It also shows the
+checkout's branch, uncommitted and unpushed counts, and sessions active in the
+project in the last 2 h (`cartographer-standup.js --roster`). It replaces the
+related-threads and maneuvers lines, which drew no measurable follow-up and
+cost ~1.8 s per session start because each call rebuilt the co-occurrence
+graph. The note now costs ~130 ms. It shows when there is a new wrapup or a
+live peer and stays silent on repeats. `focus-on-start-trial.jsonl` rows gain
+`v:2`, `session_id`, wrapup, repo and peer fields. Also: `standup --roster`,
+`recent_files` in standup `--json`, and `record-wrapup.sh` keeping every text
+field on one line.
+
+### feat(hooks): the first edit of a file says what the corpus knows about it
+
+On 2026-10-15, 4 of 72 mid-session prompts carrying a memory cue got a recall,
+and many of those prompts were rework on files whose history the agent never
+looked at. With `CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1`, the first edit of a
+file in a session adds up to two lines: a /investigate diagnosis naming it
+(open or confirmed), and the newest commit to it by another session in the
+last 14 days (or the newest peer edit when no commit was logged). A wrapup
+naming the file fills a free line. Each line carries an event id for `--get`.
+Later edits of the same file cost one state-file read. The lookup is one `rg`
+over the changelog and milestones (31-61 ms on a 120 MB corpus), with an
+in-process fallback when rg is missing. Each evaluation is logged to
+`file-history-on-edit-trial.jsonl`; the five searched logs gain no writer.
+Off by default.
+
+### fix(hooks): first-edit history never cites a missing event id
+
+A record written before ids were stamped has no `event_id`, and the note
+printed it as "(claude peer-111, undefined)" with a `--get` pointer to match.
+The note now cites an id only when the record has one, and offers `--get` only
+when some line gave an id to fetch. Hook tests also stop inheriting the trial
+gates from the developer's shell: with `CARTOGRAPHER_FILE_HISTORY_ON_EDIT=1` in
+settings.json, `edit-collision-hook.test.js` failed because the collision hook
+added a history line the test never set up. `withoutTrialGates()` clears them,
+and `trial-gate-isolation.test.js` fails any test file that runs a gated hook
+without it.
 
 ## 0.8.3 — 2026-10-07
 

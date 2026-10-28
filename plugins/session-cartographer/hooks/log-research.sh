@@ -96,7 +96,7 @@ if [ "$RESEARCH_KIND" = "fetch" ]; then
     CATEGORY=$(categorize_url "$URL")
     SALIENCE=$(salience_for_category "$CATEGORY")
 
-    jq -n -c \
+    ROW=$(jq -n -c \
         --arg eid "$EVENT_ID" \
         --arg ts "$TIMESTAMP" \
         --arg type "fetch" \
@@ -111,8 +111,8 @@ if [ "$RESEARCH_KIND" = "fetch" ]; then
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SALIENCE" \
         '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, url: $url, prompt: $prompt, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
-         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
-        >> "$LOG_FILE"
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
+    if [ -n "$ROW" ]; then cartographer_append "$LOG_FILE" "$ROW"; fi
 
     # Changelog envelope
     CHANGELOG_EVENT=$(jq -n -c \
@@ -128,7 +128,7 @@ if [ "$RESEARCH_KIND" = "fetch" ]; then
         --argjson salience "$SALIENCE" \
         '{event_id: $eid, timestamp: $ts, type: "research_fetch", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
-    if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
+    if [ -n "$CHANGELOG_EVENT" ]; then cartographer_append "$CHANGELOG" "$CHANGELOG_EVENT"; fi
 
 elif [ "$RESEARCH_KIND" = "search" ]; then
     QUERY=$(echo "$INPUT" | jq -r '.tool_input.query // .tool_input.q // .tool_input.search_query[0].q // .tool_input.image_query[0].q // empty')
@@ -136,7 +136,7 @@ elif [ "$RESEARCH_KIND" = "search" ]; then
     # Log the search query itself
     SEARCH_EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
     SEARCH_SALIENCE="0.5"
-    jq -n -c \
+    ROW=$(jq -n -c \
         --arg eid "$SEARCH_EVENT_ID" \
         --arg ts "$TIMESTAMP" \
         --arg type "search" \
@@ -149,8 +149,8 @@ elif [ "$RESEARCH_KIND" = "search" ]; then
         --arg parent_id "$PARENT_ID" \
         --argjson salience "$SEARCH_SALIENCE" \
         '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, query: $query, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, salience: $salience}
-         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end' \
-        >> "$LOG_FILE"
+         + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
+    if [ -n "$ROW" ]; then cartographer_append "$LOG_FILE" "$ROW"; fi
 
     # Changelog envelope
     CHANGELOG_EVENT=$(jq -n -c \
@@ -166,7 +166,7 @@ elif [ "$RESEARCH_KIND" = "search" ]; then
         --argjson salience "$SEARCH_SALIENCE" \
         '{event_id: $eid, timestamp: $ts, type: "research_search", provider: $provider, session_id: $session, project: $project, cwd: $cwd, summary: $summary, transcript_path: $transcript, related_ids: [], salience: $salience}
          + if $parent_id != "" then {parent_event_id: $parent_id} else {} end')
-    if [ -n "$CHANGELOG_EVENT" ]; then printf '%s\n' "$CHANGELOG_EVENT" >> "$CHANGELOG"; fi
+    if [ -n "$CHANGELOG_EVENT" ]; then cartographer_append "$CHANGELOG" "$CHANGELOG_EVENT"; fi
 
     # Extract result URLs from tool_response and log each as search_result
     echo "$INPUT" | jq -r '
@@ -196,7 +196,7 @@ elif [ "$RESEARCH_KIND" = "search" ]; then
         # Search results parent to the search event itself (intra-fanout linkage),
         # which already lives in related_ids. parent_event_id keeps the cross-
         # event chain coherent — set to the search event for the same reason.
-        jq -n -c \
+        ROW=$(jq -n -c \
             --arg eid "$RESULT_EVENT_ID" \
             --arg ts "$TIMESTAMP" \
             --arg type "search_result" \
@@ -211,15 +211,16 @@ elif [ "$RESEARCH_KIND" = "search" ]; then
             --arg transcript "$TRANSCRIPT" \
             --arg parent "$SEARCH_EVENT_ID" \
             --argjson salience "$RESULT_SALIENCE" \
-            '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent], parent_event_id: $parent, salience: $salience}' \
-            >> "$LOG_FILE"
+            '{event_id: $eid, timestamp: $ts, type: $type, provider: $provider, url: $url, title: $title, query: $query, category: $category, project: $project, cwd: $cwd, session: $session, transcript_path: $transcript, related_ids: [$parent], parent_event_id: $parent, salience: $salience}')
+        if [ -n "$ROW" ]; then cartographer_append "$LOG_FILE" "$ROW"; fi
     done
 fi
 
 # Real-time indexing (silent fail if services aren't running)
 INDEXER=$(cartographer_script index-event.sh)
 if [ -x "$INDEXER" ]; then
-  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" &
+  # Detached from the hook's pipes, as in log-tool-use.sh.
+  [ -n "$CHANGELOG_EVENT" ] && printf '%s\n' "$CHANGELOG_EVENT" | "$INDEXER" >/dev/null 2>&1 &
 fi
 
 # Always exit 0 — this is a passive logger, never blocks

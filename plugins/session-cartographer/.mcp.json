@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "cartographer": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/cartographer-mcp.js"]
+    }
+  }
+}
