@@ -21,6 +21,17 @@
  * record — a Codex transcript written in the window with no logged events, an untrusted Codex
  * hook file, tracked files changed in the window that no logged session edited.
  *
+ * Two folds keep the roster readable when a desktop agent spawns threads by the dozen.
+ * A session that left only lifecycle rows — fewer than SHORT_MAX_EVENTS events inside
+ * SHORT_MAX_SPAN_MS, nothing edited or committed — is a short session: counted on one
+ * line per provider, never a peer, never contention. Measured 2026-10-27, 137 of the 171
+ * sessions in a 2-day window were Codex Desktop threads that lived a median 6 s, fired one
+ * Stop hook and persisted no rollout, so nothing on disk names a parent for them
+ * (docs/standup-codex-threads-2026-10-27.md). A Codex rollout whose session_meta does name
+ * a parent_thread_id is a sub-thread (guardian_review, a spawned agent): SILENT counts
+ * those under their parent instead of listing them as sessions the hooks missed, because
+ * the parent's hooks did log and the sub-thread fires none of its own.
+ *
  * Read-only. Never writes to the changelog or to retrieval telemetry.
  */
 import { realpathSync, existsSync } from 'fs';
@@ -30,7 +41,7 @@ import { homedir } from 'os';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { HOUR, fmtAge, readTail, COMMIT_RE, eventFiles, contentionKey, unmappedWorktrees } from './contention.js';
 import { isResolved } from './sentinels.js';
-import { codexRollouts, claudeTranscripts, codexHookTrust, unclaimedChanges, transcriptMentions, commandEvidence } from './standup-silence.js';
+import { codexRollouts, claudeTranscripts, codexHookTrust, unclaimedChanges, transcriptMentions, commandEvidence, codexThreadMeta } from './standup-silence.js';
 
 /**
  * Exit only after stdout has handed everything to the OS.
@@ -136,6 +147,15 @@ const liveMs = parseSince(opt('live', '20m'));
 // below has cost seconds (see "Two passes"). In JSON the skipped sections read
 // null rather than [], so a check that was not run never reads as a clean one.
 const rosterOnly = flag('roster');
+// Short sessions fold into one line per provider unless --no-fold ("Two folds" above).
+const noFold = flag('no-fold');
+const SHORT_MAX_EVENTS = 3;           // fewer than this many events…
+const SHORT_MAX_SPAN_MS = 2 * 60e3;   // …inside this span, with nothing edited or committed
+const countBy = (list, key) => {
+  const out = {};
+  for (const x of list) { const k = key(x); out[k] = (out[k] || 0) + 1; }
+  return out;
+};
 
 const dev = process.env.CARTOGRAPHER_DEV_DIR || join(homedir(), 'Documents/dev');
 const changelog = join(dev, 'changelog.jsonl');
@@ -246,6 +266,26 @@ if (projectFilter) roster = roster.filter((s) => s.projects.has(projectFilter)
   || [...s.files.keys()].some((file) => fileInProject(file, projectFilter)));
 
 const mine = roster.find((s) => s.id === selfId);
+
+// ---- short sessions ---------------------------------------------------
+// A session that left only lifecycle rows is counted, not listed: fewer than
+// SHORT_MAX_EVENTS events inside SHORT_MAX_SPAN_MS, and no edit candidate
+// (resolved or not), commit or push. The last clause keeps a one-edit
+// `codex exec` run or a one-commit session in the roster — a file or a sha is
+// something a peer can collide with; a Stop row is not. Your own session is
+// never folded: a session just started has one event and is still you.
+// Folded sessions leave the roster before contention, so a project line no
+// longer reads "28 sessions" when 24 of them were one Stop row each. They had
+// no files, so file contention is unchanged by construction, and `short()`
+// below no longer widens a real id to tell it from a neighbour that shares its
+// UUIDv7 time prefix (`01a17f5d-e` was the symptom).
+const isShort = (s) => s.n < SHORT_MAX_EVENTS && (s.last - s.first) < SHORT_MAX_SPAN_MS
+  && !s.commits.length && !s.pushes && !s.files.size && !s.unresolvedEdits;
+const folded = noFold ? [] : roster.filter((s) => s.id !== selfId && isShort(s));
+if (folded.length) {
+  const foldedIds = new Set(folded.map((s) => s.id));
+  roster = roster.filter((s) => !foldedIds.has(s.id));
+}
 const peers = roster.filter((s) => s.id !== selfId || includeSelf);
 
 // ---- contention -------------------------------------------------------
@@ -292,6 +332,25 @@ const rollouts = rosterOnly ? [] : codexRollouts({ codexHome, sinceMs, now });
 const unloggedRollouts = rollouts.filter((r) => !loggedIds.has(r.id));
 const hookTrust = rosterOnly ? { status: 'not_checked' } : codexHookTrust({ codexHome });
 const hookTrustProblem = hookTrust.status === 'untrusted' || hookTrust.status === 'partial';
+
+// A Codex Desktop sub-thread (guardian_review, a spawned agent) persists a rollout whose
+// session_meta names its parent_thread_id and fires no hooks of its own. Its parent's
+// hooks did log, so it is not a session the log missed: count it under the parent rather
+// than list it beside sessions whose hooks really are silent. One bounded read of each
+// unlogged rollout's first line, never on the --roster path (rollouts is empty there).
+// The parent id is grouped on only when resolved: a sentinel there would fuse every
+// parentless thread into one phantom family.
+const threadMeta = new Map(unloggedRollouts.map((r) => [r.id, codexThreadMeta(r.path)]));
+const parentOf = (r) => {
+  const p = threadMeta.get(r.id)?.parent;
+  return isResolved(p) ? String(p).toLowerCase() : null;
+};
+const subthreadKind = (r) => threadMeta.get(r.id)?.threadSource || threadMeta.get(r.id)?.subagent || 'subagent';
+const subthreads = unloggedRollouts.filter((r) => parentOf(r));
+const standaloneSilent = unloggedRollouts.filter((r) => !parentOf(r));
+const subthreadParents = Object.entries(countBy(subthreads, parentOf))
+  .map(([id, children]) => ({ id, children, logged: loggedIds.has(id) }))
+  .sort((a, b) => b.children - a.children || a.id.localeCompare(b.id));
 
 // The repo whose working tree to check: the --project checkout, else the one this ran in.
 function scopeRepo() {
@@ -359,6 +418,21 @@ if (asJson) {
       // what a peer is in the middle of, for a reader deciding where not to edit.
       recent_files: [...s.files.entries()].sort((a, b) => b[1].t - a[1].t).slice(0, 5).map(([key]) => key),
     })),
+    // Folded out of `sessions` and out of contention ("short sessions" above).
+    // Empty under --no-fold; the rule is stated so a reader can tell why a row is absent.
+    short_sessions: {
+      count: folded.length,
+      events: folded.reduce((n, s) => n + s.n, 0),
+      live: folded.filter((s) => now - s.last <= liveMs).length,
+      newest_idle_ms: folded.length ? Math.min(...folded.map((s) => now - s.last)) : null,
+      rule: { max_events_exclusive: SHORT_MAX_EVENTS, max_span_ms: SHORT_MAX_SPAN_MS, edits: 0, commits: 0, pushes: 0 },
+      by_provider: countBy(folded, (s) => s.provider),
+      sessions: folded.map((s) => ({
+        id: s.id, provider: s.provider, events: s.n,
+        last_active: new Date(s.last).toISOString(), idle_ms: now - s.last,
+        projects: Object.fromEntries(s.projects), types: Object.fromEntries(s.types),
+      })),
+    },
     contention: {
       projects: contestedProjects.map(([p, ss]) => ({ project: p, sessions: ss.map((s) => s.id) })),
       files: contestedFiles.map(([key, hits]) => ({
@@ -369,7 +443,18 @@ if (asJson) {
       })),
     },
     silent: rosterOnly ? null : {
-      codex_sessions_without_events: unloggedRollouts.map((r) => ({ id: r.id, transcript_written: new Date(r.mtimeMs).toISOString() })),
+      codex_sessions_without_events: unloggedRollouts.map((r) => ({
+        id: r.id, transcript_written: new Date(r.mtimeMs).toISOString(),
+        // A sub-thread names the session that spawned it; null for a thread of its own.
+        parent: parentOf(r),
+        thread_source: threadMeta.get(r.id)?.threadSource || null,
+        subagent: threadMeta.get(r.id)?.subagent || null,
+      })),
+      codex_subthreads: {
+        count: subthreads.length,
+        by_source: countBy(subthreads, subthreadKind),
+        parents: subthreadParents,
+      },
       codex_hook_trust: hookTrust,
     },
     unclaimed_changes: rosterOnly ? null : unclaimed.map((u) => ({
@@ -388,11 +473,12 @@ const short = (id) => {
   return id.slice(0, length);
 };
 const out = [];
-out.push(`STANDUP — last ${opt('since', '6h')}${projectFilter ? ` · ${projectFilter}` : ''}   ${roster.length} session${roster.length === 1 ? '' : 's'}`);
+out.push(`STANDUP — last ${opt('since', '6h')}${projectFilter ? ` · ${projectFilter}` : ''}   ${roster.length} session${roster.length === 1 ? '' : 's'}`
+  + (folded.length ? ` + ${folded.length} short (folded)` : ''));
 if (mine) out.push(`you are ${short(mine.id)} · ${[...mine.projects.keys()].join(', ')}`);
 out.push('');
 
-if (!peers.length) {
+if (!peers.length && !folded.length) {
   out.push('No other logged sessions in this window' + (projectFilter ? ' for this project.' : '.'));
 } else {
   for (const s of peers) {
@@ -409,6 +495,21 @@ if (!peers.length) {
       const subj = c.subject || gitSubject(c.sha, c.cwd);
       out.push(`    ${c.sha.slice(0, 8)}  ${subj || '(subject not captured — git commit -q?)'}`.slice(0, 110));
     }
+    out.push('');
+  }
+  // One row per provider for the sessions that left only lifecycle rows, in the
+  // roster's own two-line shape: the mark says whether any of them is live.
+  const foldedByProvider = new Map();
+  for (const s of folded) {
+    if (!foldedByProvider.has(s.provider)) foldedByProvider.set(s.provider, []);
+    foldedByProvider.get(s.provider).push(s);
+  }
+  for (const [provider, list] of [...foldedByProvider.entries()].sort((a, b) => b[1].length - a[1].length)) {
+    const live = list.filter((s) => now - s.last <= liveMs).length;
+    const newest = Math.min(...list.map((s) => now - s.last));
+    const events = list.reduce((n, s) => n + s.n, 0);
+    out.push(`${live ? '●' : '○'} ${list.length} short ${provider} session${list.length === 1 ? '' : 's'} (${events} event${events === 1 ? '' : 's'}) — folded`);
+    out.push(`    each <${SHORT_MAX_EVENTS} events in <${SHORT_MAX_SPAN_MS / 60e3}m, nothing edited or committed · ${live} live · newest ${fmtAge(newest)} ago · --no-fold lists them`);
     out.push('');
   }
 }
@@ -431,7 +532,7 @@ if (contestedFiles.length || contestedProjects.length) {
     }
     if (contestedFiles.length > 12) out.push(`    … ${contestedFiles.length - 12} more`);
   }
-} else if (peers.length) {
+} else if (peers.length || folded.length) {
   out.push('CONTENTION — none. No shared project or file across these sessions.');
 }
 
@@ -439,10 +540,21 @@ if (contestedFiles.length || contestedProjects.length) {
 if (unloggedRollouts.length || hookTrustProblem) {
   out.push('');
   out.push('SILENT — activity the event log did not record');
-  for (const r of unloggedRollouts.slice(0, 6)) {
+  // Three newest threads of their own, then a count; sub-threads go under their parents.
+  for (const r of standaloneSilent.slice(0, 3)) {
     out.push(`  codex  ${r.id.slice(0, 8)}  transcript written ${fmtAge(now - r.mtimeMs)} ago · 0 events logged`);
   }
-  if (unloggedRollouts.length > 6) out.push(`  … ${unloggedRollouts.length - 6} more Codex sessions with no events`);
+  if (standaloneSilent.length > 3) {
+    const more = standaloneSilent.length - 3;
+    out.push(`  … ${more} more Codex session${more === 1 ? '' : 's'} with no events (${standaloneSilent.length} in all, 3 newest shown)`);
+  }
+  if (subthreads.length) {
+    const kinds = Object.entries(countBy(subthreads, subthreadKind)).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} ${n}`).join(', ');
+    const unlogged = subthreadParents.filter((p) => !p.logged).length;
+    const shown = subthreadParents.slice(0, 3).map((p) => `${short(p.id)} ×${p.children}${p.logged ? '' : ' (not logged)'}`).join(', ');
+    out.push(`  ${subthreads.length} Codex Desktop sub-thread${subthreads.length === 1 ? '' : 's'} (${kinds}) of ${subthreadParents.length} parent session${subthreadParents.length === 1 ? '' : 's'}: ${shown}${subthreadParents.length > 3 ? `, … ${subthreadParents.length - 3} more` : ''}`);
+    out.push(`    sub-threads logged no events of their own; ${unlogged ? `${unlogged} parent${unlogged === 1 ? '' : 's'} logged nothing in the window` : 'every parent is in the roster above'}`);
+  }
   if (hookTrustProblem) {
     const was = hookTrust.trustedFiles?.length ? ` (trust is recorded for ${hookTrust.trustedFiles.join(', ')})` : '';
     out.push(hookTrust.status === 'untrusted'

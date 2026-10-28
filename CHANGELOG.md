@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### fix(standup): fold short sessions, and count Codex Desktop sub-threads under their parent
+
+`/standup --since 2d` ran to 535 lines on 2026-10-27. 137 of its 171 sessions were
+Codex Desktop threads that had logged one Stop row each, lived a median 6 s by
+their UUIDv7 ids and left no rollout on disk, so nothing names a parent for
+them; 77 of the 78 SILENT rows were `guardian_review` or spawned-agent
+sub-threads whose `session_meta` names a parent that was in the roster
+(docs/standup-codex-threads-2026-10-27.md).
+
+A session with fewer than 3 events inside 2 minutes and no edit candidate,
+commit or push now folds into one line per provider, out of `sessions[]` and
+out of contention. A one-commit or one-edit session stays a peer, and your own
+session is never folded. `--no-fold` lists them; `--json` carries
+`short_sessions`. SILENT shows the three newest threads of their own and a
+count, and counts sub-threads under their parents (`codexThreadMeta()` in
+`standup-silence.js`, one bounded read of the first line; `parent`,
+`thread_source`, `subagent` and `codex_subthreads` in JSON). The same
+window prints 129 lines, the `psychodeli-webgl-port` contention line names 5
+sessions where it named 28, and real ids no longer widen to `01a17f5d-e` to
+clear a one-row neighbour. Real rows, their commits and file contention are
+unchanged: `tests/unit/standup-fold.test.js` runs its fixture with and without
+30 short sessions and requires the real rows and the CONTENTION section to be
+byte-identical.
+
 ### feat(hermes): read the dashboard chat, and keep each reply with its prompt
 
 Hermes 0.22 records a conversation in the dashboard's Chat tab with source

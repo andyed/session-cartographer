@@ -664,9 +664,17 @@ test('standup does not let a fresh peer pass for the caller when the client gave
   const now = Date.now();
   const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
   // Ids whose first eight characters differ: the text roster prints that much.
+  // Two rows per session, minutes apart: a one-row session with no span is a
+  // short session and folds out of the roster (standup-fold.test.js), and this
+  // test is about who is "you", not about short sessions. The fresh row stays
+  // last so the newest-event heuristic still has something to claim.
   const freshRows = [
     { event_id: 'evt-peer-old', timestamp: iso(now - 30 * 60e3), type: 'tool_bash', provider: 'claude',
       project: 'mcpfixture', session_id: 'peerold1-session', summary: 'Ran: ls' },
+    { event_id: 'evt-peer-old-2', timestamp: iso(now - 27 * 60e3), type: 'tool_bash', provider: 'claude',
+      project: 'mcpfixture', session_id: 'peerold1-session', summary: 'Ran: ls' },
+    { event_id: 'evt-peer-fresh-1', timestamp: iso(now - 200e3), type: 'tool_bash', provider: 'codex',
+      project: 'mcpfixture', session_id: 'peerfrsh-session', summary: 'Ran: git status' },
     { event_id: 'evt-peer-fresh', timestamp: iso(now - 20e3), type: 'tool_bash', provider: 'codex',
       project: 'mcpfixture', session_id: 'peerfrsh-session', summary: 'Ran: git status' },
   ];

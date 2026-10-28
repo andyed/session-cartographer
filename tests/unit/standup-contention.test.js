@@ -289,10 +289,13 @@ test('an unverified Codex worktree is reported rather than paired by directory n
 test('displayed session ids are unique when Codex ids share eight characters', () => {
   const { dir, repo } = build();
   const ids = ['01a0ce54-d281-7aa2-a237-78f50d1b5cfe', '01a0ce54-d477-79c1-8723-f3baedb49b60'];
-  fs.appendFileSync(path.join(dir, 'changelog.jsonl'), ids.map((id, i) => JSON.stringify({
-    event_id: `near-${i}`, timestamp: iso(2), type: 'tool_bash', provider: 'codex',
+  // Two rows three minutes apart: a session with one row and no span is a short
+  // session and folds out of the roster (standup-fold.test.js), which is not
+  // what this test is about.
+  fs.appendFileSync(path.join(dir, 'changelog.jsonl'), ids.flatMap((id, i) => [5, 2].map((age) => JSON.stringify({
+    event_id: `near-${i}-${age}`, timestamp: iso(age), type: 'tool_bash', provider: 'codex',
     session_id: id, project: 'widgetworks', cwd: repo, summary: 'Ran: true',
-  })).join('\n') + '\n');
+  }))).join('\n') + '\n');
   const labels = [...run(dir, ['--since', '6h']).matchAll(/^[●○] (\S+)/gm)].map((match) => match[1]);
   assert.equal(new Set(labels).size, labels.length, 'every displayed peer must have an unambiguous id');
   assert.ok(labels.some((label) => label.startsWith('01a0ce54-d2')));

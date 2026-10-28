@@ -39,6 +39,21 @@ the freshly logged invocation identifies it. Use `--me <full-session-id>` if a
 standalone shell did not log this invocation. Displayed ids expand beyond eight
 characters whenever two sessions share the same prefix.
 
+A session that left only lifecycle rows — fewer than 3 events inside 2 minutes,
+nothing edited or committed — is a **short session**: counted on one line per
+provider, out of the roster and out of contention.
+
+```
+● 142 short codex sessions (207 events) — folded
+    each <3 events in <2m, nothing edited or committed · 8 live · newest 1m ago · --no-fold lists them
+```
+
+Codex Desktop spawns such threads by the dozen (one Stop row, a median 6 s of
+life, no rollout on disk); on 2026-10-27 they were 137 of the 171 sessions in a
+2-day window (docs/standup-codex-threads-2026-10-27.md). A session that committed
+or edited a file stays a peer however short, and your own session is never
+folded. `--no-fold` lists them all.
+
 Scope it when the workspace is loud:
 
 ```bash
@@ -111,6 +126,9 @@ not idle here, it is absent. Two sections read around the log:
 ```
 SILENT — activity the event log did not record
   codex  01a107bc  transcript written 1m ago · 0 events logged
+  … 3 more Codex sessions with no events (6 in all, 3 newest shown)
+  93 Codex Desktop sub-threads (guardian_review 88, subagent 5) of 17 parent sessions: 01a1694f ×20, 01a17ae0 ×15, 01a17f5d ×15, … 14 more
+    sub-threads logged no events of their own; every parent is in the roster above
   Codex hooks untrusted: hooks/codex-hooks.json (0.8.1) has no trust record (trust is recorded for hooks/hooks.json). Codex skips untrusted hooks silently — approve with /hooks in the Codex CLI.
 
 UNCLAIMED — tracked files changed in the window that no logged session edited
@@ -123,7 +141,12 @@ UNCLAIMED — tracked files changed in the window that no logged session edited
   Codex records trust per hook file and definition hash and skips the rest
   without a word. The fix belongs to the person: `/hooks` in an interactive
   Codex CLI (docs/SETUP.md § Codex hook trust). Never write trust records
-  yourself.
+  yourself. Threads of their own are listed three newest first, then counted. A
+  rollout whose `session_meta` names a `parent_thread_id` is a Codex Desktop
+  sub-thread (`guardian_review`, a spawned agent): it fires no hooks of its own
+  and its parent's hooks did log, so it is counted under the parent rather than
+  listed as a session the log missed. A parent marked `(not logged)` is the one
+  to look at.
 - **UNCLAIMED** lists tracked files in the project's repo (`--project`, else
   the cwd's repo) changed inside the window with no logged edit. Evidence, best
   first: a logged command that named the file just before it changed (an edit
@@ -183,7 +206,8 @@ liveness — `●` means it was active recently, which is a different claim. Say
 | `--live` | `20m` | idle threshold for the `●` marker |
 | `--me` | inferred | override self-identification |
 | `--all` | off | keep your own session in the peer roster |
+| `--no-fold` | off | list short sessions (fewer than 3 events inside 2 minutes, nothing edited or committed) as rows instead of one line per provider; they then also count in contention |
 | `--roster` | off | roster and contention only: skips SILENT and UNCLAIMED (their JSON keys read `null`, not empty). The SessionStart note uses it |
-| `--json` | off | machine-readable; adds `unattributed_events`, `worktrees_unmapped`, per-session `edits_unresolved` and `recent_files` (newest first, worktree-collapsed), and `worktree_split`/`paths` on each contested file |
+| `--json` | off | machine-readable; adds `unattributed_events`, `worktrees_unmapped`, per-session `edits_unresolved` and `recent_files` (newest first, worktree-collapsed), `worktree_split`/`paths` on each contested file, `short_sessions` (the rule, count, live count and the folded sessions, which are absent from `sessions`), and under `silent` a `parent`/`thread_source`/`subagent` on each Codex transcript plus a `codex_subthreads` summary |
 
 Read-only. Writes nothing to the changelog and emits no retrieval telemetry.

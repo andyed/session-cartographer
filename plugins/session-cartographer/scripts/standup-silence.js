@@ -21,8 +21,12 @@
  *   - unclaimedChanges + transcriptMentions: tracked files changed in the window that no
  *     logged session edited, and which transcripts written in the window name them. A
  *     mention is evidence, not authorship; the output says "mentioned by", never "edited by".
+ *   - codexThreadMeta: who started a rollout. Codex Desktop spawns helper threads from a
+ *     conversation (guardian_review, spawned agents) whose session_meta names the parent;
+ *     they fire no hooks, so without this every one of them read as a session the log missed
+ *     (73 of 78 SILENT rows on 2026-10-27, docs/standup-codex-threads-2026-10-27.md).
  */
-import { readdirSync, statSync, readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'fs';
+import { readdirSync, statSync, readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync, openSync, readSync, closeSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { execFileSync } from 'child_process';
@@ -80,6 +84,52 @@ export function claudeTranscripts({ claudeHome, sinceMs }) {
     }
   }
   return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/**
+ * Who started a Codex rollout, from its first line (`session_meta`).
+ *
+ * Codex Desktop spawns helper threads out of a conversation and files each as a rollout of
+ * its own: `thread_source: "guardian_review"` with `source: {subagent: {other: "guardian"}}`,
+ * or a spawned agent with `source: {subagent: {thread_spawn: {parent_thread_id, …}}}`. Both
+ * carry the thread they came from in `parent_thread_id`; a conversation the person opened
+ * has none. One bounded read: the meta line embeds the base instructions and runs to ~30 KB,
+ * so `maxBytes` leaves room, and a first line that does not fit reads as unknown rather than
+ * as a thread of its own. Returns null when the first line is not a session_meta record (an
+ * older Codex, a fixture) — the caller treats null as "no parent known".
+ * @returns {{id: string|null, parent: string|null, threadSource: string|null,
+ *   subagent: string|null, originator: string|null, cwd: string|null}|null}
+ */
+export function codexThreadMeta(path, { maxBytes = 256 * 1024 } = {}) {
+  let head;
+  let n;
+  try {
+    const fd = openSync(path, 'r');
+    try {
+      const buf = Buffer.alloc(maxBytes);
+      n = readSync(fd, buf, 0, maxBytes, 0);
+      head = buf.toString('utf-8', 0, n);
+    } finally { closeSync(fd); }
+  } catch { return null; }
+  const nl = head.indexOf('\n');
+  if (nl < 0 && n >= maxBytes) return null;       // the first line did not fit: unknown, not standalone
+  let rec;
+  try { rec = JSON.parse(nl < 0 ? head : head.slice(0, nl)); } catch { return null; }
+  if (!rec || rec.type !== 'session_meta' || !rec.payload || typeof rec.payload !== 'object') return null;
+  const p = rec.payload;
+  const str = (v) => (typeof v === 'string' && v ? v : null);
+  const sub = p.source && typeof p.source === 'object' && p.source.subagent && typeof p.source.subagent === 'object'
+    ? p.source.subagent : null;
+  const spawn = sub && sub.thread_spawn && typeof sub.thread_spawn === 'object' ? sub.thread_spawn : null;
+  const subagent = !sub ? null : spawn ? 'thread_spawn' : str(sub.other) || Object.keys(sub)[0] || 'subagent';
+  return {
+    id: str(p.id),
+    parent: str(p.parent_thread_id) || (spawn ? str(spawn.parent_thread_id) : null),
+    threadSource: str(p.thread_source),
+    subagent,
+    originator: str(p.originator),
+    cwd: str(p.cwd),
+  };
 }
 
 /** PostToolUse → post_tool_use: Codex's trust keys spell events in snake case. */
