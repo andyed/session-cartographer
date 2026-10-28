@@ -62,7 +62,7 @@ function launchHook(script, { bash = resolveBash(), timeoutMs = 10000, env = pro
       if (process.platform === 'win32' && child.pid) {
         const taskkill = path.join(env.SystemRoot || 'C:/Windows', 'System32', 'taskkill.exe');
         execFile(taskkill, ['/PID', String(child.pid), '/T', '/F'],
-          { windowsHide: true, shell: false, timeout: Math.min(3000, timeoutMs) }, error => {
+          { windowsHide: true, shell: false, timeout: Math.min(500, timeoutMs) }, error => {
             if (error) child.kill();
             finish({ code: 1, fault: 'hook timed out; child tree termination requested' });
           });

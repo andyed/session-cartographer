@@ -136,7 +136,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-session-milestones.sh 1000",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/run-hook.cjs\" log-session-milestones.sh 2000",
             "timeout": 3
           }
         ]

@@ -114,7 +114,7 @@ test('the notice is registered once per session start in both hook configs', () 
       JSON.stringify(g.hooks).includes('warn-missing-jq-on-start.sh'));
     assert.equal(groups.length, 1, `${file}: one SessionStart group should carry the notice`);
     assert.equal(groups[0].matcher, 'startup|resume|clear', `${file}: not on compact`);
-    const hits = groups[0].hooks.filter((h) => h.command.endsWith('/hooks/warn-missing-jq-on-start.sh'));
+    const hits = groups[0].hooks.filter((h) => /\brun-hook\.cjs" warn-missing-jq-on-start\.sh \d+$/.test(h.command));
     assert.equal(hits.length, 1, `${file}: registered once`);
     for (const event of Object.keys(config.hooks)) {
       if (event === 'SessionStart') continue;

@@ -28,7 +28,7 @@ test('both providers explicitly launch Node for every hook, including archive/Se
       const budget = Number(hook.command.split(' ').at(-1));
       if (event === 'SessionEnd') {
         assert.equal(hook.timeout, 3, 'Codex caps SessionEnd at three seconds');
-        assert.equal(budget, 1000, 'leave time for child cleanup and runtime startup');
+        assert.equal(budget, 2000, 'leave time for child cleanup and runtime startup');
       } else assert.ok(hook.timeout >= budget / 1000 + 5, 'host gives launcher time to kill its child tree');
     }
   }
@@ -87,11 +87,11 @@ test('timeout terminates the launched process tree and returns without retry', a
   const dir = scratch(t), script = path.join(dir, 'hang.sh'), pidFile = path.join(dir, 'child.pid');
   fs.writeFileSync(script, '"$CARTOGRAPHER_TEST_NODE" -e \'require("fs").writeFileSync(process.env.CARTOGRAPHER_TEST_PID, String(process.pid)); setInterval(()=>{},1000)\' &\nwait\n');
   const started = Date.now();
-  const result = await launchHook(script, { timeoutMs: 1000, stdio: 'ignore', env: {
+  const result = await launchHook(script, { timeoutMs: 2000, stdio: 'ignore', env: {
     ...process.env, CARTOGRAPHER_TEST_NODE: process.execPath.replace(/\\/g, '/'), CARTOGRAPHER_TEST_PID: pidFile,
   } });
   assert.match(result.fault, /timed out/);
-  assert.ok(Date.now() - started < 2500, 'cleanup must fit inside the three-second SessionEnd cap');
+  assert.ok(Date.now() - started < 2800, 'cleanup must fit inside the three-second SessionEnd cap');
   assert.ok(fs.existsSync(pidFile), 'fixture must actually start a descendant');
   const pid = Number(fs.readFileSync(pidFile, 'utf8'));
   let alive = true;
