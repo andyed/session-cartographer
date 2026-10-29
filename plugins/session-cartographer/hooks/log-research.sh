@@ -19,6 +19,10 @@
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 LOG_FILE="$DEV/research-log.jsonl"
 CHANGELOG="$DEV/changelog.jsonl"
+# Without jq there is nothing this hook can read. The SessionStart notice
+# (warn-missing-jq-on-start.sh) has told the user; exit quietly like every
+# other hook, rather than erroring on each fetch.
+command -v jq >/dev/null 2>&1 || exit 0
 INPUT=$(cat)
 EVENT_ID="evt-$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 12)"
 

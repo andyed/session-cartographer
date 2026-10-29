@@ -11,9 +11,8 @@ set -u
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
 CHANGELOG="$DEV/changelog.jsonl"
 SUMMARY_MAX="${CARTOGRAPHER_COMPACT_SUMMARY_MAX:-8000}"
-INPUT=$(cat)
-
 command -v jq >/dev/null 2>&1 || exit 0
+INPUT=$(cat)
 
 EVENT=$(printf '%s' "$INPUT" | jq -r '.hook_event_name // empty' 2>/dev/null)
 [ "$EVENT" = "PostCompact" ] || exit 0

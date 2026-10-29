@@ -1,0 +1,26 @@
+name: Windows hook launcher
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  hooks:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test hook launch and child cleanup
+        shell: pwsh
+        run: node --test tests/unit/hook-launcher.test.js
+      - name: Check release metadata
+        run: node scripts/check-release-version.js
+      - name: Build the release archive on Windows
+        shell: pwsh
+        run: |
+          node -e "require('./plugins/session-cartographer/hooks/run-hook.cjs').launchHook('scripts/build-release.sh', {timeoutMs:10000}).then(r => {if(r.fault) console.error(r.fault); process.exitCode=r.code;});"

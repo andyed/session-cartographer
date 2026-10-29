@@ -28,6 +28,7 @@ method="GET"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -d) data="$2"; shift 2 ;;
+    --data-binary) if [ "$2" = "@-" ]; then data=$(cat); else data="$2"; fi; shift 2 ;;
     -X) method="$2"; shift 2 ;;
     http://*|https://*) url="$1"; shift ;;
     *) shift ;;

@@ -280,10 +280,17 @@ curl -sf "${CURL_PROBE[@]}" "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1
 # Get embedding — body built with jq, not string interpolation: a summary
 # containing quotes or backslashes would otherwise produce invalid JSON and
 # the event would silently never get indexed.
+#
+# Request bodies go to curl on stdin, never as an argument. Windows' native
+# curl re-encodes non-ASCII argument bytes, so `-d "$BODY"` turned every ’ or é
+# into ill-formed UTF-8 and the embedder answered 400; and a Windows command
+# line stops at ~32K characters, which a 1024-float vector plus a 50K summary
+# overruns. Both measured on BIGFU 2026-10-27, where they failed 297 of 418
+# Codex turns.
 EMBED_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$EMBED_TEXT" '{model: $m, input: $i}') || { fail_index "embed_request_invalid"; exit $?; }
-if ! EMBED_RESPONSE=$(curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
+if ! EMBED_RESPONSE=$(printf '%s' "$EMBED_BODY" | curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
   -H "Content-Type: application/json" \
-  -d "$EMBED_BODY" 2>/dev/null); then
+  --data-binary @- 2>/dev/null); then
   # Code-dense text can exceed an embedder's token budget even under the
   # character cap. Retry once at half length before treating it as a service
   # failure; the complete normalized summary still remains in Qdrant payload.
@@ -291,9 +298,9 @@ if ! EMBED_RESPONSE=$(curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
   [ "$RETRY_TEXT_MAX" -lt 256 ] && RETRY_TEXT_MAX=256
   RETRY_TEXT=$(printf '%.*s' "$RETRY_TEXT_MAX" "$TEXT")
   RETRY_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$RETRY_TEXT" '{model: $m, input: $i}') || { fail_index "embed_retry_request_invalid"; exit $?; }
-  EMBED_RESPONSE=$(curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
+  EMBED_RESPONSE=$(printf '%s' "$RETRY_BODY" | curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
     -H "Content-Type: application/json" \
-    -d "$RETRY_BODY" 2>/dev/null) || { fail_index "embedding_failed"; exit $?; }
+    --data-binary @- 2>/dev/null) || { fail_index "embedding_failed"; exit $?; }
 fi
 
 VECTOR=$(echo "$EMBED_RESPONSE" | jq -c '.data[0].embedding // empty' 2>/dev/null)
@@ -342,15 +349,15 @@ fi
 # TSV emitter (and by --thread traversal) to weight ranking and walk arcs.
 # prompt_intent (set on transcript turns by reconstruct-history.js) is optional
 # and omitted when absent — awk-backfilled turns simply carry no intent tag.
-PAYLOAD=$(jq -n -c \
+# The vector and the summary, the two large values, reach jq on stdin rather
+# than as arguments (see the embedding request above).
+PAYLOAD=$( { printf '%s\n' "$VECTOR"; printf '%s' "$TEXT" | jq -Rs .; } | jq -n -c \
   --arg id "$POINT_ID" \
-  --argjson vec "$VECTOR" \
   --arg eid "$EVENT_ID" \
   --arg src "$SOURCE" \
   --arg ts "$TIMESTAMP" \
   --arg proj "$PROJECT" \
   --arg cwd "$CWD" \
-  --arg summ "$TEXT" \
   --arg sess "$SESSION" \
   --arg provider "${PROVIDER:-}" \
   --arg transcript_path "${TRANSCRIPT_PATH:-}" \
@@ -362,12 +369,13 @@ PAYLOAD=$(jq -n -c \
   --argjson salience "${SALIENCE:-0.5}" \
   --arg parent_id "${PARENT_EVENT_ID:-}" \
   --arg intent "${PROMPT_INTENT:-}" \
-  '{points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $provider != "" then {provider: $provider} else {} end) + (if $transcript_path != "" then {transcript_path: $transcript_path} else {} end) + (if $canonical != "" then {canonical: ($canonical == "true")} else {} end) + (if $noise_class != "" then {noise_class: $noise_class} else {} end) + (if $derived_from != null then {derived_from: $derived_from} else {} end) + (if $summary_hash != "" then {summary_hash: $summary_hash} else {} end) + (if $compaction_trigger != "" then {compaction_trigger: $compaction_trigger} else {} end) + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end) + (if $intent != "" then {prompt_intent: $intent} else {} end))}]}')
+  'input as $vec | input as $summ | {points: [{id: ($id | tonumber), vector: $vec, payload: ({event_id: $eid, source: $src, timestamp: $ts, project: $proj, cwd: $cwd, summary: $summ, session: $sess, salience: $salience} + (if $provider != "" then {provider: $provider} else {} end) + (if $transcript_path != "" then {transcript_path: $transcript_path} else {} end) + (if $canonical != "" then {canonical: ($canonical == "true")} else {} end) + (if $noise_class != "" then {noise_class: $noise_class} else {} end) + (if $derived_from != null then {derived_from: $derived_from} else {} end) + (if $summary_hash != "" then {summary_hash: $summary_hash} else {} end) + (if $compaction_trigger != "" then {compaction_trigger: $compaction_trigger} else {} end) + (if $parent_id != "" then {parent_event_id: $parent_id} else {} end) + (if $intent != "" then {prompt_intent: $intent} else {} end))}]}') \
+  && [ -n "$PAYLOAD" ] || { fail_index "upsert_request_invalid"; exit $?; }
 
-qdrant_curl -sf "${CURL_CALL[@]}" "$QDRANT_URL/collections/$COLLECTION/points?wait=true" \
+printf '%s' "$PAYLOAD" | qdrant_curl -sf "${CURL_CALL[@]}" "$QDRANT_URL/collections/$COLLECTION/points?wait=true" \
   -H "Content-Type: application/json" \
   -X PUT \
-  -d "$PAYLOAD" \
+  --data-binary @- \
   >/dev/null 2>&1 || { fail_index "qdrant_upsert_failed"; exit $?; }
 
 # A successful waited upsert is enough for detached hooks. Human-facing callers

@@ -1,6 +1,90 @@
 # Changelog
 
-## Unreleased
+## 0.8.4 (2026-10-28)
+
+### fix(hooks): execute Windows hooks through an explicit, bounded launcher
+
+Bare shell-script registrations could open repeated Windows app-picker dialogs,
+including when a Codex chat was archived. Both providers now invoke a Node
+launcher that resolves Bash explicitly, hides the child window, bounds
+concurrency, and terminates timed-out process trees. SessionEnd stays within
+Codex's three-second cap. Shell sources use LF on every platform, and release
+publication now requires the Windows launcher regression gate. See
+[the release notes](docs/releases/v0.8.4.md) for recovery and hook reapproval.
+
+### fix(index): send request bodies to curl on stdin
+
+On Windows, `index-event.sh` failed 297 of 418 Codex turns in a BIGFU backfill
+(2026-10-27), for two reasons in the same line of code. Windows' native curl
+re-encodes non-ASCII argument bytes, so `-d "$BODY"` turned every curly quote
+or accent into ill-formed UTF-8, and the embedder answered 400. The same body
+sent on stdin got 200. And a Windows command line stops at about 32K
+characters, which the upsert overran with a 1024-float vector and a turn
+summary of up to 50K passed to jq and curl as arguments ("Argument list too
+long"). The failure was reported as `qdrant_upsert_failed`.
+
+The embedding request, its retry and the upsert now pipe their bodies to
+`curl --data-binary @-`. The upsert's vector and summary reach jq on stdin,
+and an empty payload is reported as `upsert_request_invalid` instead of
+surfacing as an upsert failure. `cartographer-search.sh` sends its query
+embedding the same way, because a query with an accent never reached the
+semantic leg. After the change the same backfill indexed every remaining turn,
+0 failures. The stand-in curl in `tests/unit/index-event-outcomes.test.js`
+reads `--data-binary @-`.
+
+### fix(catch-up): reclaim a lock left by a killed run
+
+`catch-up-transcripts.sh` takes `.carto/transcript-catch-up.lock` with
+`mkdir` and removes it in an EXIT trap. A run killed before the trap fires
+leaves the lock behind, and every later run then exits at the `mkdir` without
+a word. On Windows that is routine, because a hook's children die with the
+agent session's job object. BIGFU's catch-up sat behind a lock from
+2026-10-17 18:16 to 2026-10-27, so no Codex transcript was indexed for ten
+days and nothing reported it.
+
+A lock older than `CARTOGRAPHER_CATCHUP_LOCK_MAX_AGE_SECONDS` (default 21600,
+6 h) is now reclaimed. The age comes from `date -r`, which GNU and BSD date
+both read. `tests/unit/catch-up-lock.test.js` checks that a fresh lock still
+makes the next run step aside and that a 7-hour-old one is reclaimed.
+
+### fix(codex): read prompts from item_completed UserMessage records
+
+codex-cli 0.164 (on BIGFU, 2026-10) no longer writes `event_msg/user_message`.
+A prompt now arrives as an `event_msg/item_completed` whose item is a
+`UserMessage`. The Codex turn adapter split turns only on the old record, so
+every rollout from that build produced zero turns: `retro-index.sh` reported
+"Backfilled 0 turns" for all 60 Codex sessions on the box, with no error, and
+the Seelen UI setup done across several of them could not be recalled at all.
+
+`codex-transcript-to-turns.awk` now accepts either record as the turn
+boundary. The first kind seen in a file fixes the boundary for that file, so a
+build that writes both never counts one turn twice, and a file in the old
+format splits exactly as before. One real rollout went from 0 turns to 42.
+`tests/unit/provider-adapters.test.js` covers the new format and a file
+carrying both.
+
+### fix(hooks): tell the user when jq is missing
+
+Every hook reads its payload with jq and exits 0 without it, by design: a
+missing dependency must never block a tool call. The cost of that design
+showed on 2026-10-10, installing on a Windows box with no jq. The plugin
+reported installed, the SessionStart hooks found no jq and exited silently,
+the capture hooks errored into the void, and the corpus stayed empty with
+nothing to say why. The only mention of jq anywhere was one clause in
+`docs/SETUP.md`.
+
+`hooks/warn-missing-jq-on-start.sh` now runs on every startup, resume and
+clear (not compact). When `command -v jq` fails it prints one line, as a
+`systemMessage` for the user and as `additionalContext` for the agent, naming
+the three install commands (`winget install jqlang.jq`, `brew install jq`,
+`apt install jq`); with jq present it prints nothing and exits before reading
+stdin. `log-session-milestones.sh`, `log-tool-use.sh` and `log-research.sh`
+gain the same `command -v jq` guard the other hooks already had, so an
+install without jq is quiet rather than noisy on stderr every turn.
+README's Install section opens with the requirement (bash and jq; Git Bash
+supplies bash on Windows) and `docs/SETUP.md` says the same.
+`tests/unit/missing-jq-notice.test.js` runs the hooks under a PATH with no jq
+on it and, where jq is installed, with it present.
 
 ### fix(standup): fold short sessions, and count Codex Desktop sub-threads under their parent
 

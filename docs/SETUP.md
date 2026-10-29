@@ -3,7 +3,12 @@
 Session Cartographer works with Claude Code, Codex, or both. Search itself has
 two service levels:
 
-1. **Keyword search only** — zero dependencies beyond bash + jq (ships with macOS)
+Plugin hooks require Node.js 22 or newer on PATH, Bash (Git for Windows on
+Windows), and jq. Hook commands invoke `node hooks/run-hook.cjs`; never register
+a `.sh` file as a Windows executable.
+
+1. **Keyword search only** — zero dependencies beyond bash + jq (`winget install jqlang.jq`,
+   `brew install jq`, or `apt install jq`; Git Bash supplies bash on Windows)
 2. **Semantic search** — requires Qdrant binary + llama.cpp embedding server
 
 ## Minimal Setup (keyword search)
