@@ -4,7 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { Worker } from 'node:worker_threads';
 import { ArtifactError, discoverSessionArtifacts, openArtifactFile } from './session-artifacts.js';
-import { createGuardedInspector } from './guarded-open.js';
+import { createGuardedInspector, isUnreadable } from './guarded-open.js';
 import { CORPUS_ROOT } from './jsonl.js';
 import { isNonProject } from '../../scripts/non-projects.js';
 
@@ -207,7 +207,8 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
     const clips = [];
     for (const [file, namings] of files) {
       const result = found.get(file) || { status: 'unavailable' };
-      if (result.status !== 'available') { counts[result.status] += 1; continue; }
+      // Stalled and refused files are both ones a copy can stand in for.
+      if (result.status !== 'available') { counts[isUnreadable(result) ? 'blocked' : result.status] += 1; continue; }
       const { mime, dimensions } = result;
       const stat = { size: result.size };
       const mtime = result.mtimeMs;
@@ -253,7 +254,7 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
       });
     }
     clips.sort((a, b) => b.captured.localeCompare(a.captured) || a.title.localeCompare(b.title));
-    const blocked = [...found].filter(([, r]) => r.status === 'blocked');
+    const blocked = [...found].filter(([, r]) => isUnreadable(r));
     const blockedRoots = [...new Set(blocked.map(([, r]) => displayPath(r.root)))];
     // scripts/copy-blocked-images.js reads this list to make the copies.
     const blockedFiles = blocked.map(([file]) => file).slice(0, 10_000);

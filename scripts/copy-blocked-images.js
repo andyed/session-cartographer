@@ -4,10 +4,12 @@
  * protected-copies folder, so the image wall and session review show them
  * without granting the Explorer access to ~/Downloads and similar folders.
  *
- * The Explorer runs under launchd, and macOS gives that process no access to
- * privacy-protected folders. This script asks the running Explorer which
- * named images it found blocked, then copies each one. Run it from a process
- * that can read those folders: a terminal, or an agent's shell.
+ * The Explorer runs under launchd, and macOS may give that process no access
+ * to privacy-protected folders: an open either stalls on a prompt nobody sees
+ * or is refused outright once someone declined it. This script asks the
+ * running Explorer which named images it could not read, then copies each one.
+ * Run it from a process that can read those folders: a terminal, or an
+ * agent's shell.
  *
  *   node scripts/copy-blocked-images.js [--days 90] [--explorer http://127.0.0.1:2527] [--dry-run]
  *
@@ -63,13 +65,20 @@ async function main(argv) {
   const { stats } = await response.json();
   const files = stats?.blockedFiles || [];
   const { copy, skipped } = planCopies(files);
-  for (const item of copy) if (!dryRun) copyOne(item);
+  const copied = [];
+  for (const item of copy) {
+    if (dryRun) { copied.push(item); continue; }
+    // This process may be refused the same folder; say so per file and go on.
+    try { copyOne(item); copied.push(item); }
+    catch (error) { skipped.push({ file: item.from, reason: ['EPERM', 'EACCES'].includes(error.code) ? 'this process may not read it either; run from Terminal' : error.message }); }
+  }
   const copyDir = defaultCopyDir();
-  console.log(`${dryRun ? 'Would copy' : 'Copied'} ${copy.length} of ${files.length} blocked image${files.length === 1 ? '' : 's'} into ${copyDir}`);
-  for (const item of copy) console.log(`  ${item.from}`);
+  console.log(`${dryRun ? 'Would copy' : 'Copied'} ${copied.length} of ${files.length} blocked image${files.length === 1 ? '' : 's'} into ${copyDir}`);
+  for (const item of copied) console.log(`  ${item.from}`);
   for (const item of skipped) console.log(`  skipped (${item.reason}): ${item.file}`);
+  if (skipped.some(item => item.reason.startsWith('this process'))) process.exitCode = 1;
   if (!files.length) console.log(`The Explorer reports no blocked images in the last ${days} days (${(stats?.blockedRoots || []).join(', ') || 'no blocked folders'}).`);
-  else if (!dryRun && copy.length) console.log('The wall shows them on its next load; session review on its next listing.');
+  else if (!dryRun && copied.length) console.log('The wall shows them on its next load; session review on its next listing.');
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

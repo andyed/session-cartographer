@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createImageWall, namedBy, projectOfPath, scanTranscriptImages } from '../../explorer/server/image-wall.js';
 import { imageDimensions } from '../../explorer/server/image-probe.js';
-import { blockedMessage, copyPathFor, createGuardedInspector, protectedRoot } from '../../explorer/server/guarded-open.js';
+import { blockedMessage, copyPathFor, createGuardedInspector, protectedRoot, refusedMessage } from '../../explorer/server/guarded-open.js';
 import { inspectImage } from '../../explorer/server/session-artifacts.js';
 import { EventEmitter } from 'node:events';
 import { createThumbnailer, snapThumbWidth } from '../../explorer/server/image-thumbs.js';
@@ -361,4 +361,50 @@ test('the wall notes a copied image, counts it, and lists what is still blocked 
     assert.equal(opened.artifact.path, copy, 'covers and thumbnails read the copy');
     assert.equal(opened.artifact.name, 'written.png', 'the image keeps its own name');
   } finally { fs.closeSync(opened.fd); }
+});
+
+// chmod 000 does not stop reads on Windows or for root, so the real refusal runs elsewhere.
+const canRefuse = process.platform !== 'win32' && process.getuid?.() !== 0;
+
+test('a refused open is marked as a refusal, not as an unsafe file', { skip: !canRefuse && 'chmod 000 does not refuse reads here' }, t => {
+  const f = fixture(t);
+  const image = f.image('refused.png', png(2, 2));
+  fs.chmodSync(image, 0o000);
+  // Restored here, not in t.after: the fixture's own cleanup runs first.
+  let result;
+  try { result = inspectImage(image); } finally { fs.chmodSync(image, 0o600); }
+  assert.deepEqual([result.status, result.refused, result.code], ['unavailable', true, 403]);
+});
+
+test('a refused file is answered by its copy, or told which folder refused it', async t => {
+  const f = fixture(t);
+  const home = path.join(f.dir, 'home'), copyDir = path.join(f.dir, 'copies');
+  const withCopy = path.join(home, 'Downloads', 'kept.png'), without = path.join(home, 'Downloads', 'lost.png');
+  const copy = copyPathFor(withCopy, copyDir);
+  fs.mkdirSync(path.dirname(copy), { recursive: true }); fs.writeFileSync(copy, png(4, 4));
+  const refused = { status: 'unavailable', refused: true, code: 403, reason: 'Access to the recorded image was refused.' };
+  const spawned = [];
+  const inspector = createGuardedInspector({ home, platform: 'darwin', copyDir, spawn: fakeSpawn(new Set(), spawned, file => (file === copy ? { status: 'available', file } : refused)) });
+  const results = await inspector.inspect([withCopy, without]);
+  assert.deepEqual(results.get(withCopy), { status: 'available', file: copy, openPath: copy, copyOf: path.join(home, 'Downloads') });
+  assert.deepEqual(results.get(without), { ...refused, root: path.join(home, 'Downloads'), reason: refusedMessage(path.join(home, 'Downloads'), home, 'darwin') });
+  assert.equal(results.get(without).reason, `macOS refused the Explorer access to ~${path.sep}Downloads.`);
+  assert.equal(inspector.isBlocked(without), false, 'a refusal is fast, so it does not skip the folder');
+  assert.equal((await inspector.ensure(withCopy)).openPath, copy);
+});
+
+test('the wall counts a refused image with the blocked ones, for the copy script', async t => {
+  const { transcript, written, older, session } = sessionFixture(t);
+  const inspector = {
+    async inspect(files) {
+      return new Map(files.map(file => [file, file === older ? { status: 'unavailable', refused: true, root: '/Users/someone/Downloads' }
+        : file === written ? { status: 'available', mime: 'image/png', key: 'k', size: 33, mtimeMs: Date.parse('2026-10-29T10:30:00Z'), dimensions: null } : { status: 'missing' }]));
+    },
+  };
+  const wall = createImageWall({ scan: inline, inspector, now: () => NOW });
+  const { stats } = await wall.collection({ transcripts: [{ path: transcript, session }], days: 7, scope: 'named', ...urls });
+  assert.equal(stats.blocked, 1);
+  assert.equal(stats.unavailable, 0);
+  assert.deepEqual(stats.blockedFiles, [older]);
+  assert.deepEqual(stats.blockedRoots, ['/Users/someone/Downloads']);
 });

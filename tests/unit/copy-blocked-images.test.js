@@ -66,3 +66,28 @@ test('the script copies what the running Explorer reports blocked', async t => {
   assert.match(out, /^Copied 1 of 1 blocked image into /m);
   assert.equal(fs.readFileSync(copyPathFor(image, copyDir), 'utf8'), 'pixels');
 });
+
+test('a file this process cannot read either is reported, and the run fails', { skip: (process.platform === 'win32' || process.getuid?.() === 0) && 'chmod 000 does not refuse reads here' }, async t => {
+  const { home, copyDir, put } = fixture(t);
+  const readable = put(path.join('Downloads', 'ok.png'), 'pixels');
+  const refused = put(path.join('Downloads', 'refused.png'), 'secret');
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ collection: null, stats: { blockedFiles: [refused, readable], blockedRoots: ['~/Downloads'] } }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  let out = '';
+  // Restored and closed here, not in t.after: the fixture's own cleanup runs first.
+  fs.chmodSync(refused, 0o000);
+  let code;
+  try {
+    const child = spawn(process.execPath, [SCRIPT, '--explorer', `http://127.0.0.1:${server.address().port}`], { env: { ...process.env, HOME: home, USERPROFILE: home, CARTOGRAPHER_PROTECTED_COPY_DIR: copyDir } });
+    child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { out += d; });
+    code = await new Promise(resolve => child.on('close', resolve));
+  } finally { fs.chmodSync(refused, 0o600); server.close(); }
+  assert.equal(code, 1, out);
+  assert.match(out, /^Copied 1 of 2 blocked images into /m);
+  assert.match(out, /skipped \(this process may not read it either; run from Terminal\): .*refused\.png/);
+  assert.equal(fs.readFileSync(copyPathFor(readable, copyDir), 'utf8'), 'pixels');
+  assert.equal(fs.existsSync(copyPathFor(refused, copyDir)), false);
+});

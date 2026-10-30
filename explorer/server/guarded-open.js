@@ -59,6 +59,16 @@ export function blockedMessage(root, home = os.homedir(), platform = process.pla
   return platform === 'darwin' ? `macOS has not let the Explorer read ${shown}.` : `Opening files in ${shown} stalled, so the Explorer skipped them.`;
 }
 
+// A refusal is fast (EPERM/EACCES), unlike a stall: macOS answers this way
+// once someone declines the folder's prompt, and nothing else changes it.
+export function refusedMessage(root, home = os.homedir(), platform = process.platform) {
+  const shown = root.startsWith(home + path.sep) ? `~${root.slice(home.length)}` : root;
+  return platform === 'darwin' ? `macOS refused the Explorer access to ${shown}.` : `Access to ${shown} was refused.`;
+}
+
+/** Whether a result means the Explorer may not read the file: stalled, or refused outright. */
+export const isUnreadable = result => result?.status === 'blocked' || Boolean(result?.refused);
+
 function spawnWorker(workerData) {
   return new Worker(new URL('./image-wall-worker.js', import.meta.url), { workerData });
 }
@@ -127,14 +137,15 @@ export function createGuardedInspector({ stallMs = STALL_MS, retryMs = RETRY_MS,
   }
 
   /**
-   * A blocked file with a copy is answered by the copy, checked on a worker
+   * A blocked or refused file with a copy is answered by the copy, checked on a worker
    * like any file. The result names it as `openPath`; callers open that, never
    * the original, and `copyOf` keeps the blocked folder for the note.
    */
   async function withCopies(results, kind) {
     const copies = new Map();
     for (const [file, result] of results) {
-      if (result.status !== 'blocked') continue;
+      if (result.refused) results.set(file, { ...result, root: protectedRoot(file, home), reason: refusedMessage(protectedRoot(file, home), home, platform) });
+      if (!isUnreadable(result)) continue;
       const copy = copyPathFor(file, copyDir);
       try { if (fs.lstatSync(copy).isFile()) copies.set(copy, file); } catch { /* none made */ }
     }

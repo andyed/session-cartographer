@@ -12,7 +12,9 @@ const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 const DOCUMENT_EXT = /\.(?:md|markdown|txt|html?|pdf|docx?|rtf|odt|csv|tsv|xlsx?|ods|pptx?|odp|tex|rst|ipynb)$/i;
 const MAX_IMAGE_BYTES = 64 * 1024 * 1024;
 export class ArtifactError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
+  // `refused`: the OS denied access (EPERM/EACCES), as macOS does for a folder
+  // the user declined to share; a copy of the file can stand in (guarded-open.js).
+  constructor(status, message, { refused = false } = {}) { super(message); this.status = status; if (refused) this.refused = true; }
 }
 
 function localArtifactPath(raw, extension, cwd = '') {
@@ -123,6 +125,7 @@ export function openArtifactFile(file) {
     if (fd !== undefined) fs.closeSync(fd);
     if (error instanceof ArtifactError) throw error;
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') throw new ArtifactError(404, 'Recorded image is no longer available.');
+    if (error.code === 'EPERM' || error.code === 'EACCES') throw new ArtifactError(403, 'Access to the recorded image was refused.', { refused: true });
     throw new ArtifactError(403, 'Recorded image cannot be opened safely.');
   }
 }
@@ -143,12 +146,13 @@ export function openDocumentFile(file) {
     if (fd !== undefined) fs.closeSync(fd);
     if (error instanceof ArtifactError) throw error;
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') throw new ArtifactError(404, 'Recorded document is no longer available.');
+    if (error.code === 'EPERM' || error.code === 'EACCES') throw new ArtifactError(403, 'Access to the recorded document was refused.', { refused: true });
     throw new ArtifactError(403, 'Recorded document cannot be opened safely.');
   }
 }
 
 const statKey = stat => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
-const failure = error => ({ status: error.status === 404 ? 'missing' : 'unavailable', code: error.status || 403, reason: error.message });
+const failure = error => ({ status: error.status === 404 ? 'missing' : 'unavailable', code: error.status || 403, reason: error.message, ...(error.refused ? { refused: true } : {}) });
 
 /**
  * One image's availability, fingerprint and pixel size, never throwing. This
