@@ -23,7 +23,8 @@ function detail(stats) {
   const parts = [`${plural(stats.transcripts, 'transcript')} read in ${(stats.ms / 1000).toFixed(1)} s`];
   if (stats.scope === 'changed' && stats.namedOnly) parts.push(`${plural(stats.namedOnly, 'image')} only named`);
   if (stats.missing) parts.push(`${plural(stats.missing, 'named file')} no longer on disk`);
-  if (stats.blocked) parts.push(`${plural(stats.blocked, 'image')} in ${stats.blockedRoots.join(', ')} skipped: macOS has not let the Explorer read ${stats.blockedRoots.length === 1 ? 'that folder' : 'those folders'}`);
+  if (stats.copied) parts.push(`${plural(stats.copied, 'image')} shown from copies`);
+  if (stats.blocked) parts.push(`${plural(stats.blocked, 'image')} in ${stats.blockedRoots.join(', ')} skipped: macOS has not let the Explorer read ${stats.blockedRoots.length === 1 ? 'that folder' : 'those folders'}; scripts/copy-blocked-images.js copies them`);
   if (stats.failed) parts.push(`${plural(stats.failed, 'transcript')} could not be read`);
   return parts.join(' · ');
 }

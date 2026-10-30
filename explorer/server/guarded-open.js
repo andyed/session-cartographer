@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
@@ -19,6 +20,24 @@ import { Worker } from 'node:worker_threads';
 const STALL_MS = 5000;
 const RETRY_MS = 10 * 60 * 1000;
 const TRUST_MS = 10 * 60 * 1000;
+
+/**
+ * Copies of files in folders the Explorer may not read. Something that can
+ * read them (a terminal, an agent shell) copies them here with
+ * scripts/copy-blocked-images.js, and the inspector serves a copy only while
+ * its original's folder is blocked. Application Support, not Caches: macOS
+ * may purge Caches, and a copy can outlive a cleaned-out Downloads folder.
+ */
+export function defaultCopyDir() {
+  if (process.env.CARTOGRAPHER_PROTECTED_COPY_DIR) return process.env.CARTOGRAPHER_PROTECTED_COPY_DIR;
+  const base = process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Application Support') : process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
+  return path.join(base, 'session-cartographer', 'protected-copies');
+}
+
+/** The copy's path: the original's absolute path, re-rooted under `dir` (a drive letter becomes a folder). */
+export function copyPathFor(file, dir = defaultCopyDir()) {
+  return path.join(dir, ...path.resolve(file).split(path.sep).filter(Boolean).map(part => part.replace(/:$/, '')));
+}
 
 /** The folder a privacy grant covers, so one stall skips its siblings; else the file itself. */
 export function protectedRoot(file, home = os.homedir()) {
@@ -44,7 +63,7 @@ function spawnWorker(workerData) {
   return new Worker(new URL('./image-wall-worker.js', import.meta.url), { workerData });
 }
 
-export function createGuardedInspector({ stallMs = STALL_MS, retryMs = RETRY_MS, trustMs = TRUST_MS, spawn = spawnWorker, now = Date.now, home = os.homedir(), platform = process.platform } = {}) {
+export function createGuardedInspector({ stallMs = STALL_MS, retryMs = RETRY_MS, trustMs = TRUST_MS, spawn = spawnWorker, now = Date.now, home = os.homedir(), platform = process.platform, copyDir = defaultCopyDir() } = {}) {
   const blocked = new Map(); // protected root → when it stalled
   const seen = new Map(); // `${kind}\0${file}` → { result, at }
   const blockedResult = root => ({ status: 'blocked', root, code: 503, reason: blockedMessage(root, home, platform) });
@@ -58,7 +77,7 @@ export function createGuardedInspector({ stallMs = STALL_MS, retryMs = RETRY_MS,
   };
 
   /** files → Map(file → result), every file checked on a worker now. */
-  function inspect(files, { kind = 'image' } = {}) {
+  function run(files, kind) {
     return new Promise(resolve => {
       const results = new Map();
       let queue = [], worker = null, next = 0, last = now(), timer = null;
@@ -108,13 +127,42 @@ export function createGuardedInspector({ stallMs = STALL_MS, retryMs = RETRY_MS,
   }
 
   /**
+   * A blocked file with a copy is answered by the copy, checked on a worker
+   * like any file. The result names it as `openPath`; callers open that, never
+   * the original, and `copyOf` keeps the blocked folder for the note.
+   */
+  async function withCopies(results, kind) {
+    const copies = new Map();
+    for (const [file, result] of results) {
+      if (result.status !== 'blocked') continue;
+      const copy = copyPathFor(file, copyDir);
+      try { if (fs.lstatSync(copy).isFile()) copies.set(copy, file); } catch { /* none made */ }
+    }
+    if (!copies.size) return results;
+    // A copy a worker opened within trustMs is not checked again per request.
+    const trusted = copy => { const previous = seen.get(`${kind}\0${copy}`); return previous?.result.status === 'available' && now() - previous.at < trustMs ? previous.result : null; };
+    const fresh = [...copies.keys()].filter(copy => !trusted(copy));
+    const checked = fresh.length ? await run(fresh, kind) : new Map();
+    for (const [copy, file] of copies) {
+      const result = checked.get(copy) || trusted(copy);
+      if (result?.status === 'available') results.set(file, { ...result, openPath: copy, copyOf: results.get(file).root });
+    }
+    return results;
+  }
+
+  async function inspect(files, { kind = 'image' } = {}) {
+    return withCopies(await run(files, kind), kind);
+  }
+
+  /**
    * Before a route opens `file` on its own thread: a worker opened it within
    * trustMs, or one checks it now. Only `blocked` stops the route; any other
    * outcome lets its own open run and raise its own error, which a file that
-   * did not stall the worker will do promptly.
+   * did not stall the worker will do promptly. A result with `openPath` is a
+   * copy, and the route opens that path instead.
    */
   async function ensure(file, { kind = 'image' } = {}) {
-    if (isBlocked(file)) return blockedResult(protectedRoot(file, home));
+    if (isBlocked(file)) return (await withCopies(new Map([[file, blockedResult(protectedRoot(file, home))]]), kind)).get(file);
     const previous = seen.get(`${kind}\0${file}`);
     if (previous?.result.status === 'available' && now() - previous.at < trustMs) return previous.result;
     return (await inspect([file], { kind })).get(file);

@@ -437,13 +437,20 @@ export function createSessionArtifactCache({ inspector, maxEntries = 16, maxByte
     async open(transcriptPath, id) {
       const artifact = derived(transcriptPath).artifacts.find(item => item.id === id);
       if (!artifact) throw new ArtifactError(404, 'Image is not referenced by this session.');
-      refuseBlocked(await inspector.ensure(artifact.path));
-      return { artifact, ...openArtifactFile(artifact.path) };
+      const result = await inspector.ensure(artifact.path);
+      refuseBlocked(result);
+      // A copy stands in for an original whose folder the Explorer cannot read.
+      const target = result?.openPath || artifact.path;
+      return { artifact: { ...artifact, path: target }, ...openArtifactFile(target) };
     },
     async openDocument(transcriptPath, id) {
       const value = derived(transcriptPath);
       const document = value.documents.find(item => item.id === id && ['created', 'edited'].includes(item.source));
-      if (document) refuseBlocked(await inspector.ensure(document.path, { kind: 'document' }));
+      if (document) {
+        const result = await inspector.ensure(document.path, { kind: 'document' });
+        refuseBlocked(result);
+        if (result?.openPath) return { document, ...openDocumentFile(result.openPath) };
+      }
       return openDerivedDocument(value, id);
     },
     clear() { cache.clear(); bytes = 0; },

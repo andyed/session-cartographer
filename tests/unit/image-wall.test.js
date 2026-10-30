@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { createImageWall, namedBy, projectOfPath, scanTranscriptImages } from '../../explorer/server/image-wall.js';
 import { imageDimensions } from '../../explorer/server/image-probe.js';
-import { blockedMessage, createGuardedInspector, protectedRoot } from '../../explorer/server/guarded-open.js';
+import { blockedMessage, copyPathFor, createGuardedInspector, protectedRoot } from '../../explorer/server/guarded-open.js';
 import { inspectImage } from '../../explorer/server/session-artifacts.js';
 import { EventEmitter } from 'node:events';
 import { createThumbnailer, snapThumbWidth } from '../../explorer/server/image-thumbs.js';
@@ -312,4 +312,53 @@ test('ensure() trusts a recent worker open, re-checks after trustMs, and never t
   const failing = createGuardedInspector({ spawn: fakeSpawn(new Set(), spawned, () => ({ status: 'missing' })) });
   await failing.ensure('/repo/gone.png'); await failing.ensure('/repo/gone.png');
   assert.equal(spawned.length, 5, 'a failed check is repeated rather than trusted');
+});
+
+test('a blocked file with a copy is answered by the copy; one without stays blocked', async t => {
+  const f = fixture(t);
+  const home = path.join(f.dir, 'home'), copyDir = path.join(f.dir, 'copies');
+  const original = path.join(home, 'Downloads', 'walker', 'contact.png');
+  const uncopied = path.join(home, 'Downloads', 'other.png');
+  const copy = copyPathFor(original, copyDir);
+  assert.equal(copy, path.join(copyDir, ...path.resolve(original).split(path.sep).filter(Boolean).map(p => p.replace(/:$/, ''))));
+  fs.mkdirSync(path.dirname(copy), { recursive: true }); fs.writeFileSync(copy, png(8, 4));
+  const spawned = [];
+  let clock = 0;
+  const inspector = createGuardedInspector({ stallMs: 40, home, platform: 'darwin', copyDir, spawn: fakeSpawn(new Set([original]), spawned), now: () => clock });
+  const tick = setInterval(() => { clock += 10; }, 5);
+  try {
+    const results = await inspector.inspect([original, uncopied]);
+    assert.deepEqual(results.get(original), { status: 'available', file: copy, openPath: copy, copyOf: path.join(home, 'Downloads') });
+    assert.equal(results.get(uncopied).status, 'blocked');
+    assert.deepEqual(spawned.at(-1), [copy], 'the copy is checked on a worker like any file');
+    const before = spawned.length;
+    assert.equal((await inspector.ensure(original)).openPath, copy);
+    assert.equal(spawned.length, before, 'a recently checked copy needs no second worker');
+  } finally { clearInterval(tick); }
+});
+
+test('the wall notes a copied image, counts it, and lists what is still blocked for the copy script', async t => {
+  const { f, transcript, written, older, session } = sessionFixture(t);
+  const copy = path.join(f.dir, 'copies', 'render.png');
+  fs.mkdirSync(path.dirname(copy), { recursive: true }); fs.writeFileSync(copy, png(1600, 900));
+  const mtimeMs = Date.parse('2026-10-29T10:30:00Z');
+  const inspector = {
+    async inspect(files) {
+      return new Map(files.map(file => [file, file === written
+        ? { status: 'available', mime: 'image/png', key: 'k', size: 33, mtimeMs, dimensions: { width: 1600, height: 900, alpha: false }, openPath: copy, copyOf: '/Users/someone/Downloads' }
+        : file === older ? { status: 'blocked', root: '/Users/someone/Downloads' } : { status: 'missing' }]));
+    },
+    async ensure(file) { return (await this.inspect([file])).get(file); },
+  };
+  const wall = createImageWall({ scan: inline, inspector, now: () => NOW });
+  const { collection, stats } = await wall.collection({ transcripts: [{ path: transcript, session }], days: 7, scope: 'named', ...urls });
+  assert.equal(stats.copied, 1);
+  assert.equal(stats.blocked, 1);
+  assert.deepEqual(stats.blockedFiles, [older]);
+  assert.match(collection.clips[0].note, /Shown from a copy; the Explorer cannot read \/Users\/someone\/Downloads\./);
+  const opened = await wall.open(transcript, collection.clips[0].id);
+  try {
+    assert.equal(opened.artifact.path, copy, 'covers and thumbnails read the copy');
+    assert.equal(opened.artifact.name, 'written.png', 'the image keeps its own name');
+  } finally { fs.closeSync(opened.fd); }
 });

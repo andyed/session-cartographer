@@ -249,6 +249,25 @@ test('new canonical commits refresh without reparsing cached transcripts or narr
   assert.equal(parses, 1);
 });
 
+test('session review opens the copy an inspector names, keeping the recorded name', async t => {
+  const f = fixture(t), image = f.image('original.png'), copy = f.image('copy.png', Buffer.concat([PNG, Buffer.from('copy')]));
+  const transcript = path.join(f.dir, 'transcript.jsonl');
+  const rows = [read(image)];
+  fs.writeFileSync(transcript, rows.map(JSON.stringify).join('\n'));
+  const inspector = {
+    async inspect(files) { return new Map(files.map(file => [file, { status: 'available', mime: 'image/png', size: 1, mtimeMs: 0, openPath: copy }])); },
+    async ensure() { return { status: 'available', openPath: copy }; },
+  };
+  const cache = createSessionArtifactCache({ inspector, loadEntries: () => rows });
+  const [artifact] = (await cache.list(transcript)).artifacts;
+  const opened = await cache.open(transcript, artifact.id);
+  try {
+    assert.equal(opened.artifact.path, copy);
+    assert.equal(opened.artifact.name, 'original.png');
+    assert.equal(opened.stat.size, fs.statSync(copy).size);
+  } finally { fs.closeSync(opened.fd); }
+});
+
 test('session review takes the guarded verdict: a blocked folder is reported and never opened here', async t => {
   const f = fixture(t), image = f.image(), document = f.image('notes.md', '# Notes');
   const transcript = path.join(f.dir, 'transcript.jsonl');

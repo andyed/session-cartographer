@@ -202,7 +202,7 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
       files.get(image.path).push({ transcript, record, image, session: bySession.get(transcript) });
     }
     const cutoff = now() - days * DAY_MS;
-    const counts = { named: files.size, missing: 0, unavailable: 0, blocked: 0, namedOnly: 0, outside: 0 };
+    const counts = { named: files.size, missing: 0, unavailable: 0, blocked: 0, copied: 0, namedOnly: 0, outside: 0 };
     const found = await inspector.inspect([...files.keys()]);
     const clips = [];
     for (const [file, namings] of files) {
@@ -227,7 +227,9 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
         writer ? `Written during ${agent} session “${session}”.` : `Named by ${sessionCount === 1 ? `${agent} session “${session}”` : `${sessionCount} sessions`}; written outside them.`,
         sessionCount > 1 && writer ? `Named by ${sessionCount} sessions.` : '',
         `${displayPath(file)} · ${[size, kb(stat.size)].filter(Boolean).join(' · ')}`,
+        result.openPath ? `Shown from a copy; the Explorer cannot read ${displayPath(result.copyOf)}.` : '',
       ].filter(Boolean).join(' ');
+      if (result.openPath) counts.copied += 1;
       clips.push({
         id: primary.image.id,
         url: `urn:session-cartographer:image:${primary.image.id}`,
@@ -251,8 +253,11 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
       });
     }
     clips.sort((a, b) => b.captured.localeCompare(a.captured) || a.title.localeCompare(b.title));
-    const blockedRoots = [...new Set([...found.values()].filter(r => r.status === 'blocked').map(r => displayPath(r.root)))];
-    const stats = { days, scope, transcripts: transcripts.length, scanned, failed, ...counts, blockedRoots, shown: clips.length, ms: Date.now() - started };
+    const blocked = [...found].filter(([, r]) => r.status === 'blocked');
+    const blockedRoots = [...new Set(blocked.map(([, r]) => displayPath(r.root)))];
+    // scripts/copy-blocked-images.js reads this list to make the copies.
+    const blockedFiles = blocked.map(([file]) => file).slice(0, 10_000);
+    const stats = { days, scope, transcripts: transcripts.length, scanned, failed, ...counts, blockedRoots, blockedFiles, shown: clips.length, ms: Date.now() - started };
     if (!clips.length) return { collection: null, stats };
     const windowLabel = days === 1 ? '24 hours' : `${days} days`;
     const revision = createHash('sha256').update(clips.map(c => `${c.id}:${c.captured}`).join('\n')).digest('hex').slice(0, 16);
@@ -289,8 +294,9 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
     // Open on this thread only what a worker opened without stalling.
     const result = await inspector.ensure(image.path);
     if (result?.status === 'blocked') throw new ArtifactError(503, result.reason);
-    const opened = openArtifactFile(image.path);
-    return { artifact: image, ...opened, dimensions: result?.key === `${opened.stat.dev}:${opened.stat.ino}:${opened.stat.size}:${opened.stat.mtimeMs}` ? result.dimensions : null };
+    const target = result?.openPath || image.path;
+    const opened = openArtifactFile(target);
+    return { artifact: { ...image, path: target }, ...opened, dimensions: result?.key === `${opened.stat.dev}:${opened.stat.ino}:${opened.stat.size}:${opened.stat.mtimeMs}` ? result.dimensions : null };
   }
 
   return { collection, open, clear() { records.clear(); } };
