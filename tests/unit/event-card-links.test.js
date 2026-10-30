@@ -30,12 +30,18 @@ test('event urls link only when the allowlist admits them', () => {
   ]) assert.equal(safeArtifactLink(url), null, String(url));
 });
 
-test('every href EventCard renders is a safeArtifactLink result', () => {
+test('corpus hrefs are allowlisted and transcript hrefs use the canonical local builder', () => {
   const hrefs = [...card.matchAll(/\bhref=\{([^}]*)\}/g)].map(match => match[1].trim());
   // The header link icon, the commit's "view on GitHub", the detail's url.
-  assert.equal(hrefs.length, 3, `expected three hrefs in EventCard, found ${hrefs.length}`);
+  assert.equal(hrefs.filter(name => name === 'href').length, 3);
+  assert.equal(hrefs.filter(name => name === 'transcriptHref').length, 2);
+  assert.equal(hrefs.length, 5);
   for (const expression of hrefs) {
     assert.match(expression, /^\w+$/, `href={${expression}} is an expression, not a guarded name`);
+    if (expression === 'transcriptHref') {
+      assert.ok(/const transcriptHref = eventTranscriptHref\(/.test(card));
+      continue;
+    }
     // assert.ok, not assert.match: a failing match prints the whole component.
     assert.ok(new RegExp(`\\bconst ${expression} = safeArtifactLink\\(`).test(card), `href={${expression}} does not come from safeArtifactLink`);
   }

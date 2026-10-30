@@ -246,36 +246,35 @@ function ModeCohorts({ rows }) {
         </div>
         <p>Compare equivalent search conditions. A Turbo fallback stays in Turbo on; each mode needs at least 50 calls before comparison.</p>
       </div>
-      <div className="internals-mode-grid">
-        {rows.map(row => {
-          const selections = Object.entries(row.selectedBackends)
-            .filter(([, count]) => Number.isFinite(Number(count)) && Number(count) > 0)
-            .map(([backend, count]) => `${backend === 'explorer' ? 'Explorer' : backend === 'cli' ? 'CLI' : 'unknown'} ${formatNumber(Number(count))}`)
-            .join(' · ');
-          const lowSample = row.key !== 'unknown' && Number.isFinite(row.calls) && row.calls < 50;
-          const latencyUnavailable = !Number.isFinite(row.samples) || row.samples === 0;
-          return (
-            <article className="internals-mode-card" key={row.key}>
-              <div className="internals-mode-card-header">
-                <div><h3>{row.label}</h3><p>{selections || 'Backend attribution unavailable'}</p></div>
-                <span className={lowSample || latencyUnavailable ? 'is-caveat' : ''}>{formatNumber(row.calls)} calls{lowSample ? ' · low sample' : latencyUnavailable ? ' · latency unavailable' : ''}</span>
-              </div>
-              <div className="internals-scoreline">
-                <Metric label="Response p50" value={formatMilliseconds(row.p50Ms)} detail={`${formatNumber(row.samples)} timed calls`} caveat={lowSample} />
-                <Metric label="Response p95" value={formatMilliseconds(row.p95Ms)} detail={`${formatNumber(row.fallbackCalls)} fallbacks · max ${formatMilliseconds(row.maxMs)}`} caveat={lowSample} />
-                <Metric label="Calls with access" value={formatRate(row.accessedRate)} detail="fetched or marked used" />
-                <Metric label="Calls marked used" value={formatRate(row.explicitUse.callSuccessRate)} detail={`${formatNumber(row.explicitUse.callsWithUse)} of ${formatNumber(row.calls)} calls`} />
-                <Metric label="First-access MRR" value={formatMrr(row.firstAccessMrr)} detail="first fetched or marked-used rank" />
-                <Metric label="Explicit-use MRR" value={formatMrr(row.explicitUse.firstAccessMrr)} detail={`${formatNumber(row.explicitUse.orderedCalls)} ordered calls · no-use calls score zero`} />
-                <Metric label="Consumption depth" value={formatRank(row.consumptionDepthP50Rank)} detail={`p50 deepest rank · p95 ${formatRank(row.consumptionDepthP95Rank)} · ${formatNumber(row.consumptionDepthSamples)} calls`} />
-                <Metric label="Last-access MRR" value={row.lastAccessMrr === null ? '—' : row.lastAccessMrr.toFixed(3)} detail={`${formatNumber(row.orderedCalls)} ordered calls · includes fetches`} />
-              </div>
-              {row.sessionAttribution && <p className="internals-evidence-note">Session attributed: {formatNumber(row.sessionAttribution.attributedCalls)} / {formatNumber(row.calls)} calls</p>}
-              <SemanticCohorts rows={row.semanticCohorts} />
-            </article>
-          );
-        })}
+      <div className="internals-mode-table" tabIndex={0} role="region" aria-label="Mode comparison">
+        <table>
+          <thead><tr><th scope="col">Measure</th>{rows.map(row => <th scope="col" key={row.key}>{row.label}</th>)}</tr></thead>
+          <tbody>
+            {[
+              ['Calls', row => `${formatNumber(row.calls)}${row.key !== 'unknown' && Number.isFinite(row.calls) && row.calls < 50 ? ' · low sample' : ''}`],
+              ['Response p50', row => formatMilliseconds(row.p50Ms)],
+              ['Response p95', row => formatMilliseconds(row.p95Ms)],
+              ['Calls with access', row => formatRate(row.accessedRate)],
+              ['Calls marked used', row => formatRate(row.explicitUse.callSuccessRate)],
+              ['First-access MRR', row => formatMrr(row.firstAccessMrr)],
+              ['Explicit-use MRR', row => formatMrr(row.explicitUse.firstAccessMrr)],
+              ['Consumption depth p50', row => formatRank(row.consumptionDepthP50Rank)],
+              ['Consumption depth p95', row => formatRank(row.consumptionDepthP95Rank)],
+              ['Last-access MRR', row => formatMrr(row.lastAccessMrr)],
+            ].map(([label, value]) => <tr key={label}><th scope="row">{label}</th>{rows.map(row => <td data-copy-content key={row.key}>{value(row)}</td>)}</tr>)}
+          </tbody>
+        </table>
       </div>
+      <details className="internals-mode-details"><summary>Search conditions and sample coverage</summary>
+        <div className="internals-mode-grid">{rows.map(row => <article key={row.key}>
+          <h3>{row.label}</h3>
+          <p data-copy-content>{Object.entries(row.selectedBackends).map(([backend,count])=>`${backend}: ${formatNumber(Number(count))}`).join(' · ') || 'Backend attribution unavailable'}</p>
+          <p data-copy-content>{formatNumber(row.samples)} timed · {formatNumber(row.fallbackCalls)} fallbacks · max {formatMilliseconds(row.maxMs)}</p>
+          <p data-copy-content>{formatNumber(row.orderedCalls)} ordered access calls · {formatNumber(row.explicitUse.orderedCalls)} ordered explicit-use calls · {formatNumber(row.consumptionDepthSamples)} depth samples</p>
+          {row.sessionAttribution && <p data-copy-content>Session attributed: {formatNumber(row.sessionAttribution.attributedCalls)} / {formatNumber(row.calls)}</p>}
+          <SemanticCohorts rows={row.semanticCohorts} />
+        </article>)}</div>
+      </details>
     </section>
   );
 }
@@ -419,7 +418,7 @@ function ContributionBars({ rows, empty }) {
           <div className="internals-contribution" key={row.label}>
             <div className="internals-contribution-topline">
               <span title={row.label}>{row.label}</span>
-              <span>
+              <span data-copy-content>
                 {row.served !== null ? `${formatNumber(row.served)} served` : row.calls !== null ? `${formatNumber(row.calls)} calls` : 'served —'}
                 {' · '}{row.used !== null ? `${formatNumber(row.used)} accessed` : 'use unavailable'}
               </span>

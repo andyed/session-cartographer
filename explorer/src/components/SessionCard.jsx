@@ -3,6 +3,8 @@ import EventGroup, { groupEvents } from './EventGroup';
 import SessionSparkline from './SessionSparkline';
 import ProjectBadge from './ProjectBadge';
 import AgentBadge from './AgentBadge';
+import SessionArtifacts from './SessionArtifacts.jsx';
+import SessionIdentity from './SessionIdentity.jsx';
 
 function formatTokens(n) {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -64,7 +66,7 @@ function ContextGauge({ summary, compactionEvents }) {
   );
 }
 
-export default function SessionCard({ session, onOpenTranscript, onProjectClick, onProviderClick }) {
+export default function SessionCard({ session, onOpenTranscript, onProjectClick, onProviderClick, onInspect }) {
   const [expanded, setExpanded] = useState(false);
   const [summary, setSummary] = useState(null);
 
@@ -113,19 +115,11 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick,
   const groups = groupEvents(events);
 
   return (
-    <div className="border border-gray-700 bg-gray-900/40 rounded-lg mb-4 overflow-hidden shadow-md">
+    <div className="session-card border border-gray-700 bg-gray-900/40 rounded-lg mb-4 overflow-hidden shadow-md">
       <div className="p-3">
-        <div className="flex justify-between items-center mb-1">
-          <div className="flex items-center gap-3 text-sm">
-            <span className="font-medium text-gray-200" title={session.session_id}>
-              {session.session_id.startsWith('Legacy')
-                ? session.session_id
-                : `Session ${session.session_id.substring(0, 8)}`}
-            </span>
-            <span className="text-muted text-xs">{events.length} events • {durationMins}m</span>
-            <ContextGauge summary={summary} compactionEvents={compactionEvents} />
-          </div>
-          <div className="flex gap-2 items-center">
+        <div className="session-card-header">
+          <SessionIdentity title={session.title} sessionId={session.session_id} cwd={session.cwd} />
+          <div className="session-card-badges">
             <AgentBadge
               provider={session.provider}
               onClick={onProviderClick}
@@ -137,21 +131,31 @@ export default function SessionCard({ session, onOpenTranscript, onProjectClick,
           </div>
         </div>
 
-        <div className="text-xs text-muted mb-2">
+        <div className="session-card-metadata">
+          <span>{events.length} {events.length === 1 ? 'record' : 'records'} in focus{events.length > 1 ? ` • ${durationMins}m observed` : ''}</span>
+          <ContextGauge summary={summary} compactionEvents={compactionEvents} />
+        </div>
+        <div className="session-card-metadata">
           {dateObj.toLocaleDateString()} • {startTime} - {endTime}
         </div>
         {previewSummary && !expanded && (
-          <div className="text-xs text-gray-300 mb-2 truncate max-w-xl">{previewSummary}</div>
+          <div className="session-card-preview text-xs text-gray-300 mb-2 truncate max-w-xl">{previewSummary}</div>
         )}
 
+        <SessionArtifacts transcriptPath={session.transcript_path} sessionId={session.session_id} compact onOpenTranscript={onOpenTranscript} />
         <SessionSparkline events={events} />
 
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-xs text-link hover:text-blue-200 transition-colors mt-2 font-medium"
-        >
-          {expanded ? '▲ Hide Events' : '▼ View Session Events'}
-        </button>
+        <div className="session-card-actions">
+          {onInspect && <button className="timeline-inspect" aria-label="Inspect evidence" title="Inspect evidence" onClick={event => onInspect(event.currentTarget)}><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5"/></svg></button>}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            aria-label={expanded ? '▲ Hide Events' : '▼ View Session Events'}
+            aria-expanded={expanded}
+            className="text-xs text-link hover:text-blue-200 transition-colors font-medium"
+          >
+            <span aria-hidden="true">{expanded ? '▴' : '▾'}</span> Events
+          </button>
+        </div>
       </div>
 
       {expanded && (

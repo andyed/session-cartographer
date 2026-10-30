@@ -234,7 +234,13 @@ Reference: https://github.com/metalaureate/tend-cli — pull-based status board 
 - [ ] **Aggregate counters footer** — "24/24h active · 55 done today · 58 this week · 1 open TODO". All derivable from existing event log. The active-hours metric is novel and genuinely useful for understanding total-work patterns across concurrent sessions.
 - [ ] **Hint line** — tend shows "💡 6 idle + 1 open TODO — queue overnight work?" Light rule-based nudge, not an LLM. Good pattern for surfacing opportunities without nagging. Keep it optional and suppressible.
 - [ ] **`td add` equivalent — cross-project TODO aggregation** — tend's `.tend/TODO` is per-repo plain text; cartographer could read existing `TODO.md` files across registered projects and surface them in the board. No new file format, no new commands — just aggregate what's already there. Adds "1 open TODO" counter without inventing a task system.
-- [ ] **Live `watch` mode** — tend has `td watch` that refreshes every minute. Explorer already has SSE for live updates; the board view should subscribe to it so it updates when new events land. This is the "glance when you're ready" affordance — pull-based, not notification-based.
+- [ ] **Live `watch` mode** — make the board quietly current when the user returns.
+  Current source (2026-10-29): `useFocusWorkspace` already polls every 10s
+  (30s in a fixed window); Timeline's SSE callback updates a new-record counter
+  without invalidating the snapshot. Reuse this refresh owner for coalesced SSE
+  invalidation, with polling as recovery. Keep selection, scroll, fixed ranges
+  and row order stable; show freshness/reconnection state. No notifications.
+  Acceptance: a new output appears without reload or loss of reading position.
 
 **Explicitly NOT taking from tend-cli:**
 - `.tend/events` per-repo append-only logs (conflicts with cartographer's central event pipeline)
@@ -288,3 +294,103 @@ Reference: [DeepBlueDynamics/lume](https://github.com/DeepBlueDynamics/lume) —
 - [x] Route-level error containment with an in-place recovery action
 - [x] Retryable transcript failures with independent analysis fallback
 - [x] ~~Briefings system~~ — replaced with project registry + /focus skill + enriched milestones
+
+## Session viewer competitive review (queued 2026-10-29)
+
+- **[ ] Compare review tasks, not feature counts.** Test Cartographer against
+  [Claudoscope](https://claudoscope.com/),
+  [Simon Willison’s timeline viewer](https://tools.simonwillison.net/claude-code-timeline),
+  [VibeView](https://github.com/driangle/vibeview), and the tools named in
+  [this discovery article](https://dev.to/gonewx/i-tested-4-tools-for-browsing-claude-code-session-history-17ie).
+  Treat the article as leads, not verified competitor capability evidence.
+  Use the same shareable/synthetic sessions: recover an output, review a file
+  change, interpret search plus fetched pages, trace a failed operation, and
+  return to the originating task. Record time/actions, loss of context,
+  repeated-copy scores, keyboard/touch behavior, and provenance fidelity.
+  Inspect actual products/source before drawing conclusions. Do not upload
+  private transcripts to hosted viewers. Extend docs/landscape-survey.md with
+  results; this queue item is not a completed competitive evaluation.
+
+
+## Make Explorer useful: prioritized review work (2026-10-29)
+
+- [ ] **P0 — Outcome-first session summary.** Default to the request, useful
+  outputs, recorded conclusions and evidenced open issues. Group research by
+  source and changes by artifact; suppress routine plumbing. No raw JSON or
+  orchestration wrappers, including source drill-down. Preserve exact evidence
+  without equating an assistant's final response with verified completion.
+  First local pass implemented: Summary is the default; artifacts, last response,
+  search/fetch bundles and historical failures are reviewable; typed evidence
+  unwraps transport instead of printing JSON. Build, 51 focused unit checks and
+  browser journeys passed. Still open: human acceptance and a stronger synthesis
+  of findings/open issues across the work, beyond the last recorded response.
+- [ ] **P1 — Documents as reviewable work.** Open a document from its session
+  card into the existing rendered preview/diff. Show the exact session change
+  and its contributing sessions; distinguish current disk content from the
+  historical version. Extend beyond the currently indexed reviewable paths.
+  Acceptance: find a brief, read it, and see what changed without the transcript.
+- [ ] **P1 — GitHub destinations.** Link a recorded commit to its repository,
+  diff and immutable file revision; attach PR/issue links when evidenced.
+  Resolve the actual remote/worktree, retain local-only commits, and label
+  cached versus freshly checked PR state. Extend recorded event-card URLs into
+  the artifact/summary surfaces. Never infer merged/deployed from a commit.
+- [ ] **P2 — Changes since my last review.** A stable checkpoint per project:
+  new documents/images, commits, revised conclusions and unresolved failures.
+  Let the user mark a bundle reviewed. Viewing is not approval; retries are not
+  distinct outcomes. No notification stream and no reordering while reading.
+- [ ] **P2 — Keep useful outputs.** Explicitly keep a selected scratch output
+  as a local, versioned artifact with original path, content identity and source
+  session. It must survive temporary-file cleanup. Do not silently copy every
+  file or label the most recent variant “final.”
+
+Prioritize usable summaries and document/GitHub destinations before making a
+board refresh faster. The board should lead to recoverable work.
+
+## Interaction audit follow-through (2026-10-29)
+
+Contract: [interaction style guide](docs/INTERACTION_STYLE_GUIDE.md).
+Evidence and reproduction: [audit](docs/INTERACTION_AUDIT_2026-10-29.md).
+Implementation and verification: [follow-up](docs/INTERACTION_FIXES_2026-10-29.md).
+Human acceptance of the summary remains open.
+
+- [x] **IA-01 — Whole commit header target.** Title, metadata and whitespace
+  activate the sole action; multiple sources use one native summary, a single
+  source uses a direct anchor. Preserve named source links and keyboard behavior.
+- [x] **IA-03 / IA-06 — Recovery and dismissal.** Add local file Retry through
+  the existing request owner; dismiss transient timestamp detail before closing
+  the inspector. Preserve file, contributor, review mode and focus.
+- [x] **IA-04 / IA-07 — Navigation parity.** Persist Summary/Conversation in the
+  canonical route; expose native file-result links with modified-click support.
+- [x] **IA-05 — Typography floor.** Bring shared-directory and outcome metadata
+  to the 16px / weight-500 floor; verify long paths and 390px layout again.
+- [x] **IA-08 — Scope-aware live updates.** Apply the existing live-watch work
+  to scoped invalidation/counts while preserving stable reading position.
+- [ ] **IA-02 — Summary usefulness.** Acceptance gap belongs to the outcome-first
+  summary item above: evidence-backed findings and open issues across the work,
+  beyond the last assistant response. Explicitly headed findings, decisions,
+  validation and next steps are now indexed across main-agent responses, with
+  exact sources and attribution. Unlabelled conclusions and current resolution
+  are not inferred. Requires human review, not only copy checks.
+
+
+## Extend review patterns (2026-10-29 opportunity sweep)
+
+Source evidence, proposed behavior and acceptance checks:
+[Review opportunities](docs/REVIEW_OPPORTUNITIES_2026-10-29.md).
+Implemented locally; [verification and limits](docs/REVIEW_REGROUPING_2026-10-29.md).
+Human review remains separate from these mechanical checks.
+
+- [x] Restore access to grouped search members; replace lossy 120-character
+  grouping and the arrow-only similar-results control with identity-preserving bundles.
+- [x] Reveal all loaded outcomes, Day files and clipped event prose; make preview
+  limits reversible and distinguish content expansion from metadata disclosure.
+- [x] Compact scope controls on reading views while retaining active filters,
+  interval semantics and freshness; show useful work in the first mobile viewport.
+- [x] Group file operations/errors/sources by exact file identity; pair commands
+  with their results inside one review unit and retain exact source navigation.
+- [x] Render meaningful file-change provenance where supported; retain unavailable
+  source states instead of replacing them with plausible descriptions.
+- [x] Apply native primary targets to Day commits, Recall results and event cards;
+  align Read conversation with the reader's actual destination.
+- [x] Share Recall context without changing rank; provide local result-detail retry
+  and omit empty optional session recall.

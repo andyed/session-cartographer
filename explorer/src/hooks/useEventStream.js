@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { isDemoMode } from '../api';
 import { initialEventStreamStatus, transitionEventStreamStatus } from './event-stream-state';
 
-export function useEventStream(onEvent) {
+export function useEventStream(onEvent, enabled = true) {
   const sourceRef = useRef(null);
   const onEventRef = useRef(onEvent);
   const [status, setStatus] = useState(() => initialEventStreamStatus(isDemoMode));
   onEventRef.current = onEvent;
 
   useEffect(() => {
+    setStatus(initialEventStreamStatus(isDemoMode || !enabled));
     // No live streaming in demo mode
-    if (isDemoMode) return;
+    if (isDemoMode || !enabled) return;
 
     const source = new EventSource('/api/stream');
     sourceRef.current = source;
@@ -36,7 +37,7 @@ export function useEventStream(onEvent) {
     return () => {
       source.close();
     };
-  }, []);
+  }, [enabled]);
 
   return status;
 }

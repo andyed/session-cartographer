@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { sessionMetricsAt } from '../../explorer/src/components/memory-metrics.js';
+import { sessionMetricsAt, outcomeTimeline, formatTimeOffset } from '../../explorer/src/components/memory-metrics.js';
 
 const minute = 60000;
 const session = {
@@ -31,4 +31,17 @@ test('missing usage stays unknown instead of zero, including before first record
   assert.equal(sessionMetricsAt(session,minute).tokens.output,null);
   assert.equal(sessionMetricsAt(session,minute).tokens.status,'missing');
   assert.equal(sessionMetricsAt({events:session.events},60*minute).tokens.total,null);
+});
+
+
+test('outcome offsets share the latest eligible baseline across midnight and replay', () => {
+  const baseline=Date.parse('2026-10-29T17:26:00Z');
+  const rows=[{id:'earlier',type:'git_commit',t:baseline-936*minute},{id:'future',type:'wrapup',t:baseline+minute},{id:'latest',type:'wrapup',t:baseline},{id:'middle',type:'git_commit',t:baseline-900*minute},{id:'invalid',type:'git_commit',t:NaN}];
+  const ordered=outcomeTimeline(rows,baseline);
+  assert.deepEqual(ordered.map(row=>row.id),['latest','middle','earlier']);
+  assert.deepEqual(ordered.map(row=>formatTimeOffset(row.t,ordered[0].t)),['0m','−15h','−15h 36m']);
+  assert.equal(rows[0].id,'earlier','sorting must not mutate session data');
+  assert.equal(formatTimeOffset(baseline-86400000,baseline),'−1d');
+  assert.equal(formatTimeOffset(baseline-30000,baseline),'−<1m');
+  assert.deepEqual(outcomeTimeline([],baseline),[]);
 });

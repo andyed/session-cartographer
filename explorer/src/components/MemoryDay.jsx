@@ -3,6 +3,8 @@ import { apiRequest, isDemoMode } from '../api.js';
 import { workspaceHref } from '../hooks/useFocusWorkspace.js';
 import { plainLinkClick } from './memory-route.js';
 import AgentBadge from './AgentBadge.jsx';
+import PathContext from './PathContext.jsx';
+import { commonDirectory, relativeDisplayPath } from './path-presentation.js';
 import '../styles/memory-day.css';
 
 // One local calendar day across every session, from /api/memory/day. The
@@ -105,14 +107,17 @@ function CommitRow({ commit, sessionLink }) {
   const hash = (commit.landed_as || commit.sha || '').slice(0, 7);
   const churn = commit.added === null || commit.added === undefined ? null : `+${commit.added.toLocaleString()} −${commit.removed.toLocaleString()}`;
   const link = !commit.gitOnly && commit.session_id ? sessionLink(commit.session_id) : null;
+  const Body = link ? 'a' : 'div';
   return <li className="dd-commit" data-status={kind || 'landed'}>
+    <Body className="dd-commit-body" href={link?.href} onClick={link?.onClick} aria-label={link ? `Open session for ${commit.subject || hash || 'recorded commit'}` : undefined}>
     <time dateTime={commit.at}>{clock(commit.at)}</time>
     <code>{hash}</code>
-    <span className="dd-subject">{link ? <a href={link.href} onClick={link.onClick}>{commit.subject || '(no subject)'}</a> : commit.subject || '(no subject)'}</span>
+    <span className="dd-subject">{commit.subject || '(no subject)'}</span>
     <span className="dd-commit-tail">
       {kind && <span className={`rc-marker ${kind === 'missing' || kind === 'unverified' ? 'rc-warn' : 'rc-fetched'}`}>{MARKS[kind](commit)}</span>}
       {churn && <span className="dd-churn">{churn}</span>}
     </span>
+    </Body>
   </li>;
 }
 
@@ -124,6 +129,8 @@ function ProjectDay({ project, sessionLink, titles }) {
   ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)), [project]);
   const rewritten = project.commits.filter(c => c.status === 'rewritten').length;
   const files = Object.entries(project.files);
+  const fileRoot = commonDirectory(files.map(([file]) => file));
+  const fileRow = ([file, count]) => <li key={file}><span className="dd-path" title={file}>{relativeDisplayPath(file, fileRoot)}</span><span className="rc-quiet">×{count}</span></li>;
   const n = claimed(project);
   const repo = project.repo;
   const repoFlags = repo ? [repo.dirty > 0 && `${repo.dirty} uncommitted`, repo.unpushed && repo.unpushed !== '0' && `${repo.unpushed} unpushed`].filter(Boolean) : [];
@@ -142,13 +149,15 @@ function ProjectDay({ project, sessionLink, titles }) {
     {project.investigations.map(inv => <p key={inv.event_id} className="dd-line"><span className={`rc-marker ${inv.outcome === 'open' ? 'rc-warn' : 'rc-fetched'}`}>diagnosed · {inv.outcome}</span> <span>{inv.symptom}</span></p>)}
     {files.length > 0 && <div className="dd-files">
       <p className="rc-quiet">{plural(files.length, 'file')} edited{project.files_unresolved ? ` · ${project.files_unresolved} edit ${project.files_unresolved === 1 ? 'path' : 'paths'} not found on disk` : ''}</p>
-      <ul>{files.slice(0, 5).map(([file, count]) => <li key={file}><span className="dd-path">{file}</span><span className="rc-quiet">×{count}</span></li>)}</ul>
+      <PathContext root={fileRoot} />
+      <ul>{files.slice(0, 5).map(fileRow)}</ul>
+      {files.length > 5 && <details className="dd-more-files"><summary>More files ({files.length - 5})</summary><ul>{files.slice(5).map(fileRow)}</ul></details>}
     </div>}
     {project.sessions.length > 0 && <ul className="dd-sessions" aria-label={`Sessions in ${name}`}>
       {project.sessions.map(s => {
         const link = sessionLink(s.id);
         const title = titles.get(s.id)?.title || `Session ${s.id.slice(0, 8)}`;
-        return <li key={s.id}>{s.provider ? <AgentBadge provider={s.provider} /> : <span className="rc-quiet">agent unrecorded</span>}<a href={link.href} onClick={link.onClick}>{title}</a><span className="rc-quiet">{clock(s.first)}–{clock(s.last)}</span></li>;
+        return <li key={s.id}>{s.provider ? <AgentBadge provider={s.provider} /> : null}<a href={link.href} onClick={link.onClick}>{title}</a><span className="rc-quiet">{clock(s.first)}–{clock(s.last)}</span></li>;
       })}
     </ul>}
     {repo && <p className="dd-line"><span className="rc-quiet">Now, read at load:</span> {repo.branch} · {repoFlags.length ? repoFlags.join(' · ') : 'clean'}</p>}
@@ -240,16 +249,18 @@ export default function MemoryDay({ workspace, viewNavigation }) {
           <div><dt>Events</dt><dd>{totals.events.toLocaleString()}</dd></div>
           {totals.pushes > 0 && <div><dt>Pushes</dt><dd>{totals.pushes.toLocaleString()}</dd></div>}
         </dl>
-        <p className="dd-agents">{Object.entries(body.agents).sort((a, b) => b[1] - a[1]).map(([provider, n]) => <span key={provider}>{provider === 'unknown' ? <span className="rc-quiet">agent unrecorded</span> : <AgentBadge provider={provider} />} {plural(n, 'session')}</span>)}</p>
-        <HoursChart hours={body.hours} />
-        {git.length > 0 && <p className="dd-git"><span className="rc-quiet">Checked against git:</span> {git.map(([n, label]) => `${n.toLocaleString()} ${label}`).join(' · ')}</p>}
         {(body.scope.projects || body.scope.denied || body.unattributed.project) ? <p className="rc-quiet">
           {body.scope.projects && `${plural(body.scope.out_of_scope.events, 'event')} in ${plural(body.scope.out_of_scope.projects, 'project')} outside “${route.project}” are not shown. `}
           {body.unattributed.project > 0 && `${plural(body.unattributed.project, 'event')} carry no project and are not shown.`}
         </p> : null}
         {shown.map(project => <ProjectDay key={project.name} project={project} sessionLink={sessionLink} titles={titles} />)}
         {minor.length > 0 && <p className="rc-quiet dd-minor">Also active: {minor.map(p => `${p.name} (${fmtDuration(p.active_minutes)})`).join(', ')}.</p>}
-        <p className="rc-quiet dd-foot">Active time counts five-minute bins with any logged event, with every session merged, so three sessions in one hour count as one hour. A commit counts when git has it on a branch, remote, or tag; “moved” commits landed under a new sha after an amend, rebase, or cherry-pick.</p>
+        <details className="dd-activity"><summary>Activity evidence</summary>
+          <p className="dd-agents">{Object.entries(body.agents).sort((a, b) => b[1] - a[1]).map(([provider, n]) => <span key={provider}>{provider === 'unknown' ? null : <AgentBadge provider={provider} />} {plural(n, 'session')}</span>)}</p>
+          <HoursChart hours={body.hours} />
+          {git.length > 0 && <p className="dd-git"><span className="rc-quiet">Checked against git:</span> {git.map(([n, label]) => `${n.toLocaleString()} ${label}`).join(' · ')}</p>}
+          <p className="rc-quiet dd-foot">Active time counts five-minute bins with any logged event, with every session merged, so three sessions in one hour count as one hour. A commit counts when git has it on a branch, remote, or tag; “moved” commits landed under a new sha after an amend, rebase, or cherry-pick.</p>
+        </details>
       </>}
     </>}
   </section>;

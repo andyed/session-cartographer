@@ -84,3 +84,45 @@
 }
 
 .fw-range-editor .fw-exact .fw-remember-range { grid-column:1/-1; justify-self:start; color:var(--fw-accent); border:0; padding-left:0; }
+
+/* Reading views keep scope visible while the chart and editing tools are on demand. */
+.fw-scope-options { display: flex; align-items: center; gap: 12px; }
+.fw-scope-options[hidden] { display: none !important; }
+.fw-scope-options .fw-project { max-width: none; }
+.focus-workspace[data-reading] .fw-page-heading { display: flex; align-items: center; margin-bottom: 8px; gap: 8px; }
+.focus-workspace[data-reading] .fw-page-heading h1 { font-size: 24px; margin: 0; }
+.focus-workspace[data-reading] .fw-view-actions { margin: 0; }
+.fw-toolbar-compact { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 0 8px; margin-bottom: 8px; }
+.fw-toolbar-compact > .fw-scope-row, .fw-toolbar-compact > .fw-chips,
+.fw-toolbar-compact > .fw-range-editor, .fw-toolbar-compact > .fw-notice { grid-column: 1 / -1; }
+.fw-toolbar-compact .fw-scope-row { gap: 8px; }
+.fw-toolbar-compact .fw-find { min-width: 0; flex-basis: 180px; }
+.fw-toolbar-compact .fw-scope-toggle { flex: none; border-color: var(--fw-line); }
+.fw-toolbar-compact .fw-scope-options { flex-basis: 100%; padding-block: 8px; }
+.fw-toolbar-compact .fw-scope-options .fw-project { flex: 1; }
+.fw-toolbar-compact .fw-rangebar { min-width: 0; flex-wrap: wrap; gap: 0 6px; }
+.fw-toolbar-compact .fw-range-trigger { text-align: left; padding-inline: 0; }
+.fw-toolbar-compact .fw-range-state { font-size: 16px; }
+.fw-toolbar-compact > .fw-coverage { margin: 0; align-self: start; }
+.fw-toolbar-compact > .fw-coverage[open] { grid-column: 1 / -1; }
+.fw-toolbar-compact .fw-focus-strip { margin-block: 8px 16px; }
+.focus-workspace[data-reading] .fw-view-nav { flex-wrap: nowrap; gap: 2px; flex: 1 0 100%; min-width: 0; }
+.focus-workspace[data-reading] .fw-view-nav button { padding-inline: 8px; flex: 1; }
+@media(max-width:600px) {
+  .fw-scope-options { gap: 8px; min-width: 0; }
+  .fw-toolbar-compact .fw-find { flex: 1 1 180px; }
+  .fw-toolbar-compact { grid-template-columns: minmax(0,1fr); }
+  .fw-toolbar-compact > .fw-coverage { grid-column: 1; }
+  .fw-toolbar-compact .fw-range-state { margin-left: auto; }
+  .fw-toolbar-compact .fw-coverage > summary { padding-block: 4px; }
+}
+
+.fw-file-history { margin-top: 16px; }
+.fw-file-history ol { margin: 8px 0; padding: 0; list-style: none; }
+.fw-file-history-row { display: flex; align-items: baseline; gap: 12px; padding: 10px 0; min-height: 44px; border-top: 1px solid var(--fw-line); text-decoration: none; }
+.fw-file-history-row > [data-copy-content] { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fw-file-history-row time { flex: none; color: var(--fw-muted); }
+.fw-file-history-row[href] { color: var(--fw-accent); }
+.fw-file-history-row[href]:hover { background: var(--fw-surface); }
+/* Keep the filter popover's right edge within narrow timeline/list surfaces. */
+@media(max-width:600px){.fw-scope-options{flex:1 0 100%}.fw-scope-options .fw-project{flex:1}}

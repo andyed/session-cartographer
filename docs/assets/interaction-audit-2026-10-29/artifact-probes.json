@@ -1,0 +1,40 @@
+[
+  {
+    "id": "IA-05",
+    "probe": "Shared-directory type size",
+    "observed": {
+      "fontSize": "14px",
+      "fontWeight": "400"
+    },
+    "expected": "At least 16px / weight 500"
+  },
+  {
+    "id": "IA-04",
+    "probe": "Conversation mode after reload",
+    "observed": "Summary",
+    "expected": "Conversation"
+  },
+  {
+    "id": "IA-01",
+    "probe": "Single-action commit row",
+    "observed": {
+      "titleOpened": false,
+      "whitespaceOpened": false,
+      "iconOpened": true,
+      "row": {
+        "x": 93,
+        "y": 840.5625,
+        "width": 1014,
+        "height": 63
+      },
+      "target": {
+        "x": 1053.015625,
+        "y": 850.5625,
+        "width": 53.984375,
+        "height": 44
+      },
+      "activeAreaPercent": 3.7
+    },
+    "expected": "Title and row space activate the same disclosure as the icon"
+  }
+]

@@ -1,16 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../api.js';
 import { containsTimestamp } from '../../shared/focus.js';
+import SessionArtifacts from './SessionArtifacts.jsx';
+import SessionIdentity from './SessionIdentity.jsx';
 import MemorySession from './MemorySession.jsx';
+import FileEvidenceHistory from './FileEvidenceHistory.jsx';
 import MemoryArtifact, { formatFileBytes } from './MemoryArtifact.jsx';
 import { SessionHandoff } from './MemoryDesk.jsx';
 import { SessionRecall } from './MemoryRecall.jsx';
+import '../styles/path-context.css';
 import { workspaceHref } from '../hooks/useFocusWorkspace.js';
 
-export default function MemoryInspector({ workspace, tab = 'memory', onClose, onCloseFile }) {
+export default function MemoryInspector({ workspace, tab = 'memory', onClose, onCloseFile, children, onLocate }) {
   const { route, data, scoped, interval, navigate } = workspace;
   const [fallback, setFallback] = useState(null);
   const [review, setReview] = useState(null);
+  const [retryFile, setRetryFile] = useState(0);
+  const retryFocus = useRef(null);
   const heading = useRef(null), panel = useRef(null), previousReview = useRef(null);
   const selected = scoped?.sessions.find(s => s.id === route.session);
   const contextSession = data?.sessions.find(s => s.id === route.session);
@@ -30,14 +36,22 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
   useEffect(() => {
     if (!route.review || !route.file || !route.session) { setReview(null); return; }
     const controller = new AbortController();
-    const params = new URLSearchParams({ session: route.contributor || route.session, path: route.file, hours: Math.min(2160, Math.max(1, Math.ceil(((interval?.through || 0) - (interval?.from || 0)) / 3600000))) });
+    const params = new URLSearchParams({ session: route.contributor || route.session, path: route.file, hours: interval ? Math.min(2160, Math.max(1, Math.ceil((interval.through - interval.from) / 3600000))) : route.hours || 24 });
     if (interval) { params.set('from', new Date(interval.from).toISOString()); params.set('through', new Date(interval.through).toISOString()); params.set('lower', interval.lower); }
     setReview({ key: requestKey, loading: true });
     apiRequest(`/api/memory/file?${params}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) })
       .then(result => { if (!controller.signal.aborted) setReview({ ...result, key: requestKey }); })
       .catch(error => { if (!controller.signal.aborted) setReview({ key: requestKey, error: error.message }); });
     return () => controller.abort();
-  }, [route.session, route.contributor, route.file, Boolean(route.review), requestKey]);
+  }, [route.session, route.contributor, route.file, Boolean(route.review), requestKey, retryFile]);
+  useLayoutEffect(() => {
+    if (!retryFocus.current) return;
+    if (retryFocus.current !== requestKey) { retryFocus.current = null; return; }
+    if (review?.key === requestKey && !review.loading) {
+      (review.error ? panel.current?.querySelector('[data-retry-file]') : heading.current)?.focus({ preventScroll: true });
+      retryFocus.current = null;
+    }
+  }, [review, requestKey]);
   // A layout effect, so focus moves in the commit that removed the focused
   // review control. Deferring it a frame left focus on BODY in between, and a
   // second Escape arriving before a late frame never reached this panel.
@@ -50,8 +64,8 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
       const target = panel.current?.querySelector(`[data-file-path="${CSS.escape(returnPath)}"]`);
       (target || heading.current)?.focus({ preventScroll: true });
     } else {
-      heading.current?.focus({ preventScroll: true });
-      if (window.matchMedia('(max-width: 1000px)').matches) panel.current?.scrollIntoView({ block: 'start' });
+      if (tab !== 'transcript' || route.review) heading.current?.focus({ preventScroll: true });
+      if (tab !== 'transcript' && window.matchMedia('(max-width: 1000px)').matches) panel.current?.scrollIntoView({ block: 'start' });
     }
   }, [route.session, session?.id, route.file, Boolean(route.review)]);
   const contributors = useMemo(() => (scoped?.sessions || []).filter(s => (scoped.files[s.id] || []).some(f => f.path === route.file)), [scoped, route.file]);
@@ -67,25 +81,29 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
     route.review ? onCloseFile() : onClose();
   }}>
     <div className="fw-inspector-top">
-      <button onClick={route.review ? onCloseFile : onClose} aria-label={route.review ? 'Back to task' : 'Back to results'}>← {route.review ? 'Task' : 'Results'}</button>
-      <span>{outside ? 'Outside current filters' : 'Evidence in focus'}</span>
+      <button onClick={route.review ? onCloseFile : onClose} aria-label={route.review ? 'Back to task' : tab === 'transcript' ? 'Back to conversation' : 'Back to results'}>← {route.review ? 'Task' : tab === 'transcript' ? 'Conversation' : 'Results'}</button>
+      <span>{tab === 'transcript' ? 'Session evidence' : outside ? 'Outside current filters' : 'Evidence in focus'}</span>
       {tab === 'timeline' && <button onClick={() => workspace.handoff('memory')}>Review in Memory ↗</button>}
     </div>
     {interval && <p className="fw-inspector-range">Focus: {new Date(interval.from).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} – {new Date(interval.through).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>}
     {outside && <p className="fw-notice">This task is outside the current filters. Its recorded context remains available.</p>}
     {!session && <p role="status">{currentFallback?.error || 'Reading this task…'}</p>}
     {session && !route.review && <>
-      <div className="fw-inspector-identity"><h2 ref={heading} tabIndex={-1}>{session.title}</h2><SessionHandoff session={session} /><button className="fw-link" onClick={() => workspace.handoff('timeline', recordsRoute)}>{taskInWindow ? 'Task records in this window ↗' : 'Focus recorded task activity ↗'}</button>{session.fullTitle && session.fullTitle !== session.title && <details><summary>Full task prompt</summary><p>{session.fullTitle}</p></details>}</div>
+      <div className="fw-inspector-identity"><SessionIdentity title={session.title} sessionId={session.id} provider={session.provider} cwd={session.cwd} heading="h2" headingRef={heading} headingTabIndex={-1} /><SessionHandoff session={session} hideConversation={tab === 'transcript'} /><button className="fw-link" onClick={() => workspace.handoff('timeline', recordsRoute)}>{taskInWindow ? 'Task records in this window ↗' : 'Focus recorded task activity ↗'}</button>{session.fullTitle && session.fullTitle !== session.title && <details><summary>Full task prompt</summary><p>{session.fullTitle}</p></details>}</div>
+      <SessionArtifacts transcriptPath={session.transcript} sessionId={session.id} onLocate={onLocate}
+        reviewablePaths={(source?.files[session.id] || []).map(file => file.path)}
+        onReviewDocument={document => { const file = source?.files[session.id]?.find(item => item.path === document.path); if (file) openReview(session, file, 'file'); }} />
+      {children}
       <MemorySession session={session} files={source?.files[session.id] || []} at={source?.end ?? interval?.through}
         onBack={onClose} onReview={openReview} selectedPath={route.file}
         onSelectFile={file => openReview(session, file, /\.(md|markdown)$/i.test(file.path) ? 'file' : 'changes')}
-        hrefForFile={(file, review = 'changes') => workspaceHref({ ...route, file: file.path, review, contributor: session.id }, tab)} compact />
+        hrefForFile={(file, review = 'changes') => workspace.hrefForFile ? workspace.hrefForFile(file, review) : workspaceHref({ ...route, file: file.path, review, contributor: session.id }, tab)} compact />
       {/* Episode links activate this workspace's window, so recall lives on the memory tab only. */}
       {tab === 'memory' && <SessionRecall key={session.id} workspace={workspace} session={session} />}
     </>}
     {route.review && <section className="memory-review" aria-label="File review">
       <h2 ref={heading} tabIndex={-1}>{fileName}</h2>
-      <p className="memory-path">{route.file}</p>
+      <details className="path-context"><summary>Location</summary><code data-copy-content className="memory-path">{route.file}</code></details>
       <label className="fw-contributor">Evidence from <select aria-label="Contributing task" value={route.contributor || route.session} onChange={e => navigate({ session: e.target.value, contributor: e.target.value })}>
         {!contributors.some(s => s.id === route.session) && <option value={route.session}>{session?.title || route.session}</option>}
         {contributors.map(s => <option key={s.id} value={s.id}>{s.title}</option>)}
@@ -96,11 +114,11 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
         <button aria-pressed={route.review === 'file'} onClick={() => navigate({ review: 'file' })}>Current file</button>
       </nav>
       <p className="fw-muted">{route.review === 'changes' ? 'Session changes use the actual commit range; they are not a reconstruction of the focus interval.' : 'Current workspace state may include edits from other tasks.'}</p>
-      {review?.key !== requestKey || review?.loading ? <p role="status">Reading file evidence…</p> : review.error ? <p role="alert">{review.error}</p> : <>
+      {review?.key !== requestKey || review?.loading ? <p role="status">Reading file evidence…</p> : review.error ? <div><p role="alert">{review.error}</p><button data-retry-file onClick={() => { retryFocus.current = requestKey; setRetryFile(value => value + 1); }}>Retry file</button></div> : <>
         {review.downloadUrl && <div className="fw-file-access"><a href={review.downloadUrl} download={fileName}>Download full file</a>{review.preview && <span>{formatFileBytes(review.preview.totalBytes)} · current workspace file</span>}</div>}
         <MemoryArtifact key={route.file} review={review} mode={route.review} layout={route.diff} onLayout={diff => navigate({ diff })} documentMode={route.doc} onDocumentMode={doc => navigate({ doc })} />
         {route.review === 'changes' && !review.diff && <button className="fw-link" onClick={() => navigate({ review: 'file' })}>Open current file</button>}
-        <details><summary>Recorded edit evidence</summary><ul>{(review.evidence || []).map((edit, i) => <li key={edit.id || i}>{new Date(edit.t).toLocaleString()} · {edit.id || 'Unidentified record'}</li>)}</ul></details>
+        <FileEvidenceHistory key={`${route.file}:${route.contributor || route.session}`} edits={review.evidence} filePath={route.file} records={source?.evidenceIndex || []} />
       </>}
     </section>}
   </aside>;

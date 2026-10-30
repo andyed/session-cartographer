@@ -8,6 +8,7 @@ const EXPLORER_PATHS = new Set([
   '/api/health', '/api/activity-scope', '/api/events', '/api/autocomplete', '/api/coterms',
   '/api/search', '/api/projects', '/api/sessions', '/api/stream',
   '/api/transcript', '/api/transcript/analysis',
+  '/api/session/artifacts', '/api/session/artifact', '/api/session/document',
 ]);
 
 async function loadExplorer() {

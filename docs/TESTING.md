@@ -103,6 +103,30 @@ capture is exercised with the browser's capture API during a native drag.
 The complete journey includes these checks. Screenshots are written to
 `carto-focus-workspace-artifacts`. CI runs the complete built-preview journey.
 
+### Review grouping and interaction defenses
+
+After building Explorer, run:
+
+```bash
+node tests/browser/search-review.cjs
+node tests/browser/review-disclosures.cjs
+node tests/browser/evidence-review.cjs
+node tests/browser/session-artifacts.cjs --preview --interaction-audit
+```
+
+The first three serve the built app from disposable localhost ports and intercept
+APIs with explicit fixtures. They never access the live corpus. They assert source
+identity/rank recovery, full-text and preview disclosures, native actions and text
+selection, file/operation pairing, error provenance and exact anchors. They complement
+the real isolated-backend journeys, not substitute for them. Keep local browser runs
+on cylon; send CPU suites to BIGFU according to workspace guidance.
+
+`memory-entry.cjs --preview --interaction-audit` additionally captures first useful
+content position in populated 390×844 Recall/Day views, local retry and preserved
+file provenance. `focus-workspace.cjs --preview --layout-proof` isolates narrow
+session lists, open filter panels and inspector return. The complete focus journey
+also tests the compact reading editor and stable canonical scope.
+
 ### The GH Pages demo
 
 `memory-entry.cjs` strips `VITE_DEMO` on purpose, so it says nothing about the

@@ -73,3 +73,13 @@
 .memory-session .ms-visually-hidden{position:absolute;clip:rect(0,0,0,0);clip-path:inset(50%);width:1px;height:1px;overflow:hidden;white-space:nowrap}
 @media(max-width:780px){.memory-session{padding-inline:0}.memory-session .ms-evidence-columns{grid-template-columns:minmax(0,1fr);gap:30px}.memory-session .ms-heading h1{font-size:30px}.memory-session .ms-topline{gap:16px}.memory-session .ms-project{max-width:65%}}
 @media(max-width:440px){.memory-session .ms-topline{align-items:flex-start;gap:10px}.memory-session .ms-project{padding-top:10px;max-width:56%}.memory-session .ms-heading h1{font-size:26px}.memory-session .ms-duration{gap:6px}.memory-session .ms-duration>span{width:100%}.memory-session .ms-trace-caption,.memory-session .ms-token-caption{flex-wrap:wrap;gap:2px 12px}.memory-session .ms-trace-caption>span,.memory-session .ms-token-caption>span{text-align:left}.memory-session .ms-activity-plot{height:110px}.memory-session .ms-mix{gap:6px 16px}.memory-session .ms-time-axis{gap:12px}.memory-session .ms-selected-file{flex-wrap:wrap}.memory-session .ms-selected-file p{flex-basis:100%;padding-top:0}.memory-session .ms-selected-file a{padding-left:0}.memory-session .ms-file{padding-block:10px}.memory-session .ms-file-label>span{font-size:16px}}
+
+.memory-session .ms-outcome-baseline { margin: 4px 0 12px; color: var(--fw-muted,var(--ms-muted)); font-size: 16px; font-weight: 500; }
+.ms-outcome { margin-block: 12px; }
+.memory-session .ms-more-outcomes > summary { min-height: 44px; padding: 10px 0; color: var(--fw-accent,var(--ms-accent)); cursor: pointer; }
+.memory-session .ms-outcome p { margin: 0; overflow-wrap: anywhere; }
+.ms-outcome-time { position: relative; display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; color: var(--fw-muted,var(--ms-muted)); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; cursor: help; }
+.ms-outcome-time:focus-visible { outline: 2px solid var(--ms-accent); outline-offset: 2px; border-radius: 3px; }
+.fw-outcomes .ms-outcome-exact { display: none; position: absolute; top: 100%; left: 0; z-index: 3; width: max-content; max-width: min(280px,70vw); padding: 8px; border: 1px solid var(--ms-line); border-radius: 4px; background: #11151e; color: #edf0f5; font: 500 16px/1.5 ui-sans-serif,system-ui,sans-serif; }
+.ms-outcome-time[data-open] .ms-outcome-exact { display: block; }
+.memory-session button.ms-outcome-time { padding: 0; border: 0; background: transparent; text-align: left; }

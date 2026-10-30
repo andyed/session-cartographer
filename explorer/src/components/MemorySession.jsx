@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { sessionMetricsAt, formatDuration, formatCount } from './memory-metrics';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { sessionMetricsAt, formatDuration, formatCount, outcomeTimeline, formatTimeOffset } from './memory-metrics';
 import { plainLinkClick } from './memory-route';
 import '../styles/memory-session.css';
+import PathContext from './PathContext.jsx';
+import { commonDirectory, relativeDisplayPath } from './path-presentation.js';
 
 const KINDS = [
   { id: 'activity', label: 'actions', color: '#81aaff' },
@@ -26,12 +28,6 @@ function noteLabel(type = '') {
   return 'Activity';
 }
 
-function directory(file) {
-  const pieces = file.path.split('/').filter(Boolean);
-  const parent = pieces.slice(0, -1);
-  const project = parent.indexOf(file.project);
-  return (project >= 0 ? parent.slice(project) : parent.slice(-3)).join('/');
-}
 
 function makeTrace(events, tokenSeries) {
   const times = [...events.map((event) => event[0]), ...tokenSeries.map((sample) => sample.t)].filter(Number.isFinite);
@@ -96,6 +92,21 @@ function ActivityTrace({ metrics, tokens, tokenSeries }) {
   );
 }
 
+function OutcomeTime({ timestamp, baseline }) {
+  const [open, setOpen] = useState(false);
+  const id = useId();
+  const exact = new Date(timestamp).toLocaleString([], {month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
+  const offset = formatTimeOffset(timestamp, baseline);
+  return <button type="button" className="ms-outcome-time" data-open={open || undefined}
+    aria-label={`${offset} from baseline; ${exact}`} aria-describedby={open ? id : undefined}
+    onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
+    onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)} onClick={() => setOpen(true)}
+    onKeyDown={event => { if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); setOpen(false); } }}>
+    <time dateTime={new Date(timestamp).toISOString()}>{offset}</time>
+    <span id={id} role="tooltip" className="ms-outcome-exact">{exact}</span>
+  </button>;
+}
+
 export default function MemorySession({ session, files = [], at, onBack, onReview, selectedPath, onSelectFile, hrefForFile, compact = false }) {
   const heading = useRef(null);
   const metrics = useMemo(() => sessionMetricsAt(session, at, files), [session, at, files]);
@@ -117,6 +128,9 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
     }
     return [...distinct.values()];
   }, [session.notes, at]);
+  const outcomes = useMemo(() => outcomeTimeline(session.outcomes, at), [session.outcomes, at]);
+  const baseline = outcomes[0]?.t;
+  const pathRoot = commonDirectory(visibleFiles.map(file=>file.path));
   const selected = visibleFiles.find((file) => file.path === selectedPath);
   const resolvedEdits = new Set(visibleFiles.flatMap((file) => file.edits.filter((edit) => edit.source !== 'transcript').map((edit) => edit.id)).filter(Boolean)).size;
   const unresolvedEdits = Math.max(0, (metrics.counts.edit || 0) - resolvedEdits);
@@ -146,28 +160,42 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
         {fullTitle && fullTitle !== title && <details className="ms-prompt"><summary>Session prompt</summary><p>{fullTitle}</p></details>}
       </header>
 
-      {(session.outcomes || []).some(note => /commit|wrapup/.test(note.type || '')) && <section className="fw-outcomes" aria-label="Recorded outcomes"><h2>Recorded outcomes</h2>{(session.outcomes || []).filter(note => /commit|wrapup/.test(note.type || '')).slice(-3).reverse().map((note, i) => <p key={note.id || i}><span>{stamp(note.t)}</span>{note.text}</p>)}</section>}
-      <div className={`ms-evidence-columns${visibleFiles.length ? '' : ' ms-no-files'}`}>
-        <section className="ms-files" aria-label="Recently edited files">
+      {outcomes.length > 0 && <section className="fw-outcomes" aria-label="Recorded outcomes">
+        <h2>Recorded outcomes</h2>
+        <p className="ms-outcome-baseline">Baseline · <time dateTime={new Date(baseline).toISOString()}>{stamp(baseline)}</time></p>
+        {outcomes.slice(0,3).map((note,i) => {
+          return <div className="ms-outcome" key={note.id || i}>
+            <OutcomeTime timestamp={note.t} baseline={baseline} />
+            <p data-copy-content>{note.text}</p>
+          </div>;
+        })}
+        {outcomes.length > 3 && <details className="ms-more-outcomes"><summary>More outcomes ({outcomes.length - 3})</summary>{outcomes.slice(3).map((note, i) => <div className="ms-outcome" key={note.id || i}>
+          <OutcomeTime timestamp={note.t} baseline={baseline} />
+          <p data-copy-content>{note.text}</p>
+        </div>)}</details>}
+      </section>}
+      {(visibleFiles.length > 0 || metrics.counts.edit > 0 || selectedPath || notes.length > 0) && <div className={`ms-evidence-columns${visibleFiles.length ? '' : ' ms-no-files'}`}>
+        {(visibleFiles.length > 0 || metrics.counts.edit > 0 || selectedPath) && <section className="ms-files" aria-label="Recently edited files">
           <div className="ms-section-heading"><h2>Edited files</h2><span>{visibleFiles.length ? formatCount(visibleFiles.length) : 'None resolved'}</span></div>
           {visibleFiles.length > 0 ? <>
+            <PathContext root={pathRoot} />
             <div className="ms-file-branches">
               {visibleFiles.slice(0, fileLimit).map((file) => (
-                <a key={file.path} className="ms-file" data-file-path={file.path} href={hrefForFile(file)} aria-label={`Inspect ${file.path}`} aria-current={selectedPath === file.path ? 'true' : undefined} onClick={event => { if (plainLinkClick(event)) { event.preventDefault(); onSelectFile(file); } }}>
+                <a key={file.path} className="ms-file" data-file-path={file.path} title={file.path} href={hrefForFile(file)} aria-label={`Inspect ${file.path}`} aria-current={selectedPath === file.path ? 'true' : undefined} onClick={event => { if (plainLinkClick(event)) { event.preventDefault(); onSelectFile(file); } }}>
                   <span className="ms-branch" aria-hidden="true"><i /></span>
-                  <span className="ms-file-label"><strong>{file.name || file.path.split('/').at(-1)}</strong><span>{directory(file)}</span></span>
+                  <span className="ms-file-label"><strong>{relativeDisplayPath(file.path,pathRoot)}</strong></span>
                   <span className="ms-file-edits">{file.edits.length} {file.edits.length === 1 ? 'record' : 'records'}</span>
                 </a>
               ))}
             </div>
             {visibleFiles.length > fileLimit && <button type="button" className="ms-more" onClick={() => setFileLimit((n) => n + 8)}>More files ({visibleFiles.length - fileLimit}) ↓</button>}
-            {selected && <div className="ms-selected-file" aria-live="polite"><p>{selected.path}</p><a href={hrefForFile(selected, 'changes')} onClick={event => { if (plainLinkClick(event)) { event.preventDefault(); onReview(session, selected); } }}>Review</a></div>}
+            {selected && <div className="ms-selected-file" aria-live="polite"><p title={selected.path}>{relativeDisplayPath(selected.path,pathRoot)}</p><a href={hrefForFile(selected, 'changes')} onClick={event => { if (plainLinkClick(event)) { event.preventDefault(); onReview(session, selected); } }}>Review</a></div>}
           </> : <p className="ms-empty-files">{metrics.counts.edit ? `${formatCount(metrics.counts.edit)} edit observations, but their files could not be resolved in the current workspace.` : 'No file edits were recorded in this session at this point.'}</p>}
           {unresolvedEdits > 0 && visibleFiles.length > 0 && <p className="ms-file-coverage">{formatCount(unresolvedEdits)} further edit observations have no resolved file.</p>}
           {selectedPath && !selected && <p className="ms-file-coverage" role="status">The linked file has no resolved edit evidence at this point in the session.</p>}
-        </section>
+        </section>}
 
-        <section className="ms-notes" aria-label="Recent session observations">
+        {notes.length > 0 && <section className="ms-notes" aria-label="Recent session observations">
           <div className="ms-section-heading"><h2>Recent observations</h2><span>{formatCount(notes.length)}</span></div>
           {session.notePreview?.truncated && <p className="ms-file-coverage">Showing the latest {session.notePreview.shown} of {session.notePreview.total} recorded notes. Open Task records in this window for the complete loaded interval.</p>}
           {notes.length ? <>
@@ -175,15 +203,15 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
               const clean = note.text.replace(/\s+/g, ' ').trim();
               const excerpt = clean.length > 220 ? `${clean.slice(0, 217).trimEnd()}…` : clean;
               return <details className="ms-observation" key={note.id || `${note.t}-${i}`}>
-                <summary><span className="ms-observation-meta"><time dateTime={new Date(note.t).toISOString()}>{clock(note.t)}</time><span>{noteLabel(note.type)}</span><span className="ms-note-expand" aria-hidden="true">+</span></span><span className="ms-observation-text">{excerpt}</span></summary>
+                <summary><span className="ms-observation-meta"><time dateTime={new Date(note.t).toISOString()}>{clock(note.t)}</time><span>{noteLabel(note.type)}</span><span className="ms-note-expand" aria-hidden="true">+</span></span><span data-copy-content className="ms-observation-text">{excerpt}</span></summary>
                 <div className="ms-observation-evidence">{clean.length > 220 && <p>{clean}</p>}<p>{stamp(note.t)}{note.id && <><br /><code>{note.id}</code></>}</p>{note.repeated.length > 0 && <><p>Repeated in {note.repeated.length} earlier observations:</p><ul>{note.repeated.map((earlier, j) => <li key={earlier.id || j}>{stamp(earlier.t)}{earlier.id && <> · <code>{earlier.id}</code></>}</li>)}</ul></>}</div>
               </details>;
             })}</div>
             {notes.length > noteLimit && <button type="button" className="ms-more" onClick={() => setNoteLimit((n) => n + 8)}>Earlier observations ({notes.length - noteLimit}) ↓</button>}
           </> : <p className="ms-empty-notes">{metrics.eventCount ? 'These events contain no descriptive notes. Their timing and activity types are shown above.' : 'No descriptive observations before this point in the replay.'}</p>}
-        </section>
-      </div>
-      <details className="fw-activity-evidence"><summary>Activity evidence</summary><ActivityTrace metrics={metrics} tokens={metrics.tokens} tokenSeries={tokenSeries} /></details>
+        </section>}
+      </div>}
+      {(metrics.eventCount > 0 || metrics.tokens.output > 0) && <details className="fw-activity-evidence"><summary>Activity evidence</summary><ActivityTrace metrics={metrics} tokens={metrics.tokens} tokenSeries={tokenSeries} /></details>}
     </section>
   );
 }

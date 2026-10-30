@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEventStream } from './useEventStream.js';
 import { apiRequest, isDemoMode } from '../api.js';
 import { memoryHref, normalizeMemoryRoute, parseMemoryRoute } from '../components/memory-route.js';
 import { getFocusRange, advanceFocusRange, MAX_FOCUS_DURATION_MS } from '../../shared/focus.js';
@@ -7,9 +8,9 @@ import { projectMemoryScope } from '../../shared/activity-scope.js';
 const BASE = import.meta.env.BASE_URL || '/';
 const HOUR = 3600000;
 const LENSES = ['concurrent', 'sessions', 'chronological'];
-export function readWorkspaceRoute() {
-  const params = new URLSearchParams(window.location.search);
-  return { ...parseMemoryRoute(window.location.search),
+export function readWorkspaceRoute(search = window.location.search) {
+  const params = new URLSearchParams(search);
+  return { ...parseMemoryRoute(search),
     timelineView: LENSES.includes(params.get('view')) ? params.get('view') : 'concurrent',
     days: [1, 3, 7, 30].includes(Number(params.get('days'))) ? Number(params.get('days')) : 7,
     zoom: params.get('zoom') === 'detail' ? 'detail' : 'overview' };
@@ -75,6 +76,9 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
   const [frozenBounds, setFrozenBounds] = useState(null);
   const queryTransaction = useRef(false);
   const sourceRequest = useRef(null);
+  const invalidate = useRef(null);
+  const streamStatus = useEventStream(() => invalidate.current?.(), isActive);
+  useEffect(() => { if (streamStatus.state === 'live') invalidate.current?.(); }, [streamStatus.state]);
   const dataRef = useRef(data); dataRef.current = data;
   const navigate = useCallback((patch, { replace = false, typing = false } = {}) => {
     if (!typing) queryTransaction.current = false;
@@ -102,8 +106,18 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
   useEffect(() => {
     if (!isActive) return;
     const controller = new AbortController(); sourceRequest.current = controller;
-    let timer;
+    let timer, scheduled = false, running = false, pending = false;
+    const scheduleRefresh = () => {
+      if (running) { pending = true; return; }
+      if (scheduled) return;
+      clearTimeout(timer); scheduled = true;
+      // Let the backend's two-second snapshot cache expire; coalesce bursts.
+      timer = setTimeout(poll, 2500);
+    };
+    invalidate.current = scheduleRefresh;
     async function poll() {
+      if (controller.signal.aborted) return;
+      scheduled = false; running = true; pending = false;
       setRefreshing(true);
       try {
         let nextStatus = { ready: true };
@@ -145,11 +159,16 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
       } catch (failure) {
         if (!controller.signal.aborted) setError(failure.message);
       } finally {
-        if (!controller.signal.aborted) { setRefreshing(false); timer = setTimeout(poll, routeRef.current.mode === 'fixed' || isDemoMode ? 30000 : 10000); }
+        running = false;
+        if (!controller.signal.aborted) {
+          setRefreshing(false);
+          if (pending) scheduleRefresh();
+          else timer = setTimeout(poll, routeRef.current.mode === 'fixed' || isDemoMode ? 30000 : 10000);
+        }
       }
     }
     poll();
-    return () => { controller.abort(); clearTimeout(timer); };
+    return () => { controller.abort(); clearTimeout(timer); if (invalidate.current === scheduleRefresh) invalidate.current = null; };
   }, [isActive, tab, viewportSpec, retry, navigate]);
 
   const shownData = frozen || data;
@@ -206,5 +225,5 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
     } catch (failure) { setError(failure.message); } finally { setBusy(false); }
   }, [status, busy]);
   return { route, navigate, up, query, endQuery, data: shownData, scoped, context, interval, bounds, preview, commitRange, activate, frame, fit, handoff,
-    status, error, busy, refreshing, launch, retry: () => setRetry(n => n + 1), sourceId: `${isDemoMode ? 'demo' : 'live'}:${data?.source?.corpusId || 'default'}` };
+    status, streamStatus, error, busy, refreshing, launch, retry: () => setRetry(n => n + 1), sourceId: `${isDemoMode ? 'demo' : 'live'}:${data?.source?.corpusId || 'default'}` };
 }

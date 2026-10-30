@@ -66,14 +66,19 @@ export function episodeRange(row, fallbackTime = null, now = Date.now()) {
   return { from, through, lower: 'closed' };
 }
 
-function EpisodeLink({ workspace, sessionId, range, label = 'Open episode' }) {
+function episodeDestination(workspace, sessionId, range) {
   if (!sessionId || !range) return null;
-  const href = workspaceHref({ ...range, mode: 'fixed', session: sessionId }, 'memory');
-  return <a className="rc-episode" href={href} onClick={event => {
+  return { href: workspaceHref({ ...range, mode: 'fixed', session: sessionId }, 'memory'), onClick: event => {
     if (!plainLinkClick(event)) return;
     event.preventDefault();
     workspace.activate(range, { session: sessionId, surface: 'results', result: 'tasks', call: null, contributor: null, file: null, review: null, q: '', project: null, providers: [], evidence: [], brush: null }, 'fixed');
-  }}>{label} ↗</a>;
+  } };
+}
+
+function EpisodeLink({ workspace, sessionId, range, label = 'Open episode' }) {
+  const destination = episodeDestination(workspace, sessionId, range);
+  if (!destination) return null;
+  return <a className="rc-episode" aria-label={`${label} ↗`} title={label} {...destination}><svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 3h7v7M21 3L10 14M10 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5"/></svg></a>;
 }
 
 function UsedMarker({ row }) {
@@ -91,26 +96,54 @@ function ResultText({ row }) {
   return <span className="rc-summary rc-quiet">Unresolved: <code>{row.event_id}</code> is not in the corpus or the index</span>;
 }
 
-function ResultRow({ row, workspace, callTime }) {
+function sharedResultContext(rows) {
+  if (rows.length < 2) return {};
+  const same = read => {
+    const value = read(rows[0]);
+    return value && rows.every(row => read(row) === value) ? value : null;
+  };
+  const sessionId = same(row => row.session_id);
+  return {
+    provider: same(row => row.provider), source: same(row => row.source),
+    project: same(row => row.event_project || row.project), sessionId,
+    sessionTitle: sessionId ? rows.find(row => row.session_title)?.session_title || `Session ${shortId(sessionId)}` : null,
+  };
+}
+
+function ResultTime({ timestamp, callTime, rank }) {
+  if (!Number.isFinite(timestamp)) return null;
+  const exact = new Date(timestamp).toLocaleString([], { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZoneName: 'short' });
+  const delta = Number.isFinite(callTime) ? timestamp - callTime : null;
+  const distance = Math.abs(delta || 0);
+  const age = distance < 60000 ? '<1m' : distance < 3600000 ? `${Math.floor(distance / 60000)}m` : distance < 86400000 ? `${Math.floor(distance / 3600000)}h` : `${Math.floor(distance / 86400000)}d`;
+  const label = delta === null ? stamp(timestamp) : delta === 0 ? 'At call time' : `${age} ${delta < 0 ? 'before' : 'after'} call`;
+  const offset = delta === null ? stamp(timestamp) : delta === 0 ? '0m' : `${delta < 0 ? '−' : '+'}${age}`;
+  return <details className="rc-result-time"><summary aria-label={`Show exact time for rank ${rank ?? 'unknown'}: ${label}`} title={`${label} · ${exact}`}>{offset}</summary><time dateTime={new Date(timestamp).toISOString()} data-copy-content>{exact}</time></details>;
+}
+
+function ResultRow({ row, workspace, callTime, shared = {} }) {
   const range = episodeRange(row, callTime);
-  return <li className="rc-result" data-used={row.used.length > 0 || undefined} data-event-id={row.event_id}>
+  const destination = episodeDestination(workspace, row.session_id, range);
+  const Body = destination ? 'a' : 'div';
+  return <li className="rc-result" data-used={row.used.length > 0 || undefined} data-event-id={row.event_id} data-session-id={row.session_id || undefined} data-source={row.source || undefined}>
     <span className="rc-rank" aria-label={`Rank ${row.rank ?? 'unknown'}`}>{row.rank ?? '–'}</span>
     <div className="rc-result-body">
+      <Body className="rc-result-destination" {...(destination || {})} title={destination ? `Open episode${row.session_title ? `: ${row.session_title}` : ''}` : undefined}>
       <ResultText row={row} />
       <span className="rc-meta">
-        {row.provider ? <AgentBadge provider={row.provider} /> : <span>agent unrecorded</span>}
-        {row.session_title && <span>{row.session_title}</span>}
-        <span>{row.source}</span>
-        {(row.event_project || row.project) && <span>{row.event_project || row.project}</span>}
-        {row.event_timestamp && <span>{stamp(row.event_timestamp)}</span>}
+        {row.provider && !shared.provider && <AgentBadge provider={row.provider} />}
+        {row.session_id && !shared.sessionId && <span title={row.session_id}>{row.session_title || `Session ${shortId(row.session_id)}`}</span>}
+        {row.source && !shared.source && <span>{row.source}</span>}
+        {(row.event_project || row.project) && !shared.project && <span>{row.event_project || row.project}</span>}
         {row.resolution === null && <span>unresolved</span>}
       </span>
-      <span className="rc-markers">
+      </Body>
+      <div className="rc-markers">
+        <ResultTime timestamp={row.event_timestamp} callTime={callTime} rank={row.rank} />
         <UsedMarker row={row} />
         {row.fetched.length > 0 && <span className="rc-marker rc-fetched" title="Redeemed with --get. Fetching is inspection, not a use mark.">fetched</span>}
-        <EpisodeLink workspace={workspace} sessionId={row.session_id} range={range} />
         {row.session_id && !range && <span className="rc-meta">session {shortId(row.session_id)}</span>}
-      </span>
+      </div>
     </div>
   </li>;
 }
@@ -129,16 +162,29 @@ function StrayMarks({ marks, workspace }) {
 }
 
 function CallResults({ call, workspace }) {
-  const detail = useRecall(`/api/memory/recall/call?${new URLSearchParams({ call: call.call_id })}`, call.call_id, isCallDetail);
-  if (detail.loading && !detail.body) return <p className="rc-quiet" role="status">Reading ranked results…</p>;
-  if (detail.error) return <p role="alert">{detail.error}</p>;
-  const { rows, stray_marks: stray, resolution } = detail.body;
-  return <div className="rc-results">
-    {rows.length ? <ol aria-label={`Ranked results for “${call.query || call.call_id}”`}>{rows.map(row => <ResultRow key={row.event_id} row={row} workspace={workspace} callTime={call.timestamp} />)}</ol>
+  const [retry, setRetry] = useState(0);
+  const panel = useRef(null);
+  const detail = useRecall(`/api/memory/recall/call?${new URLSearchParams({ call: call.call_id })}`, `${call.call_id}:${retry}`, isCallDetail);
+  const { rows = [], stray_marks: stray, resolution } = detail.body || {};
+  const shared = useMemo(() => sharedResultContext(rows), [rows]);
+  return <section ref={panel} tabIndex={-1} className="rc-results" aria-label={`Results for ${call.query || call.call_id}`}>
+    {detail.loading && !detail.body && <p className="rc-quiet" role="status">Reading ranked results…</p>}
+    {detail.error && <div className="rc-detail-error" role="alert"><span>{detail.error}</span><button onClick={() => { panel.current?.focus({ preventScroll: true }); setRetry(value => value + 1); }}>Retry results</button></div>}
+    {detail.body && <>
+    {(shared.provider || shared.sessionId || shared.source || shared.project) && <div className="rc-result-context" role="group" aria-label="Shared result context">
+      <span>All results</span>
+      {shared.provider && <AgentBadge provider={shared.provider} />}
+      {shared.sessionId && <span data-shared-session={shared.sessionId} title={shared.sessionId}>{shared.sessionTitle}</span>}
+      {shared.project && <span data-shared-project={shared.project}>{shared.project}</span>}
+      {shared.source && <span data-shared-source={shared.source}>{shared.source}</span>}
+    </div>}
+    {Number.isFinite(call.timestamp) && rows.some(row => Number.isFinite(row.event_timestamp)) && <p className="rc-time-baseline rc-quiet">Time from search</p>}
+    {rows.length ? <ol aria-label={`Ranked results for “${call.query || call.call_id}”`}>{rows.map(row => <ResultRow key={row.event_id} row={row} workspace={workspace} callTime={call.timestamp} shared={shared} />)}</ol>
       : <p className="rc-quiet">This call returned no results.</p>}
     {resolution.unresolved > 0 && <p className="rc-quiet">{plural(resolution.unresolved, 'result')} no longer resolve{resolution.unresolved === 1 ? 's' : ''} to a recorded event{resolution.index_status === 'unavailable' ? '; the semantic index did not answer' : resolution.index_status === 'disabled' ? '; the semantic index is off' : ''}. They stay listed at their served rank.</p>}
     <StrayMarks marks={stray} workspace={workspace} />
-  </div>;
+    </>}
+  </section>;
 }
 
 function CallRow({ call, workspace, expanded, onToggle, showAgent = true }) {
@@ -159,7 +205,7 @@ function CallRow({ call, workspace, expanded, onToggle, showAgent = true }) {
         {call.stray_marks > 0 && <span className="rc-warn-text">{plural(call.stray_marks, 'stray mark')}</span>}
       </span>
     </button>
-    {showAgent && (call.provider ? <span className="rc-call-agent"><AgentBadge provider={call.provider} /></span> : <span className="rc-call-agent rc-quiet">agent unrecorded</span>)}
+    {showAgent && call.provider && <span className="rc-call-agent"><AgentBadge provider={call.provider} /></span>}
     {expanded && <div id={id}><CallResults call={call} workspace={workspace} /></div>}
   </li>;
 }
@@ -192,14 +238,14 @@ export function SessionRecall({ workspace, session }) {
   const recall = useRecall(isDemoMode ? null : `/api/memory/recall?${new URLSearchParams({ session: session.id })}`, `${session.id}:${refresh}`, isCallList);
   if (isDemoMode) return null;
   const body = recall.body;
+  if (!recall.error && (!body || (!body.calls.length && !body.unplaced.total))) return null;
   return <section className="rc-session" aria-label="Recall">
-    <div className="rc-session-head"><h2>Recall</h2><span>{body ? plural(body.totals.calls, 'search', 'searches') : ''}</span></div>
+    <div className="rc-session-head"><h2>Recall</h2>{body?.totals.calls > 0 && <span>{plural(body.totals.calls, 'search', 'searches')}</span>}</div>
     {recall.loading && !body && <p className="rc-quiet" role="status">Reading recall telemetry…</p>}
     {recall.error && <p role="alert">{recall.error} <button className="fw-link" onClick={() => setRefresh(n => n + 1)}>Retry</button></p>}
     {body && <>
       {body.totals.calls > 0 && <p className="rc-quiet">{body.totals.served} results served · {body.totals.used} marked used{body.totals.fetched ? ` · ${body.totals.fetched} fetched` : ''}</p>}
-      {body.totals.calls > 0 ? <ul className="rc-calls">{body.calls.map(call => <CallRow key={call.call_id} call={call} workspace={workspace} expanded={expanded === call.call_id} onToggle={() => toggle(call.call_id)} />)}</ul>
-        : <p className="rc-quiet">No recall searches are attributed to this session. Searches recorded without a session appear under Recall → Unattributed.</p>}
+      {body.totals.calls > 0 && <ul className="rc-calls">{body.calls.map(call => <CallRow key={call.call_id} call={call} workspace={workspace} expanded={expanded === call.call_id} onToggle={() => toggle(call.call_id)} />)}</ul>}
       <UnplacedMarks unplaced={body.unplaced} workspace={workspace} scope="made in this session" />
     </>}
   </section>;
@@ -263,7 +309,7 @@ export default function MemoryRecall({ workspace, onSession, hrefForSession, vie
           <header className="rc-group-head">
             {group.sessionId ? <>
               <h3>{session ? <a href={hrefForSession(session)} onClick={event => { if (plainLinkClick(event)) { event.preventDefault(); onSession(session); } }}>{session.title}</a> : `Session ${shortId(group.sessionId)}`}</h3>
-              {session?.provider ? <AgentBadge provider={session.provider} /> : group.calls[0].provider ? <AgentBadge provider={group.calls[0].provider} /> : <span className="rc-quiet">agent unrecorded</span>}
+              {session?.provider ? <AgentBadge provider={session.provider} /> : group.calls[0].provider ? <AgentBadge provider={group.calls[0].provider} /> : null}
               {!session && <EpisodeLink workspace={workspace} sessionId={group.sessionId} range={episodeRange({}, group.latest)} label="Open session" />}
             </> : <h3>Unattributed</h3>}
             <span className="rc-quiet">{plural(group.calls.length, 'call')}</span>

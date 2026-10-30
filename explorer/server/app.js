@@ -7,6 +7,8 @@ import { RecallContractError } from './recall-contract.js';
 import { executeFacts } from './facts.js';
 import { createMemoryHandler } from './memory.js';
 import { createTranscriptEnricher } from './memory-transcript.js';
+import { artifactHeaders, canonicalSessionArtifacts, createSessionArtifactCache, documentHeaders } from './session-artifacts.js';
+import { pipeline } from 'node:stream/promises';
 import {
   FACTS_CONTRACT_VERSION,
   FACTS_VERBS,
@@ -18,7 +20,7 @@ import { createInternalsHandler } from './internals-route.js';
 import { guardLoopback } from './loopback-guard.js';
 import { ensurePayloadIndexes, missingPayloadIndexes, PAYLOAD_INDEXES } from '../../scripts/qdrant-collection.js';
 import { qdrantFetch } from '../../scripts/qdrant-auth.js';
-import { accessSync, constants, existsSync, statSync } from 'fs';
+import { accessSync, closeSync, constants, createReadStream, existsSync, realpathSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 
@@ -35,6 +37,7 @@ function indexEventsById(list) {
  */
 export function createExplorerApp() {
   const app = express();
+  const artifactCache = createSessionArtifactCache();
   // First, so a rebound or cross-site request is refused before its body is
   // parsed. The headless Turbo server binds this same port and runs the same
   // guard (loopback-guard.js); the UI host checks again before mounting this app.
@@ -493,6 +496,66 @@ export function createExplorerApp() {
     return { path: resolved, recorded: expanded };
   }
 
+  function locateArtifactTranscript(req) {
+    const located = locateTranscript(req);
+    if (located.error) return located;
+    try {
+      if (!isAllowedTranscriptPath(realpathSync(located.path), TRANSCRIPT_ROOTS)) return { error: 'transcript resolves outside allowed roots', code: 'TRANSCRIPT_FORBIDDEN', status: 403 };
+    } catch { return { error: 'transcript is unavailable', code: 'TRANSCRIPT_UNREADABLE', status: 404 }; }
+    return located;
+  }
+
+  app.get('/api/session/artifacts', (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) {
+      if (located.status === 404 && req.query.session_id) {
+        // A stale allowed transcript does not erase canonical commit evidence.
+        // A caller-supplied outside path never gains access through this fallback.
+        if (req.query.path && !isAllowedTranscriptPath(resolve(String(req.query.path).replace(/^~/, homedir())), TRANSCRIPT_ROOTS)) return res.status(403).json({ error: 'path outside transcript roots', code: 'TRANSCRIPT_FORBIDDEN' });
+        const fallback = canonicalSessionArtifacts(events, String(req.query.session_id));
+        if (fallback) return res.set('Cache-Control', 'no-store').json(fallback);
+      }
+      return res.status(located.status).json({ error: located.error, code: located.code });
+    }
+    res.set('Cache-Control', 'no-store');
+    try { res.json({ path: located.path, ...artifactCache.list(located.path, { events }) }); }
+    catch (error) { res.status(error.status || 500).json({ error: error.message, code: 'ARTIFACTS_UNAVAILABLE' }); }
+  });
+
+  app.get('/api/session/artifact', async (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
+    let opened, stream;
+    try {
+      opened = artifactCache.open(located.path, String(req.query.id || ''));
+      res.writeHead(200, artifactHeaders(opened));
+      if (req.method === 'HEAD') { closeSync(opened.fd); opened = null; res.end(); return; }
+      stream = createReadStream(opened.artifact.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
+      await pipeline(stream, res);
+    } catch (error) {
+      if (opened && !stream) closeSync(opened.fd);
+      if (res.headersSent) res.destroy(error);
+      else res.status(error.status || 500).json({ error: error.message, code: 'ARTIFACT_UNAVAILABLE' });
+    }
+  });
+
+  app.get('/api/session/document', async (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
+    let opened, stream;
+    try {
+      opened = artifactCache.openDocument(located.path, String(req.query.id || ''));
+      res.writeHead(200, documentHeaders(opened));
+      if (req.method === 'HEAD' || !opened.stat.size) { closeSync(opened.fd); opened = null; res.end(); return; }
+      stream = createReadStream(opened.document.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
+      await pipeline(stream, res);
+    } catch (error) {
+      if (opened && !stream) closeSync(opened.fd);
+      if (res.headersSent) res.destroy(error);
+      else res.status(error.status || 500).json({ error: error.message, code: 'DOCUMENT_UNAVAILABLE' });
+    }
+  });
+
   app.get('/api/transcript', (req, res) => {
     const located = locateTranscript(req);
     if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
@@ -502,7 +565,7 @@ export function createExplorerApp() {
       return res.status(404).json({ error: 'transcript not found or empty', code: 'TRANSCRIPT_EMPTY' });
     }
 
-    const { provider, messages } = normalizeTranscriptEntries(entries);
+    const { provider, identity, messages, evidence } = normalizeTranscriptEntries(entries);
     if (messages.length === 0) {
       return res.status(422).json({ error: 'transcript contains no readable conversation messages', code: 'TRANSCRIPT_NO_MESSAGES' });
     }
@@ -514,7 +577,9 @@ export function createExplorerApp() {
       // the same thing as a transcript that is simply gone.
       path_status: located.path === located.recorded ? 'recorded' : 'resolved',
       provider,
+      identity,
       messages,
+      evidence,
       total: messages.length,
     });
   });
@@ -685,6 +750,7 @@ export function createExplorerApp() {
     for (const res of sseClients) res.end();
     sseClients.clear();
     transcriptEnricher.close();
+    artifactCache.clear();
   }
 
   return { app, close };

@@ -8,6 +8,11 @@ const path = require('node:path');
 const net = require('node:net');
 const { spawn, execFileSync } = require('node:child_process');
 const assert = require('node:assert/strict');
+const {captureCopy,writeCopyReport}=require('./helpers/repeated-copy.cjs');
+const copyReports=[];
+const interactionAudit=process.argv.includes('--interaction-audit');
+const interactionFindings=[];
+async function auditCopy(page,name){copyReports.push(await captureCopy(page,name));writeCopyReport(path.join(os.tmpdir(),'carto-memory-browser-artifacts/repeated-copy.json'),copyReports);}
 const root = path.resolve(__dirname, '../..');
 const preview = process.argv.includes('--preview');
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -84,7 +89,8 @@ async function port() {
     explorerTurn('user', 'explorer-user-1', 300, { message: { role: 'user', content: explorerPrompt } }),
     explorerReply('explorer-assistant-1', 240, 'explorer-response-1', { input_tokens: 240, cache_read_input_tokens: 40, output_tokens: 32 }, [{ type: 'text', text: explorerAnswer }]),
     explorerTurn('user', 'explorer-command-1', 230, { message: { role: 'user', content: '<command-name>/calibrate</command-name>' } }),
-    explorerReply('explorer-assistant-2', 220, 'explorer-response-2', { input_tokens: 300, cache_read_input_tokens: 900, output_tokens: 40 }, [{ type: 'text', text: explorerNotes }, { type: 'tool_use', id: 'toolu-fixture-1', name: 'Read', input: { file_path: 'calibration.md' } }]),
+    explorerReply('explorer-assistant-2', 220, 'explorer-response-2', { input_tokens: 300, cache_read_input_tokens: 900, output_tokens: 40 }, [{ type: 'text', text: explorerNotes }, { type: 'tool_use', id: 'toolu-fixture-1', name: 'Read', input: { file_path: 'calibration.md' } }, { type: 'tool_use', id: 'toolu-fixture-error', name: 'Bash', input: { command: 'calibrate --error E2' } }, { type: 'tool_use', id: 'toolu-fixture-pending', name: 'Glob', input: { pattern: '*.md' } }]),
+    explorerTurn('user', 'explorer-tool-results', 210, { message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu-fixture-1', content: 'Recorded file contents: <script>window.toolInjected = true</script> ' + 'retained output '.repeat(100) }, { type: 'tool_result', tool_use_id: 'toolu-fixture-error', is_error: true, content: 'E2 calibration failed: sensor disconnected' }] } }),
     explorerTurn('user', 'explorer-compact-1', 200, { isCompactSummary: true, message: { role: 'user', content: 'This session is being continued from a previous conversation that ran out of context.' } }),
     explorerReply('explorer-assistant-3', 180, 'explorer-response-3', { input_tokens: 150, cache_read_input_tokens: 150, output_tokens: 20 }, [{ type: 'text', text: 'Calibration resumed from the summary.' }]),
     explorerReply('explorer-agent-1', 170, 'explorer-agent-response-1', null, [{ type: 'text', text: 'The subagent checked the calibration table.' }], { isSidechain: true, agentId: 'fixture-agent' }),
@@ -313,7 +319,7 @@ async function port() {
       await targetPage.locator(selected).waitFor();
       const { measured, failures } = await textContrast(targetPage, '.fw-result-list');
       const onSelected = measured.filter(entry => entry.ground === '#153640');
-      assert.ok(onSelected.length >= 3, `${name}: the probe must measure the selected row's text on #153640 (measured ${onSelected.length} of ${measured.length})`);
+      for (const ink of ['#edf0f5','#d4dae3']) assert.ok(onSelected.some(entry=>entry.color===ink), `${name}: measure both title and metadata on #153640; missing ${ink} (${JSON.stringify(onSelected)})`);
       assert.deepEqual(failures, [], `${name}: result text under 8:1`);
     }
     // The inspector's hand-off row (Open in Codex, Read conversation, Copy
@@ -396,7 +402,8 @@ async function port() {
         assert.ok(listed.events.some(event => event.event_id === 'explorer-event-0'));
         const filtered = await apiJSON(`/api/events?project=${explorerProject}`);
         // Three Claude events plus the two Codex ones in the same project.
-        assert.equal(filtered.events.length, 5);
+        assert.equal(filtered.events.length, phase === 'warm' ? 6 : 5);
+        assert.equal(filtered.events.some(event=>event.event_id==='scoped-live-relevant'),phase==='warm');
         assert.ok(filtered.events.every(event => event.project === explorerProject));
         const projectList = await apiJSON('/api/projects');
         assert.ok(projectList.projects.includes(explorerProject));
@@ -407,7 +414,7 @@ async function port() {
         assert.ok(search.meta.keyword_count > 0);
         const browse = await apiJSON(`/api/search?project=${explorerProject}`);
         // Three Claude events plus the two Codex ones in the same project.
-        assert.equal(browse.results.length, 5);
+        assert.equal(browse.results.length, phase === 'warm' ? 6 : 5);
         assert.ok(browse.results.every(event => event.project === explorerProject));
         assert.deepEqual((await apiJSON('/api/search?q=aurora&project=missing-project')).results, []);
         assert.ok((await apiJSON('/api/autocomplete?prefix=auro')).suggestions.includes('aurora'));
@@ -426,7 +433,15 @@ async function port() {
         assert.deepEqual(agentFacets.map(f => f.name).sort(), ['claude', 'codex'], 'Search facets omitted the agent dimension');
         const transcriptQuery = `?path=${encodeURIComponent(explorerTranscript)}`;
         const recorded = await apiJSON('/api/transcript' + transcriptQuery);
-        assert.equal(recorded.total, 8);
+        const identityResponse = await legacy.request.get(origin + `/api/memory/session?session=${explorerSession}&hours=2160`);
+        const identityData = identityResponse.ok() ? await identityResponse.json() : null;
+        const canonicalTitle = identityData?.sessions?.find(item => item.id === explorerSession)?.title || recorded.identity.title;
+        assert.equal(recorded.total, 9);
+        assert.equal(recorded.identity.sessionId, explorerSession);
+        assert.equal(recorded.evidence.calls.length, 3);
+        assert.equal(recorded.evidence.errors.length, 1);
+        assert.equal(recorded.evidence.files[0].path, 'calibration.md');
+        assert.equal(recorded.evidence.calls.find(call => call.callId === 'toolu-fixture-pending').status, 'missing-result');
         assert.deepEqual(recorded.messages.slice(0, 2).map(message => message.content), [explorerPrompt, explorerAnswer]);
         assert.deepEqual(recorded.messages.filter(message => message.noise).map(message => message.noise), ['slash-command', 'compaction-summary']);
         const analysis = await apiJSON('/api/transcript/analysis' + transcriptQuery);
@@ -442,6 +457,7 @@ async function port() {
         await legacy.getByRole('button', { name: 'Event Feed', exact: true }).click();
         await legacy.getByRole('region', { name: 'Activity timeline' }).getByText(explorerSummaries[0], { exact: true }).waitFor();
         await classic('.timeline-focus-list', 'event feed', { grounds: ['#0a0a0f'] });
+        await auditCopy(legacy,`timeline-events-${phase}`);
         // The find field is empty here, so it paints its placeholder, which
         // no rule coloured: it fell to Tailwind's preflight gray-400.
         const timelineFind = await classic('.focus-timeline-workspace .fw-find input', 'timeline find placeholder', { grounds: ['#11151e'] });
@@ -465,10 +481,41 @@ async function port() {
         await legacy.getByTitle(`Filter by ${explorerProject}`, { exact: true }).first().click();
         await legacy.getByRole('region', { name: 'Activity timeline' }).getByText(explorerSummaries[0], { exact: true }).waitFor();
         await legacy.getByText(controlSummary, { exact: true }).waitFor({ state: 'hidden' });
+        if (phase === 'cold') {
+          await legacy.getByRole('button',{name:'Edit time range',exact:true}).click();
+          const pauseRefresh=legacy.waitForResponse(response=>new URL(response.url()).pathname==='/api/activity-scope' && response.status()===200);
+          await legacy.getByRole('button',{name:'Pause following',exact:true}).click();
+          await pauseRefresh;
+          assert.equal(new URL(legacy.url()).searchParams.get('mode') || 'fixed','fixed');
+          const beforeURL=legacy.url();
+          const params=new URL(beforeURL).searchParams;
+          const inTime=new Date((Date.parse(params.get('from'))+Date.parse(params.get('through')))/2).toISOString();
+          const refresh=legacy.waitForResponse(response=>new URL(response.url()).pathname==='/api/activity-scope' && response.status()===200,{timeout:8000});
+          fs.appendFileSync(log,[
+            {event_id:'scoped-live-relevant',session_id:'scoped-live-session',provider:'claude',project:explorerProject,timestamp:inTime,type:'research_search',summary:'New scoped research'},
+            {event_id:'scoped-live-unrelated',session_id:'unrelated-live',project:'unrelated-live',timestamp:inTime,type:'research_search',summary:'Unrelated scoped research'},
+          ].map(JSON.stringify).join('\n')+'\n');
+          await refresh;
+          await legacy.getByRole('button',{name:'1 new record · refresh order',exact:true}).waitFor({timeout:8000});
+          assert.equal(legacy.url(),beforeURL,'SSE must preserve the fixed interval and filter');
+          assert.equal(await legacy.getByText('Unrelated scoped research',{exact:true}).count(),0);
+          const toggle=legacy.locator('.focus-timeline-workspace .fw-find input');
+          await toggle.focus();
+          const fresh=legacy.waitForResponse(response=>new URL(response.url()).pathname==='/api/activity-scope' && response.status()===200,{timeout:8000});
+          fs.appendFileSync(log,JSON.stringify({event_id:'scoped-live-unrelated-2',session_id:'unrelated-live',project:'unrelated-live',timestamp:inTime,type:'research_search',summary:'Another unrelated record'})+'\n');
+          await fresh;
+          assert.equal(await toggle.evaluate(el=>el===document.activeElement),true,'Refresh must retain keyboard focus');
+          assert.equal(await legacy.locator('.timeline-focus-new').innerText(),'1 new record · refresh order');
+          await legacy.locator('.timeline-focus-new').click();
+          assert.equal(await legacy.locator('.timeline-focus-new').count(),0);
+          interactionFindings.push({id:'IA-08',probe:'Scoped SSE refresh',observed:'Only the matching record counted; fixed route and keyboard focus retained',expected:'Scope-aware refresh without context loss'});
+        }
+
         await legacy.getByRole('button', { name: 'Sessions', exact: true }).click();
         const explorerCard = legacy.getByTitle(explorerSession, { exact: true }).locator('xpath=ancestor::div[contains(@class,"border")][1]');
         await explorerCard.waitFor();
         await classic('.timeline-session-result', 'session cards', { grounds: ['#0d1019'] });
+        await auditCopy(legacy,`timeline-sessions-${phase}`);
         // Select the fixture by session identity; newly streamed sessions can
         // legitimately sort ahead of it without changing transcript ownership.
         await explorerCard.getByRole('button', { name: '▼ View Session Events', exact: true }).click();
@@ -488,12 +535,20 @@ async function port() {
         await legacy.unroute(holdTranscript);
         const transcriptSearch = legacy.getByPlaceholder('Search in transcript...');
         await transcriptSearch.waitFor();
+        await legacy.getByRole('button',{name:'Conversation',exact:true}).click();
+        const readerInspector=legacy.locator('#transcript-toolbar').getByRole('button',{name:'Evidence',exact:true});
+        if(await readerInspector.getAttribute('aria-pressed')!=='true')await readerInspector.click();
+        for (const name of ['Previous match', 'Next match']) { const box = await legacy.getByRole('button', { name, exact: true }).boundingBox(); assert.ok(box.width >= 44 && box.height >= 44, `${name} must remain a touch target`); }
         await legacy.getByText(explorerAnswer, { exact: true }).waitFor();
         assert.ok(new URL(legacy.url()).pathname.startsWith('/session/'));
         // The summary card and the sidebar wait on the analysis.
+        await legacy.getByRole('heading', { name: canonicalTitle, exact: true, level: 1 }).waitFor();
+        await legacy.locator('.tr-analysis > summary').click();
         const attribution = legacy.locator('#transcript-attribution');
         await attribution.getByText('Token attribution', { exact: true }).waitFor();
         await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-transcript.png`) });
+        await auditCopy(legacy,`transcript-${phase}`);
+        await transcriptSearch.fill('');
         // The empty search field shows its placeholder, read from the field's
         // ::placeholder style and measured on the field's own fill.
         const transcriptField = await classic('#transcript-toolbar input[type="text"]', 'transcript search placeholder', { grounds: ['#111827'] });
@@ -511,7 +566,7 @@ async function port() {
           [/^user$/, '#12161f'], [/^\d+m ago$/, '#12161f'], [/^fixture-model$/, '#0a0a0f'], [/^\d+m ago$/, '#0a0a0f'],
           [/^fixture-agent$/, '#0a0a0f'], [/^\/calibrate$/, '#0a0a0f'], [/^session continuation summary$/, '#0a0a0f'],
           [/^measured$/, '#0a0a0f'], [/^·$/, '#0a0a0f'], [/^1\.$/, '#0a0a0f'], [/^calibrate --sweep$/, '#1f2937'],
-          [/^\.\.\.$/, '#0a0a0f'], [/^expand \(\d+ chars\)$/, '#0a0a0f'],
+          [/^\.\.\.$/, '#0a0a0f'], [/^▾$/, '#0a0a0f'],
           [/^turns$/, '#0e121d'], [/^compactions$/, '#0e121d'], [/^cache$/, '#0e121d'], [/^\d+%$/, '#0e121d'],
           [/^⚡ compaction$/, '#030712'], [/^1k/, '#030712'], [/^→$/, '#030712'], [/^−75%$/, '#030712'],
           [/^▸$/, '#030712'], [/^Token attribution$/, '#030712'], [/^Thinking \/ text$/, '#030712'], [/^\d+%$/, '#030712'],
@@ -520,10 +575,10 @@ async function port() {
         // expanded message relabels its button `collapse`.
         await legacy.locator('#transcript-toolbar').getByRole('checkbox', { name: 'system', exact: true }).check();
         await legacy.locator('#explorer-progress-1').waitFor();
-        await legacy.locator('#explorer-assistant-2').getByRole('button', { name: /^expand/ }).click();
+        await legacy.locator('#explorer-assistant-2').getByRole('button', { name: 'Show more', exact: true }).click();
         const shown = await classic('#explorer-progress-1, #explorer-assistant-2', 'transcript system row and expanded message', { grounds: ['#0a0a0f'] });
-        reached(shown, 'transcript system row and expanded message', [[/^system$/, '#0a0a0f'], [/^collapse$/, '#0a0a0f']]);
-        await legacy.locator('#explorer-assistant-2').getByRole('button', { name: 'collapse', exact: true }).click();
+        reached(shown, 'transcript system row and expanded message', [[/^system$/, '#0a0a0f'], [/^▴$/, '#0a0a0f']]);
+        await legacy.locator('#explorer-assistant-2').getByRole('button', { name: 'Show less', exact: true }).click();
         await legacy.locator('#transcript-toolbar').getByRole('checkbox', { name: 'system', exact: true }).uncheck();
         // A selected category is painted gray-800 and offers `clear filter`;
         // collapsed, the sidebar shows only its expand glyph.
@@ -549,15 +604,65 @@ async function port() {
         const matched = await classic('#transcript-viewer', 'transcript matches', { grounds: ['#15120f'] });
         assert.ok(matched.some(entry => entry.element.startsWith('bg-yellow-500/30') && /^aurora$/i.test(entry.text)), `${phase}: the probe measured no marked match`);
         await transcriptSearch.fill('');
+        // The new evidence path preserves chronology, paired results, deep
+        // links, literal output and short-query keyboard navigation.
+        const failed = recorded.evidence.errors[0];
+        await legacy.getByRole('region', { name: 'Conversation evidence' }).getByRole('button').filter({ hasText: 'sensor disconnected' }).click();
+        const failedBlock = legacy.locator(`[id="${failed.blockId}"]`);
+        await failedBlock.locator('pre').getByText(/sensor disconnected/).waitFor();
+        assert.equal(await failedBlock.locator('summary .tr-tool-preview').isVisible(),false,'Opening evidence replaces the collapsed preview');
+        assert.match(await failedBlock.locator(':scope > summary').innerText(), /Recorded error/);
+        assert.equal(await failedBlock.locator('summary').getByText('Result recorded', {exact:true}).count(), 0);
+
+        await failedBlock.locator('pre').waitFor();
+        assert.equal(await failedBlock.getAttribute('open'), '');
+        await failedBlock.locator('summary').click();
+        await legacy.getByRole('region', { name: 'Conversation evidence' }).getByRole('button').filter({ hasText: 'sensor disconnected' }).click();
+        await failedBlock.locator('pre').waitFor();
+        assert.equal(await legacy.evaluate(() => window.toolInjected), undefined);
+        const call = recorded.evidence.calls.find(item => item.callId === failed.callId);
+        const operation = legacy.locator(`[id="${call.blockId}"]`);
+        assert.equal(await operation.locator(`[id="${failed.blockId}"]`).count(), 1, 'The response belongs inside its request');
+        assert.match(await operation.innerText(), /calibrate --error E2/);
+        assert.match(await operation.innerText(), /sensor disconnected/);
+        await failedBlock.getByRole('button', { name: /^Locate error/ }).click();
+        assert.equal(new URL(legacy.url()).searchParams.get('block'), failed.blockId);
+        await transcriptSearch.fill('E2');
+        await legacy.locator('#transcript-toolbar').getByText('2 matches', { exact: true }).waitFor();
+        await transcriptSearch.press('Enter');
+        assert.equal(new URL(legacy.url()).searchParams.get('block'), failed.blockId);
+        await transcriptSearch.press('Shift+Enter');
+        assert.equal(new URL(legacy.url()).searchParams.get('block'), call.blockId);
+        assert.equal(await transcriptSearch.evaluate(element => element === document.activeElement), true);
+        await legacy.reload();
+        await legacy.locator(`[id="${call.blockId}"][open]`).waitFor();
+        await legacy.getByRole('heading', { name: canonicalTitle, exact: true, level: 1 }).waitFor();
+        assert.ok(new URL(legacy.url()).searchParams.get('return'), 'Reader lost the source scope');
+        await legacy.setViewportSize({ width: 581, height: 739 });
+        const evidenceToggle = legacy.locator('#transcript-toolbar').getByRole('button', { name: 'Evidence', exact: true });
+        if (await evidenceToggle.getAttribute('aria-pressed') !== 'true') await evidenceToggle.click();
+        await legacy.getByRole('complementary', { name: 'Evidence inspector' }).waitFor();
+        await legacy.getByRole('button', { name: 'Back to conversation', exact: true }).click();
+        assert.ok(await legacy.locator('.tr-messages').isVisible());
+        assert.ok(await legacy.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+        await legacy.screenshot({ path: path.join(artifacts, `carto-transcript-${phase}-581.png`) });
+        await legacy.setViewportSize({ width: 390, height: 844 });
+        assert.ok(await legacy.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+        await legacy.screenshot({ path: path.join(artifacts, `carto-transcript-${phase}-390.png`) });
+        await legacy.setViewportSize({ width: 1200, height: 880 });
+        await legacy.locator('#transcript-toolbar').getByRole('button', { name: 'back', exact: true }).click();
+        assert.ok(!new URL(legacy.url()).pathname.startsWith('/session/'));
 
         await legacy.goto(origin + '/?view=concurrent');
         await legacy.getByText(/\d+ tasks · \d+ records in focus · \d+ context tasks/).waitFor();
         const lane = legacy.locator(`a.concurrent-session[title*="${explorerProject}"]`).first();
         await lane.waitFor();
         await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-sessions.png`) });
+        await auditCopy(legacy,`timeline-concurrent-${phase}`);
         await lane.focus();
         await legacy.keyboard.press('Enter');
         await legacy.getByRole('link', { name: 'Read conversation ↗', exact: true }).click();
+        await legacy.getByRole('button',{name:'Conversation',exact:true}).click();
         await legacy.getByText(explorerAnswer, { exact: true }).waitFor();
 
         await legacy.goto(origin + `/?q=aurora&project=${explorerProject}`);
@@ -613,8 +718,8 @@ async function port() {
         // surface an AgentBadge renders on. Step through every result so each
         // agent in the fixture is measured there, and hold the whole card to
         // the floor, not only its badge.
-        const activeCard = 'main > div:not(.hidden) .result-list > [data-event-id] > .ring-1';
-        const resultCount = await legacy.locator('main > div:not(.hidden) .result-list > [data-event-id]').count();
+        const activeCard = 'main > div:not(.hidden) .result-list [data-event-id] > .ring-1';
+        const resultCount = await legacy.locator('main > div:not(.hidden) .result-list [data-event-id]').count();
         assert.ok(resultCount >= 2, `${phase}: the active-result check needs several results (got ${resultCount})`);
         const activeAgents = new Set();
         let activeId = null;
@@ -634,6 +739,7 @@ async function port() {
         }
         assert.deepEqual([...activeAgents].sort(), ['claude', 'codex'], `${phase}: the active-result check must measure both agents in the fixture`);
         await legacy.screenshot({ path: path.join(artifacts, `carto-explorer-${phase}-search.png`) });
+        await auditCopy(legacy,`search-results-${phase}`);
         // A selected facet pill is painted in its own hue; measure its text on
         // that fill. Then open a commit card's detail, which carries the hash.
         const facetBar = 'main > div:not(.hidden) .facet-bar';
@@ -642,19 +748,19 @@ async function port() {
         const facets = await classic(facetBar, 'facet bar', { grounds: ['#0a0a0f'] });
         assert.ok(facets.some(entry => entry.text.startsWith(explorerProject) && entry.ground !== '#0a0a0f'), `${phase}: the selected facet pill was not measured on its own fill`);
         assert.ok(facets.some(entry => entry.text === 'clear'), `${phase}: the facet probe measured no clear control`);
-        const commitCard = legacy.locator('main > div:not(.hidden) .result-list > [data-event-id="explorer-event-0"]');
-        await commitCard.getByRole('button', { name: 'more', exact: true }).click();
+        const commitCard = legacy.locator('main > div:not(.hidden) .result-list [data-event-id="explorer-event-0"]');
+        await commitCard.getByRole('button', { name: /^Metadata/ }).click();
         await commitCard.getByText('a1b2c3d', { exact: true }).waitFor();
         const detail = await classic('main > div:not(.hidden) .result-list', 'card detail', { grounds: ['#0a0a0f'] });
         assert.ok(detail.some(entry => entry.text === 'a1b2c3d'), `${phase}: the detail probe measured no commit hash`);
         // Corpus urls reach href only through the allowlist: the commit's
         // https url is a link, and a javascript: url is text with no anchor.
         assert.equal(await commitCard.getByRole('link', { name: 'view on GitHub' }).getAttribute('href'), 'https://github.com/example/fixture/commit/a1b2c3d4e5f60718', `${phase}: the commit's https url did not link`);
-        const refusedCard = legacy.locator('main > div:not(.hidden) .result-list > [data-event-id="explorer-event-1"]');
-        await refusedCard.getByRole('button', { name: 'more', exact: true }).click();
+        const refusedCard = legacy.locator('main > div:not(.hidden) .result-list [data-event-id="explorer-event-1"]');
+        await refusedCard.getByRole('button', { name: /^Metadata/ }).click();
         await refusedCard.getByText('url: javascript:window.cardLinkExecuted=true', { exact: true }).waitFor();
         assert.equal(await refusedCard.locator('a[href^="javascript:" i]').count(), 0, `${phase}: a refused url was rendered as a link`);
-        // Repeated summaries collapse under "+N similar", and a long result set
+        // Equal full-text occurrences have a working disclosure, and a long result set
         // ends in "show more": session-0's 38 identical "Modified: field.js"
         // rows produce both. ("working" is in over half the corpus, so BM25
         // scores it zero and returns nothing.)
@@ -662,10 +768,11 @@ async function port() {
         await legacy.goto(origin + '/?q=modified');
         await searchView.getByRole('button', { name: /^show more/ }).waitFor();
         const repeated = await classic('main > div:not(.hidden)', 'repeated results', { grounds: ['#0a0a0f'] });
-        assert.ok(repeated.some(entry => /^\+\d+ similar/.test(entry.text)), `${phase}: the probe measured no duplicate toggle`);
+        assert.ok(repeated.some(entry => /^Show \d+ other occurrence/.test(entry.text)), `${phase}: the probe measured no duplicate toggle`);
         assert.ok(repeated.some(entry => entry.text.startsWith('show more')), `${phase}: the probe measured no load-more button`);
         await legacy.goto(origin + '/?q=zzqxunmatched');
         await searchView.getByText('No results found.', { exact: true }).waitFor();
+        await auditCopy(legacy,`search-empty-${phase}`);
         await classic('main > div:not(.hidden)', 'empty search', { grounds: ['#0a0a0f'] });
         // Hold one search in flight to measure its loading line.
         let releaseSearch;
@@ -703,6 +810,7 @@ async function port() {
     assert.equal(fs.existsSync(path.join(work, 'turbo')), false, 'Internals started Turbo');
     await verifyExplorer('cold');
     await page.screenshot({ path: path.join(artifacts, 'carto-memory-entry.png') });
+    await auditCopy(page,'memory-entry');
     await page.route('**/api/turbo/start', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Test startup failure. Try again.' }) }), { times: 1 });
     await page.getByRole('button', { name: 'Enable Turbo', exact: true }).click();
     await page.getByRole('alert').getByText('Test startup failure. Try again.').waitFor();
@@ -717,7 +825,34 @@ async function port() {
     await coldLink.close();
     assert.equal(JSON.parse(fs.readFileSync(config, 'utf8')).turbo.enabled, true);
     await verifyExplorer('warm');
+    const readerFile = await browser.newPage({ viewport: { width: 1200, height: 880 }, reducedMotion: 'reduce' });
+    readerFile.on('pageerror', error => errors.push(`reader file review: ${error.message}`));
+    const readerReturn = '/memory?q=Turbo&session=session-0';
+    await readerFile.goto(origin + `/session/${encodeURIComponent(transcript)}?return=${encodeURIComponent(readerReturn)}`);
+    await readerFile.getByRole('heading', { level: 1, name: 'Turbo facts', exact: true }).waitFor();
+    await readerFile.getByLabel('Session summary',{exact:true}).waitFor();
+    await auditCopy(readerFile,'session-summary');
+    await readerFile.locator('#transcript-toolbar').getByRole('button',{name:'Evidence',exact:true}).click();
+    await readerFile.locator('.fw-inspector [data-file-path]').first().click();
+    await readerFile.getByRole('region', { name: 'File review' }).waitFor();
+    assert.equal(await readerFile.evaluate(() => document.activeElement?.textContent), 'field.js');
+    await readerFile.keyboard.press('Escape');
+    assert.equal(await readerFile.evaluate(() => document.activeElement?.getAttribute('data-file-path')), target);
+    await readerFile.keyboard.press('Escape');
+    assert.equal(await readerFile.evaluate(() => document.activeElement?.textContent), 'Evidence');
+    await readerFile.locator('#transcript-toolbar').getByRole('button', { name: 'Evidence', exact: true }).click();
+    await readerFile.locator('.fw-inspector [data-file-path]').first().click();
+    await readerFile.reload();
+    await readerFile.getByRole('region', { name: 'File review' }).waitFor();
+    assert.equal(new URL(readerFile.url()).searchParams.get('file'), target);
+    await readerFile.locator('#transcript-toolbar').getByRole('button', { name: 'back', exact: true }).click();
+    await readerFile.waitForURL(url => url.pathname === '/memory');
+    assert.equal(new URL(readerFile.url()).searchParams.get('q'), 'Turbo');
+    await readerFile.getByRole('button', { name: 'search', exact: true }).click();
+    assert.ok((await readerFile.getByRole('button', { name: 'search', exact: true }).getAttribute('class')).includes('bg-gray-700'));
+    await readerFile.close();
     await page.screenshot({ path: path.join(artifacts, 'carto-memory-live.png') });
+    await auditCopy(page,'memory-working');
     // The focus workspace preserves an explicit return point and exposes the
     // same recorded evidence through task and file result modes.
     const deskPage = await browser.newPage({ viewport: { width: 1280, height: 920 }, reducedMotion: 'reduce' });
@@ -833,6 +968,7 @@ async function port() {
       await assertReadoutClear(id, `${half}-half point`);
     }
     await deskPage.locator('.mw-stage[data-panel=field]').screenshot({ path: path.join(artifacts, 'carto-memory-field-readout.png') });
+    await auditCopy(deskPage,'memory-field');
     await deskPage.getByRole('button', { name: 'Tasks', exact: true }).click();
 
     fs.appendFileSync(log, JSON.stringify({ event_id: 'after-return', session_id: docSession, session_title: 'Review the handoff', provider: 'codex', project: 'writing', timestamp: now + 1000, type: 'git_commit', summary: 'Commit abcdef1: clarify the return briefing', cwd: corpus }) + '\n');
@@ -850,6 +986,31 @@ async function port() {
     await timelineInspector.getByRole('button', { name: 'Timeline ↗', exact: true }).click();
     await timelineInspector.getByRole('button', { name: 'Review in Memory ↗', exact: true }).waitFor();
     await assertHandoffTargets(timelineInspector, 'Timeline inspector');
+    const outcomeList=timelineInspector.getByRole('region',{name:'Recorded outcomes',exact:true});
+    await outcomeList.locator('.ms-outcome-baseline').waitFor();
+    const outcomeTime=outcomeList.locator('.ms-outcome-time').first();
+    assert.equal(await outcomeTime.locator('time').getAttribute('datetime'),new Date(now+1000).toISOString());
+    assert.equal(await outcomeTime.locator('time').textContent(),'0m');
+    assert.equal(await outcomeList.locator('.ms-outcome-exact:visible').count(),0);
+    await outcomeTime.focus();
+    await outcomeList.locator('.ms-outcome-exact:visible').waitFor();
+    assert.ok((await outcomeTime.getAttribute('aria-label')).includes('from baseline'));
+    await outcomeList.screenshot({path:path.join(artifacts,'carto-outcome-baseline.png')});
+    await timelineInspector.setViewportSize({width:390,height:900});
+    await outcomeTime.scrollIntoViewIfNeeded();
+    assert.ok(await timelineInspector.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+    await outcomeList.screenshot({path:path.join(artifacts,'carto-outcome-baseline-390.png')});
+    {
+      const type=await outcomeTime.evaluate(el=>({size:parseFloat(getComputedStyle(el).fontSize),weight:Number(getComputedStyle(el).fontWeight)}));assert.ok(type.size>=16 && type.weight>=500);
+      interactionFindings.push({id:'IA-05',probe:'Outcome offset type size',observed:await outcomeTime.evaluate(el=>({fontSize:getComputedStyle(el).fontSize,fontWeight:getComputedStyle(el).fontWeight})),expected:'At least 16px / weight 500'});
+      await timelineInspector.keyboard.press('Escape');
+      assert.equal(await outcomeList.locator('.ms-outcome-exact:visible').count(),0);
+      assert.equal(await timelineInspector.getByRole('complementary',{name:'Evidence inspector'}).count(),1);
+      assert.equal(await outcomeTime.evaluate(el=>el===document.activeElement),true);
+      interactionFindings.push({id:'IA-06',probe:'Escape while exact-time tooltip has focus',observed:'Inspector retained',expected:'Dismiss transient detail first; retain inspection context'});
+      await timelineInspector.keyboard.press('Escape');
+      await timelineInspector.getByRole('complementary',{name:'Evidence inspector'}).waitFor({state:'hidden'});
+    }
     await timelineInspector.close();
     await assertResultRowContrast(deskPage, '.fw-task-row[data-selected]', 'selected task row');
     await deskPage.getByRole('button', { name: 'Back to results' }).click();
@@ -857,9 +1018,65 @@ async function port() {
     // Markdown remains inert while the source and actual session-bounded diff
     // stay inspectable from the file result.
     await deskPage.getByRole('button', { name: 'Files', exact: true }).click();
+    const fileContext=deskPage.locator('.fw-results > .path-context');
+    await fileContext.waitFor();
+    assert.equal(await fileContext.count(),1);
+    assert.equal(await fileContext.locator('code').textContent(),corpus+'/');
+    assert.equal(await fileContext.locator('code').isVisible(),false);
+    assert.ok(!(await deskPage.locator('.fw-result-list').innerText()).includes(corpus),'Rows must not repeat the shared directory');
+    await fileContext.locator('summary').focus();
+    await deskPage.keyboard.press('Enter');
+    await fileContext.locator('code:visible').waitFor();
+    await deskPage.keyboard.press('Enter');
+    assert.equal(await fileContext.locator('code').isVisible(),false);
+    const fileLink=deskPage.locator('.fw-file-row .fw-result-open').filter({hasText:'handoff.md'});
+    const fileHref=await fileLink.getAttribute('href');
+    assert.equal(new URL(fileHref,deskPage.url()).searchParams.get('file'),document);
+    // Freeze this navigation assertion so the authorized rolling clock cannot advance it.
+    await deskPage.getByRole('button',{name:'Edit time range',exact:true}).click();
+    await deskPage.getByRole('button',{name:'Pause following',exact:true}).click();
+    const originalURL=deskPage.url();
+    const [linkedFile]=await Promise.all([deskPage.context().waitForEvent('page'),fileLink.click({modifiers:['ControlOrMeta']})]);
+    await linkedFile.getByRole('heading',{name:'Return briefing',exact:true}).waitFor();
+    assert.equal(deskPage.url(),originalURL,'Modified click must leave the source review intact');
+    await linkedFile.close();
     await deskPage.getByText('handoff.md', { exact: true }).click();
     await deskPage.getByRole('region', { name: 'File review' }).waitFor();
+    const fileLocation=deskPage.getByRole('region',{name:'File review'}).locator('.path-context');
+    assert.equal(await fileLocation.locator('code').textContent(),document);
+    assert.equal(await fileLocation.locator('code').isVisible(),false);
+    await fileLocation.locator('summary').click();
+    await fileLocation.locator('code:visible').waitFor();
+    await fileLocation.locator('summary').click();
+    await deskPage.screenshot({path:path.join(artifacts,'carto-file-path-context.png')});
+    const fileHistory = deskPage.locator('.fw-file-history');
+    await fileHistory.locator(':scope > summary').click();
+    const historySource = fileHistory.locator('a.fw-file-history-row').first();
+    await historySource.waitFor();
+    assert.equal(new URL(await historySource.getAttribute('href'), origin).searchParams.get('q'), 'document-edit');
+    assert.ok(!(await fileHistory.innerText()).includes('document-edit'), 'Source IDs are destinations, not prose');
+    assert.ok(!(await fileHistory.innerText()).includes(corpus), 'File history does not repeat the known directory');
+    await fileHistory.locator(':scope > summary').click();
+
     await assertResultRowContrast(deskPage, '.fw-file-row[data-selected]', 'selected file row');
+    {
+      const failedFile=await browser.newPage({viewport:{width:1200,height:900}});
+      const fileAPI=/\/api\/memory\/file(?:\?|$)/;
+      await failedFile.route(fileAPI,route=>route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Audit fixture: file service unavailable'})}));
+      await failedFile.goto(deskPage.url());
+      const failedReview=failedFile.getByRole('region',{name:'File review'});
+      await failedReview.getByRole('alert').waitFor();
+      interactionFindings.push({id:'IA-03',probe:'File-read failure recovery',observed:{retryButtons:await failedReview.getByRole('button',{name:/retry/i}).count(),filePreserved:new URL(failedFile.url()).searchParams.get('file')===document},expected:'Local Retry preserving file and review mode'});
+      await failedReview.screenshot({path:path.join(artifacts,'audit-file-error.png')});
+      const failureURL=failedFile.url();
+      assert.equal(await failedReview.getByRole('button',{name:'Retry file',exact:true}).count(),1);
+      await failedFile.unroute(fileAPI);await failedReview.getByRole('button',{name:'Retry file',exact:true}).click();
+      await failedFile.getByRole('heading',{name:'Return briefing',exact:true}).waitFor();
+      assert.equal(failedFile.url(),failureURL);
+      assert.equal(await failedReview.locator("h2").evaluate(el=>el===document.activeElement),true,"Retry recovery returns focus to the file heading");
+      interactionFindings.push({id:'IA-03',probe:'Local retry recovery',observed:'Document restored with same file route',expected:'Available through local Retry'});
+      await failedFile.close();
+    }
     await deskPage.getByRole('button', { name: 'Preview', exact: true }).waitFor();
     await deskPage.getByRole('heading', { name: 'Return briefing', exact: true }).waitFor();
     await deskPage.getByRole('cell', { name: 'Ready', exact: true }).waitFor();
@@ -918,6 +1135,7 @@ async function port() {
     await deskPage.getByRole('button', { name: 'Current file', exact: true }).click();
     await deskPage.getByText('export const live = true;', { exact: false }).waitFor();
     await deskPage.screenshot({ path: path.join(artifacts, 'carto-memory-review.png') });
+    await auditCopy(deskPage,'memory-file-review');
     await deskPage.keyboard.press('Escape');
     await deskPage.keyboard.press('Escape');
 
@@ -1003,6 +1221,22 @@ async function port() {
     await recallCall.getByRole('button', { expanded: false }).click();
     await recallPage.waitForURL(url => url.searchParams.get('call') === 'recall-fixture-call');
     await recallCall.locator('.rc-result').nth(11).waitFor({ timeout: 15000 });
+    {
+      const failure = await browser.newPage();
+      const api = /\/api\/memory\/recall\/call\?/;
+      await failure.route(api, route => route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:'Fixture recall unavailable'})}));
+      await failure.goto(recallPage.url());
+      const panel = failure.getByRole('region',{name:`Results for ${recallQuery}`});
+      await panel.getByRole('button',{name:'Retry results'}).waitFor();
+      const before = failure.url();
+      await failure.unroute(api);
+      await panel.getByRole('button',{name:'Retry results'}).click();
+      await panel.locator('.rc-result').nth(11).waitFor();
+      assert.equal(failure.url(),before);
+      assert.equal(await panel.evaluate(el=>el===document.activeElement),true);
+      await failure.close();
+    }
+
     assert.equal(await recallCall.locator('.rc-result').count(), recallIds.length);
     const usedRow = recallCall.locator('.rc-result[data-used]');
     assert.equal(await usedRow.count(), 1);
@@ -1011,7 +1245,7 @@ async function port() {
     assert.equal(await recallView.getByText(/helpful/i).count(), 0, 'a use mark is not evidence of help');
     await recallCall.locator('.rc-result[data-event-id="evt-gone-404"]').getByText(/^Unresolved:/).waitFor();
     await recallCall.locator('.rc-result[data-event-id="turn-session-3-7"]').getByText(/^Transcript turn 7/).waitFor();
-    const episode = usedRow.getByRole('link', { name: 'Open episode ↗' });
+    const episode = usedRow.locator('a.rc-result-destination');
     const episodeUrl = new URL(await episode.getAttribute('href'), origin);
     assert.equal(episodeUrl.searchParams.get('session'), 'session-5');
     assert.ok(episodeUrl.searchParams.get('from') && episodeUrl.searchParams.get('through'), 'episode link carries no fixed window');
@@ -1030,13 +1264,14 @@ async function port() {
     const selectedRecallRows = await recallPage.locator('.rc-call, .rc-result').evaluateAll(rows => rows.filter(row => getComputedStyle(row).backgroundColor.replace(/\s/g, '') === 'rgb(21,54,64)').length);
     assert.equal(selectedRecallRows, 0);
     await recallPage.screenshot({ path: path.join(artifacts, 'carto-memory-recall.png'), fullPage: true });
+    await auditCopy(recallPage,'memory-recall');
     await usedRow.screenshot({ path: path.join(artifacts, 'carto-memory-recall-marker.png') });
     await recallCall.locator('.rc-result[data-event-id="evt-gone-404"]').screenshot({ path: path.join(artifacts, 'carto-memory-recall-unresolved.png') });
     await unattributedGroup.screenshot({ path: path.join(artifacts, 'carto-memory-recall-unattributed.png') });
     // The expanded call is a link: reload restores it.
     await recallPage.reload();
     await recallView.locator('[data-call="recall-fixture-call"] .rc-result[data-used]').waitFor({ timeout: 15000 });
-    await recallView.locator('[data-call="recall-fixture-call"] .rc-result[data-used]').getByRole('link', { name: 'Open episode ↗' }).click();
+    await recallView.locator('[data-call="recall-fixture-call"] .rc-result[data-used] a.rc-result-destination').click();
     await recallPage.waitForURL(url => url.searchParams.get('session') === 'session-5' && !url.searchParams.has('mode'));
     await recallPage.getByRole('complementary', { name: 'Evidence inspector' }).getByRole('heading', { name: labels[5], exact: true }).waitFor();
     // The searching task's own detail lists the call, and says where
@@ -1047,11 +1282,15 @@ async function port() {
     assert.match(await taskRecall.locator('.rc-call-counts').innerText(), /12 results.*1 marked used · deepest rank 12/s);
     await taskRecall.screenshot({ path: path.join(artifacts, 'carto-memory-recall-task.png') });
     await recallPage.goto(origin + '/memory?session=session-5');
-    await recallPage.getByRole('complementary', { name: 'Evidence inspector' }).getByRole('region', { name: 'Recall' }).getByText(/Searches recorded without a session appear under Recall → Unattributed/).waitFor({ timeout: 15000 });
+    await recallPage.getByRole('complementary', { name: 'Evidence inspector' }).getByRole('heading', { name: labels[5], exact: true }).waitFor();
+    assert.equal(await recallPage.getByRole('complementary', { name: 'Evidence inspector' }).getByRole('region', { name: 'Recall' }).count(), 0, 'Optional empty recall adds no section');
     await recallPage.goto(origin + '/memory?surface=recall');
     await recallPage.setViewportSize({ width: 390, height: 844 });
     await recallView.getByText(recallQuery, { exact: true }).waitFor({ timeout: 15000 });
     assert.equal(await recallPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Recall view overflows on mobile');
+    const recallTop = await recallView.locator('.rc-call').first().boundingBox();
+    assert.ok(recallTop.y + 44 < 844, `First Recall action below fold: ${recallTop.y}`);
+    interactionFindings.push({id:'RG-mobile-recall',observed:{firstResultY:recallTop.y,viewportHeight:844}});
     await recallPage.screenshot({ path: path.join(artifacts, 'carto-memory-recall-390.png') });
     // In a fixed window the request URL never changes, so Refresh must still
     // re-read the logs. purpose=manual keeps Internals' remember count below.
@@ -1092,11 +1331,13 @@ async function port() {
     assert.equal(tiles.Sessions, cliDay.totals.sessions, 'Day view and command line disagree on sessions');
     assert.equal(tiles.Commits, cliDay.totals.commits_landed + cliDay.totals.commits_git_only, 'Day view and command line disagree on commits');
     assert.equal(await dayView.locator('.dd-project').count(), cliDay.projects.filter(p => p.commits.length || p.git_only_commits.length || p.investigations.length || p.investigation_outcomes.length || Object.keys(p.files).length || p.repo).length);
+    await dayPage.locator('.dd-activity > summary').click();
     const dayContrast = await textContrast(dayPage, '.fw-day', { fixed: '.agent-badge' });
     assert.ok(dayContrast.measured.some(entry => entry.element.includes('dd-tick')), 'the day probe measured no chart label');
     assert.ok(dayContrast.measured.some(entry => entry.element.includes('agent-badge')), 'the day probe measured no AgentBadge');
     assert.deepEqual(dayContrast.failures, [], 'day text under 8:1');
     await dayPage.screenshot({ path: path.join(artifacts, 'carto-memory-day.png'), fullPage: true });
+    await auditCopy(dayPage,'memory-day');
     // Yesterday moves the desk's window onto local midnight to local midnight.
     await dayView.getByRole('button', { name: 'Yesterday', exact: true }).click();
     await dayPage.waitForURL(url => url.searchParams.get('day') && url.searchParams.get('day') !== shownDay);
@@ -1109,6 +1350,9 @@ async function port() {
     await dayPage.goto(origin + '/memory?surface=day');
     await dayView.locator('.dd-stats').waitFor({ timeout: 30000 });
     assert.equal(await dayPage.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'Day view overflows on mobile');
+    const dayTop = await dayView.locator('.dd-project').first().boundingBox();
+    assert.ok(dayTop.y + 44 < 844, `First Day project below fold: ${dayTop.y}`);
+    interactionFindings.push({id:'RG-mobile-day',observed:{firstResultY:dayTop.y,viewportHeight:844}});
     await dayPage.screenshot({ path: path.join(artifacts, 'carto-memory-day-390.png') });
     await dayPage.close();
     // An installed backend older than the endpoint answers 404; the view says
@@ -1125,6 +1369,12 @@ async function port() {
     await page.getByRole('button', { name: 'internals', exact: true }).click();
     await page.getByText('Current snapshot', { exact: true }).waitFor({ timeout: 15000 });
     assert.equal(await page.locator('.internals-error').count(), 0);
+    await auditCopy(page,'internals');
+    writeCopyReport(path.join(artifacts,'repeated-copy.json'),copyReports);
+    assert.deepEqual(copyReports.filter(report=>report.boilerplatePercent>5).map(({name,boilerplatePercent})=>({name,boilerplatePercent})),[], 'Repeated interface copy exceeds the 5% page-state budget; inspect repeated-copy.json');
+    assert.equal(copyReports.length,20,'Copy audit skipped a required page state');
+    assert.deepEqual(copyReports.flatMap(report=>report.glyphControls.filter(control=>control.issue).map(control=>({page:report.name,...control}))),[], 'Glyph controls need accessible names and 44px targets');
+    console.log('COPY AUDIT '+JSON.stringify(copyReports.map(({name,boilerplatePercent})=>({name,boilerplatePercent}))));
     const internals = await (await page.request.get(origin + '/api/internals?window=7d')).json();
     assert.equal(internals.utility.calls, 2);
     assert.equal(internals.utility.explicitUse.usedRows, 1, 'Internals and the Recall view disagree on marked-used results');
@@ -1160,6 +1410,8 @@ async function port() {
     const failedAnalysisResponse = transcriptFallback.waitForResponse(response => new URL(response.url()).pathname === '/api/transcript/analysis');
     await transcriptFallback.goto(origin+`/session/${encodeURIComponent(explorerTranscript)}`);
     assert.equal((await failedAnalysisResponse).status(),503);
+    await transcriptFallback.getByLabel('Session summary',{exact:true}).waitFor();
+    await transcriptFallback.getByRole('button',{name:'Conversation',exact:true}).click();
     await transcriptFallback.getByText(explorerAnswer,{exact:true}).waitFor();
     await transcriptFallback.getByText('Basic view · analysis unavailable',{exact:true}).waitFor();
     // The basic view and the unavailable panel below are the viewer's two
@@ -1230,6 +1482,7 @@ async function port() {
     await routeBoundaryPage.getByText('Live',{exact:true}).waitFor();
     await routeBoundaryPage.close();
     assert.deepEqual(errors, []);
+    if(interactionAudit){fs.writeFileSync(path.join(artifacts,'interaction-audit.json'),JSON.stringify(interactionFindings,null,2)+'\n');console.log('INTERACTION AUDIT '+JSON.stringify(interactionFindings));}
     console.log('PASS: focus workspace entry and persisted return point, task/file result modes, recorded outcomes, Markdown preview/source and inert HTML, session-bounded split/unified diff, current-file disclosure, native Codex provenance, exact fixed links with clipboard failure/success, file permalink reload, managed Turbo stop/start, mobile layout, Recall calls with the unattributed group, rank-12 use marker and fixed-window episode links, the Day view matching the command-line event, session and commit counts with its local-midnight window, 8:1 text and stale-backend notice; the inspector hand-off row at 44px with a keyboard focus ring in Working memory and the Timeline; 8:1 text from computed styles on selected task/file rows and every classic Explorer ground (event feed, hovered group header, session cards closed and open, the whole active search result, a selected facet pill, card detail, repeated/empty/loading search, the search placeholder, suggestion list and co-term flyout idle and active, the timeline and desk find placeholders, the whole Transcript viewer loading, enriched, filtered, collapsed and searched, and its basic and unavailable states); Explorer APIs, timeline, project filters, search/autocomplete, event-card urls linked only through the allowlist, session views, provider facets, transcript/enrichment with basic-view fallback and retryable expiry, visible SSE interruption/recovery, route error containment/retry, Internals, no page errors.');
   } catch (error) {
     if (output.trim()) console.error('Explorer server output:\n' + output);

@@ -1,0 +1,67 @@
+.session-artifacts { min-width: 0; margin-block: 18px; color: #edf0f5; font-size: 16px; line-height: 1.5; }
+.session-artifacts-category > h3, .session-artifacts-category > h4 { margin: 0 0 10px; font-size: 18px; font-weight: 650; }
+.session-artifacts-category + .session-artifacts-category { margin-top: 22px; }
+.session-artifacts p { margin: 8px 0; color: #d4dae3; overflow-wrap: anywhere; }
+.session-artifacts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)); gap: 12px; }
+.session-artifact { min-width: 0; margin: 0; border: 1px solid #3b4658; border-radius: 6px; overflow: hidden; background: #11151e; }
+.session-artifact-preview { display: flex; align-items: center; justify-content: center; width: 100%; height: 190px; background: #080a0f; }
+.session-artifact-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.session-artifact-placeholder { min-height: 120px; display: flex; flex-direction: column; justify-content: center; gap: 8px; padding: 16px; overflow-wrap: anywhere; }
+.session-artifact-placeholder span { color: #d4dae3; }
+.session-artifact figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 10px; }
+.session-artifact-name { flex: 1 1 110px; min-width: 0; display: block; font-weight: 650; overflow-wrap: anywhere; }
+.session-artifact-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px; }
+.session-artifacts a { color: #a6edf3; }
+.session-artifacts .session-artifact-icon { display: inline-flex; align-items: center; justify-content: center; position: relative; min-width: 44px; min-height: 44px; padding: 10px; color: #a6edf3; cursor: pointer; border-radius: 4px; }
+.session-artifact-icon svg { flex: 0 0 20px; }
+.session-artifact-ref-count { margin-left: 4px; font-size: 16px; font-variant-numeric: tabular-nums; color: #edf0f5; }
+.session-artifact-references { min-width: 0; }
+.session-artifact-references > summary { list-style: none; }
+.session-artifact-references > summary::-webkit-details-marker { display: none; }
+.session-artifact-reference-list { display: flex; flex-wrap: wrap; gap: 4px; padding-block: 4px; }
+.session-artifact-event { display: flex; flex-direction: column; gap: 4px; max-width: 100%; font-size: 16px; overflow-wrap: anywhere; }
+.session-artifact-event span { color: #d4dae3; }
+.session-artifacts summary { display: list-item; min-height: 44px; padding-block: 10px; cursor: pointer; overflow-wrap: anywhere; }
+.session-artifact-actions details { min-width: 0; }
+.session-artifacts-unavailable { margin-top: 10px; color: #d4dae3; }
+.session-artifacts-unavailable .session-artifact { color: #edf0f5; }
+.session-artifacts button { min-height: 44px; padding: 8px 12px; border: 1px solid #3b4658; border-radius: 5px; background: #11151e; color: #edf0f5; font: inherit; cursor: pointer; }
+.session-artifacts-more { margin-top: 12px; }
+.session-artifacts :focus-visible { outline: 2px solid #72e6ef; outline-offset: 3px; }
+.session-artifacts-compact .session-artifact-preview { height: 160px; }
+.session-artifacts-compact .session-artifacts-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr)); }
+.session-artifact-outputs { padding: 0; margin: 0; list-style: none; }
+.session-artifact-outputs > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; padding-block: 9px; border-top: 1px solid #3b4658; }
+.session-artifact-output-title { min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; overflow-wrap: anywhere; }
+.session-artifact-output-title strong { font-weight: 650; }
+.session-artifact-output-title .session-artifact-review { min-width: 0; padding: 8px 0; border: 0; border-radius: 0; background: transparent; color: #a6edf3; font-weight: 650; text-align: left; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.session-artifact-output-title code { font-size: 16px; color: #d4dae3; }
+.session-artifact-operation, .session-artifact-availability { color: #d4dae3; }
+.session-artifact-output-path { min-width: 0; grid-column: 1; font-size: 16px; color: #d4dae3; overflow-wrap: anywhere; }
+.session-artifact-output-actions { min-width: 0; grid-column: 2; grid-row: 1 / span 2; align-self: start; max-width: 150px; }
+@media (hover: hover) { .session-artifact-icon:hover { background: #20333d; } }
+
+/* Expanded provenance belongs to the whole output row, not a narrow icon cell. */
+.session-artifact-outputs > li { position: relative; align-items: start; }
+.session-artifact-output-title { min-height: 44px; align-content: center; }
+.session-artifact-output-actions { grid-row: 1; max-width: none; }
+.session-artifact-outputs > li[data-has-evidence] > .session-artifact-output-actions { margin-right: 76px; }
+.session-artifact-outputs > li > a.session-artifact-output-evidence,
+.session-artifact-outputs > li > details.session-artifact-output-evidence > summary { position: absolute; right: 0; top: 9px; }
+.session-artifact-outputs > li > details.session-artifact-output-evidence { grid-column: 1 / -1; width: 100%; }
+.session-artifact-reference-list { gap: 4px 12px; }
+.session-artifacts .session-artifact-source-link { gap: 8px; padding: 8px 10px; max-width: 100%; text-decoration: underline; text-underline-offset: 3px; }
+.session-artifact-source-link span { overflow-wrap: anywhere; min-width: 0; }
+.session-artifact-ref-close { display: none; margin-left: 4px; }
+.session-artifact-references[open] > summary .session-artifact-ref-count { display: none; }
+.session-artifact-references[open] > summary .session-artifact-ref-close { display: inline; }
+
+/* A commit has one primary action: its whole header is the native target. */
+.session-artifact-outputs > li.session-artifact-commit-row { display: block; padding: 0; }
+.session-artifact-commit { width: 100%; }
+.session-artifacts .session-artifact-commit-target { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 62px; padding: 9px 10px; color: #edf0f5; border-radius: 4px; cursor: pointer; text-decoration: none; list-style: none; }
+.session-artifact-commit-target .session-artifact-output-title { flex: 1; }
+.session-artifact-commit-cue { display: inline-flex; align-items: center; flex: none; color: #a6edf3; }
+.session-artifact-commit-target > svg { flex: none; color: #a6edf3; }
+.session-artifact-commit-target:focus-visible { outline-offset: -2px; }
+@media (hover: hover) { .session-artifact-commit-target:hover { background: #20333d; } }

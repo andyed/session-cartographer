@@ -7,6 +7,7 @@ import Internals from './components/Internals';
 import WorkingMemory from './components/WorkingMemory';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import { isDemoMode, getDemoQueries } from './api';
+import { safeTranscriptReturn } from './components/transcript-navigation.js';
 import { workspaceHref, readWorkspaceRoute } from './hooks/useFocusWorkspace.js';
 
 const BASE = import.meta.env.BASE_URL || '/';
@@ -68,19 +69,10 @@ export default function App() {
     window.history.replaceState({ ...window.history.state, tab: initial.tab }, '');
 
     const onPopState = (e) => {
-      if (e.state?.tab) {
-        setTab(e.state.tab);
-        if (e.state.tab === 'transcript' && e.state.transcript) {
-          setTranscript(e.state.transcript);
-        } else {
-          setTranscript({ path: '', uuid: '', highlight: '' });
-        }
-      } else {
-        // Fallback: parse URL
-        const state = parseURL();
-        setTab(state.tab);
-        setTranscript({ path: state.transcript, uuid: state.uuid, highlight: state.highlight });
-      }
+      const state = parseURL();
+      setTab(e.state?.tab === 'search' && state.tab === 'timeline' ? 'search' : state.tab);
+      if (state.tab === 'search') setSearchQuery(state.query);
+      setTranscript({ path: state.transcript, uuid: state.uuid, highlight: state.highlight });
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
@@ -90,7 +82,11 @@ export default function App() {
     setTab(t);
     let nextURL = BASE;
     if (t === 'internals') nextURL = `${BASE}internals`;
-    if (t === 'memory' || t === 'timeline') nextURL = ['memory', 'timeline'].includes(tab) ? workspaceHref(readWorkspaceRoute(), t) : `${BASE}${t}`;
+    if (t === 'memory' || t === 'timeline') {
+      const origin = tab === 'transcript' && safeTranscriptReturn(new URLSearchParams(window.location.search).get('return'), BASE);
+      const route = origin ? readWorkspaceRoute(new URL(origin, window.location.origin).search) : readWorkspaceRoute();
+      nextURL = ['memory', 'timeline'].includes(tab) || origin ? workspaceHref(route, t) : `${BASE}${t}`;
+    }
     if (t === 'search' && searchQuery.trim()) nextURL = `${BASE}?q=${encodeURIComponent(searchQuery.trim())}`;
     window.history.pushState({ tab: t }, '', nextURL);
     window.dispatchEvent(new PopStateEvent('popstate', { state: { tab: t } }));
@@ -107,7 +103,7 @@ export default function App() {
     }
   }, [tab]);
 
-  const openTranscript = useCallback((path, uuid, highlight = '') => {
+  const openTranscript = useCallback((path, uuid, highlight = '', blockId = '') => {
     // Push current tab state first so back returns here
     window.history.replaceState({ ...window.history.state, tab }, '', window.location.href);
     // Then push transcript
@@ -115,18 +111,24 @@ export default function App() {
     setTranscript(transcriptState);
     setTab('transcript');
     const params = new URLSearchParams();
+    params.set('reader', 'conversation');
+    params.set('return', window.location.pathname + window.location.search);
     if (uuid) params.set('uuid', uuid);
+    if (blockId) params.set('block', blockId);
     if (highlight) params.set('highlight', highlight);
     const qs = params.toString();
     window.history.pushState(
-      { tab: 'transcript', transcript: transcriptState },
+      { tab: 'transcript', transcript: transcriptState, transcriptOrigin: true },
       '',
       `${BASE}session/${encodeURIComponent(path)}${qs ? '?' + qs : ''}`
     );
   }, [tab]);
 
   const closeTranscript = useCallback(() => {
-    window.history.back();
+    if (window.history.state?.transcriptOrigin) { window.history.back(); return; }
+    const destination = safeTranscriptReturn(new URLSearchParams(window.location.search).get('return'), BASE) || `${BASE}timeline`;
+    window.history.pushState({}, '', destination);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   }, []);
 
   return (
@@ -155,11 +157,11 @@ export default function App() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-4 py-2">
           {/* Search input with autocomplete — flush left */}
           {/* Memory owns its local find control; other routes keep global search. */}
-          {['memory', 'timeline'].includes(tab) ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
+          {['memory', 'timeline', 'transcript'].includes(tab) ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
 
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               {['memory', 'timeline', 'search', ...(isDemoMode ? [] : ['internals'])].map(t => (
                 <button
                   key={t}
@@ -174,7 +176,7 @@ export default function App() {
                 </button>
               ))}
               {tab === 'transcript' && (
-                <span className="px-3 py-1 text-xs rounded bg-gray-700 text-gray-200">
+                <span className="px-3 py-2 text-sm rounded bg-gray-700 text-gray-200">
                   transcript
                 </span>
               )}
@@ -235,6 +237,7 @@ export default function App() {
         {tab === 'transcript' && (
           <RouteErrorBoundary name="Transcript" resetKey={transcript.path} onLeave={closeTranscript}>
             <TranscriptViewer
+              key={transcript.path}
               transcriptPath={transcript.path}
               targetUuid={transcript.uuid}
               initialHighlight={transcript.highlight}

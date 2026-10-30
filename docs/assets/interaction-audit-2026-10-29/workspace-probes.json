@@ -1,0 +1,32 @@
+[
+  {
+    "id": "IA-05",
+    "probe": "Outcome offset type size",
+    "observed": {
+      "fontSize": "14px",
+      "fontWeight": "500"
+    },
+    "expected": "At least 16px / weight 500"
+  },
+  {
+    "id": "IA-06",
+    "probe": "Escape while exact-time tooltip has focus",
+    "observed": "Inspector closed",
+    "expected": "Dismiss transient detail first; retain inspection context"
+  },
+  {
+    "id": "IA-03",
+    "probe": "File-read failure recovery",
+    "observed": {
+      "retryButtons": 0,
+      "filePreserved": true
+    },
+    "expected": "Local Retry preserving file and review mode"
+  },
+  {
+    "id": "IA-03",
+    "probe": "Reload recovery",
+    "observed": "Document restored with same file route",
+    "expected": "Available through local Retry"
+  }
+]

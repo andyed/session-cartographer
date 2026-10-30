@@ -107,6 +107,65 @@ When a user says "explore" or wants to browse history visually, use `/carto` to 
 
 At the end of a productive session — or when a user says "wrap up" — use `/wrapup` to synthesize decisions, discoveries, and open threads into a milestone event. The milestone gets indexed and becomes searchable via `/remember`.
 
+## Product gospel: useful summaries, never JSON dumps
+
+User directive, 2026-10-29: “There are a slew of tools that print the session
+out; our goal is to provide a more useful summary.” “If it's worth showing,
+it's worth rendering.”
+
+- The default review answers what was produced, what changed, what was found,
+  and what remains unresolved. A transcript printed with nicer typography does
+  not satisfy this product's purpose.
+- Never display raw JSON, serialized tool envelopes, orchestration JavaScript,
+  call/chunk IDs, wall-time wrappers or Promise settlement objects as session UI.
+  Parse worthwhile content into documents, diffs, links, images, findings and
+  actionable failures. Unsupported payloads stay out of the visible review;
+  retain their original evidence for export and exact provenance.
+- Source drill-down must also render meaningful content; disclosure is not a
+  license to dump JSON. Routine reads/searches belong in grouped activity,
+  subordinate to outputs and decisions.
+- A low repeated-copy score is insufficient. Test the real task: can someone
+  recover an output, understand a change, identify an unresolved issue, or
+  resume the work without decoding tool plumbing?
+
+## Session artifact presentation
+
+Before changing interactions, read [the interaction style guide](docs/INTERACTION_STYLE_GUIDE.md).
+The [2026-10-29 audit](docs/INTERACTION_AUDIT_2026-10-29.md) records current
+violations and acceptance probes. A single-action row uses its entire header as
+one native target; the icon signals that action rather than owning a tiny hit area.
+Copy scores and icon dimensions do not substitute for exercising the whole task.
+
+Session browsing should foreground what the work produced: documents created or
+edited, actual commits, and available images, before the raw event log.
+
+- Optional artifact categories render only when they contain useful evidence.
+  An empty category is absent: no heading, zero count, placeholder panel, or
+  sentence announcing that nothing was recorded. Loading optional categories
+  must not flash empty headings. A failed explicit action may show recovery.
+- Counts describe the displayed collection. Distinguish records in the current
+  focus from artifacts evidenced across the full session; one timestamp does
+  not establish a session duration.
+- Show named content first. Use compact, recognizable glyph actions for opening
+  an artifact or locating its evidence, with descriptive accessible names,
+  tooltips and 44px targets. Do not repeat instructional link prose on every row.
+- Preserve provenance: a referenced/read image is not proof of creation; a
+  commit command is not proof of a commit. Existing sources own those facts.
+- Verify absent, sparse and mixed-content states in the browser, including the
+  surrounding session card and inspector. Assert that empty categories are
+  absent, not merely that a populated fixture renders successfully.
+
+- Bundle related records around the object a person is reviewing: search result
+  plus subsequent fetch attempts, artifact plus its producing evidence, and
+  comparison rows under shared headers. Use explicit identities/URLs and call
+  links; retain errors, retries and exact source navigation. Do not infer intent.
+- Run the rendered repeated-copy audit in the Explorer browser harness. Keep
+  each tested page state at or below 5% excess repeated interface words. Glyphs
+  remove visible-word repetition, but still require accessible names, 44px
+  targets and recognizable meaning. Do not classify UI copy as source content
+  or add filler to reduce the score. See [UI review guards](docs/UI_REVIEW_GUARDS.md)
+  for the formula, exclusions and research limits.
+
 ## Testing
 
 Read [docs/TESTING.md](docs/TESTING.md) before writing tests. Assert on result

@@ -1,0 +1,15 @@
+{
+  "build": "assets/index-BCk831Ns.js",
+  "checks": [
+    "full-text grouping",
+    "all source occurrences",
+    "original ranks",
+    "keyboard exact source",
+    "native and ordinary title-only destinations",
+    "full prose recovery",
+    "text selection",
+    "peer source/metadata actions",
+    "390px layout"
+  ],
+  "errors": []
+}

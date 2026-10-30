@@ -1,0 +1,29 @@
+{
+  "build": "assets/index-BCk831Ns.js",
+  "checks": [
+    "exact file bundles",
+    "worktree separation",
+    "readable short paths",
+    "empty fallback sections absent",
+    "requested old/new",
+    "historical error retained",
+    "pointer and keyboard disclosures",
+    "multiple paired outputs",
+    "exact request/result navigation",
+    "unique canonical IDs",
+    "source reload",
+    "short-query match",
+    "390px source recovery"
+  ],
+  "copy": [
+    {
+      "name": "file-bundle-expanded",
+      "boilerplatePercent": 2.9
+    },
+    {
+      "name": "mobile-exact-error-source",
+      "boilerplatePercent": 0
+    }
+  ],
+  "errors": []
+}

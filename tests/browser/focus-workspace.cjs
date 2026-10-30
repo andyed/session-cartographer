@@ -79,7 +79,7 @@ async function noHorizontalOverflow(page, label) {
       .filter(element => element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden')
       .map(element => {
         const box = element.getBoundingClientRect();
-        return { label: element.getAttribute('aria-label') || element.textContent.trim().slice(0, 40), left: box.left, right: box.right };
+        return { label: element.getAttribute('aria-label') || element.textContent.trim().slice(0, 40), tag:element.tagName, className:element.className, disclosure:element.closest('details')?.outerHTML.slice(0,150), left: box.left, right: box.right };
       });
     return { width: innerWidth, scrollWidth: root.scrollWidth, controls };
   });
@@ -88,6 +88,61 @@ async function noHorizontalOverflow(page, label) {
     assert.ok(control.left >= -1 && control.right <= layout.width + 1,
       `${label}: visible control leaves the viewport: ${JSON.stringify(control)}`);
   }
+}
+
+async function noOverlap(first, second, label) {
+  const [a, b] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+  assert.ok(a?.width && a?.height && b?.width && b?.height, `${label}: both controls must be rendered`);
+  const width = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+  const height = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+  assert.ok(width <= .5 || height <= .5,
+    `${label}: rectangles overlap by ${width.toFixed(1)} × ${height.toFixed(1)}px: ${JSON.stringify({ a, b })}`);
+}
+
+async function verifySessionLayout(page, origin, scope, artifacts, canonicalTitle) {
+  for (const viewport of [{ width: 581, height: 739 }, { width: 1024, height: 850 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${origin}/timeline?${scope}&view=sessions`);
+    await ensureWorkspace(page, { results: false });
+    const card = page.locator('.timeline-session-result').filter({ has: page.getByTitle('alpha-task', { exact: true }) });
+    const title = card.getByRole('heading', { level: 3 });
+    await title.waitFor();
+    assert.equal(await title.textContent(), canonicalTitle,
+      'the session card must use the canonical named task, not the first raw event or an ID-only heading');
+    const inspect = card.getByRole('button', { name: 'Inspect evidence', exact: true });
+    const assertLayout = async suffix => {
+      // The 581px/739px case forces the old flex column to shrink around a
+      // substantial result list; the 1024px case also exercises the split pane.
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      const label = `${viewport.width}px ${suffix}`;
+      await noOverlap(page.locator('.timeline-focus-views'), page.locator('.timeline-focus-main > .fw-toolbar'), `${label}: view selectors / toolbar`);
+      await noOverlap(page.locator('.timeline-focus-status'), page.locator('.timeline-focus-views'), `${label}: activity status / view selectors`);
+      await noOverlap(inspect, card.locator('.session-card-header'), `${label}: inspect action / identity and badges`);
+      await noOverlap(inspect, card.getByRole('button', { name: '▼ View Session Events', exact: true }), `${label}: card actions`);
+    };
+    await assertLayout('session list');
+    await page.screenshot({ path: path.join(artifacts, `focus-sessions-${viewport.width}.png`), fullPage: true });
+    await noHorizontalOverflow(page, `sessions ${viewport.width}`);
+    await page.locator('.fw-facets > summary').click();
+    await noHorizontalOverflow(page, `sessions ${viewport.width} filters open`);
+    await page.locator('.fw-facets > summary').press('Escape');
+    await inspect.click();
+    const inspector = page.getByRole('complementary', { name: 'Evidence inspector' });
+    const inspectorTitle = inspector.getByRole('heading', { level: 2, name: canonicalTitle, exact: true });
+    await inspectorTitle.waitFor();
+    assert.equal(await inspectorTitle.textContent(), canonicalTitle, 'the inspector must preserve the card task identity');
+    assert.equal(new URL(page.url()).searchParams.get('session'), 'alpha-task');
+    if (viewport.width === 1024) {
+      assert.equal(await page.locator('.timeline-focus-main').isVisible(), true,
+        'the 1024px fixture must exercise a visible list beside the inspector');
+      await assertLayout('with inspector');
+    }
+    await page.screenshot({ path: path.join(artifacts, `focus-session-inspector-${viewport.width}.png`), fullPage: true });
+    await inspector.getByRole('button', { name: 'Back to results', exact: true }).click();
+    await page.waitForFunction(() => !new URL(location.href).searchParams.has('session'));
+    await page.waitForFunction(() => document.activeElement?.classList.contains('timeline-inspect'));
+  }
+  await page.setViewportSize({ width: 1440, height: 1000 });
 }
 
 async function verifyViewportUnion(page, origin, fixture) {
@@ -170,8 +225,8 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
   const active = '.focus-active-range';
   // The default focus fills its loaded window, so it must not advertise a pan
   // gesture that can only clamp back to the same interval.
-  await page.goto(`${origin}/memory?project=alpha`);
-  await ensureWorkspace(page);
+  await page.goto(`${origin}/memory?project=alpha&surface=activity`);
+  await ensureWorkspace(page, { results: false });
   await page.waitForFunction(() => new URL(location.href).searchParams.has('from'));
   assert.equal(await page.getByRole('slider', { name: 'Move focus interval' }).count(), 0,
     'a full-window focus exposed a no-op pan control');
@@ -277,6 +332,12 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     page.on('pageerror', error => pageErrors.push(error.message));
     const scope = `from=${encodeURIComponent(fixture.isoFrom)}&through=${encodeURIComponent(fixture.isoThrough)}&project=alpha`;
 
+    if (process.argv.includes('--layout-proof')) {
+      await verifySessionLayout(page, origin, scope, artifacts, 'Alpha focus boundary task');
+      assert.deepEqual(pageErrors,[]);
+      console.log('PASS: session layout and inspector return');
+      return;
+    }
     if (viewportProof) {
       await verifyViewportUnion(page, origin, fixture);
       assert.deepEqual(pageErrors, []);
@@ -287,6 +348,17 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     await page.goto(`${origin}/memory?${scope}`);
     await ensureWorkspace(page);
 
+    // Reading views expose the same canonical range editor on demand.
+    assert.equal(await page.locator('.focus-timeline-track:visible').count(),0);
+    const unchangedScope=page.url();
+    await page.getByRole('button',{name:'Edit time range',exact:true}).click();
+    await page.locator('.focus-timeline-track:visible').waitFor();
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    assert.equal(page.url(),unchangedScope);
+    assert.equal(await page.getByRole('button',{name:'Edit time range',exact:true}).evaluate(el=>el===document.activeElement),true);
+    await page.getByRole('button',{name:/^Scope/}).click();
+    await page.getByRole('combobox',{name:'Project',exact:true}).waitFor();
+    assert.equal(await page.getByRole('button',{name:'Project: alpha ×'}).count(),1);
     await runPointerProof(page, browser, origin, scope, pageErrors);
     if (pointerProof) {
       assert.deepEqual(pageErrors, []);
@@ -377,6 +449,7 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     await editor.waitFor({ state: 'hidden' });
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Edit time range');
 
+    await page.getByRole('button', { name: 'Edit time range', exact: true }).click();
     const horizontal = page.getByRole('slider', { name: 'Adjust focus start' });
     const beforeHorizontal = page.url();
     assert.equal(await horizontal.isEnabled(), true);
@@ -388,11 +461,13 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     await page.getByRole('button', { name: 'Go to return point', exact: true }).click();
     await page.waitForFunction(expected => new URL(location.href).searchParams.get('from') === expected, fixture.isoFrom);
     const beforeHorizontalCancel = page.url();
+    await page.getByRole('button', { name: 'Edit time range', exact: true }).click();
     await horizontal.focus();
     await page.keyboard.down('ArrowRight');
     await page.keyboard.press('Escape');
     await page.keyboard.up('ArrowRight');
     assert.equal(page.url(), beforeHorizontalCancel, 'Escape must cancel a horizontal draft without history');
+    if (await editor.isVisible()) await editor.getByRole('button', {name:'Cancel',exact:true}).click();
     await page.getByRole('button', { name: 'Edit time range', exact: true }).click();
     await page.getByRole('button', { name: 'Since return point', exact: true }).click();
     await page.waitForFunction(expected => {
@@ -561,6 +636,10 @@ async function runPointerProof(page, browser, origin, scope, pageErrors) {
     await timeline.goto(`${origin}/timeline?${scope}&view=concurrent`);
     await timeline.getByRole('button', { name: 'Adjust focus through time' }).waitFor();
     assert.equal(new URL(timeline.url()).pathname, '/timeline');
+
+    const canonicalTitle = contract.focused.sessions.find(session => session.id === 'alpha-task').title;
+    assert.equal(canonicalTitle, 'Alpha focus boundary task', 'fixture must supply a named task distinct from its ID and event summary');
+    await verifySessionLayout(timeline, origin, scope, artifacts, canonicalTitle);
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole('button', { name: 'Edit time range', exact: true }).click();

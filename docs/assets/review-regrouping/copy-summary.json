@@ -1,0 +1,146 @@
+{
+  "metric": "Repeated interface words beyond first occurrence / rendered interface words; exact phrases of 2+ words",
+  "targetPercent": 5,
+  "reports": [
+    {
+      "name": "timeline-events-cold",
+      "interfaceWords": 257,
+      "contentWords": 759,
+      "excessWords": 8,
+      "boilerplatePercent": 3.11
+    },
+    {
+      "name": "timeline-sessions-cold",
+      "interfaceWords": 92,
+      "contentWords": 41,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "transcript-cold",
+      "interfaceWords": 101,
+      "contentWords": 162,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "timeline-concurrent-cold",
+      "interfaceWords": 54,
+      "contentWords": 102,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "search-results-cold",
+      "interfaceWords": 35,
+      "contentWords": 47,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "search-empty-cold",
+      "interfaceWords": 12,
+      "contentWords": 0,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "memory-entry",
+      "interfaceWords": 21,
+      "contentWords": 0,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "timeline-events-warm",
+      "interfaceWords": 257,
+      "contentWords": 762,
+      "excessWords": 8,
+      "boilerplatePercent": 3.11
+    },
+    {
+      "name": "timeline-sessions-warm",
+      "interfaceWords": 86,
+      "contentWords": 41,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "transcript-warm",
+      "interfaceWords": 105,
+      "contentWords": 211,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "timeline-concurrent-warm",
+      "interfaceWords": 55,
+      "contentWords": 102,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "search-results-warm",
+      "interfaceWords": 35,
+      "contentWords": 47,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "search-empty-warm",
+      "interfaceWords": 12,
+      "contentWords": 0,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "session-summary",
+      "interfaceWords": 28,
+      "contentWords": 13,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "memory-working",
+      "interfaceWords": 132,
+      "contentWords": 71,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "memory-field",
+      "interfaceWords": 51,
+      "contentWords": 5,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "memory-file-review",
+      "interfaceWords": 77,
+      "contentWords": 38,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "memory-recall",
+      "interfaceWords": 195,
+      "contentWords": 84,
+      "excessWords": 6,
+      "boilerplatePercent": 3.08
+    },
+    {
+      "name": "memory-day",
+      "interfaceWords": 185,
+      "contentWords": 17,
+      "excessWords": 0,
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "internals",
+      "interfaceWords": 332,
+      "contentWords": 77,
+      "excessWords": 14,
+      "boilerplatePercent": 4.22
+    }
+  ]
+}

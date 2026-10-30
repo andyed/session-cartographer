@@ -1,6 +1,20 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
-import { fetchTranscript, fetchTranscriptAnalysis } from '../api';
+import { apiRequest, fetchTranscript, fetchTranscriptAnalysis } from '../api';
 import { transcriptAnalysisNotice, transcriptFailure } from './transcript-state';
+import { safeArtifactLink } from './memory-artifact.js';
+import EvidenceValue from './EvidenceValue.jsx';
+import SessionReview from './SessionReview.jsx';
+import { displayValue, readableText } from './evidence-content.js';
+import { toolPresentation } from './tool-presentation.js';
+import SessionIdentity from './SessionIdentity.jsx';
+import MemoryInspector from './MemoryInspector.jsx';
+import { ToolEvidenceBlock, TranscriptEvidenceIndex } from './TranscriptEvidence.jsx';
+import { blockText, messageBlocks, transcriptMatches, resolveTranscriptLocation, operationBundles } from './transcript-navigation.js';
+import { buildReviewBundles } from './review-bundles.js';
+import { excerpt, messagePresentation } from './tool-presentation.js';
+import { workspaceHref } from '../hooks/useFocusWorkspace.js';
+import '../styles/focus-workspace.css';
+import '../styles/transcript.css';
 import { HUE, NEUTRAL } from '../lib/palette.js';
 
 /**
@@ -8,7 +22,10 @@ import { HUE, NEUTRAL } from '../lib/palette.js';
  * Handles: headings, bold, italic, code blocks, inline code, hr, lists.
  */
 function RenderMarkdown({ text, highlights = [] }) {
-  const lines = text.split('\n');
+  const visible = displayValue(text);
+  if (visible == null) return null;
+  if (typeof visible !== 'string') return <EvidenceValue value={visible} />;
+  const lines = visible.split('\n');
   const elements = [];
   let i = 0;
 
@@ -26,9 +43,9 @@ function RenderMarkdown({ text, highlights = [] }) {
       }
       i++; // skip closing ```
       elements.push(
-        <pre key={elements.length} className="bg-gray-800 border border-gray-700 rounded px-3 py-2 my-2 text-xs font-mono overflow-x-auto text-gray-300">
-          {codeLines.join('\n')}
-        </pre>
+        <div key={elements.length} className="bg-gray-800 border border-gray-700 rounded px-3 py-2 my-2 text-xs font-mono overflow-x-auto text-gray-300">
+          <EvidenceValue value={codeLines.join('\n')} renderText={text => applyHighlights(text, highlights, elements.length)} />
+        </div>
       );
       continue;
     }
@@ -93,43 +110,19 @@ function RenderMarkdown({ text, highlights = [] }) {
 // Inline markdown: **bold**, *italic*, `code`
 // Optionally highlights search terms in plain text segments
 function inlineMarkdown(text, highlights = []) {
-  const parts = [];
-  let remaining = text;
-  let key = 0;
-
-  while (remaining.length > 0) {
-    // Inline code
-    let match = remaining.match(/^(.*?)`([^`]+)`/);
-    if (match) {
-      if (match[1]) parts.push(...applyHighlights(match[1], highlights, key)); key++;
-      parts.push(<code key={key++} className="bg-gray-800 px-1 rounded text-xs font-mono text-amber-300">{match[2]}</code>);
-      remaining = remaining.slice(match[0].length);
-      continue;
-    }
-
-    // Bold
-    match = remaining.match(/^(.*?)\*\*(.+?)\*\*/);
-    if (match) {
-      if (match[1]) parts.push(...applyHighlights(match[1], highlights, key)); key++;
-      parts.push(<strong key={key++} className="text-gray-100 font-semibold">{match[2]}</strong>);
-      remaining = remaining.slice(match[0].length);
-      continue;
-    }
-
-    // Italic
-    match = remaining.match(/^(.*?)\*(.+?)\*/);
-    if (match) {
-      if (match[1]) parts.push(...applyHighlights(match[1], highlights, key)); key++;
-      parts.push(<em key={key++} className="text-muted">{match[2]}</em>);
-      remaining = remaining.slice(match[0].length);
-      continue;
-    }
-
-    // No more matches — emit the rest with highlights
-    parts.push(...applyHighlights(remaining, highlights, key));
-    break;
+  const tokens = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+  const parts=[];
+  let start=0,match;
+  while((match=tokens.exec(text))){
+    if(match.index>start)parts.push(...applyHighlights(text.slice(start,match.index),highlights,start));
+    const key=match.index;
+    if(match[1])parts.push(<code key={key} className="bg-gray-800 px-1 rounded text-xs font-mono text-amber-300">{applyHighlights(match[1],highlights,key)}</code>);
+    else if(match[2])parts.push(<strong key={key} className="text-gray-100 font-semibold">{applyHighlights(match[2],highlights,key)}</strong>);
+    else if(match[3])parts.push(<em key={key} className="text-muted">{applyHighlights(match[3],highlights,key)}</em>);
+    else {const href=safeArtifactLink(match[5]);parts.push(href?<a key={key} href={href} target="_blank" rel="noopener noreferrer">{applyHighlights(match[4],highlights,key)}</a>:match[4]);}
+    start=tokens.lastIndex;
   }
-
+  if(start<text.length)parts.push(...applyHighlights(text.slice(start),highlights,start));
   return parts;
 }
 
@@ -194,9 +187,12 @@ function highlightMatches(text, searchTerms) {
 // badge is outlined in its hue, never tinted, as the classic badges are.
 const ROLE_HUES = { user: HUE.blue, assistant: HUE.green, sidechain: HUE.lavender };
 
-function MessageBlock({ msg, searchTerms, defaultExpanded }) {
-  const isLong = msg.content.length > 500;
+function MessageBlock({ msg, blockLookup, reviewBundles, operations, searchTerms, defaultExpanded, activeLocation, onLocate }) {
+  const blocks = messageBlocks(msg).filter(block => !operations.owners.has(block.id) && (block.type !== 'thinking' || block.text?.trim()));
+  const { toolOnly, textLength, role } = messagePresentation(msg, blocks);
+  const isLong = textLength > 500;
   const [expanded, setExpanded] = useState(defaultExpanded || !isLong);
+  useEffect(() => { if (defaultExpanded) setExpanded(true); }, [defaultExpanded, activeLocation]);
   const isSc = msg.isSidechain;
 
   const roleColors = {
@@ -214,37 +210,42 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
   const borderClass = isSc
     ? 'border-l-2 border-dashed border-violet-500/40'
     : `border-l-2 ${roleColors[msg.role] || 'border-gray-700'}`;
-  const displayContent = expanded ? msg.content : msg.content.slice(0, 500);
 
   // Check if this message matches search
   const hasMatch = searchTerms.length > 0 &&
     searchTerms.some(t => msg.content.toLowerCase().includes(t.toLowerCase()));
 
-  const isUser = msg.role === 'user' && !isSc;
+  const isUser = role === 'user' && !isSc;
+  if (!blocks.length) return <span id={msg.uuid} className="tr-source-alias" tabIndex={-1} />;
 
   return (
     <div
       id={msg.uuid}
-      className={`${borderClass} pl-3 py-2 mb-1 ${isSc ? 'ml-6' : ''} ${
+      tabIndex={-1}
+      data-active={activeLocation?.messageId === msg.uuid || undefined}
+      data-tool-only={toolOnly || undefined}
+      title={toolOnly ? msg.timestamp : undefined}
+      className={`tr-message ${borderClass} pl-3 py-2 mb-1 ${isSc ? 'ml-6' : ''} ${
         isUser ? 'ml-4 bg-gray-800/40 border border-gray-700/50 rounded-md px-3' : ''
       } ${hasMatch ? 'bg-yellow-500/5' : ''}`}
     >
-      <div className="flex items-center gap-2 mb-1">
+      <div className={toolOnly ? "sr-only" : "flex items-center gap-2 mb-1"}>
         {isSc && (
           <span className="text-xs px-1 py-0.5 rounded font-mono" style={{ color: ROLE_HUES.sidechain, border: `1px solid ${ROLE_HUES.sidechain}44` }}>
             {msg.agentId || 'agent'}
           </span>
         )}
         <span className="text-xs font-mono" style={{ color: isSc ? ROLE_HUES.sidechain : ROLE_HUES[msg.role] || NEUTRAL }}>
-          {roleLabels[msg.role]}
+          {roleLabels[role] || role || 'message'}
         </span>
         <span className="text-xs text-muted font-mono" title={msg.timestamp}>
           {relativeTime(msg.timestamp)}
         </span>
       </div>
 
+      {(msg.author || msg.recipient) && <p className="tr-provenance">{msg.author || 'Unrecorded sender'} → {msg.recipient || 'Unrecorded recipient'}</p>}
       <div className="text-sm text-gray-300 break-words font-sans leading-relaxed prose-transcript">
-        <RenderMarkdown text={displayContent} highlights={searchTerms} />
+        {blocks.map(block => block.type === 'thinking' && !block.text?.trim() ? null : ['tool_call', 'tool_result'].includes(block.type) ? <ToolEvidenceBlock key={block.id} block={block} pairedCall={blockLookup.get(block.callBlockId)} pairedResults={operations.results.get(block.id)} resultAnchorMode="canonical" activeBlockId={activeLocation?.blockId} bundlePages={reviewBundles.searches.get(block.id)} membership={reviewBundles.memberships.get(block.id)} renderContent={text => <RenderMarkdown text={text} highlights={searchTerms} />} revealRaw={searchTerms.length > 0} active={activeLocation?.blockId === block.id || operations.owners.get(activeLocation?.blockId) === block.id} onLocate={onLocate} renderText={text => applyHighlights(text, searchTerms, block.id)} /> : ['thinking', 'attachment'].includes(block.type) ? <details key={block.id} id={block.id} open={activeLocation?.blockId === block.id || undefined}><summary>{block.type === 'thinking' ? `Reasoning · ${excerpt(block.text, 140)}` : block.label || 'Attachment metadata'}</summary><EvidenceValue value={block.metadata || block.text} renderText={text => applyHighlights(text, searchTerms, block.id)} /></details> : <div key={block.id} id={block.id}><RenderMarkdown text={expanded ? blockText(block) : blockText(block).slice(0, 500)} highlights={searchTerms} /></div>)}
         {!expanded && isLong && (
           <span className="text-muted">...</span>
         )}
@@ -253,9 +254,11 @@ function MessageBlock({ msg, searchTerms, defaultExpanded }) {
       {isLong && (
         <button
           onClick={() => setExpanded(!expanded)}
+          aria-label={expanded ? 'Show less' : 'Show more'}
+          title={expanded ? 'Show less' : 'Show more'}
           className="text-xs text-muted hover:text-gray-300 mt-1"
         >
-          {expanded ? 'collapse' : `expand (${msg.content.length} chars)`}
+          <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
         </button>
       )}
     </div>
@@ -501,8 +504,25 @@ function TokenAttributionSidebar({ attribution, activeCategory, onCategoryClick,
 // label class.
 const TOGGLE_LABEL = 'flex items-center gap-1 text-xs text-muted cursor-pointer';
 
+function summaryFromRoute() {
+  const params = new URLSearchParams(window.location.search);
+  return !(params.get('uuid') || params.get('highlight') || params.get('reader') === 'conversation');
+}
+
 export default function TranscriptViewer({ transcriptPath, targetUuid, initialHighlight = '', onClose }) {
   const [messages, setMessages] = useState([]);
+  const [identity, setIdentity] = useState({});
+  const [evidence, setEvidence] = useState({});
+  const [memory, setMemory] = useState(null);
+  const [memoryNotice, setMemoryNotice] = useState('');
+  const [inspecting, setInspecting] = useState(() => window.innerWidth > 800 && !!(targetUuid || initialHighlight || new URLSearchParams(window.location.search).get('file')));
+  const [reviewMode, setReviewMode] = useState(summaryFromRoute);
+  const [activeLocation, setActiveLocation] = useState(null);
+  const [hitIndex, setHitIndex] = useState(-1);
+  const [fileRoute, setFileRoute] = useState(() => {
+    const p = new URLSearchParams(window.location.search);
+    return { file: p.get('file'), review: p.get('review'), diff: p.get('diff') || 'split', doc: p.get('doc') || 'preview' };
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState(initialHighlight);
@@ -515,6 +535,10 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   const [analysisNotice, setAnalysisNotice] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const containerRef = useRef(null);
+  const evidenceToggle = useRef(null);
+  const navigationEpoch = useRef(0);
+  const currentHit = useRef(-1);
+  function closeInspector() { evidenceToggle.current?.focus({ preventScroll: true }); setInspecting(false); }
 
   useEffect(() => {
     if (!transcriptPath) {
@@ -524,10 +548,14 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
     }
     const controller = new AbortController();
     let active = true;
-    let scrollTimer = null;
     setLoading(true);
     setError(null);
     setMessages([]);
+    setIdentity({});
+    setMemory(null);
+    setMemoryNotice('');
+    setActiveLocation(null);
+    setReviewMode(summaryFromRoute());
     setEnriched(null);
     setAnalysisNotice(null);
     setActiveCategory(null);
@@ -547,22 +575,13 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
         setMessages(data.messages);
         setLoading(false);
 
-        // Scroll to target: by UUID, or by first highlight match
-        scrollTimer = setTimeout(() => {
-          if (!active) return;
-          if (targetUuid) {
-            const el = document.getElementById(targetUuid);
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          } else if (initialHighlight) {
-            const match = data.messages.find(m =>
-              m.content.toLowerCase().includes(initialHighlight.toLowerCase())
-            );
-            if (match) {
-              const el = document.getElementById(match.uuid);
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }
-        }, 100);
+        setIdentity(data.identity || { provider: data.provider });
+        setEvidence(data.evidence || {});
+        if (data.identity?.sessionId) {
+          apiRequest(`/api/memory/session?${new URLSearchParams({ session: data.identity.sessionId, hours: 2160 })}`, { signal: controller.signal })
+            .then(result => { if (active) setMemory(result); })
+            .catch(error => { if (active && error.name !== 'AbortError') setMemoryNotice('Task records unavailable; conversation evidence remains available.'); });
+        }
       })
       .catch(e => {
         if (!active || e?.name === 'AbortError') return;
@@ -583,24 +602,113 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
 
     return () => {
       active = false;
+      navigationEpoch.current++;
       controller.abort();
-      if (scrollTimer) clearTimeout(scrollTimer);
     };
-  }, [transcriptPath, targetUuid, initialHighlight, reloadKey]);
+  }, [transcriptPath, reloadKey]);
 
-  // Split search into terms, filter out noise (< 3 chars)
-  const searchTerms = useMemo(() =>
-    search.trim()
-      ? search.trim().split(/\s+/).filter(t => t.length >= 3)
-      : [],
-    [search]
-  );
+  useEffect(() => { setSearch(initialHighlight); }, [initialHighlight]);
+  useEffect(() => {
+    const restore = () => {
+      setReviewMode(summaryFromRoute());
+      const params = new URLSearchParams(window.location.search);
+      setSearch(params.get('highlight') || '');
+      setFileRoute({ file: params.get('file'), review: params.get('review'), diff: params.get('diff') || 'split', doc: params.get('doc') || 'preview' });
+    };
+    window.addEventListener('popstate', restore);
+    return () => window.removeEventListener('popstate', restore);
+  }, []);
+  function chooseReader(summary) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('reader', summary ? 'summary' : 'conversation');
+    if (summary) {
+      ['uuid', 'block', 'highlight'].forEach(key => url.searchParams.delete(key));
+      setInspecting(false); setSearch(''); setActiveLocation(null);
+    }
+    if (url.pathname + url.search !== window.location.pathname + window.location.search)
+      window.history.pushState({ ...window.history.state, transcriptOrigin: false }, '', url.pathname + url.search);
+    setReviewMode(summary);
+  }
+
+
+  const searchTerms = useMemo(() => search.trim() ? [search.trim()] : [], [search]);
+  const hits = useMemo(() => transcriptMatches(messages, search), [messages, search]);
+  const canonical = memory?.sessions?.find(session => session.id === identity.sessionId);
+  const session = canonical ? { ...canonical, transcript: canonical.transcript || transcriptPath } : { id: identity.sessionId || 'transcript', title: identity.title || 'Untitled session', provider: identity.provider, cwd: identity.cwd, transcript: transcriptPath, events: [], notes: [], projects: {} };
+  const source = memory && canonical ? memory : { sessions: [session], files: {}, end: Date.now() };
+  const navigateFile = patch => {
+    const next = { ...fileRoute, ...patch }, url = new URL(window.location.href);
+    for (const key of ['file', 'review', 'diff', 'doc']) next[key] ? url.searchParams.set(key, next[key]) : url.searchParams.delete(key);
+    window.history.replaceState(window.history.state, '', url.pathname + url.search);
+    setFileRoute(next);
+  };
+  const workspace = {
+    route: { ...fileRoute, hours: 2160, session: session.id, contributor: session.id }, data: source, scoped: source, interval: null,
+    navigate: navigateFile,
+    hrefForFile: (file, review) => { const url = new URL(window.location.href); url.searchParams.set('file', file.path); url.searchParams.set('review', review); return url.pathname + url.search; },
+    handoff: (tab, patch = {}) => {
+      window.history.pushState({ tab }, '', workspaceHref({ session: session.id, ...patch }, tab));
+      window.dispatchEvent(new PopStateEvent('popstate', { state: { tab } }));
+    },
+  };
+  function locate(location, { focus = true, save = true } = {}) {
+    if (!location) return;
+    location = resolveTranscriptLocation(messages, location.messageId, location.blockId) || location;
+    setReviewMode(false);
+    setActiveLocation({ ...location });
+    currentHit.current = hits.findIndex(hit => hit.blockId === location.blockId);
+    setHitIndex(currentHit.current);
+    setActiveCategory(null);
+    if (window.innerWidth <= 800) setInspecting(false);
+    if (save) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('reader', 'conversation');
+      url.searchParams.set('uuid', location.messageId);
+      location.blockId ? url.searchParams.set('block', location.blockId) : url.searchParams.delete('block');
+      search.trim() ? url.searchParams.set('highlight', search) : url.searchParams.delete('highlight');
+      window.history.replaceState(window.history.state, '', url.pathname + url.search);
+    }
+    const epoch = ++navigationEpoch.current;
+    const focusOrigin = document.activeElement;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (epoch !== navigationEpoch.current) return;
+      const element = document.getElementById(location.blockId || location.messageId);
+      if (element instanceof HTMLDetailsElement) element.open = true;
+      let ancestor = element?.parentElement;
+      while (ancestor) { if (ancestor instanceof HTMLDetailsElement) ancestor.open = true; ancestor = ancestor.parentElement; }
+      const review = element?.closest('.tr-tool-evidence')?.querySelector('.tr-web-results');
+      (review || element)?.scrollIntoView({ block: review ? 'start' : 'center' });
+      if (!focus) element?.querySelector('mark')?.scrollIntoView({ block: 'center' });
+      if (focus && (document.activeElement === focusOrigin || document.activeElement === document.body)) (element?.querySelector('summary') || document.getElementById(location.messageId))?.focus({ preventScroll: true });
+    }));
+  }
+  function moveHit(direction) {
+    if (!hits.length) return;
+    const previous = currentHit.current;
+    const next = previous < 0 ? (direction > 0 ? 0 : hits.length - 1) : (previous + direction + hits.length) % hits.length;
+    setHitIndex(next); locate(hits[next], { focus: false });
+  }
+  useEffect(() => {
+    currentHit.current = hits.length ? 0 : -1;
+    setHitIndex(currentHit.current);
+    if (hits.length) locate(hits[0], { focus: false, save: false });
+  }, [hits]);
+  useEffect(() => {
+    if (!messages.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const location = resolveTranscriptLocation(messages, params.get('uuid') || targetUuid, params.get('block'));
+    if (location) locate(location, { focus: false, save: false });
+    if (fileRoute.review) setInspecting(true);
+  }, [messages, targetUuid]);
 
   // Map compaction UUID → event data for banner rendering
   const compactionMap = useMemo(() => {
     if (!enriched?.compactionEvents?.length) return {};
     return Object.fromEntries(enriched.compactionEvents.map(e => [e.uuid, e]));
   }, [enriched]);
+
+  const reviewBundles = useMemo(() => buildReviewBundles(messages), [messages]);
+  const blockLookup = useMemo(() => new Map(messages.flatMap(message => messageBlocks(message).map(block => [block.id, block]))), [messages]);
 
   const noiseCount = useMemo(() =>
     messages.filter(m => m.noise).length,
@@ -610,21 +718,18 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   const filtered = useMemo(() => {
     let msgs = messages;
     if (!showAllTypes) {
-      msgs = msgs.filter(m => m.role === 'user' || m.role === 'assistant');
+      msgs = msgs.filter(m => m.role === 'user' || m.role === 'assistant' || m.role === 'tool' || m.uuid === activeLocation?.messageId || messageBlocks(m).some(b => ['tool_call', 'tool_result'].includes(b.type)));
     }
     // Sidebar category filter: show only turns dominated by the selected category
     if (activeCategory && enriched?.perMessageCategory) {
       msgs = msgs.filter(m => enriched.perMessageCategory[m.uuid] === activeCategory);
     }
     return msgs;
-  }, [messages, showAllTypes, activeCategory, enriched]);
+  }, [messages, showAllTypes, activeCategory, enriched, activeLocation]);
 
-  const matchCount = useMemo(() => {
-    if (searchTerms.length === 0) return 0;
-    return filtered.filter(m =>
-      searchTerms.some(t => m.content.toLowerCase().includes(t.toLowerCase()))
-    ).length;
-  }, [filtered, searchTerms]);
+  const operations = useMemo(() => operationBundles(filtered.filter(message => !message.noise || !hideNoise || message.uuid === activeLocation?.messageId),reviewBundles), [filtered,hideNoise,activeLocation,reviewBundles]);
+
+  const matchCount = hits.length;
 
   function handleCategoryClick(cat) {
     setActiveCategory(prev => prev === cat ? null : cat);
@@ -665,7 +770,8 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
   }
 
   return (
-    <div id="transcript-viewer" className="flex flex-col h-full">
+    <div id="transcript-viewer" className="transcript-reader flex flex-col h-full">
+      <div className="tr-identity"><SessionIdentity title={session.title} sessionId={identity.sessionId} provider={session.provider} cwd={session.cwd} heading="h1" /></div>
       {/* Header */}
       <div id="transcript-toolbar" className="flex items-center gap-2 px-4 py-2 border-b border-gray-800 flex-shrink-0">
         <button
@@ -675,10 +781,14 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
           back
         </button>
 
+        <button aria-pressed={reviewMode} onClick={() => chooseReader(true)}>Summary</button>
+        <button aria-pressed={!reviewMode} onClick={() => chooseReader(false)}>Conversation</button>
         <input
           type="text"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={event => { setSearch(event.target.value); const url = new URL(window.location.href); event.target.value.trim() ? url.searchParams.set('highlight', event.target.value) : url.searchParams.delete('highlight'); url.searchParams.delete('uuid'); url.searchParams.delete('block'); window.history.replaceState(window.history.state, '', url.pathname + url.search); }}
+          aria-label="Search in transcript"
+          onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); moveHit(event.shiftKey ? -1 : 1); } }}
           placeholder="Search in transcript..."
           className="flex-1 bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-gray-200 placeholder-muted focus:outline-none focus:border-gray-500"
         />
@@ -689,7 +799,12 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
           </span>
         )}
 
-        <label className={TOGGLE_LABEL}>
+        {(!reviewMode || search.trim()) && <><button aria-label="Previous match" disabled={!hits.length} onClick={() => moveHit(-1)}>↑</button>
+        <button aria-label="Next match" disabled={!hits.length} onClick={() => moveHit(1)}>↓</button>
+        {hits.length > 0 && <span role="status">{hitIndex + 1} of {hits.length}</span>}
+        </>}
+        <button ref={evidenceToggle} aria-pressed={inspecting} onClick={() => setInspecting(value => !value)}>Evidence</button>
+        {!reviewMode && <><label className={TOGGLE_LABEL}>
           <input
             type="checkbox"
             checked={showAllTypes}
@@ -713,11 +828,11 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
 
         <span className="text-xs text-muted font-mono">
           {filtered.length} messages
-        </span>
+        </span></>}
       </div>
 
-      {/* Transcript path */}
-      <div className="px-4 py-1 text-xs text-muted font-mono border-b border-gray-800/50 flex-shrink-0 flex items-center gap-2 min-w-0">
+      {/* Source path belongs to evidence inspection, not the summary. */}
+      {(!reviewMode || analysisNotice) && <div className="px-4 py-1 text-xs text-muted font-mono border-b border-gray-800/50 flex-shrink-0 flex items-center gap-2 min-w-0">
         {enriched?.isOngoing && (
           <span className="relative flex h-1.5 w-1.5 flex-shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
@@ -736,22 +851,13 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
         )}
       </div>
 
-      {/* Body: main content + optional attribution sidebar */}
-      <div className="flex flex-1 min-h-0">
-        {/* Main column */}
-        <div className="flex flex-col flex-1 min-h-0">
-          {/* 1c. Session summary header */}
-          {enriched?.summary && (
-            <SessionSummaryCard
-              summary={enriched.summary}
-              isOngoing={enriched.isOngoing}
-              cacheTimeline={enriched.cacheTimeline}
-            />
-          )}
-
+      }
+      {search.trim() && <details className="tr-search-results"><summary>Matching blocks ({hits.length})</summary><div>{hits.map((hit, index) => <button key={hit.blockId} aria-current={hitIndex === index ? 'true' : undefined} onClick={() => { setHitIndex(index); locate(hit); }}><strong>{index + 1} · {hit.type.replaceAll('_', ' ')}</strong> {['tool_call','tool_result'].includes(hit.type) ? toolPresentation(blockLookup.get(hit.blockId), blockLookup.get(blockLookup.get(hit.blockId)?.callBlockId)).detail || 'Source match' : readableText(hit.snippet)}</button>)}{!hits.length && <p>No matching conversation or tool evidence.</p>}</div></details>}
+      <div className="tr-body" data-inspecting={inspecting}>
+        <div className="tr-main">
           {/* Messages */}
-          <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-2">
-            {filtered.map((msg, i) => (
+          <div ref={containerRef} className="tr-messages">
+            {reviewMode ? <SessionReview messages={messages} bundles={reviewBundles} session={session} onLocate={locate} onReviewDocument={document => {setInspecting(true);navigateFile({file:document.path,review:'file'});}} reviewablePaths={(source.files?.[session.id] || []).map(file=>file.path)} renderContent={text => <RenderMarkdown text={text} />} /> : filtered.map((msg, i) => (
               <Fragment key={msg.uuid || i}>
                 {/* 1b. Compaction banner — rendered before the compaction summary message */}
                 {compactionMap[msg.uuid] && (
@@ -760,13 +866,18 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
                     postTokens={compactionMap[msg.uuid].postTokens}
                   />
                 )}
-                {msg.noise && hideNoise ? (
+                {msg.noise && hideNoise && activeLocation?.messageId !== msg.uuid ? (
                   <NoiseBar summary={msg.noiseSummary} type={msg.noise} />
                 ) : (
                   <MessageBlock
                     msg={msg}
+                    blockLookup={blockLookup}
+                    reviewBundles={reviewBundles}
+                    operations={operations}
                     searchTerms={searchTerms}
-                    defaultExpanded={msg.uuid === targetUuid}
+                    defaultExpanded={msg.uuid === activeLocation?.messageId}
+                    activeLocation={activeLocation}
+                    onLocate={locate}
                   />
                 )}
               </Fragment>
@@ -774,16 +885,14 @@ export default function TranscriptViewer({ transcriptPath, targetUuid, initialHi
           </div>
         </div>
 
-        {/* 1a. Token attribution sidebar (only when enriched data is available) */}
-        {enriched?.attribution && (
-          <TokenAttributionSidebar
-            attribution={enriched.attribution}
-            activeCategory={activeCategory}
-            onCategoryClick={handleCategoryClick}
-            collapsed={sidebarCollapsed}
-            onToggle={() => setSidebarCollapsed(s => !s)}
-          />
-        )}
+        {inspecting && <MemoryInspector workspace={workspace} onLocate={locate} tab="transcript" onClose={closeInspector} onCloseFile={() => navigateFile({ file: null, review: null })}>
+          {memoryNotice && <p role="status">{memoryNotice}</p>}
+          <TranscriptEvidenceIndex evidence={evidence} messages={messages} onLocate={locate} />
+          {enriched?.summary && <details className="tr-analysis"><summary>Token analysis</summary><SessionSummaryCard summary={enriched.summary} isOngoing={enriched.isOngoing} cacheTimeline={enriched.cacheTimeline} />
+            {enriched.attribution && <TokenAttributionSidebar attribution={enriched.attribution} activeCategory={activeCategory} onCategoryClick={handleCategoryClick} collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(value => !value)} />}
+          </details>}
+        </MemoryInspector>}
+
       </div>
     </div>
   );

@@ -32,6 +32,13 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}
         run: node tests/browser/focus-workspace.cjs --preview
+      - name: Verify grouped review interactions in the built Explorer
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          node tests/browser/search-review.cjs
+          node tests/browser/review-disclosures.cjs
+          node tests/browser/evidence-review.cjs
       - name: Preserve browser screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -40,4 +47,7 @@ jobs:
           path: |
             ${{ runner.temp }}/carto-memory-browser-artifacts
             ${{ runner.temp }}/carto-focus-workspace-artifacts
+            ${{ runner.temp }}/carto-search-review-browser-artifacts
+            ${{ runner.temp }}/carto-review-disclosure-artifacts
+            ${{ runner.temp }}/carto-evidence-review-browser-artifacts
           if-no-files-found: ignore

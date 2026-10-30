@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import EventCard from './EventCard';
 import ProjectBadge from './ProjectBadge';
 
@@ -59,9 +59,11 @@ export function groupEvents(events) {
   return groups;
 }
 
-export default function EventGroup({ group, onOpenTranscript, onProjectClick }) {
-  const [expanded, setExpanded] = useState(false);
+export default function EventGroup({ group, onOpenTranscript, onProjectClick, focusedEventId }) {
   const events = group.events;
+  const matchedId = focusedEventId && events.find(event => event.event_id === focusedEventId)?.event_id;
+  const [expanded, setExpanded] = useState(Boolean(matchedId));
+  useEffect(() => { if (matchedId) setExpanded(true); }, [matchedId]);
 
   // Single event — no grouping needed
   if (events.length === 1) {
@@ -77,6 +79,7 @@ export default function EventGroup({ group, onOpenTranscript, onProjectClick }) 
     <div className="event-group border border-gray-800 rounded-lg mb-2 overflow-hidden">
       <button
         onClick={() => setExpanded(!expanded)}
+        aria-expanded={expanded}
         className="w-full flex items-center gap-2 px-3 py-2 hover:bg-gray-800/50 transition-colors text-left"
       >
         <span className="text-xs text-muted font-mono" title={first.timestamp}>
