@@ -8,6 +8,9 @@ import { executeFacts } from './facts.js';
 import { createMemoryHandler } from './memory.js';
 import { createTranscriptEnricher } from './memory-transcript.js';
 import { artifactHeaders, canonicalSessionArtifacts, createSessionArtifactCache, documentHeaders } from './session-artifacts.js';
+import { createImageWall, IMAGE_WALL_DAYS, IMAGE_WALL_SCOPES } from './image-wall.js';
+import { createGuardedInspector } from './guarded-open.js';
+import { createThumbnailer, snapThumbWidth } from './image-thumbs.js';
 import { pipeline } from 'node:stream/promises';
 import {
   FACTS_CONTRACT_VERSION,
@@ -37,7 +40,12 @@ function indexEventsById(list) {
  */
 export function createExplorerApp() {
   const app = express();
-  const artifactCache = createSessionArtifactCache();
+  // One inspector, so a folder macOS keeps closed is learned once for every
+  // route that opens corpus-named files (guarded-open.js).
+  const inspector = createGuardedInspector();
+  const artifactCache = createSessionArtifactCache({ inspector });
+  const imageWall = createImageWall({ inspector });
+  const thumbnailer = createThumbnailer();
   // First, so a rebound or cross-site request is refused before its body is
   // parsed. The headless Turbo server binds this same port and runs the same
   // guard (loopback-guard.js); the UI host checks again before mounting this app.
@@ -505,7 +513,7 @@ export function createExplorerApp() {
     return located;
   }
 
-  app.get('/api/session/artifacts', (req, res) => {
+  app.get('/api/session/artifacts', async (req, res) => {
     const located = locateArtifactTranscript(req);
     if (located.error) {
       if (located.status === 404 && req.query.session_id) {
@@ -518,7 +526,7 @@ export function createExplorerApp() {
       return res.status(located.status).json({ error: located.error, code: located.code });
     }
     res.set('Cache-Control', 'no-store');
-    try { res.json({ path: located.path, ...artifactCache.list(located.path, { events }) }); }
+    try { res.json({ path: located.path, ...(await artifactCache.list(located.path, { events })) }); }
     catch (error) { res.status(error.status || 500).json({ error: error.message, code: 'ARTIFACTS_UNAVAILABLE' }); }
   });
 
@@ -527,7 +535,7 @@ export function createExplorerApp() {
     if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
     let opened, stream;
     try {
-      opened = artifactCache.open(located.path, String(req.query.id || ''));
+      opened = await artifactCache.open(located.path, String(req.query.id || ''));
       res.writeHead(200, artifactHeaders(opened));
       if (req.method === 'HEAD') { closeSync(opened.fd); opened = null; res.end(); return; }
       stream = createReadStream(opened.artifact.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
@@ -544,7 +552,7 @@ export function createExplorerApp() {
     if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
     let opened, stream;
     try {
-      opened = artifactCache.openDocument(located.path, String(req.query.id || ''));
+      opened = await artifactCache.openDocument(located.path, String(req.query.id || ''));
       res.writeHead(200, documentHeaders(opened));
       if (req.method === 'HEAD' || !opened.stat.size) { closeSync(opened.fd); opened = null; res.end(); return; }
       stream = createReadStream(opened.document.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
@@ -553,6 +561,65 @@ export function createExplorerApp() {
       if (opened && !stream) closeSync(opened.fd);
       if (res.headersSent) res.destroy(error);
       else res.status(error.status || 500).json({ error: error.message, code: 'DOCUMENT_UNAVAILABLE' });
+    }
+  });
+
+  // The image wall: every image the window's sessions wrote (or, with
+  // scope=named, named), as a Wunderkammer collection. Paths are authorized
+  // here, exactly as /api/session/artifacts authorizes one transcript.
+  app.get('/api/images/collection', async (req, res) => {
+    const days = IMAGE_WALL_DAYS.includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const scope = IMAGE_WALL_SCOPES.includes(req.query.scope) ? req.query.scope : 'changed';
+    const { sessions } = summarizeSessions(events, { days, isHighSignal, deriveTranscript: deriveSessionTranscript, minEvents: 1 });
+    const transcripts = [];
+    for (const session of sessions) {
+      if (!session.transcript_path) continue;
+      try {
+        const canonical = realpathSync(session.transcript_path);
+        if (isAllowedTranscriptPath(canonical, TRANSCRIPT_ROOTS)) transcripts.push({ path: canonical, session });
+      } catch { /* gone since the event was written */ }
+    }
+    // The loopback guard has already refused any other Host.
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const fileUrl = (path, id, w) => `/api/images/file?${new URLSearchParams({ path, id, ...(w ? { w: String(w) } : {}) })}`;
+    const transcriptUrl = (path, link) => `${origin}/session/${encodeURIComponent(path)}?${new URLSearchParams({ reader: 'conversation', uuid: link.messageId, ...(link.blockId ? { block: link.blockId } : {}) })}`;
+    res.set('Cache-Control', 'no-store');
+    try {
+      const result = await imageWall.collection({ transcripts, days, scope, fileUrl, transcriptUrl });
+      if (req.query.document !== '1') return res.json(result);
+      if (!result.collection) return res.status(404).json({ error: 'No images in this window.', code: 'IMAGES_EMPTY', stats: result.stats });
+      res.json(result.collection);
+    } catch (error) { res.status(500).json({ error: error.message, code: 'IMAGES_UNAVAILABLE' }); }
+  });
+
+  app.get('/api/images/file', async (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
+    let opened, stream;
+    try {
+      opened = await imageWall.open(realpathSync(located.path), String(req.query.id || ''));
+      const width = snapThumbWidth(req.query.w);
+      let thumb = null;
+      if (width) {
+        try { thumb = await thumbnailer.thumbnail(opened, width); }
+        catch (error) { if (error.status === 409) throw error; thumb = null; }
+      }
+      if (thumb) {
+        closeSync(opened.fd); opened = null;
+        if (req.headers['if-none-match'] === thumb.etag) return res.status(304).end();
+        const size = statSync(thumb.file).size;
+        res.writeHead(200, { ...artifactHeaders({ artifact: { name: req.query.id + (thumb.mime === 'image/png' ? '.png' : '.jpg') }, stat: { size }, mime: thumb.mime }), 'Cache-Control': 'private, no-cache', ETag: thumb.etag });
+        if (req.method === 'HEAD') return res.end();
+        return await pipeline(createReadStream(thumb.file), res);
+      }
+      res.writeHead(200, artifactHeaders(opened));
+      if (req.method === 'HEAD') { closeSync(opened.fd); opened = null; res.end(); return; }
+      stream = createReadStream(opened.artifact.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
+      await pipeline(stream, res);
+    } catch (error) {
+      if (opened && !stream) closeSync(opened.fd);
+      if (res.headersSent) res.destroy(error);
+      else res.status(error.status || 500).json({ error: error.message, code: 'IMAGE_UNAVAILABLE' });
     }
   });
 
@@ -751,6 +818,7 @@ export function createExplorerApp() {
     sseClients.clear();
     transcriptEnricher.close();
     artifactCache.clear();
+    imageWall.clear();
   }
 
   return { app, close };

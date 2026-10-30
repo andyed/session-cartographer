@@ -6,6 +6,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { artifactHeaders, canonicalSessionArtifacts, createSessionArtifactCache, discoverSessionArtifacts, documentHeaders, openSessionArtifact, openSessionDocument } from '../../explorer/server/session-artifacts.js';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+import { createGuardedInspector } from '../../explorer/server/guarded-open.js';
 
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aPcQAAAAASUVORK5CYII=', 'base64');
 function fixture(t) {
@@ -124,44 +125,45 @@ test('rejects final-file and parent-directory symlinks including substitution af
   assert.throws(() => openSessionArtifact(rows, id), error => error.status === 403);
 });
 
-test('derived cache avoids repeated parsing, invalidates source changes, and restats image availability', t => {
+test('derived cache avoids repeated parsing, invalidates source changes, and restats image availability', async t => {
   const f = fixture(t), image = f.image(), second = f.image('second.png');
   const transcript = path.join(f.dir, 'transcript.jsonl');
   const write = rows => fs.writeFileSync(transcript, rows.map(JSON.stringify).join('\n'));
   write([read(image)]);
   let parses = 0;
-  const cache = createSessionArtifactCache({ loadEntries(file) { parses++; return fs.readFileSync(file, 'utf8').split('\n').map(JSON.parse); } });
-  const initial = cache.list(transcript).artifacts[0];
-  const opened = cache.open(transcript, initial.id); fs.closeSync(opened.fd);
-  assert.equal(cache.list(transcript).artifacts[0].status, 'available');
+  const cache = createSessionArtifactCache({ inspector: createGuardedInspector(), loadEntries(file) { parses++; return fs.readFileSync(file, 'utf8').split('\n').map(JSON.parse); } });
+  const initial = (await cache.list(transcript)).artifacts[0];
+  const opened = await cache.open(transcript, initial.id); fs.closeSync(opened.fd);
+  assert.equal((await cache.list(transcript)).artifacts[0].status, 'available');
   assert.equal(parses, 1, 'list plus image requests reuse derived references');
   fs.unlinkSync(image);
-  assert.equal(cache.list(transcript).artifacts[0].status, 'missing');
-  assert.throws(() => cache.open(transcript, initial.id), error => error.status === 404);
+  assert.equal((await cache.list(transcript)).artifacts[0].status, 'missing');
+  await assert.rejects(cache.open(transcript, initial.id), error => error.status === 404);
   assert.equal(parses, 1, 'image status is never part of cached source parsing');
   write([read(second)]);
-  assert.equal(cache.list(transcript).artifacts[0].path, second);
+  assert.equal((await cache.list(transcript)).artifacts[0].path, second);
   assert.equal(parses, 2);
-  assert.throws(() => cache.open(transcript, initial.id), error => error.status === 404);
+  await assert.rejects(cache.open(transcript, initial.id), error => error.status === 404);
   const replacement = path.join(f.dir, 'replacement.jsonl');
   fs.writeFileSync(replacement, JSON.stringify(read(image)));
   fs.renameSync(replacement, transcript);
-  assert.equal(cache.list(transcript).artifacts[0].path, image, 'atomic source replacement invalidates provenance');
+  assert.equal((await cache.list(transcript)).artifacts[0].path, image, 'atomic source replacement invalidates provenance');
   assert.equal(parses, 3);
 });
 
-test('derived cache respects both entry and byte limits', t => {
+test('derived cache respects both entry and byte limits', async t => {
   const f = fixture(t), image = f.image();
   const a = path.join(f.dir, 'a.jsonl'), b = path.join(f.dir, 'b.jsonl');
   fs.writeFileSync(a, JSON.stringify(read(image))); fs.writeFileSync(b, JSON.stringify(read(image)));
   let parses = 0;
   const loadEntries = file => { parses++; return [JSON.parse(fs.readFileSync(file, 'utf8'))]; };
-  const small = createSessionArtifactCache({ maxEntries: 1, loadEntries });
-  small.list(a); small.list(b); small.list(a);
+  const inspector = createGuardedInspector();
+  const small = createSessionArtifactCache({ inspector, maxEntries: 1, loadEntries });
+  await small.list(a); await small.list(b); await small.list(a);
   assert.equal(parses, 3);
   parses = 0;
-  const bytes = createSessionArtifactCache({ maxBytes: 1, loadEntries });
-  bytes.list(a); bytes.list(a);
+  const bytes = createSessionArtifactCache({ inspector, maxBytes: 1, loadEntries });
+  await bytes.list(a); await bytes.list(a);
   assert.equal(parses, 2, 'oversized derived entries are not retained');
 });
 
@@ -229,22 +231,43 @@ test('commits require canonical same-session events or paired git commit stdout,
   assert.equal(discoverSessionArtifacts(rows).commits[0].subject, 'Create graphics brief');
 });
 
-test('new canonical commits refresh without reparsing cached transcripts or narrowing document scope', t => {
+test('new canonical commits refresh without reparsing cached transcripts or narrowing document scope', async t => {
   const f = fixture(t), document = f.image('whole-session.md', '# Whole session');
   const transcript = path.join(f.dir, 'session.jsonl');
   const rows = [msg('write', 'assistant', [call('write', 'Write', { file_path: document })]), msg('result', 'user', [result('write', `File created successfully at: ${document}`)])];
   fs.writeFileSync(transcript, rows.map(JSON.stringify).join('\n'));
   let parses = 0;
-  const cache = createSessionArtifactCache({ loadEntries() { parses++; return rows; } });
+  const cache = createSessionArtifactCache({ inspector: createGuardedInspector(), loadEntries() { parses++; return rows; } });
   const scoped = [{ type: 'wrapup', session_id: 'artifact-session' }];
-  assert.equal(cache.list(transcript, { events: scoped }).documents.length, 1);
+  assert.equal((await cache.list(transcript, { events: scoped })).documents.length, 1);
   const commit = { event_id: 'later', type: 'git_commit', session_id: 'artifact-session', summary: 'Commit bbbbbbb: A new event' };
-  const updated = cache.list(transcript, { events: [...scoped, commit] });
+  const updated = await cache.list(transcript, { events: [...scoped, commit] });
   assert.equal(updated.commits[0].hash, 'bbbbbbb');
   assert.equal(parses, 1);
   fs.unlinkSync(document);
-  assert.equal(cache.list(transcript).documents[0].status, 'missing');
+  assert.equal((await cache.list(transcript)).documents[0].status, 'missing');
   assert.equal(parses, 1);
+});
+
+test('session review takes the guarded verdict: a blocked folder is reported and never opened here', async t => {
+  const f = fixture(t), image = f.image(), document = f.image('notes.md', '# Notes');
+  const transcript = path.join(f.dir, 'transcript.jsonl');
+  const rows = [read(image), msg('write', 'assistant', [call('write', 'Write', { file_path: document })]), msg('result', 'user', [result('write', `File created successfully at: ${document}`)])];
+  fs.writeFileSync(transcript, rows.map(JSON.stringify).join('\n'));
+  // Both files exist and would open fine on this thread; only the inspector says no.
+  const blocked = { status: 'blocked', root: f.dir, code: 503, reason: 'macOS has not let the Explorer read the fixture folder.' };
+  const asked = [];
+  const inspector = {
+    async inspect(files) { asked.push(['inspect', ...files]); return new Map(files.map(file => [file, blocked])); },
+    async ensure(file, { kind = 'image' } = {}) { asked.push(['ensure', kind, file]); return blocked; },
+  };
+  const cache = createSessionArtifactCache({ inspector, loadEntries: () => rows });
+  const listed = await cache.list(transcript);
+  assert.deepEqual(listed.artifacts.map(a => [a.status, a.reason, a.previewUrl]), [['unavailable', blocked.reason, null]]);
+  await assert.rejects(cache.open(transcript, listed.artifacts[0].id), error => error.status === 503 && error.message === blocked.reason);
+  await assert.rejects(cache.openDocument(transcript, listed.documents[0].id), error => error.status === 503);
+  assert.deepEqual(asked, [['inspect', image], ['ensure', 'image', image], ['ensure', 'document', document]]);
+  assert.throws(() => createSessionArtifactCache({ loadEntries: () => rows }), /needs an inspector/);
 });
 
 test('canonical commit artifacts survive an unavailable transcript only for an exactly known session', () => {

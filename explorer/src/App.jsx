@@ -5,6 +5,7 @@ import SearchInput from './components/SearchInput';
 import TranscriptViewer from './components/TranscriptViewer';
 import Internals from './components/Internals';
 import WorkingMemory from './components/WorkingMemory';
+import ImageWall from './components/ImageWall';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import { isDemoMode, getDemoQueries } from './api';
 import { safeTranscriptReturn } from './components/transcript-navigation.js';
@@ -24,6 +25,7 @@ function parseURL() {
   const isInternals = url.pathname === `${base}/internals` || url.pathname === `${base}/internals/`;
   const isMemory = /^\/memory\/?$/.test(url.pathname.slice(base.length));
   const isTimeline = /^\/timeline\/?$/.test(url.pathname.slice(base.length));
+  const isImages = !isDemoMode && /^\/images\/?$/.test(url.pathname.slice(base.length));
   const isLegacyTimeline = /^\/?$/.test(url.pathname.slice(base.length))
     && ['concurrent', 'sessions', 'chronological'].includes(url.searchParams.get('view'));
   const deepLinkTranscript = sessionMatch
@@ -35,6 +37,7 @@ function parseURL() {
   const tab = deepLinkTranscript ? 'transcript'
     : isMemory ? 'memory'
     : isInternals ? 'internals'
+    : isImages ? 'images'
     : isTimeline || isLegacyTimeline ? 'timeline'
     : (urlQuery || urlProject) ? 'search'
     : 'timeline';
@@ -82,6 +85,7 @@ export default function App() {
     setTab(t);
     let nextURL = BASE;
     if (t === 'internals') nextURL = `${BASE}internals`;
+    if (t === 'images') nextURL = `${BASE}images`;
     if (t === 'memory' || t === 'timeline') {
       const origin = tab === 'transcript' && safeTranscriptReturn(new URLSearchParams(window.location.search).get('return'), BASE);
       const route = origin ? readWorkspaceRoute(new URL(origin, window.location.origin).search) : readWorkspaceRoute();
@@ -157,16 +161,16 @@ export default function App() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-4 py-2">
           {/* Search input with autocomplete — flush left */}
           {/* Memory owns its local find control; other routes keep global search. */}
-          {['memory', 'timeline', 'transcript'].includes(tab) ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
+          {['memory', 'timeline', 'transcript', 'images'].includes(tab) ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
 
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
             <div className="flex flex-wrap gap-1">
-              {['memory', 'timeline', 'search', ...(isDemoMode ? [] : ['internals'])].map(t => (
+              {['memory', 'timeline', 'search', ...(isDemoMode ? [] : ['images', 'internals'])].map(t => (
                 <button
                   key={t}
                   onClick={() => handleTabClick(t)}
-                  className={`px-2 sm:px-3 min-h-11 text-sm sm:text-base rounded ${
+                  className={`px-1.5 sm:px-3 min-h-11 text-sm sm:text-base rounded ${
                     tab === t
                       ? 'bg-gray-700 text-gray-200'
                       : 'text-gray-300 hover:text-gray-100'
@@ -224,6 +228,13 @@ export default function App() {
           <div className={`absolute inset-0 ${tab === 'search' ? '' : 'hidden'}`}>
             <RouteErrorBoundary name="Search" resetKey={`${tab}:${searchQuery}`} onLeave={() => handleTabClick('timeline')}>
               <Search query={searchQuery} onOpenTranscript={openTranscript} isActive={tab === 'search'} />
+            </RouteErrorBoundary>
+          </div>
+        )}
+        {mountedTabs.current.has('images') && (
+          <div className={`absolute inset-0 ${tab === 'images' ? '' : 'hidden'}`}>
+            <RouteErrorBoundary name="Images" resetKey={tab} onLeave={() => handleTabClick('timeline')}>
+              <ImageWall isActive={tab === 'images'} />
             </RouteErrorBoundary>
           </div>
         )}

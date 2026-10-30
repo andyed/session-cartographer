@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { normalizeTranscriptEntries } from './transcripts.js';
 import { literalToolInputs } from './memory-transcript.js';
 import { firstResolved } from '../../scripts/sentinels.js';
+import { imageDimensions } from './image-probe.js';
 
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
 const DOCUMENT_EXT = /\.(?:md|markdown|txt|html?|pdf|docx?|rtf|odt|csv|tsv|xlsx?|ods|pptx?|odp|tex|rst|ipynb)$/i;
@@ -126,7 +127,7 @@ export function openArtifactFile(file) {
   }
 }
 
-function openDocumentFile(file) {
+export function openDocumentFile(file) {
   let fd;
   try {
     assertNoSymlink(file);
@@ -144,6 +145,33 @@ function openDocumentFile(file) {
     if (error.code === 'ENOENT' || error.code === 'ENOTDIR') throw new ArtifactError(404, 'Recorded document is no longer available.');
     throw new ArtifactError(403, 'Recorded document cannot be opened safely.');
   }
+}
+
+const statKey = stat => `${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}`;
+const failure = error => ({ status: error.status === 404 ? 'missing' : 'unavailable', code: error.status || 403, reason: error.message });
+
+/**
+ * One image's availability, fingerprint and pixel size, never throwing. This
+ * opens the file on the calling thread: the server runs it on a worker
+ * (guarded-open.js), because an open can park in a macOS privacy prompt.
+ */
+export function inspectImage(file, known) {
+  let opened;
+  try { opened = openArtifactFile(file); } catch (error) { return failure(error); }
+  const { fd, stat, mime } = opened;
+  try {
+    const key = statKey(stat);
+    const dimensions = known?.key === key ? known.dimensions : imageDimensions(fd, stat.size, mime);
+    return { status: 'available', mime, key, size: stat.size, mtimeMs: stat.mtimeMs, dev: stat.dev, ino: stat.ino, dimensions };
+  } finally { fs.closeSync(fd); }
+}
+
+/** Whether a recorded document opens, never throwing; same thread caveat as inspectImage. */
+export function inspectDocument(file) {
+  let opened;
+  try { opened = openDocumentFile(file); } catch (error) { return failure(error); }
+  fs.closeSync(opened.fd);
+  return { status: 'available', key: statKey(opened.stat), size: opened.stat.size, mtimeMs: opened.stat.mtimeMs };
 }
 
 function openDerivedDocument(derived, id) {
@@ -271,17 +299,32 @@ export function canonicalSessionArtifacts(events, sessionId) {
   };
 }
 
-export function discoverSessionArtifacts(entries, { transcriptPath = '', inspect = true, events = [] } = {}) {
+// First and last recorded message times. The image wall compares a file's
+// mtime with this span to tell an image the session wrote from one it only named.
+function transcriptSpan(normalized) {
+  let start = '', end = '';
+  for (const message of normalized.messages) {
+    const at = Date.parse(message.timestamp || '');
+    if (!Number.isFinite(at)) continue;
+    if (!start || at < Date.parse(start)) start = new Date(at).toISOString();
+    if (!end || at > Date.parse(end)) end = new Date(at).toISOString();
+  }
+  return { start, end };
+}
+
+export function discoverSessionArtifacts(entries, { transcriptPath = '', inspect = true, events = [], imagesOnly = false } = {}) {
   const normalized = normalizeTranscriptEntries(entries);
   const artifacts = new Map();
   const calls = new Map(normalized.messages.flatMap(m => m.blocks.filter(b => b.type === 'tool_call').map(b => [b.id, b])));
   const add = (file, message, block, source, label, operation = 'referenced') => {
     file = localImagePath(file);
     if (!file) return;
-    if (!artifacts.has(file)) artifacts.set(file, { id: createHash('sha256').update(file).digest('hex').slice(0, 24), path: file, name: path.basename(file), source: operation, evidence: [], lastIndex: message.sourceIndex });
+    if (!artifacts.has(file)) artifacts.set(file, { id: createHash('sha256').update(file).digest('hex').slice(0, 24), path: file, name: path.basename(file), source: operation, evidence: [], lastIndex: message.sourceIndex, firstAt: message.timestamp || '', lastAt: message.timestamp || '' });
     const artifact = artifacts.get(file);
     if (operation === 'created') artifact.source = 'created';
     artifact.lastIndex = message.sourceIndex;
+    if (message.timestamp) artifact.lastAt = message.timestamp;
+    artifact.firstAt ||= message.timestamp || '';
     if (!artifact.evidence.some(e => e.blockId === block.id && e.source === source)) artifact.evidence.push({ messageId: message.uuid, blockId: block.id, ...(block.callId ? { callId: block.callId } : {}), source, label, operation });
   };
   for (const message of normalized.messages) for (const block of message.blocks) {
@@ -312,22 +355,24 @@ export function discoverSessionArtifacts(entries, { transcriptPath = '', inspect
   }
   const list = [...artifacts.values()].sort((a, b) => b.lastIndex - a.lastIndex || a.name.localeCompare(b.name));
   const derived = {
-    identity: normalized.identity, artifacts: list.map(({ lastIndex, ...artifact }) => artifact),
-    documents: transcriptDocuments(normalized, entries),
-    commits: mergeCommits(transcriptCommits(normalized), events, normalized.identity.sessionId),
+    identity: normalized.identity, span: transcriptSpan(normalized), artifacts: list.map(({ lastIndex, ...artifact }) => artifact),
+    // The image wall reads only images; documents and commits cost a second pass.
+    documents: imagesOnly ? [] : transcriptDocuments(normalized, entries),
+    commits: imagesOnly ? [] : mergeCommits(transcriptCommits(normalized), events, normalized.identity.sessionId),
   };
   return inspect ? inspectArtifacts(derived, transcriptPath) : derived;
 }
 
-function inspectArtifacts(derived, transcriptPath) {
+// `checked` maps each image path to an inspectImage result; without it the
+// images are opened here, on the calling thread (tests and the sync export).
+function inspectArtifacts(derived, transcriptPath, checked = null) {
   const artifacts = derived.artifacts.map(artifact => {
-    let metadata = { status: 'unavailable', previewUrl: null };
-    try {
-      const { fd, stat, mime } = openArtifactFile(artifact.path);
-      fs.closeSync(fd);
-      metadata = { status: 'available', mime, size: stat.size, modifiedAt: stat.mtime.toISOString(), previewUrl: `/api/session/artifact?${new URLSearchParams({ path: transcriptPath, id: artifact.id })}` };
-    } catch (error) { metadata.reason = error.message; metadata.status = error.status === 404 ? 'missing' : 'unavailable'; }
-    return { ...artifact, ...metadata };
+    const result = checked ? checked.get(artifact.path) : inspectImage(artifact.path);
+    if (result?.status === 'available') {
+      return { ...artifact, status: 'available', mime: result.mime, size: result.size, modifiedAt: new Date(result.mtimeMs).toISOString(), previewUrl: `/api/session/artifact?${new URLSearchParams({ path: transcriptPath, id: artifact.id })}` };
+    }
+    // A blocked open is reported as unavailable, with the folder macOS kept closed.
+    return { ...artifact, status: result?.status === 'missing' ? 'missing' : 'unavailable', previewUrl: null, reason: result?.reason || 'Recorded image cannot be opened safely.' };
   }).sort((a, b) => Number(b.status === 'available') - Number(a.status === 'available'));
   const documents = (derived.documents || []).map(document => {
     try {
@@ -357,7 +402,11 @@ function readEntries(file) {
 // Cache only derived paths, identity and provenance, never raw transcripts or
 // tool bodies. Each request checks source identity; image availability and
 // descriptors are independently revalidated even when the source is unchanged.
-export function createSessionArtifactCache({ maxEntries = 16, maxBytes = 4 * 1024 * 1024, loadEntries = readEntries } = {}) {
+// `inspector` (guarded-open.js) does every first open on a worker, so an
+// image in a folder macOS keeps closed cannot freeze the server's thread.
+export function createSessionArtifactCache({ inspector, maxEntries = 16, maxBytes = 4 * 1024 * 1024, loadEntries = readEntries } = {}) {
+  if (!inspector) throw new TypeError('createSessionArtifactCache needs an inspector from guarded-open.js');
+  const refuseBlocked = result => { if (result?.status === 'blocked') throw new ArtifactError(503, result.reason); };
   const cache = new Map();
   let bytes = 0;
   const signature = stat => [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
@@ -380,16 +429,23 @@ export function createSessionArtifactCache({ maxEntries = 16, maxBytes = 4 * 102
     return value;
   }
   return {
-    list(transcriptPath, { events = [] } = {}) {
+    async list(transcriptPath, { events = [] } = {}) {
       const value = derived(transcriptPath);
-      return inspectArtifacts({ ...value, commits: mergeCommits(value.commits, events, value.identity.sessionId) }, transcriptPath);
+      const checked = await inspector.inspect(value.artifacts.map(artifact => artifact.path));
+      return inspectArtifacts({ ...value, commits: mergeCommits(value.commits, events, value.identity.sessionId) }, transcriptPath, checked);
     },
-    open(transcriptPath, id) {
+    async open(transcriptPath, id) {
       const artifact = derived(transcriptPath).artifacts.find(item => item.id === id);
       if (!artifact) throw new ArtifactError(404, 'Image is not referenced by this session.');
+      refuseBlocked(await inspector.ensure(artifact.path));
       return { artifact, ...openArtifactFile(artifact.path) };
     },
-    openDocument(transcriptPath, id) { return openDerivedDocument(derived(transcriptPath), id); },
+    async openDocument(transcriptPath, id) {
+      const value = derived(transcriptPath);
+      const document = value.documents.find(item => item.id === id && ['created', 'edited'].includes(item.source));
+      if (document) refuseBlocked(await inspector.ensure(document.path, { kind: 'document' }));
+      return openDerivedDocument(value, id);
+    },
     clear() { cache.clear(); bytes = 0; },
   };
 }

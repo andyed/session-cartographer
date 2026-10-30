@@ -130,6 +130,18 @@ file provenance. `focus-workspace.cjs --preview --layout-proof` isolates narrow
 session lists, open filter panels and inspector return. The complete focus journey
 also tests the compact reading editor and stable canonical scope.
 
+### Image wall
+
+`node tests/browser/image-wall.cjs` (add `--preview` after a build) runs the
+Explorer against a fixture session that wrote three SVGs and read a fourth. It
+checks that `scope=changed` keeps the three written ones and `scope=named` adds
+the read-only one, that the document passes Wunderkammer's `validateCollection`,
+that unnamed ids get 404, that the embedded wall loads every cover without SVG
+scripts running or any request to a Wunderkammer server API, and that the tab
+bar stays on one row at 390 px. Screenshots go to `carto-image-wall-browser-artifacts`.
+The stall watchdog is covered in `tests/unit/image-wall.test.js` with a fake
+worker, because a real TCC prompt cannot be produced in CI.
+
 ### The GH Pages demo
 
 `memory-entry.cjs` strips `VITE_DEMO` on purpose, so it says nothing about the
