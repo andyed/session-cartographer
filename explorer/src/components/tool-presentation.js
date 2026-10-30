@@ -1,4 +1,5 @@
 import { readableText, isOrchestration } from './evidence-content.js';
+import { commandReview } from './command-review.js';
 import { literalToolInputs } from '../../shared/literal-tool-inputs.js';
 // Display excerpts only; the original blocks remain the evidence/search source.
 export function excerpt(value, limit = 180) {
@@ -71,6 +72,8 @@ export function toolPresentation(block, pairedCall) {
   const status = block.status === 'error' ? 'Error'
     : block.status === 'missing-result' ? 'No result recorded'
     : block.orphan ? 'Call unavailable' : '';
+  const review = commandReview(typeof input === 'string' && /(?:^|[_.])(?:bash|shell|shell_command|exec_command)$/i.test(call?.name || block.name || '') ? {cmd:input} : input);
+  if (review) return { title: excerpt(review.title,100) + (result ? ' · Response' : ''), detail: result ? excerpt(outputText(block.output)) : '', status, cues: result ? [] : review.cues };
   return { title, detail: detail === shortName && !result ? '' : detail, status };
 }
 

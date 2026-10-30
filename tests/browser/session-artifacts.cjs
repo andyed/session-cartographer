@@ -259,7 +259,7 @@ async function port() { const server = net.createServer(); await new Promise(r =
       await page.getByLabel('Session summary',{exact:true}).getByText('The package declares Capacitor. Device validation remains pending.',{exact:true}).waitFor();
       assert.equal(await page.locator('.tr-tool').count(),0);
       await page.getByRole('button',{name:'Conversation',exact:true}).click();
-      const command=page.locator('.tr-tool').filter({hasText:'Commands · rg -n Capacitor'});
+      const command=page.locator('.tr-tool').filter({has:page.locator('.tr-command-cues [data-kind=term]').getByText('Capacitor',{exact:true})});
       await command.locator(':scope > summary').click();
       await command.locator('.tr-tool-result pre').getByText('Capacitor dependency found in Package.swift',{exact:true}).waitFor();
       assert.equal(await command.getByRole('button',{name:/Go to result/}).count(),0);

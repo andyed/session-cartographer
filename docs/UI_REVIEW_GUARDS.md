@@ -131,3 +131,24 @@ Initial product grounding, not a completed evaluation:
   supplies discovery leads only. Verify its claims against products before use.
 
 The full task-based competitive review is queued in TODO.md.
+
+
+## Follow-up: useful terms hidden by command prefixes
+
+The 2026-10-29 user example passed the interface-copy gate because tool previews
+were classified as source content. It still hid `solverAB` behind a long checkout
+path and shell syntax. `command-review.js` now extracts display-only literal
+subjects for collapsed command rows: description/operation, search anchors,
+filenames and secondary operations. Exact requests and patterns remain available;
+unsupported/dynamic expressions are not interpreted as literal facts.
+
+`tests/browser/command-review.cjs` independently requires terms beyond the old
+prefix to remain visible at 390px, then exercises exact-command expansion,
+source search, reload and paired output navigation. The proof is included in CI.
+The final local build `index-Bs7k5jqJ.js` passed this browser proof; 18 focused
+unit tests passed on BIGFU, and the added plain-string Bash case passed in the
+six-test command subset. The existing artifact browser journey also passed.
+
+[Desktop capture](assets/command-review-2026-10-29/collapsed-1200.png) ·
+[390px capture](assets/command-review-2026-10-29/collapsed-390.png) ·
+[Verification](assets/command-review-2026-10-29/verification.json).

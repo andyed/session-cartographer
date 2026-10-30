@@ -39,6 +39,7 @@ jobs:
           node tests/browser/search-review.cjs
           node tests/browser/review-disclosures.cjs
           node tests/browser/evidence-review.cjs
+          node tests/browser/command-review.cjs
       - name: Preserve browser screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -50,4 +51,5 @@ jobs:
             ${{ runner.temp }}/carto-search-review-browser-artifacts
             ${{ runner.temp }}/carto-review-disclosure-artifacts
             ${{ runner.temp }}/carto-evidence-review-browser-artifacts
+            ${{ runner.temp }}/carto-command-review-browser-artifacts
           if-no-files-found: ignore

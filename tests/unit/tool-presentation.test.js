@@ -7,9 +7,10 @@ test('collapsed tool evidence exposes specific work without inventing success', 
   assert.deepEqual(toolPresentation(write), {title:'Write · output.html',detail:'/tmp/output.html',status:''});
   const command = {type:'tool_call',name:'Bash',input:JSON.stringify({command:'magick source.png -resize 50% preview.png',description:'Render preview'}),status:'returned'};
   assert.match(toolPresentation(command).title, /Render preview/);
-  assert.match(toolPresentation(command).detail, /magick source.png/);
+  assert.equal(toolPresentation(command).detail, '');
+  assert.deepEqual(toolPresentation(command).cues.filter(cue=>cue.kind==='file').map(cue=>cue.text), ['source.png','preview.png']);
   const result = {type:'tool_result',name:'Bash',output:[{type:'text',text:'preview.png PNG 640x480'}],status:'returned'};
-  assert.deepEqual(toolPresentation(result,command), {title:'Bash output · Render preview',detail:'preview.png PNG 640x480',status:''});
+  assert.deepEqual(toolPresentation(result,command), {title:'Render preview · Response',detail:'preview.png PNG 640x480',status:'',cues:[]});
   assert.equal(toolPresentation({...result,status:'error'},command).status,'Error');
   assert.equal(toolPresentation({...command,status:'missing-result'}).status,'No result recorded');
   assert.equal(toolPresentation({...result,orphan:true}).status,'Call unavailable');

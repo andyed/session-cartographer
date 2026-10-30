@@ -27,7 +27,9 @@ test('orchestration is decoded, never evaluated or printed; backend still requir
   assert.deepEqual(literalToolInputs(input),[]);
   const presentation=toolPresentation({type:'tool_call',name:'exec',input});
   assert.doesNotMatch(presentation.title+presentation.detail,/Promise|tools\.|text\(|\{"/);
-  assert.match(presentation.title,/rg -n Capacitor/);
+  assert.equal(presentation.title,'Search');
+  assert.ok(presentation.cues.some(cue=>cue.text==='Capacitor'));
+  assert.equal(presentation.detail,'');
   assert.equal(displayValue('text(await tools.exec_command({cmd:"ls"}))'),null);
 });
 

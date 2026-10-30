@@ -85,3 +85,10 @@
 .tr-file-evidence>summary>strong{grid-column:1;grid-row:1}
 .tr-file-evidence>summary>span:nth-child(2){grid-column:1/-1;grid-row:2}
 .tr-file-evidence>summary>span:last-child{grid-column:2;grid-row:1}
+
+/* Literal subjects wrap independently; shell prefixes never occupy this preview. */
+.tr-tool>summary{position:relative;padding-right:32px}
+.tr-tool>summary>.tr-tool-status{position:absolute;right:0;top:8px;margin:0}
+.tr-tool>summary .tr-command-cues{display:flex;flex-wrap:wrap;gap:4px 8px;margin:6px 0 4px 18px}
+.tr-tool>summary .tr-command-cues>span{display:inline;max-width:100%;margin:0;padding:2px 6px;border:1px solid var(--fw-line);border-radius:3px;white-space:normal;overflow-wrap:anywhere;font:500 16px/1.5 ui-monospace,monospace;color:var(--fw-ink)}
+.tr-tool>summary .tr-command-cues>[data-kind=operation]{font-family:inherit;color:var(--fw-muted);border-color:transparent;padding-inline:0}

@@ -1,0 +1,24 @@
+{
+  "build": "assets/index-Bs7k5jqJ.js",
+  "checks": [
+    "meaningful lexical cues",
+    "wrapped exec extraction",
+    "no shell or transport in collapsed rows",
+    "exact expanded commands",
+    "keyboard and pointer disclosure",
+    "canonical search and reload",
+    "paired result source",
+    "390px unclipped cues"
+  ],
+  "copy": [
+    {
+      "name": "commands-collapsed-desktop",
+      "boilerplatePercent": 0
+    },
+    {
+      "name": "commands-collapsed-mobile",
+      "boilerplatePercent": 0
+    }
+  ],
+  "errors": []
+}

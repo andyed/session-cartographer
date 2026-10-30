@@ -111,11 +111,14 @@ After building Explorer, run:
 node tests/browser/search-review.cjs
 node tests/browser/review-disclosures.cjs
 node tests/browser/evidence-review.cjs
+node tests/browser/command-review.cjs
 node tests/browser/session-artifacts.cjs --preview --interaction-audit
 ```
 
-The first three serve the built app from disposable localhost ports and intercept
-APIs with explicit fixtures. They never access the live corpus. They assert source
+The first four serve the built app from disposable localhost ports and intercept
+APIs with explicit fixtures. The command proof places useful search terms beyond
+a long shell prefix and requires them to remain visible at 390px, while exact
+commands and source search remain intact. They never access the live corpus. They assert source
 identity/rank recovery, full-text and preview disclosures, native actions and text
 selection, file/operation pairing, error provenance and exact anchors. They complement
 the real isolated-backend journeys, not substitute for them. Keep local browser runs

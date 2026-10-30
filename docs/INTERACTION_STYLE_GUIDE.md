@@ -138,6 +138,19 @@ A low repeated-copy score cannot compensate for inaccessible content. Gate sourc
 identity recovery, truthful disclosures, first-result visibility, input parity and
 local retry separately. Retain full paths/times on demand and exact source return.
 
+### Command previews are subjects, not shell excerpts
+
+A truncated command prefix is not a useful summary. Put the recorded description
+or operation first, followed by independently wrapping filenames and literal
+search anchors. A long `cd` path, pipeline or orchestration wrapper must not push
+`solverAB` (or another distinguishing subject) outside the collapsed view.
+Use lexical extraction only; never execute a command to label it, infer its
+outcome, or promote a dynamic expression to a literal fact. Keep exact commands,
+patterns and original source IDs available for expansion and search.
+
+Test token recoverability separately from repeated-copy scoring: source content
+can contain a huge repeated path blob while the interface-copy score stays low.
+
 ## Navigation, focus and recovery
 
 Use the same canonical identity in list rows, charts, URLs, inspectors and
