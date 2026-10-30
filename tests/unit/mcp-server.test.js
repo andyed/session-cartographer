@@ -42,7 +42,7 @@ import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
-import { hitLines } from '../../scripts/cartographer-mcp.js';
+import { hitLines, resolveCommand, run } from '../../scripts/cartographer-mcp.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const SERVER = path.join(ROOT, 'scripts', 'cartographer-mcp.js');
@@ -326,6 +326,36 @@ test('the JSON-RPC surface answers what it must and refuses the rest', async () 
   } finally {
     fx.cleanup();
   }
+});
+
+test('on Windows, bash is the absolute executable the hook launcher finds', () => {
+  // spawn cannot run a bash.cmd shim, and the desktop app's PATH may lack Git's
+  // bin directory: every recall failed with `spawn bash ENOENT`.
+  assert.equal(resolveCommand('bash', 'linux'), 'bash');
+  assert.equal(resolveCommand('node', 'win32'), 'node');
+  const saved = process.env.CARTOGRAPHER_BASH;
+  process.env.CARTOGRAPHER_BASH = process.execPath;
+  try {
+    assert.equal(resolveCommand('bash', 'win32'), process.execPath);
+  } finally {
+    if (saved === undefined) delete process.env.CARTOGRAPHER_BASH;
+    else process.env.CARTOGRAPHER_BASH = saved;
+  }
+});
+
+test('a child that exits while a process it started holds its pipes still answers', async () => {
+  // On Windows, the Turbo daemon a cold recall starts inherits the search
+  // script's pipes, and waiting for them to close hung that recall for good.
+  // Detached, as cartographer-turbo.js starts it: on Windows a holder that is
+  // not detached lets the pipes close.
+  const child = "require('node:child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 4000)'],"
+    + " { stdio: 'inherit', windowsHide: true, detached: true }).unref(); console.log('answered');";
+  const started = Date.now();
+  const result = await run(process.execPath, ['-e', child], { timeoutMs: 10_000, env: process.env });
+  const elapsed = Date.now() - started;
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'answered');
+  assert.ok(elapsed < 3000, `answered after ${elapsed} ms, when the holder exited`);
 });
 
 test('the plugin registers the server for Claude Code and Codex, and the mirror is byte-identical', () => {

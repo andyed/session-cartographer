@@ -46,6 +46,7 @@
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
@@ -96,6 +97,7 @@ const INTENTS = [
 
 const SEARCH_TIMEOUT_MS = 120_000;
 const QUICK_TIMEOUT_MS = 30_000;
+const EXIT_DRAIN_MS = 500;
 const OUTPUT_CAP_BYTES = 8 * 1024 * 1024;
 const SUMMARY_CLIP = 180;
 
@@ -159,15 +161,33 @@ function childEnv() {
 }
 
 /**
+ * On Windows, `bash` on PATH is often missing, a .cmd shim spawn cannot run,
+ * or WSL's, so find Git's bash.exe the way the hook launcher does
+ * (CARTOGRAPHER_BASH overrides). The launcher is in ../hooks in the plugin and
+ * under plugins/ from the repo's mirror, as cartographer-search.sh finds
+ * log-knowledge-gap.sh. A miss throws, and run() reports it.
+ */
+function resolveCommand(command, platform = process.platform) {
+  if (command !== 'bash' || platform !== 'win32') return command;
+  const launcher = [path.join(ROOT, 'hooks', 'run-hook.cjs'),
+    path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'run-hook.cjs')].find((file) => fs.existsSync(file));
+  if (!launcher) throw new Error('hooks/run-hook.cjs not found, so Bash cannot be located');
+  return createRequire(import.meta.url)(launcher).resolveBash(platform);
+}
+
+/**
  * Run a child to completion. Detached into its own process group so a
  * cancellation or timeout can stop the awk/grep workers the search script
- * spawns, not just the bash parent.
+ * spawns, not just the bash parent. Not on Windows, where detaching gives the
+ * child a console of its own, as in the hook launcher.
  */
 function run(command, args, { timeoutMs = SEARCH_TIMEOUT_MS, signal, env = childEnv() } = {}) {
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(command, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+      child = spawn(resolveCommand(command), args, {
+        env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true,
+      });
     } catch (error) {
       resolve({ code: 127, stdout: '', stderr: error.message, timedOut: false, cancelled: false });
       return;
@@ -196,8 +216,16 @@ function run(command, args, { timeoutMs = SEARCH_TIMEOUT_MS, signal, env = child
       errBytes += chunk.length;
     });
     child.on('error', (error) => err.push(Buffer.from(`${error.message}\n`)));
+    // On Windows a daemon the child starts (Turbo, on the first recall after a
+    // boot) inherits its pipes and holds them open, so 'close' would never
+    // come. Once the child has exited, give its output a moment, then stop reading.
+    let drain;
+    child.on('exit', () => {
+      drain = setTimeout(() => { child.stdout.destroy(); child.stderr.destroy(); }, EXIT_DRAIN_MS);
+    });
     child.on('close', (code) => {
       clearTimeout(timer);
+      clearTimeout(drain);
       if (signal) signal.removeEventListener('abort', onAbort);
       resolve({
         code: code ?? 1,
@@ -1202,4 +1230,4 @@ if (isMain) {
   });
 }
 
-export { TOOLS, INSTRUCTIONS, PROTOCOL_VERSIONS, parseGetOutput, parseThread, parseExtras, providerFromClient, sourceMix, hitLines };
+export { TOOLS, INSTRUCTIONS, PROTOCOL_VERSIONS, parseGetOutput, parseThread, parseExtras, providerFromClient, sourceMix, hitLines, resolveCommand, run };
