@@ -40,7 +40,9 @@ detect_provider_from() {
     claude|codex) printf '%s\n' "$CARTOGRAPHER_PROVIDER"; return 0 ;;
   esac
 
-  case "$transcript" in
+  # Windows payloads spell the path with `\` (C:\Users\me\.claude\projects\…),
+  # which the patterns below never matched: every such row was "unknown".
+  case "${transcript//\\//}" in
     */.codex/sessions/*|*/.codex/archived_sessions/*) printf '%s\n' "codex"; return 0 ;;
     */.claude/projects/*) printf '%s\n' "claude"; return 0 ;;
   esac
@@ -321,8 +323,13 @@ cartographer_event_id() {
 # handful of paths does not pay a process for each. Same answers as the
 # utilities: trailing slashes are dropped, a bare name has dirname `.`, the
 # root's dirname and basename are both `/`.
+#
+# Under Git Bash (and Cygwin) `\` separates too, as it does for MSYS's own
+# dirname and basename: a Windows payload's cwd is C:\dev\repo, and a non-repo
+# cwd's project was the whole path ("C:\dev") until this treated it as one.
 cartographer_dirname() {
   local p="$1"
+  case "$OSTYPE" in msys*|cygwin*) p="${p//\\//}" ;; esac
   case "$p" in
     '') printf '.\n'; return 0 ;;
     *[!/]*) ;;
@@ -336,6 +343,7 @@ cartographer_dirname() {
 }
 cartographer_basename() {
   local p="$1"
+  case "$OSTYPE" in msys*|cygwin*) p="${p//\\//}" ;; esac
   case "$p" in
     '') printf '\n'; return 0 ;;
     *[!/]*) ;;
