@@ -8,7 +8,7 @@
 
 import { statSync, realpathSync, openSync, readSync, closeSync } from 'fs';
 import { execFileSync } from 'child_process';
-import { join, dirname, isAbsolute, resolve as resolvePath } from 'path';
+import { join, dirname, isAbsolute, resolve as resolvePath, sep } from 'path';
 import { editSummaryPaths } from './edit-paths.js';
 
 export const HOUR = 3600e3;
@@ -117,8 +117,12 @@ export function eventFiles(e) {
  * Git common directory identifies the main checkout. Cache that lookup per
  * worktree: a directory name alone is not proof that two repositories match.
  */
-const WORKTREE_SEGMENT = /\/\.claude\/worktrees\/[^/]+(?=\/)/;
-const CODEX_WORKTREE = /\/\.codex\/worktrees\/[^/]+\/[^/]+(?=\/)/;
+// A Windows path separates with `\`, and only matched these with `/`, so a
+// worktree edit and its main checkout never collided there.
+const SEP = sep === '\\' ? '[\\\\/]' : '\\/';
+const NAME = sep === '\\' ? '[^\\\\/]+' : '[^/]+';
+const WORKTREE_SEGMENT = new RegExp(`${SEP}\\.claude${SEP}worktrees${SEP}${NAME}(?=${SEP})`);
+const CODEX_WORKTREE = new RegExp(`${SEP}\\.codex${SEP}worktrees${SEP}${NAME}${SEP}${NAME}(?=${SEP})`);
 const codexWorktreeRoots = new Map();
 export const unmappedWorktrees = new Set();
 export function contentionKey(absolutePath) {
