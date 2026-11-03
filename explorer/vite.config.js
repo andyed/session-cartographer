@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { turboEntryPlugin } from './server/turbo-entry.js';
@@ -21,7 +22,9 @@ export default defineConfig({
   resolve: {
     // The split diff view never highlights syntax; see src/lib/lowlight-stub.js
     // for the measurement that keeps highlight.js out of the bundle.
-    alias: { lowlight: new URL('./src/lib/lowlight-stub.js', import.meta.url).pathname },
+    // fileURLToPath, not URL.pathname: on Windows .pathname is "/C:/...", which
+    // esbuild resolved to C:\C:\... and the dev server exited at startup.
+    alias: { lowlight: fileURLToPath(new URL('./src/lib/lowlight-stub.js', import.meta.url)) },
   },
   server: {
     host: '127.0.0.1',
