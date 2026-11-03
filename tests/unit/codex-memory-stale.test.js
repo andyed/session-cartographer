@@ -21,8 +21,8 @@ const repo = resolve(import.meta.dirname, '../..');
 test('cartographer-search.sh reads the same stale-id path as the JS readers', () => {
   const shell = readFileSync(join(repo, 'scripts/cartographer-search.sh'), 'utf8');
   assert.ok(
-    shell.includes(`codex_memory_stale="$DEV/${CODEX_MEMORY_STALE_RELATIVE}"`),
-    'the awk -v codex_memory_stale path drifted from codex-memory-stale.js',
+    shell.includes(`CARTO_CODEX_MEMORY_STALE="$DEV/${CODEX_MEMORY_STALE_RELATIVE}"`),
+    'the CARTO_CODEX_MEMORY_STALE path handed to the fusion awk drifted from codex-memory-stale.js',
   );
 });
 

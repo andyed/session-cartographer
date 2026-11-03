@@ -1270,7 +1270,7 @@ rank_fuse_and_display() {
   # RRF with k=60 (standard constant)
   # Input: TSV lines from all sources
   # Output: faceted summary of top 500, then detailed top N results
-  # codex_memory_stale mirrors CODEX_MEMORY_STALE_RELATIVE in
+  # CARTO_CODEX_MEMORY_STALE mirrors CODEX_MEMORY_STALE_RELATIVE in
   # codex-memory-stale.js; tests/unit/codex-memory-stale.test.js pins them.
   CARTO_SERVED_IN="${SERVED_FILE:-}" CARTO_SERVED_OUT="${SERVED_OUT:-}" \
   CARTO_ACCESS_LEDGER="$ACCESS_LEDGER" CARTO_CODEX_MEMORY_STALE="$DEV/.carto/codex-memory-stale-ids.txt" \
