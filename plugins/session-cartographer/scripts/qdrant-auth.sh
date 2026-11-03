@@ -61,10 +61,21 @@ cartographer_qdrant_auth() {
 # header goes in through a descriptor (-H @file, curl 7.55+) rather than as an
 # argument, so the key never appears in `ps` output. printf is a builtin, so
 # the process substitution's subshell execs nothing that would show it either.
+#
+# Git Bash's curl is a native Windows program, which cannot open the
+# /proc/<pid>/fd path a process substitution names: every keyed request failed
+# (exit 26), so index-event.sh exited 75 and search dropped its semantic leg.
+# There the header comes from curl's own environment (--variable, curl 8.3+),
+# which keeps the key out of the argument list as well.
 qdrant_curl() {
-  if [ -n "$CARTOGRAPHER_QDRANT_KEY" ]; then
-    curl -H @<(printf 'api-key: %s\n' "$CARTOGRAPHER_QDRANT_KEY") "$@"
-  else
+  if [ -z "$CARTOGRAPHER_QDRANT_KEY" ]; then
     curl "$@"
+  else
+    case "$OSTYPE" in
+      msys*|cygwin*)
+        CARTO_QDRANT_HEADER_KEY="$CARTOGRAPHER_QDRANT_KEY" curl \
+          --variable %CARTO_QDRANT_HEADER_KEY --expand-header 'api-key: {{CARTO_QDRANT_HEADER_KEY}}' "$@" ;;
+      *) curl -H @<(printf 'api-key: %s\n' "$CARTOGRAPHER_QDRANT_KEY") "$@" ;;
+    esac
   fi
 }
