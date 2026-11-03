@@ -36,7 +36,7 @@
  */
 import { realpathSync, existsSync } from 'fs';
 import { execFileSync } from 'child_process';
-import { join, dirname, resolve as resolvePath, relative } from 'path';
+import { join, dirname, basename, resolve as resolvePath, relative, sep } from 'path';
 import { homedir } from 'os';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { HOUR, fmtAge, readTail, COMMIT_RE, eventFiles, contentionKey, unmappedWorktrees } from './contention.js';
@@ -97,10 +97,13 @@ function fileInProject(filePath, project) {
   if (devRootReal === null) {
     try { devRootReal = realpathSync(dev); } catch { devRootReal = resolvePath(dev); }
   }
+  // With path's own separator: split at `/`, a Windows path (C:\dev\repo\x.js)
+  // was never under the dev root and its repository never named the project,
+  // so --project dropped every file there.
   const root = repoRootOf(filePath, devRootReal);
-  if (root) return root.split('/').pop() === project;
-  if (!filePath.startsWith(`${devRootReal}/`)) return false;
-  return filePath.slice(devRootReal.length + 1).split('/')[0] === project;
+  if (root) return basename(root) === project;
+  if (!filePath.startsWith(`${devRootReal}${sep}`)) return false;
+  return filePath.slice(devRootReal.length + 1).split(sep)[0] === project;
 }
 
 function parseCommit(e) {
