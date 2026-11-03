@@ -102,6 +102,26 @@ test('replaceJsonl carries rows appended after the read, untransformed, and keep
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('a log another process holds open is still replaced', () => {
+  // Windows refuses to rename onto an open file, and replaceJsonl holds the
+  // log open itself for its last look, so every rewrite there failed with
+  // EPERM: backfill-event-ids, repair-torn-rows and the other repairs never
+  // ran. A hook holding the log for a write is the other holder.
+  const { dir, file } = tempLog([{ event_id: 'a', n: 1 }]);
+  const ready = path.join(dir, 'holding');
+  const holder = spawn('bash', ['-c', 'exec 3>>"$1"; : > "$2"; sleep 3', '_', file, ready], { stdio: 'ignore' });
+  try {
+    waitFor(() => fs.existsSync(ready));
+    const raw = snapshotJsonl(file);
+    replaceJsonl(file, { original: raw, body: `${JSON.stringify({ event_id: 'a', n: 2 })}\n`, graceMs: 0 });
+    assert.deepEqual(rowsOf(file), [{ event_id: 'a', n: 2 }]);
+    assert.deepEqual(fs.readdirSync(dir).sort(), ['holding', 'log.jsonl', 'log.jsonl.rewrite'], 'nothing is left aside');
+  } finally {
+    holder.kill();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a change that is not an append is refused and nothing is written', () => {
   const { dir, file } = tempLog([{ event_id: 'a' }, { event_id: 'b' }]);
   const raw = fs.readFileSync(file);
@@ -152,6 +172,11 @@ function waitFor(predicate, ms = 10000) {
   }
 }
 
+// The rename that starts the swap: the new copy over the log on POSIX, the log
+// moved aside on Windows, which cannot rename onto an open file.
+const startsSwap = (file, from, to) =>
+  (to === file && String(from).startsWith(`${file}.rewrite-`)) || (from === file && String(to).startsWith(`${file}.replaced-`));
+
 // Run <during> inside replaceJsonl at two points, by wrapping fs.renameSync,
 // which the module calls through the same fs object: once the state file has
 // just been renamed to say held, and once the new copy is about to be renamed
@@ -159,7 +184,7 @@ function waitFor(predicate, ms = 10000) {
 function replaceWithPauses(file, { afterHeld, beforeSwap }) {
   const rename = fs.renameSync;
   fs.renameSync = function patched(from, to) {
-    if (to === file && String(from).startsWith(`${file}.rewrite-`)) beforeSwap?.();
+    if (startsSwap(file, from, to)) beforeSwap?.();
     rename.call(fs, from, to);
     if (to === statePath(file) && fs.readFileSync(to, 'utf8').startsWith('held ')) afterHeld?.();
   };
@@ -181,7 +206,7 @@ test('a dead rewriter\'s spool is moved before the state says held, never after'
   const rename = fs.renameSync;
   fs.renameSync = function spy(from, to) {
     if (from === spoolPath(file)) states.push(fs.readFileSync(statePath(file), 'utf8').trim());
-    if (to === file) fs.appendFileSync(spoolPath(file), `${JSON.stringify({ event_id: 'spooled-while-held' })}\n`);
+    if (startsSwap(file, from, to)) fs.appendFileSync(spoolPath(file), `${JSON.stringify({ event_id: 'spooled-while-held' })}\n`);
     return rename.call(fs, from, to);
   };
   try {
