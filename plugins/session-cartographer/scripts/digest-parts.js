@@ -52,8 +52,13 @@ export function commitParts(summary) {
 // worktree is a checkout of the same repository, so its prefix goes too —
 // otherwise one file edited in the main checkout and in
 // `.claude/worktrees/inspiring-williamson-a3dcd0/` reads as two files.
+// Matched in git's spelling, with `/`: a Windows path (C:\dev\repo\docs\x.md)
+// held no `/repo/` and was never under `${dev}/`, so the panel keyed every file
+// by its whole absolute path and a worktree edit never joined its main checkout.
 const WORKTREE_PREFIX = /^\.claude\/worktrees\/[^/]+\//;
+const slashed = (p) => (path.sep === '\\' && typeof p === 'string' ? p.replaceAll('\\', '/') : p);
 export function relativize(abs, project, dev, home = process.env.HOME) {
+  abs = slashed(abs); dev = slashed(dev); home = slashed(home);
   if (isResolved(project)) {
     const marker = `/${project}/`;
     const at = abs.lastIndexOf(marker);
