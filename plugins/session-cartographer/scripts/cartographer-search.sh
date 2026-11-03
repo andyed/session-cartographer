@@ -1225,8 +1225,12 @@ grep_transcripts_to_tsv() {
 
     matched_files=$((matched_files + 1))
 
+    # The paths go through ENVIRON, not -v, for the reason given at the fusion
+    # awk's BEGIN: rg on Windows joins the components it walks with "\".
     LC_ALL=C grep -niE "$GREP_QUERY" "$transcript" 2>/dev/null | head -20 | \
-      awk -F: -v sid="$session_id" -v proj="$project_dir" -v provider="$provider" -v tpath="$transcript" '
+      CARTO_PROJ="$project_dir" CARTO_TPATH="$transcript" \
+      awk -F: -v sid="$session_id" -v provider="$provider" '
+        BEGIN { proj = ENVIRON["CARTO_PROJ"]; tpath = ENVIRON["CARTO_TPATH"] }
         {
           lineno = $1
           content = $2
@@ -1268,16 +1272,17 @@ rank_fuse_and_display() {
   # Output: faceted summary of top 500, then detailed top N results
   # codex_memory_stale mirrors CODEX_MEMORY_STALE_RELATIVE in
   # codex-memory-stale.js; tests/unit/codex-memory-stale.test.js pins them.
+  CARTO_SERVED_IN="${SERVED_FILE:-}" CARTO_SERVED_OUT="${SERVED_OUT:-}" \
+  CARTO_ACCESS_LEDGER="$ACCESS_LEDGER" CARTO_CODEX_MEMORY_STALE="$DEV/.carto/codex-memory-stale-ids.txt" \
+  CARTO_SERVED_LOG="${SERVED_LOG:+$TMPDIR/served-rows.jsonl}" CARTO_FLOOR_OUT="$TMPDIR/floor.tsv" \
+  CARTO_SERVE_QUERY="$QUERY" CARTO_SERVE_PROJECT="$PROJECT" \
   awk -F'\t' -v limit="$LIMIT" -v fusion_depth="$FUSION_DEPTH" -v decay_lambda="$DECAY_LAMBDA" -v now_epoch="$(date +%s)" \
       -v lookup_max="$LOOKUP_MAX" -v lookup_lift="$LOOKUP_LIFT" -v noise_trim=0.1 \
       -v since_epoch="${SINCE_EPOCH:-0}" -v before_epoch="${BEFORE_EPOCH:-0}" \
-      -v served_in="${SERVED_FILE:-}" -v served_out="${SERVED_OUT:-}" \
-      -v access_ledger="$ACCESS_LEDGER" -v reuse_weight="$REUSE_WEIGHT" \
-      -v codex_memory_stale="$DEV/.carto/codex-memory-stale-ids.txt" \
-      -v served_log="${SERVED_LOG:+$TMPDIR/served-rows.jsonl}" -v serve_ts="$SERVE_TS" -v serve_query="$QUERY" -v serve_project="$PROJECT" \
+      -v reuse_weight="$REUSE_WEIGHT" -v serve_ts="$SERVE_TS" \
       -v call_id="$CALL_ID" -v purpose="$PURPOSE" -v context_session="$CONTEXT_SESSION_ID" -v context_provider="$CONTEXT_PROVIDER" \
       -v session_attribution="$SESSION_ATTRIBUTION" -v session_source="$SESSION_SOURCE" \
-      -v output_format="$OUTPUT_FORMAT" -v min_score="${MIN_SCORE:-0}" -v floor_out="$TMPDIR/floor.tsv" '
+      -v output_format="$OUTPUT_FORMAT" -v min_score="${MIN_SCORE:-0}" '
   # Stable O(n log n) merge sort over order[] using score_map[]. The old
   # insertion sort was acceptable for tiny corpora, but common project terms
   # can generate tens of thousands of keyword candidates.
@@ -1303,6 +1308,17 @@ rank_fuse_and_display() {
     for (i = lo; i <= hi; i++) order[i] = scratch[i]
   }
   BEGIN {
+    # Paths and the query arrive through ENVIRON, because awk expands backslash
+    # escapes in a -v value. A backslash path such as C:\Users\andye\... became
+    # the relative name "C:Users<BEL>ndye...": the ledger and served-list reads
+    # found nothing, so reuse boosts and delta-serving silently stopped, and until
+    # the served rows moved to cartographer_append, each test run left 17
+    # such files in the working directory (85 by 2026-10-27).
+    served_in = ENVIRON["CARTO_SERVED_IN"]; served_out = ENVIRON["CARTO_SERVED_OUT"]
+    access_ledger = ENVIRON["CARTO_ACCESS_LEDGER"]
+    codex_memory_stale = ENVIRON["CARTO_CODEX_MEMORY_STALE"]
+    served_log = ENVIRON["CARTO_SERVED_LOG"]; floor_out = ENVIRON["CARTO_FLOOR_OUT"]
+    serve_query = ENVIRON["CARTO_SERVE_QUERY"]; serve_project = ENVIRON["CARTO_SERVE_PROJECT"]
     if (codex_memory_stale != "") {
       while ((getline stale_id < codex_memory_stale) > 0) {
         if (stale_id != "") stale_memory[stale_id] = 1

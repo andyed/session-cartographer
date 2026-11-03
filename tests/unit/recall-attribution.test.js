@@ -253,6 +253,40 @@ test('portable ranking ignores fetched-only records but preserves explicit and l
   }
 });
 
+// awk expands backslash escapes in a -v value, so a path handed to the fusion
+// awk that way lost its backslashes and turned "\a" into BEL. On Windows the
+// ledger read found nothing and served rows landed in the working directory.
+// A directory named "x\aliased" breaks the same paths on macOS and Linux.
+test('ledger, served-log and temp paths with backslashes reach the fusion awk intact', (t) => {
+  const f = fixture(t);
+  const odd = path.join(f.dir, process.platform === 'win32' ? 'aliased' : 'x\\aliased');
+  fs.mkdirSync(odd);
+  const ledger = path.join(odd, 'access.jsonl');
+  const servedLog = path.join(odd, 'served.jsonl');
+  const ranking = (callId) => {
+    const result = spawnSync('bash', [SEARCH, 'gestureack', '--limit', '2', '--all', '--call-id', callId], {
+      cwd: f.dir, encoding: 'utf8', timeout: 15000,
+      env: { ...f.env, CARTOGRAPHER_ACCESS_LEDGER: ledger, CARTOGRAPHER_SERVED_LOG: servedLog,
+        CARTOGRAPHER_DECAY_LAMBDA: '0', TMPDIR: odd },
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return result.stdout;
+  };
+  const ids = (output) => [...output.matchAll(/\] (evt-[a-z]+)(?:\s|$)/g)].map((match) => match[1]);
+  const baselineIds = ids(ranking('call-backslash-1'));
+  assert.equal(baselineIds.length, 2);
+  const target = baselineIds[1];
+  writeRows(ledger, [{ event_id: target, timestamp: new Date().toISOString(), source: 'result_used' }]);
+  const used = ranking('call-backslash-2');
+  assert.equal(ids(used)[0], target, 'the ledger under the backslash path must still boost its record');
+  assert.match(used, new RegExp(`${target} \\(used x1\\)`));
+  assert.deepEqual(readRows(servedLog).map((row) => row.call_id).sort(),
+    ['call-backslash-1', 'call-backslash-1', 'call-backslash-2', 'call-backslash-2'],
+    'every served row must reach the served log it was given');
+  assert.deepEqual(fs.readdirSync(f.dir).filter((name) => name.includes('served') && name !== 'served.jsonl'), [],
+    'no served log may appear under a mangled name in the working directory');
+});
+
 test('API ranking gives fetched-only records the same score/count as no access', (t) => {
   const f = fixture(t);
   const runner = path.join(f.dir, 'rank-fixture.mjs');
