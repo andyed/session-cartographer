@@ -74,7 +74,9 @@ import { fileURLToPath } from 'node:url';
 import { NO_INDEXER_ROOT } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'log-tool-use.sh');
+// With `/`, as hooks/run-hook.cjs launches it: the hook finds common.sh from
+// "$0", and a Windows path written with `\` names no directory there.
+const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'log-tool-use.sh').replaceAll('\\', '/');
 const AUTHOR = ['-c', 'user.email=t@t', '-c', 'user.name=t'];
 
 function makeWorkspace() {
