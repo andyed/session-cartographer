@@ -122,7 +122,8 @@ for (const name of LOGS) {
     let ev;
     try { ev = JSON.parse(line); } catch { return line; }   // never drop a bad line
     const cwd = ev && ev.cwd;
-    if (cwd && ev.project && /worktrees?\//.test(cwd) && !fs.existsSync(cwd)) unresolvable++;
+    // Either separator: a Windows cwd is C:\repo\.claude\worktrees\name.
+    if (cwd && ev.project && /worktrees?[\\/]/.test(cwd) && !fs.existsSync(cwd)) unresolvable++;
     const parent = shouldRepoint(ev);
     if (!parent) return line;
     byProject.set(ev.project, (byProject.get(ev.project) || 0) + 1);
