@@ -26,6 +26,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { ownerNames } from './ownership.js';
 import { replaceJsonl, snapshotJsonl } from './jsonl-lock.js';
 
@@ -100,4 +101,5 @@ function main() {
   // semantic payloads never carried the inferred session (checked 2026-09-24).
 }
 
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) main();
+// As paths: `file://${argv[1]}` is never a URL on Windows, so main never ran.
+if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) main();
