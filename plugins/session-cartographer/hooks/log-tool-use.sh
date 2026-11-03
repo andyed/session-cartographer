@@ -364,7 +364,9 @@ git_re() { printf '(^|[^[:alnum:]_.-])git%s[[:space:]]+%s([^[:alnum:]_-]|$)' "$G
 
 # A path as written in a command, made absolute against a base directory. The
 # shell never saw this text, so `~` and `$HOME` are expanded by hand; nothing
-# in the command is ever evaluated.
+# in the command is ever evaluated. A drive path (C:/repo, C:\repo) is already
+# absolute: Git Bash takes both, and read as relative they named no repo, so a
+# commit behind `git -C C:/dev/repo` or `cd C:/dev/repo &&` was lost.
 git_path() {
   local p="$1"
   case "$p" in
@@ -373,7 +375,7 @@ git_path() {
     '$HOME/'*)   p="$HOME/${p:6}" ;;
     '${HOME}/'*) p="$HOME/${p:8}" ;;
   esac
-  case "$p" in /*) ;; *) p="$2/$p" ;; esac
+  case "$p" in /*|[A-Za-z]:[/\\]*) ;; *) p="$2/$p" ;; esac
   printf '%s' "$p"
 }
 
@@ -425,16 +427,18 @@ function resolve(p) {
   if (substr(p, 1, 6) == "$HOME/") return home "/" substr(p, 7)
   if (substr(p, 1, 8) == "${HOME}/") return home "/" substr(p, 9)
   if (p == "-" || p ~ /[$`*?[]/) return "?"
-  if (substr(p, 1, 1) == "/") return p
+  if (substr(p, 1, 1) == "/" || p ~ /^[A-Za-z]:[\/\\]/) return p
   return (cur == "?") ? "?" : cur "/" p
 }
-# One simple command: words split on unquoted blanks, quotes removed.
+# One simple command: words split on unquoted blanks, quotes removed. Inside
+# double quotes a backslash escapes only $ ` " \ and newline, as in bash, so
+# "C:\dev\repo" keeps its backslashes.
 function hop(seg,   n, w, i, c, q, word, inword, verb) {
   n = 0; word = ""; inword = 0; q = ""
   for (i = 1; i <= length(seg); i++) {
     c = substr(seg, i, 1)
     if (q != "") {
-      if (c == "\\" && q == "\"") { word = word substr(seg, ++i, 1); continue }
+      if (c == "\\" && q == "\"" && substr(seg, i + 1, 1) ~ /[$`"\\\n]/) { word = word substr(seg, ++i, 1); continue }
       if (c == q) q = ""; else word = word c
       continue
     }
@@ -493,10 +497,15 @@ function walk(s, from, to,   i, c) {
 # as `;` does. A subshell scopes its hops, so `(cd a && make); git commit` and
 # `R=$(cd a && pwd); git commit` both commit where they started. Paths expand
 # `~` and `$HOME` as git_path() does.
+#
+# The start and home directories reach awk through ENVIRON, not -v: awk expands
+# backslash escapes in a -v value, so a Windows cwd (C:\Users\me\dev) arrived
+# as "C:Usersmedev" and every relative hop from it named nothing. The same fix
+# as cartographer-search.sh's CARTO_* values (d6ac7a3).
 bash_cd_base() {
-  printf '%s\n' "$1" | LC_ALL=C awk \
-    -v re="$(git_re "$2")" \
-    -v start="$3" -v home="$HOME" "$AWK_CODE_ONLY$AWK_CD_HOP"'
+  printf '%s\n' "$1" | CARTO_START="$3" CARTO_HOME="$HOME" LC_ALL=C awk \
+    -v re="$(git_re "$2")" "$AWK_CODE_ONLY$AWK_CD_HOP"'
+    BEGIN { start = ENVIRON["CARTO_START"]; home = ENVIRON["CARTO_HOME"] }
     { if (sub(/\\$/, "")) { s = s $0 " " } else { s = s $0 "\n" } }
     END {
       if (!match(code_only(s), re)) exit
@@ -517,9 +526,9 @@ bash_cd_base() {
 # applies and no subcommand option: `git commit -C HEAD` reuses a message, it
 # does not change directory. <args> is the rest of that simple command.
 git_invocations() {
-  printf '%s\n' "$1" | LC_ALL=C awk \
-    -v re="$(git_re "$2")" \
-    -v start="$3" -v home="$HOME" "$AWK_CODE_ONLY$AWK_CD_HOP"'
+  printf '%s\n' "$1" | CARTO_START="$3" CARTO_HOME="$HOME" LC_ALL=C awk \
+    -v re="$(git_re "$2")" "$AWK_CODE_ONLY$AWK_CD_HOP"'
+    BEGIN { start = ENVIRON["CARTO_START"]; home = ENVIRON["CARTO_HOME"] }
     { if (sub(/\\$/, "")) { s = s $0 " " } else { s = s $0 "\n" } }
     END {
       m = code_only(s); k = 0; off = 0
@@ -652,7 +661,7 @@ EOF
     [ -d "$r" ] || continue
     printf 'reflog\t%s\n' "$r"
     git -C "$r" log -g -n 60 --date=unix --format='%H%x09%gd%x09%ct%x09%gs%x09%s' HEAD 2>/dev/null \
-      | awk -v r="$r" '{ print "entry\t" r "\t" $0 }'
+      | CARTO_R="$r" awk '{ print "entry\t" ENVIRON["CARTO_R"] "\t" $0 }'
   done | CARTO_CMD="$COMMAND_RAW" CARTO_NAMED="$named" CARTO_WANT="$want" CARTO_LOGGED="$logged" \
       LC_ALL=C awk -F'\t' \
       -v since="$since" -v now="$now" '
