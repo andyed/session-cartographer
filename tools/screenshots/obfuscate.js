@@ -1,12 +1,18 @@
 import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { createReplacer } from './remap-core.js';
 
 const adjectives = 'amber arctic autumn azure bright cedar coral crystal dusk ember fern golden hazel indigo ivory jade lunar maple mist moss ocean olive opal quiet river silver solar spruce stone velvet violet willow winter zephyr'.split(' ');
 const nouns = 'atlas beacon bridge brook canvas cloud compass delta field forest garden harbor island lantern meadow mosaic orbit paper peak prism ridge signal spring studio summit trail valley wave window'.split(' ');
-const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/** Presentation aliases only: this is not a general secret or prose redactor. */
-export function obfuscateSnapshot(input, { seed = randomBytes(12).toString('hex'), replacements = {} } = {}) {
+/**
+ * Seeded aliases for the names a Memory state snapshot carries: projects,
+ * file names and stems, session ids, then explicit `replacements`. Names in
+ * `keep` map to themselves (a public repository can show its real name), and
+ * a file name `keepFile` accepts gets no alias. Returns [original,
+ * replacement] pairs for createReplacer.
+ */
+export function buildDictionary(input, { seed = randomBytes(12).toString('hex'), replacements = {}, keep = [], keepFile = () => false } = {}) {
   if (!Array.isArray(input.sessions) || !Array.isArray(input.evidenceIndex)) throw new Error('Expected a Memory state snapshot with sessions and evidenceIndex.');
   const projects = new Set(input.groups || []);
   const paths = new Set();
@@ -44,6 +50,7 @@ export function obfuscateSnapshot(input, { seed = randomBytes(12).toString('hex'
   for (const project of [...projects].sort()) if (project && project !== 'Unattributed') dictionary.set(project, alias('project', project));
   const conventionalStems = new Set(['readme', 'index', 'main', 'app', 'package', 'config', 'test', 'types', 'utils', 'settings']);
   for (const file of [...filenames].sort()) {
+    if (keepFile(file)) continue;
     const extension = path.posix.extname(file);
     const stem = path.posix.basename(file, extension);
     const name = alias('file', file);
@@ -58,17 +65,22 @@ export function obfuscateSnapshot(input, { seed = randomBytes(12).toString('hex'
     if (!real || typeof fake !== 'string') throw new Error('Replacements must map nonempty strings to strings.');
     dictionary.set(real, fake);
   }
-  const entries = [...dictionary].sort(([a], [b]) => b.length - a.length || a.localeCompare(b));
-  const lookup = new Map(entries.map(([a, b]) => [a.toLowerCase(), b]));
+  // Matching is case-insensitive, so a kept name also displaces any entry
+  // that differs from it only in case (a "scrutinizer" replacement).
+  for (const name of keep) {
+    if (!name) continue;
+    for (const key of [...dictionary.keys()]) if (key.toLowerCase() === name.toLowerCase()) dictionary.delete(key);
+    dictionary.set(name, name);
+  }
+  return { entries: [...dictionary], sessions, counts: { projects: projects.size, filenames: filenames.size, sessions: sessions.size } };
+}
+
+/** Presentation aliases only: this is not a general secret or prose redactor. */
+export function obfuscateSnapshot(input, { seed = randomBytes(12).toString('hex'), replacements = {} } = {}) {
+  const { entries, sessions, counts } = buildDictionary(input, { seed, replacements });
+  const dictionary = new Map(entries);
   // One pass prevents aliases containing another original name from being rewritten.
-  const pattern = entries.length ? new RegExp(`(?<![\\p{L}\\p{N}_-])(?:${entries.map(([key]) => escape(key)).join('|')})(?![\\p{L}\\p{N}_-])`, 'giu') : null;
-  const replace = text => {
-    let result = pattern ? text.replace(pattern, key => lookup.get(key.toLowerCase())) : text;
-    result = result.replace(/\/(?:Users|home)\/[^/\s"'<>]+/g, '/home/demo');
-    // Encoded URLs and provider path slugs can otherwise retain the home owner.
-    result = result.replace(/%2F(?:Users|home)%2F[^%\s"'<>]+/gi, '%2Fhome%2Fdemo');
-    return result;
-  };
+  const { replace } = createReplacer(entries);
   const protocol = new Set(['provider', 'providers', 'type', 'category', 'evidence', 'mode', 'status', 'backend', 'quadrant', 'commit_type', 'source', 'scope']);
   const identity = new Set(['id', 'key', 'event_id', 'sessionId', 'session_id', 'session']);
   const transform = (value, field = '') => {
@@ -87,5 +99,5 @@ export function obfuscateSnapshot(input, { seed = randomBytes(12).toString('hex'
     ]));
     return value;
   };
-  return { snapshot: transform(input), seed, counts: { projects: projects.size, filenames: filenames.size, sessions: sessions.size }, replace };
+  return { snapshot: transform(input), seed, counts, replace };
 }

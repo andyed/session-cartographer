@@ -71,3 +71,61 @@ node --test tests/unit/screenshot-obfuscation.test.js
 The capture itself checks for populated results, runtime errors, unexpected
 network calls, horizontal overflow, and painted activity canvases. This covers
 the screenshot journey, not the complete Explorer regression suite.
+
+## README gallery
+
+`gallery.js` captures the screenshots in the main README from the running
+Explorer over your real corpus: eleven views of one day, at 2×, with names
+rewritten where they render. It drives the Explorer already serving
+`http://127.0.0.1:2527` and changes nothing in it.
+
+Names are rewritten in the page itself, by an init script that runs in every
+frame before the app does. Text nodes, visible attributes, form values, and
+canvas text all pass through one dictionary: seeded aliases for project and
+file names, any replacements from `demo-sanitize.json`, and real names only for
+the repositories you list as public. Image lists are cut to the projects you
+allow, and any other image request receives a placeholder. Before each capture
+the page audits what it paints, and a shot that would show an original name, a
+denied term, or a real home directory is not written.
+
+The private config lives at `~/.config/session-cartographer/screenshots.json`:
+
+```json
+{
+  "keep": ["my-public-repo"],
+  "imageProjects": ["^my-art-project"],
+  "deny": ["Client name"],
+  "replacements": {"Internal tool": "Analytics"},
+  "shots": {
+    "day": "2026-11-03",
+    "review": {"session": "<session id>", "file": "/abs/path/to/a/file.js"},
+    "transcript": {"path": "/abs/path/to/session.jsonl", "uuid": "<message uuid>"},
+    "query": "a search that shows real results"
+  }
+}
+```
+
+`deny` terms of five or more characters match anywhere, including inside
+longer words. Choose the review, transcript, and search targets deliberately:
+remapping replaces names, not subject matter.
+
+On macOS, an optional OCR pass reads every PNG back and deletes any that still
+shows a protected term:
+
+```bash
+swiftc -O tools/screenshots/ocr.swift -o .carto/ocr
+node tools/screenshots/gallery.js --ocr .carto/ocr
+node tools/screenshots/gallery.js --only timeline-feed,search --ocr .carto/ocr
+```
+
+PNGs, `manifest.json`, and a review page (`index.html`) go to
+`.carto/screenshots/gallery/`. The README uses 1440-pixel WebP copies: lossless
+for interface-only views, lossy for views carrying artwork.
+
+```bash
+G=.carto/screenshots/gallery
+cwebp -lossless -z 9 -resize 1440 0 $G/search.png -o docs/screenshots/search.webp
+cwebp -q 90 -m 6 -sharp_yuv -resize 1440 0 $G/timeline-feed.png -o docs/screenshots/timeline-feed.webp
+```
+
+Read every image before it ships.
