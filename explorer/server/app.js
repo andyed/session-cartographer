@@ -19,6 +19,9 @@ import {
 } from './facts-contract.js';
 import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { summarizeSessions } from './sessions.js';
+import { MAX_FOCUS_DURATION_MS } from '../shared/focus.js';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 import { createInternalsHandler } from './internals-route.js';
 import { guardLoopback } from './loopback-guard.js';
 import { ensurePayloadIndexes, missingPayloadIndexes, PAYLOAD_INDEXES } from '../../scripts/qdrant-collection.js';
@@ -567,10 +570,7 @@ export function createExplorerApp() {
   // The image wall: every image the window's sessions wrote (or, with
   // scope=named, named), as a Wunderkammer collection. Paths are authorized
   // here, exactly as /api/session/artifacts authorizes one transcript.
-  app.get('/api/images/collection', async (req, res) => {
-    const days = IMAGE_WALL_DAYS.includes(Number(req.query.days)) ? Number(req.query.days) : 7;
-    const scope = IMAGE_WALL_SCOPES.includes(req.query.scope) ? req.query.scope : 'changed';
-    const { sessions } = summarizeSessions(events, { days, isHighSignal, deriveTranscript: deriveSessionTranscript, minEvents: 1 });
+  const imageTranscripts = sessions => {
     const transcripts = [];
     for (const session of sessions) {
       if (!session.transcript_path) continue;
@@ -579,9 +579,18 @@ export function createExplorerApp() {
         if (isAllowedTranscriptPath(canonical, TRANSCRIPT_ROOTS)) transcripts.push({ path: canonical, session });
       } catch { /* gone since the event was written */ }
     }
+    return transcripts;
+  };
+  const imageFileUrl = (path, id, w) => `/api/images/file?${new URLSearchParams({ path, id, ...(w ? { w: String(w) } : {}) })}`;
+
+  app.get('/api/images/collection', async (req, res) => {
+    const days = IMAGE_WALL_DAYS.includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const scope = IMAGE_WALL_SCOPES.includes(req.query.scope) ? req.query.scope : 'changed';
+    const { sessions } = summarizeSessions(events, { days, isHighSignal, deriveTranscript: deriveSessionTranscript, minEvents: 1 });
+    const transcripts = imageTranscripts(sessions);
     // The loopback guard has already refused any other Host.
     const origin = `${req.protocol}://${req.get('host')}`;
-    const fileUrl = (path, id, w) => `/api/images/file?${new URLSearchParams({ path, id, ...(w ? { w: String(w) } : {}) })}`;
+    const fileUrl = imageFileUrl;
     const transcriptUrl = (path, link) => `${origin}/session/${encodeURIComponent(path)}?${new URLSearchParams({ reader: 'conversation', uuid: link.messageId, ...(link.blockId ? { block: link.blockId } : {}) })}`;
     res.set('Cache-Control', 'no-store');
     try {
@@ -589,6 +598,28 @@ export function createExplorerApp() {
       if (req.query.document !== '1') return res.json(result);
       if (!result.collection) return res.status(404).json({ error: 'No images in this window.', code: 'IMAGES_EMPTY', stats: result.stats });
       res.json(result.collection);
+    } catch (error) { res.status(500).json({ error: error.message, code: 'IMAGES_UNAVAILABLE' }); }
+  });
+
+  // The images sessions wrote inside a focus window, for the Timeline's event
+  // feed. `through` defaults to now, so a live window is not cut at the
+  // client's last snapshot. Sessions are those whose events overlap the
+  // window; the image's own mtime does the exact bounding.
+  app.get('/api/images/window', async (req, res) => {
+    const instant = value => (/^\d+$/.test(String(value)) ? Number(value) : Date.parse(String(value)));
+    const from = instant(req.query.from);
+    const through = req.query.through == null || req.query.through === '' ? Date.now() : instant(req.query.through);
+    if (!Number.isFinite(from) || !Number.isFinite(through) || through <= from) {
+      return res.status(400).json({ error: 'from and through must be instants with from before through.', code: 'IMAGES_WINDOW_INVALID' });
+    }
+    if (through - from > MAX_FOCUS_DURATION_MS) return res.status(400).json({ error: 'An image window is at most 90 days.', code: 'IMAGES_WINDOW_INVALID' });
+    // summarizeSessions keeps sessions ending at or after now - days; with
+    // now = through that is exactly "ended at or after from".
+    const { sessions } = summarizeSessions(events, { days: (through - from) / DAY_MS, now: through, isHighSignal, deriveTranscript: deriveSessionTranscript, minEvents: 1 });
+    const overlapping = sessions.filter(session => !(Date.parse(session.start) > through));
+    res.set('Cache-Control', 'no-store');
+    try {
+      res.json(await imageWall.windowImages({ transcripts: imageTranscripts(overlapping), from, through, fileUrl: imageFileUrl }));
     } catch (error) { res.status(500).json({ error: error.message, code: 'IMAGES_UNAVAILABLE' }); }
   });
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import EventCard from './EventCard';
 import ProjectBadge from './ProjectBadge';
 
-function relativeTime(ts) {
+export function relativeTime(ts) {
   if (!ts) return '?';
   const diff = Date.now() - new Date(ts).getTime();
   const mins = Math.floor(diff / 60000);

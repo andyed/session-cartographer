@@ -29,6 +29,9 @@ const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - 
   const written = [['#7a2e3b', 400, 200], ['#1f5c4a', 200, 300], ['#2a3f7a', 240, 240]].map(([fill, w, h], i) => {
     const file = path.join(outputs, `render-${i}.svg`); fs.writeFileSync(file, svg(fill, w, h)); return file;
   });
+  // Written as the render's output arrived, eight minutes before the session ended.
+  const writtenAt = start.getTime() / 1000 + 2 * 60;
+  for (const file of written) fs.utimesSync(file, writtenAt, writtenAt);
   const reference = path.join(outputs, 'reference.svg'); fs.writeFileSync(reference, svg('#555555', 300, 200));
   const old = start.getTime() / 1000 - 3 * 24 * 60 * 60; fs.utimesSync(reference, old, old);
   const rows = [
@@ -87,6 +90,40 @@ const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - 
       assert.ok(contrast(fg, bg) >= 8, `${await el.innerText()}: ${fg} on ${bg}`);
     }
     await page.screenshot({ path: path.join(artifacts, 'image-wall-1200.png') });
+
+    // The Timeline's event feed: the same written images as one moment, placed
+    // by write time below the newer session-end event, with an overview that
+    // jumps to it. Bounded on both ends, unlike the wall's "last N days".
+    const from = new Date(start.getTime() - 60 * 60 * 1000).toISOString(), through = new Date(Date.now() + 60 * 1000).toISOString();
+    const win = await (await fetch(`${origin}/api/images/window?${new URLSearchParams({ from, through })}`)).json();
+    assert.deepEqual(win.images.map(i => i.name), ['render-0.svg', 'render-1.svg', 'render-2.svg'], JSON.stringify(win.stats));
+    assert.ok(win.images.every(i => i.sessionId === sid), 'each image carries the session the feed scopes by');
+    const early = await (await fetch(`${origin}/api/images/window?${new URLSearchParams({ from, through: new Date(start.getTime() + 60 * 1000).toISOString() })}`)).json();
+    assert.equal(early.images.length, 0, 'a window ending before the writes holds none of them');
+    assert.equal((await fetch(`${origin}/api/images/window?from=nonsense`)).status, 400);
+
+    const timeline = await browser.newPage({ viewport: { width: 1200, height: 900 }, reducedMotion: 'reduce' });
+    timeline.on('pageerror', e => errors.push(e.message));
+    await timeline.goto(`${origin}/timeline?${new URLSearchParams({ view: 'chronological', from, through, mode: 'fixed', lower: 'closed' })}`);
+    await timeline.waitForSelector('.image-moment');
+    assert.match(await timeline.textContent('.image-overview-summary'), /^3 images written in 1 burst across 1 session/);
+    const kinds = await timeline.$$eval('.timeline-focus-list > *', nodes => nodes.map(node => node.matches('.image-overview') ? 'overview' : node.matches('.image-moment') ? 'images' : /Session ended/.test(node.textContent) ? 'end' : node.tagName.toLowerCase()));
+    assert.deepEqual(kinds, ['overview', 'end', 'images'], 'the moment sits below the newer event it preceded');
+    await timeline.waitForFunction(() => [...document.querySelectorAll('.image-moment img')].filter(i => i.complete && i.naturalWidth > 0).length === 3, null, { timeout: 30000 });
+    assert.deepEqual(await timeline.$$eval('.image-moment .image-moment-name', nodes => nodes.map(n => n.textContent)), ['render-2.svg', 'render-1.svg', 'render-0.svg'], 'newest first, like the feed');
+    assert.equal(await timeline.$('.image-moment-more'), null, 'a burst that fits the strip offers no expansion');
+    await timeline.click('.image-overview button');
+    await timeline.waitForFunction(() => document.activeElement?.matches('.image-moment[data-arrived]'));
+    for (const el of await timeline.$$('.image-overview-summary, .image-overview-summary strong, .image-overview .image-moment-name, .image-moment-head time, .image-moment-count, .image-moment-session, .image-moment .image-moment-name')) {
+      const [fg, bg] = await el.evaluate(node => { let n = node, bg = 'rgba(0, 0, 0, 0)'; while (n && /rgba\(0, 0, 0, 0\)|transparent/.test(bg)) { bg = getComputedStyle(n).backgroundColor; n = n.parentElement; } return [getComputedStyle(node).color, bg]; });
+      assert.ok(contrast(fg, bg) >= 8, `${await el.innerText()}: ${fg} on ${bg}`);
+    }
+    await timeline.screenshot({ path: path.join(artifacts, 'timeline-images-1200.png') });
+    await timeline.setViewportSize({ width: 390, height: 844 });
+    await timeline.waitForTimeout(100);
+    assert.ok(await timeline.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no horizontal page scroll in the feed at 390');
+    await timeline.screenshot({ path: path.join(artifacts, 'timeline-images-390.png') });
+    await timeline.close();
 
     await page.getByRole('button', { name: 'Any a session named', exact: true }).click();
     await page.waitForFunction(() => /^4 images named by sessions/.test(document.querySelector('.image-wall-status strong')?.textContent || ''));

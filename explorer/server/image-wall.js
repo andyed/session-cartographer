@@ -188,12 +188,12 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
   }
 
   /**
-   * `transcripts` are `{ path, session }` pairs whose paths the caller has
-   * already canonicalized and authorized. `fileUrl(path, id, width)` and
-   * `transcriptUrl(path, link)` build the clip's links.
+   * The one selection both projections share: which files the window's
+   * sessions wrote (or, for `named`, named), each with the naming that places
+   * it. `from`/`through` bound the time the file is placed at — its mtime
+   * when a session wrote it, else its last naming.
    */
-  async function collection({ transcripts, days, scope, fileUrl, transcriptUrl }) {
-    const started = Date.now();
+  async function select({ transcripts, scope, from = -Infinity, through = Infinity }) {
     const bySession = new Map(transcripts.map(item => [item.path, item.session]));
     const { records: loaded, scanned, failed } = await load(transcripts.map(item => item.path));
     const files = new Map();
@@ -201,16 +201,13 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
       if (!files.has(image.path)) files.set(image.path, []);
       files.get(image.path).push({ transcript, record, image, session: bySession.get(transcript) });
     }
-    const cutoff = now() - days * DAY_MS;
     const counts = { named: files.size, missing: 0, unavailable: 0, blocked: 0, copied: 0, namedOnly: 0, outside: 0 };
     const found = await inspector.inspect([...files.keys()]);
-    const clips = [];
+    const picks = [];
     for (const [file, namings] of files) {
       const result = found.get(file) || { status: 'unavailable' };
       // Stalled and refused files are both ones a copy can stand in for.
       if (result.status !== 'available') { counts[isUnreadable(result) ? 'blocked' : result.status] += 1; continue; }
-      const { mime, dimensions } = result;
-      const stat = { size: result.size };
       const mtime = result.mtimeMs;
       const writers = namings.filter(n => within(mtime, n.record.span));
       const latest = list => list.reduce((a, b) => (Date.parse(b.image.lastAt || 0) > Date.parse(a.image.lastAt || 0) ? b : a));
@@ -219,7 +216,25 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
       if (scope === 'changed' && !writer) continue;
       const primary = writer || latest(namings);
       const when = writer ? mtime : Date.parse(primary.image.lastAt || '');
-      if (!(when >= cutoff)) { counts.outside += 1; continue; }
+      if (!(when >= from && when <= through)) { counts.outside += 1; continue; }
+      if (result.openPath) counts.copied += 1;
+      picks.push({ file, result, namings, writer, primary });
+    }
+    const blocked = [...found].filter(([, r]) => isUnreadable(r));
+    return { picks, counts, blocked, scanned, failed };
+  }
+
+  /**
+   * `transcripts` are `{ path, session }` pairs whose paths the caller has
+   * already canonicalized and authorized. `fileUrl(path, id, width)` and
+   * `transcriptUrl(path, link)` build the clip's links.
+   */
+  async function collection({ transcripts, days, scope, fileUrl, transcriptUrl }) {
+    const started = Date.now();
+    const { picks, counts, blocked, scanned, failed } = await select({ transcripts, scope, from: now() - days * DAY_MS });
+    const clips = picks.map(({ file, result, namings, writer, primary }) => {
+      const { mime, dimensions } = result;
+      const mtime = result.mtimeMs;
       const agent = AGENTS[primary.session?.provider || primary.record.identity.provider] || 'Other agent';
       const session = sessionLabel(primary);
       const sessionCount = new Set(namings.map(n => n.transcript)).size;
@@ -227,11 +242,10 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
       const note = [
         writer ? `Written during ${agent} session “${session}”.` : `Named by ${sessionCount === 1 ? `${agent} session “${session}”` : `${sessionCount} sessions`}; written outside them.`,
         sessionCount > 1 && writer ? `Named by ${sessionCount} sessions.` : '',
-        `${displayPath(file)} · ${[size, kb(stat.size)].filter(Boolean).join(' · ')}`,
+        `${displayPath(file)} · ${[size, kb(result.size)].filter(Boolean).join(' · ')}`,
         result.openPath ? `Shown from a copy; the Explorer cannot read ${displayPath(result.copyOf)}.` : '',
       ].filter(Boolean).join(' ');
-      if (result.openPath) counts.copied += 1;
-      clips.push({
+      return {
         id: primary.image.id,
         url: `urn:session-cartographer:image:${primary.image.id}`,
         title: primary.image.name,
@@ -251,10 +265,9 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
           day: localDay(mtime),
           ...(scope === 'named' ? { written: writer ? 'during a session' : 'outside sessions' } : {}),
         },
-      });
-    }
+      };
+    });
     clips.sort((a, b) => b.captured.localeCompare(a.captured) || a.title.localeCompare(b.title));
-    const blocked = [...found].filter(([, r]) => isUnreadable(r));
     const blockedRoots = [...new Set(blocked.map(([, r]) => displayPath(r.root)))];
     // scripts/copy-blocked-images.js reads this list to make the copies.
     const blockedFiles = blocked.map(([file]) => file).slice(0, 10_000);
@@ -282,6 +295,37 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
   }
 
   /**
+   * The images sessions wrote inside [from, through], for the Timeline's event
+   * feed: one flat row per file, oldest first, carrying the session id the
+   * feed keys on. Only written images: a file a session merely read says
+   * nothing about what happened in the window, and its mtime places it at
+   * some other time. The feed picks the representatives; this lists them all.
+   */
+  async function windowImages({ transcripts, from, through, fileUrl }) {
+    const started = Date.now();
+    const { picks, counts, blocked, scanned, failed } = await select({ transcripts, scope: 'changed', from, through });
+    const images = picks.map(({ file, result, primary }) => ({
+      id: primary.image.id,
+      name: primary.image.name,
+      at: new Date(result.mtimeMs).toISOString(),
+      sessionId: primary.session?.session_id || primary.record.identity.sessionId || '',
+      provider: primary.session?.provider || primary.record.identity.provider || '',
+      project: projectOfPath(file) || sessionProject(primary.session) || '',
+      session: sessionLabel(primary),
+      ...(result.dimensions ? { width: result.dimensions.width, height: result.dimensions.height } : {}),
+      thumb: fileUrl(primary.transcript, primary.image.id, 320),
+      full: fileUrl(primary.transcript, primary.image.id, 0),
+      transcript: primary.transcript,
+      ...(primary.image.link ? { link: primary.image.link } : {}),
+      path: displayPath(file),
+      ...(result.openPath ? { copy: true } : {}),
+    }));
+    images.sort((a, b) => a.at.localeCompare(b.at) || a.name.localeCompare(b.name));
+    const blockedRoots = [...new Set(blocked.map(([, r]) => displayPath(r.root)))];
+    return { images, stats: { from: new Date(from).toISOString(), through: new Date(through).toISOString(), transcripts: transcripts.length, scanned, failed, ...counts, blockedRoots, shown: images.length, ms: Date.now() - started } };
+  }
+
+  /**
    * Open an image the transcript names, for the wall's covers and detail
    * view. Transcripts only grow, so a record scanned from a shorter copy of
    * the same file still authorizes what it found; a replaced file is rescanned.
@@ -300,5 +344,5 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
     return { artifact: { ...image, path: target }, ...opened, dimensions: result?.key === `${opened.stat.dev}:${opened.stat.ino}:${opened.stat.size}:${opened.stat.mtimeMs}` ? result.dimensions : null };
   }
 
-  return { collection, open, clear() { records.clear(); } };
+  return { collection, windowImages, open, clear() { records.clear(); } };
 }

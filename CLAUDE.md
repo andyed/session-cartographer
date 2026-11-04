@@ -96,7 +96,7 @@ explorer/
     project-filter.js           — One definition of "is this event in scope" (matches bm25.js substring behaviour)
     memory-recall.js            — Recall calls for the Memory Desk (/api/memory/recall, /recall/call): on demand, read-only, unjoined marks listed not guessed
     memory-day.js               — /api/memory/day: runs scripts/session-digest.js --day as a child and returns its JSON or Markdown verbatim, so the Day view cannot disagree with the CLI or the pulse
-    image-wall.js               — /api/images/collection: a Wunderkammer collection of the images a window's sessions wrote (mtime inside a naming session's span) or named; transcripts parsed in workers, cached per file version
+    image-wall.js               — /api/images/collection: a Wunderkammer collection of the images a window's sessions wrote (mtime inside a naming session's span) or named; transcripts parsed in workers, cached per file version. /api/images/window: the same selection bounded to a focus window [from, through], flat rows for the Timeline feed's image moments (src/components/image-moments.js picks the representatives)
     guarded-open.js             — First opens of corpus-named images and documents, on worker threads under a stall watchdog; a stalled open blocks its macOS-protected folder (see constraint below). Shared by session review and the image wall
     image-thumbs.js             — Wall covers through macOS `sips` (JPEG when opaque, PNG when alpha may exist); other platforms serve originals
     wunderkammer-static.js      — Serves the pinned Wunderkammer package's page and wall/ at /wunderkammer/, same origin as the API

@@ -124,6 +124,41 @@ test('the window bounds by write time, and an empty window returns no document',
   assert.equal(result.stats.outside, 1);
 });
 
+test('windowImages lists written images bounded on both ends, with the session id the feed keys on', async t => {
+  const { f, transcript, written, session } = sessionFixture(t);
+  // A second write in the same session, later in the hour.
+  const later = f.image('repo-a/out/later.png', png(16, 16), '2026-10-29T10:50:00Z');
+  fs.appendFileSync(transcript, JSON.stringify(output('r2', '2026-10-29T10:50:02Z', 'render-1', `wrote ${later}`)) + '\n');
+  const wall = createImageWall({ scan: inline, now: () => NOW });
+  const window = (from, through) => wall.windowImages({ transcripts: [{ path: transcript, session }], from: Date.parse(from), through: Date.parse(through), fileUrl: urls.fileUrl });
+
+  const all = await window('2026-10-29T10:00:00Z', '2026-10-29T11:00:00Z');
+  assert.deepEqual(all.images.map(i => i.name), ['written.png', 'later.png'], 'oldest first');
+  const [first] = all.images;
+  assert.equal(first.sessionId, 'wall-session');
+  assert.equal(first.provider, 'claude');
+  assert.equal(first.project, 'repo-a');
+  assert.equal(first.at, '2026-10-29T10:30:00.000Z', 'placed at the write, not the naming');
+  assert.deepEqual([first.width, first.height], [1600, 900]);
+  assert.equal(first.transcript, transcript);
+  assert.equal(first.link.messageId, 'r1');
+  assert.match(first.thumb, /&w=320$/);
+  assert.doesNotMatch(first.full, /w=/);
+  assert.equal(all.stats.namedOnly, 1, 'the read reference is counted, never listed');
+  assert.ok(!all.images.some(i => i.name === 'reference.png'));
+
+  // Both bounds cut: the collection's window had only a lower one.
+  const early = await window('2026-10-29T10:00:00Z', '2026-10-29T10:40:00Z');
+  assert.deepEqual(early.images.map(i => i.name), ['written.png']);
+  assert.equal(early.stats.outside, 1);
+  const late = await window('2026-10-29T10:40:00Z', '2026-10-29T12:00:00Z');
+  assert.deepEqual(late.images.map(i => i.name), ['later.png']);
+
+  // The wall and the window share one selection: the same files, by the same rule.
+  const { collection } = await wall.collection({ transcripts: [{ path: transcript, session }], days: 7, scope: 'changed', ...urls });
+  assert.deepEqual(collection.clips.map(c => c.id).sort(), all.images.map(i => i.id).sort());
+});
+
 test('open() serves only images the transcript names, and a grown transcript keeps its authorization', async t => {
   const { transcript, written, session } = sessionFixture(t);
   let scans = 0;
@@ -220,13 +255,14 @@ test('thumbnails: widths snap, other platforms serve originals, and a changed so
   assert.deepEqual(fs.readdirSync(path.join(f.dir, 'race')), [], 'nothing half-made is left behind');
 });
 
-test('the UI host routes both image endpoints to the Explorer app', async () => {
+test('the UI host routes every image endpoint to the Explorer app', async () => {
   const seen = [];
   const middleware = createExplorerUiMiddleware({ loadApp: async () => ({ app: req => seen.push(req.url), close() {} }) });
-  for (const url of ['/api/images/collection?days=7', '/api/images/file?path=x&id=y&w=320']) {
+  const urls = ['/api/images/collection?days=7', '/api/images/window?from=2026-11-03T00:00:00Z', '/api/images/file?path=x&id=y&w=320'];
+  for (const url of urls) {
     await middleware({ url, method: 'GET', headers: { host: '127.0.0.1:2527' } }, { headersSent: false, writeHead() {}, end() {} }, () => assert.fail(`${url} escaped to Turbo`));
   }
-  assert.equal(seen.length, 2);
+  assert.equal(seen.length, urls.length);
   await middleware.close();
 });
 

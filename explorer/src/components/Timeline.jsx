@@ -2,8 +2,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { eventStreamPresentation } from '../hooks/event-stream-state.js';
 import useFocusWorkspace from '../hooks/useFocusWorkspace.js';
 import useSavedFocus from '../hooks/useSavedFocus.js';
+import useWindowImages from '../hooks/useWindowImages.js';
 import { activityFromMemory } from '../../shared/activity-scope.js';
 import EventGroup, { groupEvents } from './EventGroup.jsx';
+import ImageMoment, { ImageOverview } from './ImageMoment.jsx';
+import { imageMoments, momentOffset, overviewPicks, pageBounds, placeMoments } from './image-moments.js';
 import SessionCard from './SessionCard.jsx';
 import ConcurrentTimeline from './ConcurrentTimeline.jsx';
 import FocusToolbar from './FocusToolbar.jsx';
@@ -63,6 +66,43 @@ export default function Timeline({ onOpenTranscript, isActive = true }) {
   const offset = Math.min(route.offset || 0, Math.max(0, total - 1));
   const visibleEvents = events.slice(offset, offset + pageSize), visibleSessions = sessions.slice(offset, offset + pageSize);
   const groups = useMemo(() => groupEvents(visibleEvents), [visibleEvents]);
+  // Images the focus window's sessions wrote, as moments placed by write time.
+  // A moment shows only when its session is in scope, so the project, agent
+  // and text filters narrow images exactly as they narrow sessions.
+  const feed = route.timelineView === 'chronological';
+  const live = route.mode !== 'fixed';
+  const windowImages = useWindowImages({ interval, live, enabled: isActive && feed });
+  const moments = useMemo(() => {
+    if (!feed || !scoped || !interval) return [];
+    const inScope = new Set((scoped.sessions || []).map(session => session.id));
+    const within = windowImages.images.filter(image => {
+      const t = Date.parse(image.at);
+      return inScope.has(image.sessionId) && t >= interval.from && (live || t <= interval.through);
+    });
+    return imageMoments(within);
+  }, [feed, scoped, interval?.from, interval?.through, live, windowImages.images]);
+  const feedItems = useMemo(() => placeMoments(groups, moments, pageBounds(events, offset, pageSize)), [groups, moments, events, offset, pageSize]);
+  const overview = useMemo(() => overviewPicks(moments), [moments]);
+  // A jump from the overview may change page first; the scroll waits for the
+  // render that holds the moment.
+  const arriving = useRef(null);
+  const reveal = () => {
+    const key = arriving.current;
+    const element = key && [...(scrollRef.current?.querySelectorAll('[data-moment-key]') || [])].find(node => node.dataset.momentKey === key);
+    if (!element) return;
+    arriving.current = null;
+    element.dataset.arrived = '';
+    element.addEventListener('blur', () => { delete element.dataset.arrived; }, { once: true });
+    element.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    element.focus({ preventScroll: true });
+  };
+  useEffect(reveal);
+  const jumpToMoment = moment => {
+    arriving.current = moment.key;
+    const target = momentOffset(events, moment, pageSize);
+    if (target !== offset) workspace.navigate({ offset: target });
+    else reveal();
+  };
   const openSession = (session, element) => {
     origin.current = { element, scrollTop: scrollRef.current?.scrollTop || 0 };
     workspace.navigate({ session: session.session_id || session.id, file: null, contributor: null, review: null });
@@ -98,6 +138,7 @@ export default function Timeline({ onOpenTranscript, isActive = true }) {
       {newCount > 0 && <button className="timeline-focus-new" onClick={() => { workspace.navigate({ sort: Date.now() }, { replace: true }); workspace.retry(); scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' }); }}>{newCount} new record{newCount === 1 ? '' : 's'} · refresh order</button>}
       {data && interval && route.timelineView === 'concurrent' && <ConcurrentTimeline workspace={workspace} focus={focus} onSession={openSession} scrollRef={scrollRef} />}
       {data && interval && route.timelineView !== 'concurrent' && <div ref={scrollRef} className="timeline-focus-list">
+        {feed && <ImageOverview picks={overview} moments={moments} status={windowImages.status} error={windowImages.error} stats={windowImages.stats} onJump={jumpToMoment} />}
         {!total ? <p className="timeline-focus-empty">No recorded {route.timelineView === 'sessions' ? 'tasks' : 'events'} match this focus.</p>
           : route.timelineView === 'sessions' ? visibleSessions.map(session => <article className="timeline-session-result" key={session.session_id}>
             <SessionCard session={session} onOpenTranscript={onOpenTranscript}
@@ -105,8 +146,11 @@ export default function Timeline({ onOpenTranscript, isActive = true }) {
               onProjectClick={project => workspace.navigate({ project, offset: 0 })}
               onProviderClick={provider => workspace.navigate({ providers: provider ? [provider] : [], offset: 0 })} />
           </article>)
-          : groups.map((group, index) => <EventGroup key={group.events[0]?.event_id || index} group={group} onOpenTranscript={onOpenTranscript} focusedEventId={route.q}
-            onProjectClick={project => workspace.navigate({ project, offset: 0 })} />)}
+          : feedItems.map((item, index) => item.kind === 'images'
+            ? <ImageMoment key={`images:${item.moment.key}`} moment={item.moment} onOpenTranscript={onOpenTranscript} onInspect={openSession}
+              onProjectClick={project => workspace.navigate({ project, offset: 0 })} />
+            : <EventGroup key={item.group.events[0]?.event_id || index} group={item.group} onOpenTranscript={onOpenTranscript} focusedEventId={route.q}
+              onProjectClick={project => workspace.navigate({ project, offset: 0 })} />)}
         {total > pageSize && <nav className="timeline-focus-pages" aria-label="Timeline pages"><button disabled={!offset} onClick={() => workspace.navigate({ offset: Math.max(0, offset - pageSize) })}>← Previous</button><span>{offset + 1}–{Math.min(total, offset + pageSize)} of {total}</span><button disabled={offset + pageSize >= total} onClick={() => workspace.navigate({ offset: offset + pageSize })}>Next →</button></nav>}
       </div>}
     </section>

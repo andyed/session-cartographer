@@ -10,7 +10,7 @@ const EXPLORER_PATHS = new Set([
   '/api/search', '/api/projects', '/api/sessions', '/api/stream',
   '/api/transcript', '/api/transcript/analysis',
   '/api/session/artifacts', '/api/session/artifact', '/api/session/document',
-  '/api/images/collection', '/api/images/file',
+  '/api/images/collection', '/api/images/window', '/api/images/file',
 ]);
 
 async function loadExplorer() {
