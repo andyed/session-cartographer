@@ -24,10 +24,10 @@ conversation, or browse the Explorer to reconnect with a thread of work.
      rebuilt: the live build predates the Memory Desk and serves real March
      activity. Restore it here after the rebuild. -->
 
-![One day of concurrent agent sessions, one column per project](docs/screenshots/timeline.png)
+![One day of concurrent agent sessions, one column per project](docs/screenshots/timeline-concurrent.webp)
 
-*One day of recorded work: 51 tasks across nine projects. Project names are
-randomized for this screenshot.*
+*One day of recorded work: 31 tasks and 3,301 records across nine projects.
+Private project names are replaced for these screenshots.*
 
 Capture requires no LLM, and keyword recall needs no server. Semantic search and
 the Explorer are optional. The default setup keeps your history on your machine.
@@ -52,6 +52,67 @@ Cartographer `/focus` skill.
 Additional skills: Codex's `$session-cartographer:setup` diagnoses local semantic
 service access; `/trustmap` proposes Claude Code auto-mode environment settings
 from recorded usage. See [auto-mode guidance](docs/AUTO_MODE.md).
+
+## The Explorer
+
+`/carto` opens the Explorer, a local web app over the same history `/remember`
+searches. Each view below shows the same day of real work.
+
+<table>
+<tr>
+<td colspan="2">
+<a href="docs/screenshots/timeline-feed.webp"><img src="docs/screenshots/timeline-feed.webp" alt="Timeline event feed with a strip of images written during the day"></a>
+<br><b>See what a day produced.</b> 78 images written in 16 bursts across 7
+sessions, above the events that wrote them.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="docs/screenshots/timeline-burst.webp"><img src="docs/screenshots/timeline-burst.webp" alt="One burst of renders opened in the event feed"></a>
+<br><b>Open a burst.</b> 17 images one session wrote between 5:15 and 5:50 AM,
+linked to the conversation that produced them.
+</td>
+<td width="50%" valign="top">
+<a href="docs/screenshots/memory-tasks.webp"><img src="docs/screenshots/memory-tasks.webp" alt="Memory Desk task list"></a>
+<br><b>Pick a task back up.</b> 31 tasks in the day, latest first, each with its
+project, agent, and last activity.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="docs/screenshots/memory-day.webp"><img src="docs/screenshots/memory-day.webp" alt="Day view grouping commits by project"></a>
+<br><b>Check a day against Git.</b> 75 commits from 30 sessions across 18
+projects, with a Markdown receipt to copy.
+</td>
+<td width="50%" valign="top">
+<a href="docs/screenshots/session-review.webp"><img src="docs/screenshots/session-review.webp" alt="Split diff of one file, bounded by a session's activity"></a>
+<br><b>Review what a session changed.</b> The diff starts at the last commit
+before the session began: +46 −2 in <code>Timeline.jsx</code>.
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<a href="docs/screenshots/transcript.webp"><img src="docs/screenshots/transcript.webp" alt="Transcript reader with session evidence alongside"></a>
+<br><b>Read the conversation behind it.</b> 858 messages with tool calls folded,
+beside the documents and commits the session produced.
+</td>
+<td width="50%" valign="top">
+<a href="docs/screenshots/search.webp"><img src="docs/screenshots/search.webp" alt="Search results with project, event type, and agent facets"></a>
+<br><b>Search every agent at once.</b> 416 results from keyword and semantic
+ranking in 209 ms, faceted by project, event type, and agent.
+</td>
+</tr>
+<tr>
+<td colspan="2">
+<a href="docs/screenshots/image-wall.webp"><img src="docs/screenshots/image-wall.webp" alt="Image wall grouped by project"></a>
+<br><b>Browse every image sessions wrote.</b> 728 from the last 7 days, read
+from 90 transcripts in 0.8 s and grouped by project.
+</td>
+</tr>
+</table>
+
+*Public repositories keep their names. Other project, file, and session names
+are replaced, and home directories read `/home/demo`.*
 
 ## Install
 
@@ -152,7 +213,7 @@ bounded feeds for other agents, and briefings are described in
 
 ### Memory Desk and digests
 
-![Explorer activity: session field, activity traces, and token comparison](docs/screenshots/memory-activity.png)
+![Explorer activity: session field, activity traces, and token comparison](docs/screenshots/memory-activity.webp)
 
 *Real recorded activity, with project and file names replaced for these screenshots.*
 
