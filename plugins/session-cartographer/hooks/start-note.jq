@@ -8,6 +8,8 @@
 #   prior      the last trial row that was shown for this project, or ""
 #   status     `git status --porcelain=v2 --branch`, or "" outside a repo
 #   localonly  commits on no remote when the branch has no upstream, or ""
+#   base       in a linked worktree, the local default branch it was compared to, or ""
+#   behind     commits on that branch HEAD lacks, or ""
 #   window     peer window label, e.g. "2h"
 #   budget     note size cap in characters
 #
@@ -89,6 +91,10 @@ def unset: . == null or . == "" or . == "none" or . == "unknown";
 | ([$sl[] | select(length > 0 and (startswith("#") | not))] | length) as $dirty
 | ([$sl[] | select(startswith("? "))] | length) as $untracked
 | ($localonly | tonumber? // null) as $local
+# A worktree that lacks commits on its local default branch. Null outside a
+# linked worktree, which the trial row keeps apart from a worktree at 0.
+| (if $base == "" then null else ($behind | tonumber? // null) end) as $nbehind
+| (($nbehind // 0) > 0) as $lagging
 
 # Peers: every session the roster saw in the window except this one.
 | ([inputs] | join("\n") | try fromjson catch null) as $roster
@@ -97,10 +103,12 @@ def unset: . == null or . == "" or . == "none" or . == "unknown";
    else null end) as $peers
 | (($peers // []) | length) as $npeers
 
-# Gate: a wrapup this project has not been shown yet, or someone else working here.
+# Gate: a wrapup this project has not been shown yet, someone else working here,
+# or a worktree missing commits on its base. The last re-arms on every start,
+# because the note is the only thing that says so before the agent's first edit.
 | (($prior | try fromjson catch null) // {}) as $pr
 | ($wid != "" and $wid != ($pr.wrapup_id // "")) as $new_wrapup
-| ($new_wrapup or $npeers > 0) as $show
+| ($new_wrapup or $npeers > 0 or $lagging) as $show
 
 | "[carto start note · \($project)]" as $head
 | (if $w then
@@ -114,6 +122,10 @@ def unset: . == null or . == "" or . == "none" or . == "unknown";
         elif $local != null then ", no upstream (\($local) commit\(if $local == 1 then "" else "s" end) on no remote)"
         else "" end) + "."
    end) as $repo
+| (if $lagging then
+     "Worktree: HEAD lacks \($nbehind) commit\(if $nbehind == 1 then "" else "s" end) on local \($base)"
+     + " (git log --oneline HEAD..\($base))."
+   else null end) as $behindline
 # $f: how many of each peer's files to name (2, 1 or 0).
 | def peerline($f):
     if $npeers == 0 then null
@@ -140,7 +152,7 @@ def unset: . == null or . == "" or . == "none" or . == "unknown";
        else ["Open threads it left:"] + ($items[0:$k] | map("- " + .))
          + ["(" + (if $n > $k then "+\($n - $k) more. " else "" end) + "Full record: /remember --get \($wid))"]
        end)
-    + [$repo, peerline($f), $tail]
+    + [$repo, $behindline, peerline($f), $tail]
     | map(select(. != null)) | join("\n");
   # Threads first, peer file names second: the most threads that fit, and at
   # that count the most file names that still fit.
@@ -149,7 +161,7 @@ def unset: . == null or . == "" or . == "none" or . == "unknown";
 | render($k; $f) as $note
 
 | {
-    timestamp: ($now | todate), v: 2, project: $project, provider: $provider, source: $source,
+    timestamp: ($now | todate), v: 3, project: $project, provider: $provider, source: $source,
     session_id: (if $sid == "" then null else $sid end),
     wrapup_id: (if $wid == "" then null else $wid end),
     wrapup_at: ($w.timestamp // null),
@@ -159,10 +171,12 @@ def unset: . == null or . == "" or . == "none" or . == "unknown";
     branch: $branch, dirty: (if $status == "" then null else $dirty end),
     untracked: (if $status == "" then null else $untracked end),
     unpushed: $ahead, local_only: $local,
+    base_branch: (if $base == "" then null else $base end), behind_base: $nbehind,
     peers: (if $peers == null then null else $npeers end),
     peer_ids: (if $peers == null then null else [$peers[0:5][] | (.id // "")[0:8]] end),
-    fired: ($wid != "" or $npeers > 0),
-    reason: (if $show then ([if $new_wrapup then "new_wrapup" else empty end, if $npeers > 0 then "peers" else empty end] | join("+"))
+    fired: ($wid != "" or $npeers > 0 or $lagging),
+    reason: (if $show then ([if $new_wrapup then "new_wrapup" else empty end, if $npeers > 0 then "peers" else empty end,
+                             if $lagging then "behind_base" else empty end] | join("+"))
              elif $wid == "" then "nothing" else "repeat" end),
     chars: (if $show then ($note | length) else 0 end),
     shown: $show

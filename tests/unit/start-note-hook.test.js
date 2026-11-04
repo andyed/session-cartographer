@@ -173,8 +173,13 @@ test('a wrapup with unresolved[] puts its threads, repo state and live peers in 
     assert.match(note, /→ \/remember --project alpha for full orientation\.$/);
     assert.ok(note.length <= 800, `note is ${note.length} chars`);
 
+    // A main checkout is not compared to anything: null, not 0.
+    assert.doesNotMatch(note, /Worktree:/);
+
     const [row] = trialRows(f);
-    assert.equal(row.v, 2);
+    assert.equal(row.v, 3);
+    assert.equal(row.base_branch, null);
+    assert.equal(row.behind_base, null);
     assert.equal(row.session_id, SELF);
     assert.equal(row.wrapup_id, 'evt-alpha-new');
     assert.equal(row.open_source, 'unresolved');
@@ -265,6 +270,69 @@ test('a repeat start with nothing new is silent; a live peer or a new wrapup re-
     assert.match(fresh.note, /evt-legacy-2/);
     assert.match(fresh.note, /^- Tag the release$/m);
     assert.equal(trialRows(f).at(-1).reason, 'new_wrapup');
+  } finally { fs.rmSync(f.base, { recursive: true, force: true }); }
+});
+
+// The failure this guards: Claude Code's default worktree.baseRef branches from
+// origin/<default>, so while local main holds unpushed commits a new worktree
+// starts without them. The fixture's repos already have one unpushed commit, so
+// a worktree cut from origin/main reproduces that start exactly.
+test('a worktree cut from origin while local main is ahead says what it lacks, even on a repeat', () => {
+  const f = fixture();
+  try {
+    // The main checkout shows the wrapup once, with no worktree line.
+    const first = run(f, f.legacy);
+    assert.match(first.note, /evt-legacy/);
+    assert.doesNotMatch(first.note, /Worktree:/);
+
+    const wt = path.join(f.base, 'legacy-wt');
+    git(f.legacy, 'worktree', 'add', '-q', '--detach', wt, 'origin/main');
+    // A second commit on local main after the worktree was cut: the count is not
+    // just "unpushed", which is 1 in the main checkout too.
+    fs.writeFileSync(path.join(f.legacy, 'src', 'c.js'), 'three\n');
+    git(f.legacy, 'add', 'src/c.js');
+    git(f.legacy, 'commit', '-q', '-m', 'three');
+
+    // Same wrapup, already shown, no peers: without the worktree check, silent.
+    const { note } = run(f, wt, { sid: 'worktree-session' });
+    assert.match(note, /^\[carto start note · legacy\]/, 'the project is the repo, not the worktree directory');
+    assert.match(note, /^Worktree: HEAD lacks 2 commits on local main \(git log --oneline HEAD\.\.main\)\.$/m);
+    const row = trialRows(f).at(-1);
+    assert.equal(row.shown, true);
+    assert.equal(row.reason, 'behind_base');
+    assert.equal(row.base_branch, 'main');
+    assert.equal(row.behind_base, 2);
+
+    // A worktree at local main's tip lacks nothing: the repeat stays silent, and
+    // the row records 0 against main rather than null.
+    const level = path.join(f.base, 'legacy-level');
+    git(f.legacy, 'worktree', 'add', '-q', '--detach', level, 'main');
+    assert.equal(run(f, level, { sid: 'level-session' }).stdout, '');
+    const levelRow = trialRows(f).at(-1);
+    assert.deepEqual([levelRow.shown, levelRow.reason, levelRow.base_branch, levelRow.behind_base],
+      [false, 'repeat', 'main', 0]);
+  } finally { fs.rmSync(f.base, { recursive: true, force: true }); }
+});
+
+test('the base is the default branch origin/HEAD names, not a guessed main', () => {
+  const f = fixture();
+  try {
+    // quiet has no wrapup and no peers, so only the worktree line can show the note.
+    // Its default becomes trunk (origin/HEAD says so), one commit past a local main.
+    const one = git(f.quiet, 'rev-parse', 'HEAD~1');
+    git(f.quiet, 'branch', '-m', 'main', 'trunk');
+    git(f.quiet, 'push', '-q', 'origin', 'trunk');
+    git(f.quiet, 'remote', 'set-head', 'origin', 'trunk');
+    git(f.quiet, 'branch', 'main', one);
+    const wt = path.join(f.base, 'quiet-wt');
+    git(f.quiet, 'worktree', 'add', '-q', '--detach', wt, one);
+
+    // Guessing main would find 0 commits missing and stay silent.
+    const { note } = run(f, wt);
+    assert.match(note, /No \/wrapup recorded for this project\./);
+    assert.match(note, /^Worktree: HEAD lacks 1 commit on local trunk \(git log --oneline HEAD\.\.trunk\)\.$/m);
+    const row = trialRows(f).at(-1);
+    assert.deepEqual([row.reason, row.base_branch, row.behind_base], ['behind_base', 'trunk', 1]);
   } finally { fs.rmSync(f.base, { recursive: true, force: true }); }
 });
 

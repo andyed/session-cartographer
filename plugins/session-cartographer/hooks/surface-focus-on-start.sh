@@ -7,6 +7,7 @@
 #   - the latest /wrapup's open threads (its unresolved[]), with the event id to
 #     --get the record: 78 of 368 wrapups had ever been read back (2026-10-15);
 #   - the checkout's branch, uncommitted path count and unpushed commit count;
+#   - in a linked worktree, the commits on the local default branch HEAD lacks;
 #   - other sessions active in this project in the last 2 h, from the standup
 #     roster (cartographer-standup.js --roster) and the files they last touched.
 # It replaced co-active projects and maneuver names. Of the 41 notes shown in the
@@ -16,7 +17,8 @@
 # cost ~1.8 s a start: each call rebuilt the co-occurrence graph from the logs.
 #
 # Shown when there is something new: a wrapup newer than the last one shown for
-# this project, or a live peer. Silent on a repeat with neither. Every evaluation,
+# this project, a live peer, or a worktree behind its local default branch.
+# Silent on a repeat with none of them. Every evaluation,
 # shown or not, appends one row to $DEV/focus-on-start-trial.jsonl.
 #
 # DORMANT BY DEFAULT. Enable: export CARTOGRAPHER_FOCUS_ON_START=1
@@ -29,7 +31,8 @@
 # (one jq for the payload, one for the note, git twice, or three times without an
 # upstream, node once for the roster, rg|tail twice), against ~1.8 s and 22 for
 # the graph-lens note. ~100 ms of it is node starting the roster, which runs in
-# the background while git and the log lookups run. Gate off: ~7 ms.
+# the background while git and the log lookups run. Gate off: ~7 ms. A linked
+# worktree adds one git for the behind-base count.
 
 # Gate first, before touching stdin: the dormant path costs a bash start and nothing else.
 [ "${CARTOGRAPHER_FOCUS_ON_START:-0}" = "1" ] || exit 0
@@ -95,6 +98,34 @@ if [ -n "$TOPLEVEL" ]; then
   esac
 fi
 
+# In a linked worktree: how many commits on the local default branch HEAD lacks.
+# Claude Code's default worktree.baseRef ("fresh") branches from origin/<default>,
+# so while local main holds unpushed commits a new worktree starts without them,
+# and nothing tells the agent it is building on stale code (2026-09-25: a fan-out's
+# worktrees started 3 commits behind). A main checkout pays one file test and no
+# process. A worktree pays one git, two when origin/HEAD is unset; the gitdir and
+# origin/HEAD are read with the read builtin (symbolic refs are never packed).
+BASE="" BEHIND=""
+if [ -n "$TOPLEVEL" ] && [ -f "$TOPLEVEL/.git" ]; then
+  GITDIR="" ORIGIN_HEAD=""
+  read -r GITDIR < "$TOPLEVEL/.git" 2>/dev/null
+  case "$GITDIR" in
+    # A submodule's .git file points into .git/modules/, which never matches.
+    "gitdir: "*/worktrees/*)
+      GITDIR=${GITDIR#gitdir: }
+      case "$GITDIR" in /*) ;; *) GITDIR="$TOPLEVEL/$GITDIR" ;; esac
+      COMMON=${GITDIR%/worktrees/*}
+      [ -f "$COMMON/refs/remotes/origin/HEAD" ] && read -r ORIGIN_HEAD < "$COMMON/refs/remotes/origin/HEAD" 2>/dev/null
+      case "$ORIGIN_HEAD" in "ref: refs/remotes/origin/"?*) BASE=${ORIGIN_HEAD#ref: refs/remotes/origin/} ;; esac
+      # origin/HEAD names the default; only without it are main and master tried.
+      for B in ${BASE:-main master}; do
+        BEHIND=$(git -C "$CWD" rev-list --count "HEAD..refs/heads/$B" 2>/dev/null) && { BASE=$B; break; }
+        BEHIND=""
+      done
+      [ -n "$BEHIND" ] || BASE="" ;;
+  esac
+fi
+
 # The last <n> lines of <file> matching ERE <pattern>. rg when present: BSD grep
 # takes ~80 ms over the 12 MB milestone log, rg ~10 ms.
 tail_match() {
@@ -122,6 +153,7 @@ PRIOR=$(tail_match "$TRIAL" 1 "\"project\":\"$P_RE\",.*\"shown\":true")
 RESULT=$(jq -n -R -r -f "$NOTE_JQ" \
   --arg project "$PROJECT" --arg sid "$SID" --arg source "$SOURCE" --arg provider "$PROVIDER" \
   --arg wraps "$WRAPS" --arg prior "$PRIOR" --arg status "$GIT_STATUS" --arg localonly "$LOCAL_ONLY" \
+  --arg base "$BASE" --arg behind "$BEHIND" \
   --arg window "$WINDOW" --arg budget "$BUDGET" <&3 2>/dev/null)
 exec 3<&-
 
