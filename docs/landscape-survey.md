@@ -4,13 +4,16 @@
 from the GitHub API (2026-10-17 03:23 UTC), platform features from the vendors'
 docs and the public
 [Claude Code changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md).
+Category 6 was added on 2026-11-11 with counts read that day; categories 1 to 5
+keep their October counts.
 See [Sources](#sources).*
 
 ## Summary
 
-- **Five kinds of tool** help coding agents carry context between sessions:
+- **Six kinds of tool** help coding agents carry context between sessions:
   memory the agent writes, passive recall of what sessions did, viewers and
-  analytics, commit provenance, and live coordination of concurrent sessions.
+  analytics, commit provenance, live coordination of concurrent sessions, and
+  trackers and specs that hold planned work.
 - **Session Cartographer (SC) is passive recall for reinstating context.** Hooks
   in Claude Code and Codex, plus a read-only adapter for Hermes, record what each
   session did into local logs, with no LLM at capture. `/remember` and the
@@ -21,11 +24,14 @@ See [Sources](#sources).*
 - **Nearby tools:** claude-mem and agentmemory are the largest passive-recall
   projects; deja-vu, cass and Funes search sessions across several agents;
   Entire and git-ai link commits to sessions.
+- **Trackers and specs** hold declared work: issues, dependencies, priorities
+  and specs that an agent or a person writes and the next session reads.
+  spec-kit, OpenSpec, beads and paperclip are the largest. SC keeps no tracker.
 - **The platforms** ship memory and session tooling for their own agent. History
   that spans Claude Code and Codex, and outlasts Claude Code's 30-day transcript
   cleanup, is left to tools like SC.
 
-## The five categories
+## The six categories
 
 | # | Category | What it does | Examples | Crowding |
 |---|---|---|---|---|
@@ -34,9 +40,11 @@ See [Sources](#sources).*
 | 3 | Viewers, analytics, observability | Show people what sessions did and what they cost | claude-code-history-viewer, agenttrail, agentacct, `/insights` | Moderate |
 | 4 | Code provenance | Link commits and lines to the sessions that wrote them | Entire, git-ai, brain0, deja-vu `blame` | Few players; Entire is funded |
 | 5 | Live multi-agent operations | Run, watch and coordinate concurrent sessions | Claude Code agent view, `SendMessage`/`ListAgents`, vibe-kanban, claude-squad | Led by the platforms |
+| 6 | Declared work: trackers and specs | Hold planned work as issues, dependencies and specs that agents read and update | spec-kit, OpenSpec, beads, Backlog.md, Storybloq, paperclip | Crowded; the largest projects were created in 2025 and 2026 |
 
 SC's core is category 2. `/standup` and the day digest reach into 4 and 5 without
-writing to either.
+writing to either. In category 6, SC records only the `unresolved[]` list of
+each `/wrapup`.
 
 Star counts in parentheses are from March 2026.
 
@@ -162,6 +170,67 @@ Claude Code's agent-teams documentation offers no file-conflict detection.
 Anthropic's answer is worktree isolation, which moves contention to merge time
 and narrows `/standup`'s premise to checkouts that several sessions share.
 
+## 6. Declared work: trackers and specs
+
+These tools hold what is planned. An agent or a person writes issues,
+dependencies, priorities and specs, and the next session reads them. Counts in
+this section were read from the GitHub API on 2026-11-11, and the notes come
+from each project's README.
+
+Trackers that live in the repository or in a local database:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [beads](https://github.com/gastownhall/beads) | 28,672 | 2026-11-10 | MIT | Dependency graph of issues in Dolt, synced through Dolt remotes. `bd ready` lists work with no open blocker. Summarizes old closed issues to save context. `steveyegge/beads` redirects here. |
+| [claude-task-master](https://github.com/eyaltoledano/claude-task-master) | 28,345 | 2026-04-28 | Custom, MIT-based | Task system over MCP with task dependencies; needs model API keys. |
+| [ccpm](https://github.com/automazeio/ccpm) | 8,443 | 2026-11-04 | MIT | PRD → epic → task files with dependencies → GitHub issues and a worktree. GitHub Issues is the store. |
+| [Backlog.md](https://github.com/MrLesk/Backlog.md) | 7,354 | 2026-11-10 | MIT | One Markdown file per task, with acceptance criteria, a Definition of Done, milestones and dependencies. CLI, with optional MCP. |
+| [ticket](https://github.com/wedow/ticket) (`tk`) | 930 | 2026-11-09 | MIT | A single bash script: dependencies with a tree and a cycle check, priority 0 to 4, acceptance criteria, and a `blocked` list. |
+| [Storybloq](https://github.com/Storybloq/storybloq) | 788 | 2026-11-11 | PolyForm Shield 1.0.0 | A `.story/` directory of JSON and Markdown: stories, issues, roadmap phases, session handovers and lessons. Recommends the next story from blockers and from what it would unblock. CLI, MCP server and an optional Mac app. Its handovers and lessons also sit in category 1. |
+| [dex](https://github.com/dcramer/dex) | 409 | 2026-03-02 | MIT | "Task tracking for Agents." |
+| [chainlink](https://github.com/dollspace-gay/chainlink) | 367 | 2026-08-09 | MIT | SQLite at `.chainlink/issues.db`: blocking dependencies, priorities, milestones, `chainlink next`, and session handoff notes. |
+| [plandb](https://github.com/Agent-Field/plandb) | 112 | 2026-09-24 | Apache-2.0 | Tasks nest to any depth and dependencies cross the nesting. `split`, `insert` (rewires dependencies), `critical-path` and `bottlenecks`. CLI, MCP and HTTP. |
+| [trekker](https://github.com/obsfx/trekker) | 88 | 2026-10-30 | MIT | "Simple opinionated issue tracker for AI Agents." |
+| [lific](https://github.com/VoidNullable/lific) | 87 | 2026-11-02 | Apache-2.0 | Single Rust binary on SQLite, with MCP. |
+
+Tracker servers that agents reach over MCP or an API:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [paperclip](https://github.com/paperclipai/paperclip) | 113,111 | 2026-11-11 | MIT | Goals, projects and tasks for a team of agents, with an org chart, budgets and approval gates. |
+| [multica](https://github.com/multica-ai/multica) | 55,738 | 2026-11-11 | Apache-2.0 with added conditions | Issues assigned to agents as teammates; the run, the decisions and the diff stay on the issue. |
+| [itsaplan](https://github.com/croffasia/itsaplan) | 2,267 | 2026-11-11 | AGPL-3.0 | Cycles, initiatives, issue links (blocks, relates, duplicates), an audit log and an MCP server. |
+| [Chorus](https://github.com/Chorus-AIDLC/Chorus) | 1,226 | 2026-11-09 | AGPL-3.0 | Idea → Proposal → Document and task DAG → Execute → Verify. Agents propose and people verify. |
+| [Windshift](https://github.com/Windshiftapp/core) | 425 | 2026-11-11 | AGPL-3.0 | Jira's model: epics, stories, sub-tasks, sprints, custom workflows and roadmaps. MCP server with OAuth. |
+| [pad](https://github.com/PerpetualSoftware/pad) | 207 | 2026-11-11 | Apache-2.0 | Tasks, Plans (milestones), Docs and Playbooks. Each change is versioned with the person or named agent that made it. |
+| [projektor](https://github.com/TAJD/projektor) | 66 | 2026-11-11 | MIT | Backlog, kanban, epics, sprints and a nested wiki on Cloudflare Workers; 126 MCP tools. |
+| [donewhen](https://github.com/johnreginald/donewhen) | 66 | 2026-10-04 | AGPL-3.0 | Each ticket is a spec with a done-when checklist. The server refuses In Review while an item is open, and Blocked requires a reason. |
+
+Spec workflows:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [spec-kit](https://github.com/github/spec-kit) | 149,315 | 2026-11-11 | MIT | Slash commands from a project constitution through specify, plan, tasks and implement. |
+| [OpenSpec](https://github.com/Fission-AI/OpenSpec) | 74,615 | 2026-11-11 | MIT | Change proposals under `openspec/changes/`. Archiving a change moves it to `openspec/changes/archive/` and updates the specs. |
+
+Notes on this category:
+
+- **Status is declared.** In the READMEs read, an agent or a person writes each
+  item's status, and none describes checking it against commits or session
+  events. The nearest tool in this survey is brain0's drift check of declared
+  against actual changes (category 4).
+- **Boards that run the agents**, such as vibe-kanban, are in category 5.
+- **Outside this section:** general trackers that predate coding agents
+  ([Plane](https://github.com/makeplane/plane), 62,294;
+  [Huly](https://github.com/hcengineering/platform), 28,091) and hosted ones.
+  Linear's changelog lists
+  [Linear Agent](https://linear.app/changelog/2026-03-24-introducing-linear-agent)
+  on 2026-03-24 and
+  [coding sessions](https://linear.app/changelog/2026-06-11-coding-sessions) on
+  2026-06-11, and Atlassian publishes an
+  [MCP server](https://github.com/atlassian/atlassian-mcp-server) (1,153) for
+  Jira and Confluence.
+
 ## Platform features
 
 ### Anthropic: Claude Code
@@ -202,10 +271,15 @@ Cursor removed its memories UI in 2.1.x and offers an export to `.mdc` rules
 | Review a day's work | Day digest that checks each logged commit against git: landed, moved, rewritten or missing | [brain0](https://github.com/Brain0-ai/brain0) `today` and its drift check |
 | Review one session's changes | Memory Desk diffs bounded by the session's commits | Entire checkpoints, brain0 per-prompt diffs, [Tessera](https://github.com/horang-labs/tessera) |
 | Configure auto mode from real usage | `/trustmap`, weighted by use across Claude Code and Codex, re-runnable as a delta | Claude Code [`/auto-mode-setup`](https://code.claude.com/docs/en/auto-mode-config) |
+| Carry planned work forward | `/wrapup` records `unresolved[]`, and the opt-in start note shows the newest one for the project. No dependencies, priorities or status | [beads](https://github.com/gastownhall/beads), [Backlog.md](https://github.com/MrLesk/Backlog.md), [Storybloq](https://github.com/Storybloq/storybloq), [plandb](https://github.com/Agent-Field/plandb), [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
 
 ## Sources
 
 - Star counts and push dates: the GitHub API, read 2026-10-17 03:23 UTC.
+- Category 6: the GitHub API, read 2026-11-11. Projects were found with `gh
+  search repos` keyword and topic queries, so projects under about 100 stars
+  are under-covered. Notes come from each README, and license names from each
+  LICENSE file where GitHub reports no SPDX id.
 - Platform features: the vendors' docs and the Claude Code changelog.
 - Project details: each project's repository and docs; claude-mem at `b6f9742`
   and agentmemory at `6a182c4`. No third-party code was run, so runtime
