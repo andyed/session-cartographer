@@ -4,16 +4,17 @@
 from the GitHub API (2026-10-17 03:23 UTC), platform features from the vendors'
 docs and the public
 [Claude Code changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md).
-Category 6 was added on 2026-11-11 with counts read that day; categories 1 to 5
-keep their October counts.
+Categories 6 and 7 were added on 2026-11-11 with counts read that day;
+categories 1 to 5 keep their October counts.
 See [Sources](#sources).*
 
 ## Summary
 
-- **Six kinds of tool** help coding agents carry context between sessions:
+- **Seven kinds of tool** help coding agents carry context between sessions:
   memory the agent writes, passive recall of what sessions did, viewers and
-  analytics, commit provenance, live coordination of concurrent sessions, and
-  trackers and specs that hold planned work.
+  analytics, commit provenance, live coordination of concurrent sessions,
+  trackers and specs that hold planned work, and runbooks that hold repeatable
+  procedures.
 - **Session Cartographer (SC) is passive recall for reinstating context.** Hooks
   in Claude Code and Codex, plus a read-only adapter for Hermes, record what each
   session did into local logs, with no LLM at capture. `/remember` and the
@@ -27,11 +28,15 @@ See [Sources](#sources).*
 - **Trackers and specs** hold declared work: issues, dependencies, priorities
   and specs that an agent or a person writes and the next session reads.
   spec-kit, OpenSpec, beads and paperclip are the largest. SC keeps no tracker.
+- **Runbooks** hold a repeatable procedure as steps that a person or an agent
+  runs. runme and Atuin Desktop run Markdown; opensop, rundown and runsheets
+  keep a record of each run; App-Store-Connect-CLI scripts app releases. SC has
+  no runbook format.
 - **The platforms** ship memory and session tooling for their own agent. History
   that spans Claude Code and Codex, and outlasts Claude Code's 30-day transcript
   cleanup, is left to tools like SC.
 
-## The six categories
+## The seven categories
 
 | # | Category | What it does | Examples | Crowding |
 |---|---|---|---|---|
@@ -41,10 +46,12 @@ See [Sources](#sources).*
 | 4 | Code provenance | Link commits and lines to the sessions that wrote them | Entire, git-ai, brain0, deja-vu `blame` | Few players; Entire is funded |
 | 5 | Live multi-agent operations | Run, watch and coordinate concurrent sessions | Claude Code agent view, `SendMessage`/`ListAgents`, vibe-kanban, claude-squad | Led by the platforms |
 | 6 | Declared work: trackers and specs | Hold planned work as issues, dependencies and specs that agents read and update | spec-kit, OpenSpec, beads, Backlog.md, Storybloq, paperclip | Crowded; the largest projects were created in 2025 and 2026 |
+| 7 | Procedures: runbooks and operations | Hold a repeatable procedure as steps that a person or an agent runs, in some tools with a record of each run | runme, Atuin Desktop, braintree/runbook, opensop, App-Store-Connect-CLI, FounderOS | Runners for people are established; run records for agents are small and were created in 2026 |
 
 SC's core is category 2. `/standup` and the day digest reach into 4 and 5 without
 writing to either. In category 6, SC records only the `unresolved[]` list of
-each `/wrapup`.
+each `/wrapup`. In category 7, SC's event logs record the commands a session
+ran, without tying them to the steps of a procedure.
 
 Star counts in parentheses are from March 2026.
 
@@ -231,6 +238,78 @@ Notes on this category:
   [MCP server](https://github.com/atlassian/atlassian-mcp-server) (1,153) for
   Jira and Confluence.
 
+## 7. Procedures: runbooks and operations
+
+These tools hold how a recurring job is done: a release, a deploy, a store
+submission, a morning check. A person or an agent runs the steps, and some
+tools keep a record of each run. Counts in this section were read from the
+GitHub API on 2026-11-11, and the notes come from each project's README unless
+a row quotes the repository description.
+
+Markdown that runs:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [Atuin Desktop](https://github.com/atuinsh/desktop) | 2,447 | 2026-04-29 | Apache-2.0 | Runbooks with terminal, database and HTTP blocks and Jinja-style templating; local-first, with sync through Atuin Hub. Lists release checklists among its uses. GitHub marks the repository archived. |
+| [runme](https://github.com/runmedev/runme) | 2,209 | 2026-11-11 | Apache-2.0 | Runs the fenced code blocks of a Markdown file, each by name (`runme run <name>`). A [VS Code extension](https://github.com/runmedev/vscode-runme) (218) shows the file as a notebook. |
+| [runbooks](https://github.com/gruntwork-io/runbooks) | 35 | 2026-11-11 | MPL-2.0 | Electron app for MDX runbooks. Runs commands on the local machine, limited to the commands and scripts that are part of the runbook. The README says it has one author and no peer review yet. |
+| [Runbook.md](https://github.com/kjkuan/Runbook.md) | 32 | 2026-11-09 | BSD-2-Clause | "Write Bash executable runbooks in Markdown." |
+
+Gradual automation, where each step starts as an instruction to a person and
+is automated one step at a time:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [runbook](https://github.com/braintree/runbook) | 769 | 2023-08-24 | MIT | Ruby DSL. View mode exports a runbook as Markdown and run mode executes it. State is saved at each step, so a failed run resumes; noop mode shows what a run would do. |
+| [donothing](https://github.com/danslimmon/donothing) | 97 | 2021-05-24 | None stated | "do-nothing scripting framework", from the author of the do-nothing scripting essay. |
+| [autopilot](https://github.com/StencilFrame/autopilot) | 39 | 2026-10-19 | Apache-2.0 | Runbook steps are manual at first and are automated one at a time; credits do-nothing scripting. |
+
+Procedures with a run record, written for agent work:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [agentic-sop-to-work](https://github.com/s0912758806p/agentic-sop-to-work) | 211 | 2026-10-30 | MIT | Claude Code plugin that turns a written procedure into a flow. `run.py --plan` refuses a flow with a dead end or an endless loop before anything runs. One tool per step, optional code gates on a step's output, capped retries, and output marked as a draft. |
+| [opensop](https://github.com/opensop/opensop) | 13 | 2026-11-11 | Apache-2.0 | One JSON file per process. A step is a shell command, a model call or an approval. Each run has a folder with `manifest.json`, an append-only `audit.jsonl` and `context.json`, so another agent or a person can continue it. Needs bash and jq. |
+| [rundown](https://github.com/tobyhede/rundown) | 10 | 2026-11-03 | MIT | `.runbook.md` files compiled to XState state machines. Run state persists, so a run continues after the agent's context is cleared. Commands outside an allowlist need confirmation. |
+| [runsheets](https://github.com/MadBomber/runsheets) | 1 | 2026-10-15 | MIT | Serves a Markdown runbook as a local web page with a Run button on marked commands. Records each command, its output, exit status and timing, and the operator's acknowledgement of manual steps. Describes itself as a proof of concept. |
+
+App release operations:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [App-Store-Connect-CLI](https://github.com/rorkai/App-Store-Connect-CLI) (`asc`) | 8,330 | 2026-11-11 | MIT | CLI for the App Store Connect API: TestFlight, builds, submissions, signing and metadata. Authenticates with an App Store Connect API key. |
+| [app-store-connect-cli-skills](https://github.com/rorkai/app-store-connect-cli-skills) | 1,132 | 2026-11-07 | MIT | 25 agent skills for `asc`, with Claude Code and Codex plugin manifests. Community-maintained and unofficial. |
+| [app-store-compliance](https://github.com/mjmirza/app-store-compliance) | 424 | 2026-11-07 | OpenRoots Agent License 2.3 | App Store and Google Play rejection patterns, each mapped to a guideline. A bash guard scans a project and ends with `BLOCKED`, `CLEAR` or `NOT CHECKED`; it can be installed as a hook ahead of submit commands. |
+| [The-Last-Mile](https://github.com/namedtoaster/The-Last-Mile) | 39 | 2026-11-09 | MIT | Claude Code plugin whose `/ship` command covers project detection, a rejection check and store submission. |
+
+Operations suites for a one-person company:
+
+| Project | Stars | Last push | License | Notes |
+|---|---|---|---|---|
+| [FounderOS](https://github.com/Bennettxai/FounderOS) | 1,408 | 2026-11-09 | MIT | Next.js app on local SQLite: clients, inbox, social accounts, finances, a knowledge base and a roster of agents. |
+| [ai-employees](https://github.com/markfulton/ai-employees) | 891 | 2026-11-07 | MIT | Eight business roles, each a folder of scheduled routines (60 in all) that an agent runs on the owner's machine. |
+| [claude-ops](https://github.com/Lifecycle-Innovations-Limited/claude-ops) | 551 | 2026-11-10 | MIT | Claude Code plugin with a morning briefing across infrastructure, CI, inbox, pull requests, sprint and revenue. |
+| [founders-os](https://github.com/OurThinkTank/founders-os) | 21 | 2026-11-03 | MIT | MCP server on Supabase with 94 tools: CRM, tasks with dependencies, playbooks that fan out to tasks, a double-entry ledger, memory and an audit log. |
+
+Notes on this category:
+
+- **A run record is kept by the tool that ran the steps.** opensop, rundown,
+  runsheets and braintree's runbook each store their own run state. None of
+  the READMEs read describes checking a run against commits or session events.
+- **The suites cover client records, inbox, marketing and revenue.** In the
+  README sections read, founders-os is the one that lists tasks with
+  dependencies.
+- **Outside this section:** job schedulers and workflow engines
+  ([n8n](https://github.com/n8n-io/n8n), 210,213;
+  [Kestra](https://github.com/kestra-io/kestra), 30,205;
+  [Windmill](https://github.com/windmill-labs/windmill), 18,531;
+  [StackStorm](https://github.com/StackStorm/st2), 6,560;
+  [Rundeck](https://github.com/rundeck/rundeck), 6,373), incident tooling
+  for on-call teams such as
+  [robusta](https://github.com/robusta-dev/robusta) (3,140), and
+  [fastlane](https://github.com/fastlane/fastlane) (42,386), which predates
+  coding agents.
+
 ## Platform features
 
 ### Anthropic: Claude Code
@@ -272,13 +351,16 @@ Cursor removed its memories UI in 2.1.x and offers an export to `.mdc` rules
 | Review one session's changes | Memory Desk diffs bounded by the session's commits | Entire checkpoints, brain0 per-prompt diffs, [Tessera](https://github.com/horang-labs/tessera) |
 | Configure auto mode from real usage | `/trustmap`, weighted by use across Claude Code and Codex, re-runnable as a delta | Claude Code [`/auto-mode-setup`](https://code.claude.com/docs/en/auto-mode-config) |
 | Carry planned work forward | `/wrapup` records `unresolved[]`, and the opt-in start note shows the newest one for the project. No dependencies, priorities or status | [beads](https://github.com/gastownhall/beads), [Backlog.md](https://github.com/MrLesk/Backlog.md), [Storybloq](https://github.com/Storybloq/storybloq), [plandb](https://github.com/Agent-Field/plandb), [OpenSpec](https://github.com/Fission-AI/OpenSpec) |
+| Run a repeatable procedure | Skills such as `/wrapup` are written procedures, and `/wrapup` returns a receipt for its own write. No runbook format and no per-step record of a run | [runme](https://github.com/runmedev/runme), [opensop](https://github.com/opensop/opensop), [rundown](https://github.com/tobyhede/rundown), [runsheets](https://github.com/MadBomber/runsheets), [App-Store-Connect-CLI](https://github.com/rorkai/App-Store-Connect-CLI) |
 
 ## Sources
 
 - Star counts and push dates: the GitHub API, read 2026-10-17 03:23 UTC.
-- Category 6: the GitHub API, read 2026-11-11. Projects were found with `gh
-  search repos` keyword and topic queries, so projects under about 100 stars
-  are under-covered. Notes come from each README, and license names from each
+- Categories 6 and 7: the GitHub API, read 2026-11-11. Projects were found
+  with `gh search repos` keyword and topic queries, so projects under about 100
+  stars are under-covered. Category 7 keeps nine projects under 100 stars
+  where they are the examples of a shape, such as the tools that keep a run
+  record. Notes come from each README, and license names from each
   LICENSE file where GitHub reports no SPDX id.
 - Platform features: the vendors' docs and the Claude Code changelog.
 - Project details: each project's repository and docs; claude-mem at `b6f9742`
