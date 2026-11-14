@@ -120,10 +120,20 @@ After the change the indexer walks both stores in both spellings:
   run still exits 0, so a missing tool does not void the catch-up cooldown.
 - A plain file beside its compressed twin is the one read.
 
-Nothing was indexed into the live collection for this change. On an install
-that has it, catch-up (`--limit-days 7`) picks up the plain archived rollouts
-still inside its window. The 226 compressed ones are older than that window
-and need one `retro-index.sh --provider codex` without `--limit-days`.
+The archive was then indexed on this machine, the same day, with the script
+from the repository: `retro-index.sh --provider codex` with
+`CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR` pointed at a directory that does not
+exist, so only the archive was walked, and catch-up's settings
+(`TURN_BODY_MAX=1200`, novelty gate off). 241 rollouts, 3,032 turns, no turn
+failure, 34 minutes. Afterwards all 641 archived rollouts had a checkpoint at
+their mtime, and every expected turn id of the 241 was in Qdrant carrying the
+archive path this run recorded (3,032 of 3,032, counted per session from the
+rollouts, not from the indexer's own total). The collection went from 264,803
+to 267,778 points while other sessions' hooks were writing to it too.
+
+On another install, catch-up (`--limit-days 7`) picks up the plain archived
+rollouts still inside its window; compressed ones are older than that window
+and need the same one run without `--limit-days`.
 
 ## The other readers (measured 2026-11-13, read-only)
 
@@ -164,8 +174,9 @@ most of the corpus would be stale again the next week.
 
 ## Not covered
 
-- The 241 archived rollouts above are still not indexed on this machine until
-  an install with this change runs the indexer over them.
+- The installed plugin runs its own copy of the indexer. Until it carries this
+  change, catch-up walks the live tree only, and a session archived before its
+  next catch-up falls behind again.
 - A turn indexed from a compressed rollout records the `.jsonl.zst` path; one
   indexed while plain keeps the `.jsonl` path. Both go through the resolver.
 - `wrapup`'s SKILL.md and `record-investigation.sh` find the current session's
