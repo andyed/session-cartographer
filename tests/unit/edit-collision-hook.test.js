@@ -66,6 +66,20 @@ test('a peer edit of the same file in the same checkout produces a non-blocking 
   assert.equal(JSON.parse(log[0]).split, false);
 });
 
+test('the note still fires when the script is reached through a link with a space in it', () => {
+  // The script took itself for the main module only when its URL equalled
+  // `file://${argv[1]}`: never on Windows (C:\...), nor through a path a URL
+  // escapes or a link, so the hook printed nothing and every edit went
+  // unchecked. The link stands in for Windows on a Unix runner.
+  const { dev, repo } = workspace();
+  const file = path.join(repo, 'src/app.js');
+  writeLog(dev, [edit(PEER, file, 6)]);
+  const linked = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'carto-collision-link-')), 'carto root');
+  fs.symlinkSync(ROOT, linked, 'junction');
+  const r = runHook(dev, payload(file), { CARTOGRAPHER_ROOT: linked });
+  assert.match(r.stdout, /peer-111/, 'the collision note must survive the link');
+});
+
 test('silent for own edits, other files, stale touches, and when disabled', () => {
   const { dev, repo } = workspace();
   const file = path.join(repo, 'src/app.js');

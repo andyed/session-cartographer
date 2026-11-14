@@ -64,7 +64,7 @@ import {
   existsSync, readFileSync, writeFileSync, mkdirSync, statSync, openSync, readSync,
   closeSync, fstatSync, readdirSync, unlinkSync, appendFileSync,
 } from 'fs';
-import { join, basename, dirname, isAbsolute, resolve as resolvePath } from 'path';
+import { join, basename, dirname, isAbsolute, resolve as resolvePath, sep } from 'path';
 import { homedir, tmpdir } from 'os';
 import { COMMIT_RE, contentionKey } from './contention.js';
 import { editSummaryPaths } from './edit-paths.js';
@@ -79,6 +79,12 @@ const MARKERS = ['"type":"investigation', '"type":"git_commit"', '"type":"tool_f
 const OUTCOME_NEEDLE = '"type":"investigation_outcome"';
 const KEPT_OUTCOMES = new Set(['open', 'confirmed']);
 const PATH_CHAR = /[\w./-]/;
+
+// Paths are matched in git's spelling, with `/`. On Windows a native path
+// (C:\repo\src\app.js) never ended at `/<project>/<rel>`, and its rel
+// (src\app.js) never equalled a commit's `files: src/app.js`, so no history
+// note ever fired there.
+const slashed = (p) => (sep === '\\' ? p.replaceAll('\\', '/') : p);
 
 export function windowDays(env = process.env) {
   const n = Number(env.CARTOGRAPHER_FILE_HISTORY_DAYS);
@@ -111,7 +117,7 @@ export function fileIdentity(key) {
           if (at > 0) project = basename(gitdir.slice(0, at));
         } catch { /* keep the worktree's own name */ }
       }
-      return { key, root: dir, project: isResolved(project) ? project : null, rel: key.slice(dir.length + 1) };
+      return { key, root: dir, project: isResolved(project) ? project : null, rel: slashed(key.slice(dir.length + 1)) };
     }
     const up = dirname(dir);
     if (up === dir) return { key, root: null, project: null, rel: null };
@@ -121,7 +127,7 @@ export function fileIdentity(key) {
 
 /** Collapse worktree segments the way contentionKey does, without realpath or git. */
 function collapse(p) {
-  return p.replace(/\/\.claude\/worktrees\/[^/]+(?=\/)/, '').replace(/\/\.codex\/worktrees\/[^/]+(?=\/)/, '');
+  return slashed(p).replace(/\/\.claude\/worktrees\/[^/]+(?=\/)/, '').replace(/\/\.codex\/worktrees\/[^/]+(?=\/)/, '');
 }
 
 /**
@@ -139,11 +145,11 @@ export function namesFile(candidate, e, id) {
   if (!value || value.includes('\0')) return false;
   if (!id.project) {
     const abs = isAbsolute(value) ? value : (typeof e.cwd === 'string' && isAbsolute(e.cwd) ? resolvePath(e.cwd, value) : null);
-    return !!abs && collapse(abs) === id.key;
+    return !!abs && collapse(abs) === slashed(id.key);
   }
-  if (value === id.rel) return isResolved(e.project) && e.project === id.project;
+  if (slashed(value) === id.rel) return isResolved(e.project) && e.project === id.project;
   const tail = `/${id.project}/${id.rel}`;
-  if (`/${value}`.endsWith(tail)) return true;
+  if (`/${slashed(value)}`.endsWith(tail)) return true;
   const abs = isAbsolute(value) ? value : (typeof e.cwd === 'string' && isAbsolute(e.cwd) ? resolvePath(e.cwd, value) : null);
   return !!abs && collapse(abs).endsWith(tail);
 }

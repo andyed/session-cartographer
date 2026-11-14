@@ -108,6 +108,21 @@ test('a non-repo directory falls back to its own basename', () => {
   assert.equal(resolveProject(path.join(tmp, 'notgit', 'sub')), 'sub');
 });
 
+test('under Git Bash a Windows path splits at backslashes; elsewhere a backslash is a name', () => {
+  // A Windows payload's cwd is C:\dev\repo. Split at `/` only, a cwd outside
+  // any repository was filed as project "C:\dev"; 500+ of BIGFU's changelog
+  // rows carried a whole path as their project (2026-11-03). OSTYPE is what
+  // the helpers read, so each platform's answer is checked on any runner.
+  const run = (ostype, call) => spawnSync('bash', ['-c',
+    `. "$1"; OSTYPE=${ostype}; ${call}`, '_', COMMON], { encoding: 'utf8' }).stdout.trim();
+  assert.equal(run('msys', String.raw`cartographer_basename 'C:\dev\notgit\sub'`), 'sub');
+  assert.equal(run('msys', String.raw`cartographer_basename 'C:\dev\'`), 'dev');
+  assert.equal(run('msys', String.raw`cartographer_dirname 'C:\dev\repo\src\a.js'`), 'C:/dev/repo/src');
+  assert.equal(run('cygwin', String.raw`cartographer_basename 'C:\dev'`), 'dev');
+  assert.equal(run('darwin23', String.raw`cartographer_basename '/tmp/a\b'`), String.raw`a\b`);
+  assert.equal(run('linux-gnu', String.raw`cartographer_dirname '/tmp/a\b'`), '/tmp');
+});
+
 test('no hook still derives the project with a raw basename', () => {
   const hooks = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks');
   const offenders = fs.readdirSync(hooks)

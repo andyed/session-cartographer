@@ -110,6 +110,17 @@ test('an already-pruned worktree is counted, not guessed at', () => {
   assert.equal(a2.project, 'deleted-9999', 'unrecoverable events stay as they are');
 });
 
+test('a pruned worktree recorded with Windows separators is counted too', () => {
+  // A Windows cwd is C:\repo\.claude\worktrees\name; the count matched
+  // `worktrees/` only and reported none.
+  const winDev = path.join(tmp, 'win-dev');
+  fs.mkdirSync(winDev);
+  fs.writeFileSync(path.join(winDev, 'changelog.jsonl'), `${JSON.stringify({
+    event_id: 'evt-w1', project: 'lane-z', cwd: 'C:\\gone\\myproject\\.claude\\worktrees\\lane-z', summary: 'pruned on Windows',
+  })}\n`);
+  assert.match(run(winDev).stdout, /1 event\(s\) reference a worktree that no longer exists/);
+});
+
 test('a second --apply is a no-op', () => {
   run(dev, '--apply');
   const after1 = fs.readFileSync(path.join(dev, 'changelog.jsonl'), 'utf8');
