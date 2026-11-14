@@ -24,6 +24,18 @@
  *     Listed as unplaced marks.
  * Crediting either to a row would be inference, which this pipeline keeps
  * report-only.
+ *
+ * One reader may bring evidence the logs lack. Codex gives an MCP child no
+ * session, so those calls are recorded with none and their marks with no
+ * call_id; the Codex rollout names both exactly (codex-call-evidence.js).
+ * Passed as `callEvidence`, it is reported beside the record, never as it:
+ *   - session_id stays what the log says. derived_session_id is the one
+ *     session whose rollout minted the call id; a call id minted in several
+ *     rollouts gets none and says how many (derivation_conflict).
+ *   - used and fetched stay exact. derived_used and derived_fetched hold the
+ *     no_session marks that name a derived call, for a result that call
+ *     served, where the call's own session's rollout names that pair.
+ * Readers that pass no evidence see the recorded join unchanged.
  */
 import { readFileSync } from 'node:fs';
 import { isResolved } from './sentinels.js';
@@ -106,6 +118,11 @@ export function pairKey(callId, eventId) {
   return `${callId}\0${eventId}`;
 }
 
+/** Key of callEvidence.named: a (call, event) pair as fetched or as marked used. */
+export function namedKey(callId, eventId, source) {
+  return `${pairKey(callId, eventId)}\0${source}`;
+}
+
 /**
  * Served rows that can join at all (both ids present), first occurrence per
  * (call_id, event_id). A call can repeat an event across ladders; counting the
@@ -152,6 +169,7 @@ function newCall(callId) {
   return {
     call_id: callId, timestamp: null, query: '', purpose: null, session_id: null,
     provider: null, backend: null, rows: [], stray: [],
+    derived_session_id: null, session_derivation: null, derivation_conflict: 0,
   };
 }
 
@@ -165,15 +183,48 @@ function fillCallFields(call, row) {
   call.backend ||= resolvedText(row.selected_backend) || resolvedText(row.backend);
 }
 
+/** Give each call recorded without a session the one session whose rollout minted its id. */
+function deriveCallSessions(calls, evidence) {
+  for (const call of calls.values()) {
+    if (call.session_id !== null) continue;
+    const sessions = [...(evidence.minted.get(call.call_id) || [])].filter(isResolved);
+    if (sessions.length === 1) {
+      call.derived_session_id = String(sessions[0]);
+      call.session_derivation = evidence.derivation;
+    } else if (sessions.length > 1) {
+      call.derivation_conflict = sessions.length;
+    }
+  }
+}
+
+/**
+ * The served row a no_session mark belongs on, or null. The same test the
+ * writer applies when it has a session: the mark names the call, the call
+ * served the event, and the marker is the call's own session. Here the last
+ * part is read from that session's rollout. A mark by another session that
+ * learned the id (a subagent inherits its parent's) stays stray.
+ */
+function derivedMarkRow(row, calls, servedRowByPair, evidence) {
+  if (row.call_id || recordSession(row) !== null || resolvedText(row.attribution_status) !== 'no_session') return null;
+  const callId = resolvedText(row.requested_call_id);
+  const call = callId ? calls.get(callId) : null;
+  if (!call || call.derived_session_id === null) return null;
+  const served = servedRowByPair.get(pairKey(callId, row.event_id));
+  if (!served) return null;
+  const namers = evidence.named.get(namedKey(callId, row.event_id, row.source));
+  return namers?.has(call.derived_session_id) ? { served, call } : null;
+}
+
 /**
  * Every call the logs know about, each with its ranked results and marks.
  * searchCallRows add zero-result calls and fill fields the served rows lack;
  * they never override what the served rows recorded.
  */
-export function buildRecallIndex({ servedRows = [], accessRows = [], searchCallRows = [] } = {}) {
+export function buildRecallIndex({ servedRows = [], accessRows = [], searchCallRows = [], callEvidence = null } = {}) {
   const { rows: served, keys: servedKeys } = exactServedPairs(servedRows);
   const { byPair } = indexExactAccesses(accessRows);
   const calls = new Map();
+  const servedRowByPair = new Map();
 
   for (const row of served) {
     const callId = String(row.call_id);
@@ -181,14 +232,18 @@ export function buildRecallIndex({ servedRows = [], accessRows = [], searchCallR
     const call = calls.get(callId);
     fillCallFields(call, row);
     const accesses = (byPair.get(pairKey(row.call_id, row.event_id)) || []).map(({ row: access }) => access);
-    call.rows.push({
+    const result = {
       event_id: String(row.event_id),
       rank: positiveRank(row.rank),
       source: normalizeSourceLabel(row.source),
       project: resolvedText(row.project),
       used: accesses.filter((access) => access.source === USED_SOURCE).map(markOf),
       fetched: accesses.filter((access) => access.source === FETCHED_SOURCE).map(markOf),
-    });
+      derived_used: [],
+      derived_fetched: [],
+    };
+    call.rows.push(result);
+    servedRowByPair.set(pairKey(callId, result.event_id), result);
   }
 
   for (const row of searchCallRows) {
@@ -198,10 +253,21 @@ export function buildRecallIndex({ servedRows = [], accessRows = [], searchCallR
     fillCallFields(calls.get(callId), row);
   }
 
+  if (callEvidence) deriveCallSessions(calls, callEvidence);
+
   const unplaced = [];
   for (const row of accessRows) {
-    if (row.source !== USED_SOURCE || !row.event_id) continue;
+    if (!row.event_id || (row.source !== USED_SOURCE && row.source !== FETCHED_SOURCE)) continue;
     if (row.call_id && servedKeys.has(pairKey(row.call_id, row.event_id))) continue;
+    const derived = callEvidence ? derivedMarkRow(row, calls, servedRowByPair, callEvidence) : null;
+    if (derived) {
+      derived.served[row.source === USED_SOURCE ? 'derived_used' : 'derived_fetched'].push({
+        ...markOf(row), derived_session_id: derived.call.derived_session_id, session_derivation: derived.call.session_derivation,
+      });
+      continue;
+    }
+    // An unjoined fetch is inspection nobody placed; only use marks are listed.
+    if (row.source !== USED_SOURCE) continue;
     const named = resolvedText(row.call_id) || resolvedText(row.requested_call_id);
     if (named && calls.has(named)) calls.get(named).stray.push(markOf(row));
     else unplaced.push(markOf(row));
@@ -225,6 +291,10 @@ export function summarizeCall(call) {
     stray_marks: call.stray.length,
     used_ranks: knownRanks.sort((a, b) => a - b),
     deepest_used_rank: knownRanks.length ? Math.max(...knownRanks) : null,
+    // Results the record does not count and a transcript does. Disjoint from
+    // used/fetched, so recorded + derived never counts a result twice.
+    derived_used: call.rows.filter((row) => row.used.length === 0 && row.derived_used.length > 0).length,
+    derived_fetched: call.rows.filter((row) => row.fetched.length === 0 && row.derived_fetched.length > 0).length,
   };
 }
 

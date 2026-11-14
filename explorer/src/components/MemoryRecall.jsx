@@ -25,6 +25,9 @@ const STATUS_LABELS = {
   no_compatible_serve: 'no matching call',
 };
 const statusLabel = status => status ? STATUS_LABELS[status] || status : 'status not recorded';
+// A session read from the Codex transcript, not from the telemetry row.
+const callSession = call => call.session_id || call.derived_session_id || null;
+const isDerived = call => !call.session_id && Boolean(call.derived_session_id);
 const isCallList = body => Array.isArray(body?.calls) && Boolean(body.totals) && Boolean(body.unplaced);
 const isCallDetail = body => Array.isArray(body?.rows) && Boolean(body.resolution);
 
@@ -90,6 +93,13 @@ function UsedMarker({ row }) {
   </span>;
 }
 
+function TranscriptUsedMarker({ row }) {
+  if (row.used.length || !row.derived_used?.length) return null;
+  return <span className="rc-marker rc-used" title="The telemetry row carries no session. This session's transcript names the call and this result in mark_used.">
+    <span aria-hidden="true">✓ </span>marked used{row.rank !== null ? ` · rank ${row.rank}` : ''}<span className="rc-marker-note"> · per transcript</span>
+  </span>;
+}
+
 function ResultText({ row }) {
   if (row.summary) return <span className="rc-summary">{row.summary}</span>;
   if (row.resolution === 'turn-id') return <span className="rc-summary rc-quiet">Transcript turn {row.turn ?? ''} · text is held only in the semantic index</span>;
@@ -125,7 +135,7 @@ function ResultRow({ row, workspace, callTime, shared = {} }) {
   const range = episodeRange(row, callTime);
   const destination = episodeDestination(workspace, row.session_id, range);
   const Body = destination ? 'a' : 'div';
-  return <li className="rc-result" data-used={row.used.length > 0 || undefined} data-event-id={row.event_id} data-session-id={row.session_id || undefined} data-source={row.source || undefined}>
+  return <li className="rc-result" data-used={row.used.length > 0 || row.derived_used?.length > 0 || undefined} data-event-id={row.event_id} data-session-id={row.session_id || undefined} data-source={row.source || undefined}>
     <span className="rc-rank" aria-label={`Rank ${row.rank ?? 'unknown'}`}>{row.rank ?? '–'}</span>
     <div className="rc-result-body">
       <Body className="rc-result-destination" {...(destination || {})} title={destination ? `Open episode${row.session_title ? `: ${row.session_title}` : ''}` : undefined}>
@@ -141,7 +151,9 @@ function ResultRow({ row, workspace, callTime, shared = {} }) {
       <div className="rc-markers">
         <ResultTime timestamp={row.event_timestamp} callTime={callTime} rank={row.rank} />
         <UsedMarker row={row} />
+        <TranscriptUsedMarker row={row} />
         {row.fetched.length > 0 && <span className="rc-marker rc-fetched" title="Redeemed with --get. Fetching is inspection, not a use mark.">fetched</span>}
+        {!row.fetched.length && row.derived_fetched?.length > 0 && <span className="rc-marker rc-fetched" title="Redeemed with get, per this session's transcript. Fetching is inspection, not a use mark.">fetched · per transcript</span>}
         {row.session_id && !range && <span className="rc-meta">session {shortId(row.session_id)}</span>}
       </div>
     </div>
@@ -197,11 +209,14 @@ function CallRow({ call, workspace, expanded, onToggle, showAgent = true }) {
         <time dateTime={call.timestamp ? new Date(call.timestamp).toISOString() : undefined}>{call.timestamp ? stamp(call.timestamp) : 'time not recorded'}</time>
         <span>{call.purpose || 'purpose not recorded'}</span>
         {call.backend && <span>{call.backend}</span>}
+        {isDerived(call) && <span data-session-derivation={call.session_derivation} title={`The telemetry row carries no session. The Codex transcript of ${call.derived_session_id} holds this call.`}>session from transcript</span>}
       </span>
       <span className="rc-call-counts">
         <span>{plural(call.served, 'result')}</span>
         <span className={call.used ? 'rc-used-count' : undefined}>{call.used} marked used{deep ? ` · deepest rank ${deep}` : ''}</span>
+        {call.derived_used > 0 && <span className="rc-used-count">{call.derived_used} marked used per transcript</span>}
         {call.fetched > 0 && <span>{call.fetched} fetched</span>}
+        {call.derived_fetched > 0 && <span>{call.derived_fetched} fetched per transcript</span>}
         {call.stray_marks > 0 && <span className="rc-warn-text">{plural(call.stray_marks, 'stray mark')}</span>}
       </span>
     </button>
@@ -238,13 +253,15 @@ export function SessionRecall({ workspace, session }) {
   const recall = useRecall(isDemoMode ? null : `/api/memory/recall?${new URLSearchParams({ session: session.id })}`, `${session.id}:${refresh}`, isCallList);
   if (isDemoMode) return null;
   const body = recall.body;
-  if (!recall.error && (!body || (!body.calls.length && !body.unplaced.total))) return null;
+  const scanning = body?.transcript_attribution?.status === 'scanning';
+  if (!recall.error && (!body || (!body.calls.length && !body.unplaced.total && !scanning))) return null;
   return <section className="rc-session" aria-label="Recall">
     <div className="rc-session-head"><h2>Recall</h2>{body?.totals.calls > 0 && <span>{plural(body.totals.calls, 'search', 'searches')}</span>}</div>
     {recall.loading && !body && <p className="rc-quiet" role="status">Reading recall telemetry…</p>}
     {recall.error && <p role="alert">{recall.error} <button className="fw-link" onClick={() => setRefresh(n => n + 1)}>Retry</button></p>}
     {body && <>
-      {body.totals.calls > 0 && <p className="rc-quiet">{body.totals.served} results served · {body.totals.used} marked used{body.totals.fetched ? ` · ${body.totals.fetched} fetched` : ''}</p>}
+      {scanning && <p className="rc-quiet" role="status">Codex transcripts are still being read. <button className="fw-link" onClick={() => setRefresh(n => n + 1)}>Read again</button></p>}
+      {body.totals.calls > 0 && <p className="rc-quiet">{body.totals.served} results served · {body.totals.used} marked used{body.totals.derived_used ? ` · ${body.totals.derived_used} marked used per transcript` : ''}{body.totals.fetched ? ` · ${body.totals.fetched} fetched` : ''}</p>}
       {body.totals.calls > 0 && <ul className="rc-calls">{body.calls.map(call => <CallRow key={call.call_id} call={call} workspace={workspace} expanded={expanded === call.call_id} onToggle={() => toggle(call.call_id)} />)}</ul>}
       <UnplacedMarks unplaced={body.unplaced} workspace={workspace} scope="made in this session" />
     </>}
@@ -276,7 +293,7 @@ export default function MemoryRecall({ workspace, onSession, hrefForSession, vie
     if (!body) return [];
     const bySession = new Map();
     for (const call of body.calls) {
-      const key = call.session_id || '';
+      const key = callSession(call) || '';
       if (!bySession.has(key)) bySession.set(key, []);
       bySession.get(key).push(call);
     }
@@ -298,9 +315,10 @@ export default function MemoryRecall({ workspace, onSession, hrefForSession, vie
     {!isDemoMode && recall.loading && !body && <p className="rc-quiet" role="status">Reading recall telemetry…</p>}
     {body && <>
       <p className="rc-totals" role="status">
-        {plural(body.totals.calls, 'call')} · {body.totals.attributed} attributed to {plural(body.totals.sessions, 'session')} · <strong>{body.totals.unattributed} unattributed</strong> · {body.totals.served} results served · {body.totals.used} marked used
+        {plural(body.totals.calls, 'call')} · {body.totals.attributed + (body.totals.derived || 0)} attributed to {plural(body.totals.sessions, 'session')}{body.totals.derived > 0 && `, ${body.totals.derived} from transcripts`} · <strong>{body.totals.unattributed} unattributed</strong> · {body.totals.served} results served · {body.totals.used} marked used{body.totals.derived_used > 0 && ` · ${body.totals.derived_used} marked used per transcript`}
         {body.unplaced.total > 0 && ` · ${plural(body.unplaced.total, 'mark')} with no call`}
       </p>
+      {body.transcript_attribution?.status === 'scanning' && <p className="fw-notice" role="status">Codex transcripts are still being read. Refresh adds the sessions they name.</p>}
       <UnplacedMarks unplaced={body.unplaced} workspace={workspace} scope="in this window" />
       {body.truncated > 0 && <p className="fw-notice" role="status">Showing the newest {body.calls.length} of {body.totals.calls} calls. Narrow the window to see the rest.</p>}
       {groups.map(group => {

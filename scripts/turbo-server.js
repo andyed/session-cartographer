@@ -8,6 +8,7 @@ import { executeRecall, recallHealth, recallIndexGeneration } from '../explorer/
 import { RecallContractError } from '../explorer/server/recall-contract.js';
 import { executeFacts } from '../explorer/server/facts.js';
 import { createMemoryHandler } from '../explorer/server/memory.js';
+import { createCallEvidenceSource } from '../explorer/server/call-evidence.js';
 import { refuseNonLoopback } from '../explorer/server/loopback-guard.js';
 import {
   FACTS_CONTRACT_VERSION,
@@ -98,7 +99,7 @@ const loadStarted = Date.now();
 events = readAllEvents();
 index = buildIndex(events);
 byEventId = indexEventsById(events);
-const handleMemory = createMemoryHandler({ getEvents: () => events });
+const handleMemory = createMemoryHandler({ getEvents: () => events, callEvidence: createCallEvidenceSource() });
 
 // Turbo issues the filtered semantic searches, so it checks once at boot that
 // the collection carries the payload indexes those filters need (200-420 ms a

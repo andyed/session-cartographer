@@ -6,6 +6,7 @@ import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js'
 import { RecallContractError } from './recall-contract.js';
 import { executeFacts } from './facts.js';
 import { createMemoryHandler } from './memory.js';
+import { createCallEvidenceSource } from './call-evidence.js';
 import { createTranscriptEnricher } from './memory-transcript.js';
 import { artifactHeaders, canonicalSessionArtifacts, createSessionArtifactCache, documentHeaders } from './session-artifacts.js';
 import { createImageWall, IMAGE_WALL_DAYS, IMAGE_WALL_SCOPES } from './image-wall.js';
@@ -123,7 +124,7 @@ export function createExplorerApp() {
   // ─── Endpoints ───
 
   const transcriptEnricher = createTranscriptEnricher();
-  const handleMemory = createMemoryHandler({ getEvents: () => events, transcriptEnricher });
+  const handleMemory = createMemoryHandler({ getEvents: () => events, transcriptEnricher, callEvidence: createCallEvidenceSource() });
   app.use(async (req, res, next) => {
     if (!await handleMemory(req, res)) next();
   });

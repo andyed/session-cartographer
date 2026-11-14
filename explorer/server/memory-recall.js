@@ -8,6 +8,11 @@
  *
  * Read-only. scripts/cartographer-search.sh stays the single writer of the
  * served log and access ledger; opening the desk must not add rows to either.
+ *
+ * A call recorded without a session can still be shown under one. Codex gives
+ * an MCP child no session id, and its rollout names every call it made, so the
+ * desk joins that evidence at read time (loadRecall) and reports it as derived,
+ * beside the record: session_id is always what the log says.
  */
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -43,22 +48,60 @@ function fileIdentity(filePath) {
  * of milliseconds on every expand, so the index is kept until a file changes.
  */
 export function createRecallSource({ paths = internalsSourcePaths() } = {}) {
-  let cached = null;
-  return function load() {
+  let logs = null;
+  // One index as recorded and one with the latest evidence. The evidence
+  // object changes identity only when a rollout scan lands.
+  let recorded = null;
+  let derived = null;
+  return function load({ evidence = null } = {}) {
     const key = [paths.served, paths.access, paths.searchCalls].map(fileIdentity).join('|');
-    if (cached?.key === key) return cached.value;
-    const served = parseJsonl(paths.served);
-    const access = parseJsonl(paths.access);
-    const searchCalls = parseJsonl(paths.searchCalls);
-    const coverage = Object.fromEntries([['served', served], ['access', access], ['searchCalls', searchCalls]]
-      .map(([name, parsed]) => [name, { rows: parsed.validRows, malformedRows: parsed.malformedRows, exists: fileIdentity(paths[name]) !== 'missing' }]));
-    const value = {
-      index: buildRecallIndex({ servedRows: served.rows, accessRows: access.rows, searchCallRows: searchCalls.rows }),
-      coverage,
-    };
-    cached = { key, value };
-    return value;
+    if (logs?.key !== key) {
+      const served = parseJsonl(paths.served);
+      const access = parseJsonl(paths.access);
+      const searchCalls = parseJsonl(paths.searchCalls);
+      const coverage = Object.fromEntries([['served', served], ['access', access], ['searchCalls', searchCalls]]
+        .map(([name, parsed]) => [name, { rows: parsed.validRows, malformedRows: parsed.malformedRows, exists: fileIdentity(paths[name]) !== 'missing' }]));
+      logs = { key, rows: { servedRows: served.rows, accessRows: access.rows, searchCallRows: searchCalls.rows }, coverage };
+      recorded = null;
+      derived = null;
+    }
+    if (!evidence) {
+      recorded ||= { index: buildRecallIndex(logs.rows), coverage: logs.coverage };
+      return recorded;
+    }
+    if (derived?.evidence !== evidence) derived = { evidence, value: { index: buildRecallIndex({ ...logs.rows, callEvidence: evidence }), coverage: logs.coverage } };
+    return derived.value;
   };
+}
+
+const EVIDENCE_SLACK_MS = 60000;
+
+/**
+ * The recall index for one request, with transcript evidence when the request
+ * shows a call the record could not attribute. Evidence is asked for from the
+ * earliest such call on, so a window of attributed calls reads no rollout.
+ * `transcript_attribution.status` says what happened: "off", "not-needed",
+ * "scanning" (answered from the record; ask again) or "complete".
+ */
+export async function loadRecall(source, callEvidence, { from = null, through = null, session = null, callId = null } = {}) {
+  const base = source();
+  if (!callEvidence) return { ...base, transcript_attribution: { status: 'off' } };
+  const unattributed = (call) => call && call.session_id === null && call.timestamp !== null;
+  let candidates;
+  if (callId !== null) candidates = [base.index.calls.get(callId)];
+  else if (from !== null || through !== null) {
+    candidates = [...base.index.calls.values()].filter((call) => (from === null || call.timestamp >= from) && (through === null || call.timestamp <= through));
+  } else {
+    // A session's whole life: only its own rollout says which calls are its.
+    const own = await callEvidence.sessionMinted(session);
+    if (own?.status === 'scanning') return { ...base, transcript_attribution: { status: 'scanning' } };
+    candidates = (own?.minted || []).map((id) => base.index.calls.get(id));
+  }
+  const times = candidates.filter(unattributed).map((call) => call.timestamp);
+  if (!times.length) return { ...base, transcript_attribution: { status: 'not-needed' } };
+  const { status, evidence, rollouts, pending, unreadable } = await callEvidence.since(Math.min(...times) - EVIDENCE_SLACK_MS);
+  if (!evidence) return { ...base, transcript_attribution: { status, rollouts, pending } };
+  return { ...source({ evidence }), transcript_attribution: { status, rollouts, unreadable } };
 }
 
 function callSummary(call) {
@@ -68,11 +111,15 @@ function callSummary(call) {
     query: call.query,
     purpose: call.purpose,
     session_id: call.session_id,
+    derived_session_id: call.derived_session_id,
+    session_derivation: call.session_derivation,
     provider: call.provider,
     backend: call.backend,
     served: call.served,
     used: call.used,
     fetched: call.fetched,
+    derived_used: call.derived_used,
+    derived_fetched: call.derived_fetched,
     stray_marks: call.stray_marks,
     used_ranks: call.used_ranks,
     deepest_used_rank: call.deepest_used_rank,
@@ -85,15 +132,18 @@ const purposeKey = (call) => call.purpose || '(none)';
  * Calls in a window, newest first. A call with no session is listed with
  * session_id null and counted as unattributed; dropping it would make a day
  * whose calls were mostly unattributed read as a day without recall.
+ * A call whose session comes from a transcript is counted as derived, apart
+ * from both, and belongs to that session for a session request.
  */
-export function listRecallCalls({ index, coverage }, { from = null, through = null, session = null, purpose = null, limit = RECALL_CALL_LIMIT } = {}) {
+export function listRecallCalls({ index, coverage, transcript_attribution: transcriptAttribution = { status: 'off' } }, { from = null, through = null, session = null, purpose = null, limit = RECALL_CALL_LIMIT } = {}) {
   const inWindow = (t) => (from === null || (t !== null && t >= from)) && (through === null || (t !== null && t <= through));
-  const selected = [...index.calls.values()].filter((call) => (session === null || call.session_id === session) && inWindow(call.timestamp));
+  const selected = [...index.calls.values()].filter((call) => (session === null || call.session_id === session || call.derived_session_id === session) && inWindow(call.timestamp));
   const purposes = {};
   for (const call of selected) purposes[purposeKey(call)] = (purposes[purposeKey(call)] || 0) + 1;
   const calls = (purpose ? selected.filter((call) => purposeKey(call) === purpose) : selected)
     .sort((a, b) => (b.timestamp ?? -Infinity) - (a.timestamp ?? -Infinity) || a.call_id.localeCompare(b.call_id));
   const attributed = calls.filter((call) => call.session_id !== null);
+  const derived = calls.filter((call) => call.session_id === null && call.derived_session_id !== null);
   const sum = (field) => calls.reduce((total, call) => total + call[field], 0);
 
   const marks = index.unplaced
@@ -113,16 +163,22 @@ export function listRecallCalls({ index, coverage }, { from = null, through = nu
     totals: {
       calls: calls.length,
       attributed: attributed.length,
-      unattributed: calls.length - attributed.length,
-      sessions: new Set(attributed.map((call) => call.session_id)).size,
+      derived: derived.length,
+      unattributed: calls.length - attributed.length - derived.length,
+      // Minted in more than one rollout: left unattributed, and counted here.
+      derivation_conflicts: calls.filter((call) => call.derivation_conflict > 0).length,
+      sessions: new Set([...attributed.map((call) => call.session_id), ...derived.map((call) => call.derived_session_id)]).size,
       served: sum('served'),
       used: sum('used'),
       fetched: sum('fetched'),
+      derived_used: sum('derived_used'),
+      derived_fetched: sum('derived_fetched'),
       stray_marks: sum('stray_marks'),
     },
     calls: calls.slice(0, limit).map(callSummary),
     truncated: Math.max(0, calls.length - limit),
     unplaced: { total: marks.length, by_status: byStatus, marks: marks.slice(0, UNPLACED_LIMIT) },
+    transcript_attribution: transcriptAttribution,
     coverage,
   };
 }
@@ -281,7 +337,7 @@ export async function resolveUnplacedMarks(listing, { events, lookupIndexed } = 
   return { ...listing, unplaced: { ...listing.unplaced, marks: marks.map((mark) => markWithResult(mark, resolved)) } };
 }
 
-export async function recallCallDetail({ index, coverage }, callId, { events, lookupIndexed } = {}) {
+export async function recallCallDetail({ index, coverage, transcript_attribution: transcriptAttribution = { status: 'off' } }, callId, { events, lookupIndexed } = {}) {
   const call = index.calls.get(callId);
   if (!call) return null;
   const ids = [...new Set([...call.rows.map((row) => row.event_id), ...call.stray.map((mark) => mark.event_id)])];
@@ -298,6 +354,7 @@ export async function recallCallDetail({ index, coverage }, callId, { events, lo
       unresolved: rows.filter((row) => row.resolution === null).length,
       index_status: indexStatus,
     },
+    transcript_attribution: transcriptAttribution,
     coverage,
   };
 }

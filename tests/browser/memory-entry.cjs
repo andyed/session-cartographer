@@ -159,6 +159,22 @@ async function port() {
     { event_id: 'session-5-9', call_id: 'recall-fixture-call', requested_call_id: 'recall-fixture-call', timestamp: new Date(now - 30000).toISOString(), timestamp_ms: now - 30000, session_id: 'session-0', provider: 'claude', purpose: 'remember', source: 'result_used', access_batch_id: 'touch-fixture', access_ordinal: 1, attribution_status: 'explicit' },
     { event_id: 'fixture-result', timestamp: new Date(now - 20000).toISOString(), timestamp_ms: now - 20000, session_id: '', provider: 'unknown', purpose: 'remember', source: 'result_used', access_batch_id: 'touch-fixture-2', access_ordinal: 1, attribution_status: 'no_session' },
   ].map(JSON.stringify).join('\n')+'\n');
+  // A Codex MCP call: recorded with no session, minted in docSession's rollout.
+  // Its no_session mark names the call, and the same rollout holds the
+  // mark_used that made it, so the desk shows both under that session as
+  // read from the transcript.
+  const mcpCall = 'call-fixture-mcp1-1';
+  const mcpQuery = 'handoff briefing review';
+  fs.appendFileSync(path.join(corpus, 'served-log.jsonl'), ['session-1-3', 'session-2-5'].map((event_id, i) => JSON.stringify({ event_id, call_id: mcpCall, timestamp: new Date(now - 45000).toISOString(), purpose: 'mcp', session_id: '', provider: 'codex', attribution_status: 'no_session', session_source: '', query: mcpQuery, rank: i + 1, project: 'writing', source: 'changelog', backend: 'explorer' })).join('\n')+'\n');
+  fs.appendFileSync(path.join(corpus, 'access-ledger.jsonl'), JSON.stringify({ event_id: 'session-2-5', timestamp: new Date(now - 40000).toISOString(), timestamp_ms: now - 40000, session_id: '', provider: 'codex', session_source: '', purpose: 'mcp', source: 'result_used', access_batch_id: 'touch-fixture-mcp', access_ordinal: 1, attribution_status: 'no_session', requested_call_id: mcpCall })+'\n');
+  const mcpItem = (tool, args, text) => ({ timestamp: new Date(now - 45000).toISOString(), type: 'event_msg', payload: { type: 'item_completed', thread_id: docSession, turn_id: 'fixture-turn', item: { type: 'McpToolCall', id: `exec-${tool}`, server: 'cartographer', tool, status: 'completed', arguments: args, result: { content: [{ type: 'text', text }] } } } });
+  const rolloutDir = path.join(work, 'codex-sessions', '2026', '11', '13');
+  fs.mkdirSync(rolloutDir, { recursive: true });
+  fs.writeFileSync(path.join(rolloutDir, `rollout-2026-11-13T05-00-00-${docSession}.jsonl`), [
+    { timestamp: new Date(now - 60000).toISOString(), type: 'session_meta', payload: { id: docSession, session_id: docSession, originator: 'Codex Desktop' } },
+    mcpItem('recall', { query: mcpQuery, limit: 2 }, `recall "${mcpQuery}" — 2 results · call_id ${mcpCall} · turbo 200 ms · semantic disabled`),
+    mcpItem('mark_used', { event_ids: ['session-2-5'], call_id: mcpCall }, `mark_used — 1 of 1 recorded · call_id ${mcpCall} · purpose mcp`),
+  ].map(JSON.stringify).join('\n')+'\n');
   const vite = spawn(process.execPath, [path.join(root, 'explorer/node_modules/vite/bin/vite.js'), ...(preview ? ['preview'] : []), '--host', '127.0.0.1', '--port', String(uiPort), '--strictPort'], { cwd: path.join(root, 'explorer'), env, stdio: ['ignore', 'pipe', 'pipe'] });
   let output = '';
   vite.stdout.on('data', c => output += c);
@@ -1212,7 +1228,18 @@ async function port() {
     const recallView = recallPage.getByRole('region', { name: 'Recall searches' });
     await recallView.getByText(recallQuery, { exact: true }).waitFor({ timeout: 15000 });
     assert.equal(await recallPage.getByRole('navigation', { name: 'Memory view' }).getByRole('button', { name: 'Recall', exact: true }).getAttribute('aria-pressed'), 'true');
-    assert.match(await recallView.locator('.rc-totals').innerText(), /^2 calls · 1 attributed to 1 session · 1 unattributed · 13 results served · 1 marked used · 1 mark with no call/);
+    assert.match(await recallView.locator('.rc-totals').innerText(), /^3 calls · 2 attributed to 2 sessions, 1 from transcripts · 1 unattributed · 15 results served · 1 marked used · 1 marked used per transcript · 1 mark with no call/);
+    // The MCP call sits under the session whose rollout minted it, labelled as
+    // read from the transcript, and its mark counts beside the exact ones.
+    const derivedCall = recallView.locator(`[data-call="${mcpCall}"]`);
+    assert.equal(await recallView.getByRole('region', { name: 'Session Review the handoff' }).locator(`[data-call="${mcpCall}"]`).count(), 1, 'the transcript-attributed call is not under its session');
+    assert.equal(await derivedCall.locator('[data-session-derivation="codex_rollout"]').innerText(), 'session from transcript');
+    assert.match(await derivedCall.locator('.rc-call-counts').innerText(), /2 results\s+0 marked used\s+1 marked used per transcript/);
+    await derivedCall.getByRole('button', { expanded: false }).click();
+    await derivedCall.locator('.rc-result[data-event-id="session-2-5"]').getByText(/marked used · rank 2 · per transcript/).waitFor({ timeout: 15000 });
+    assert.equal(await derivedCall.locator('.rc-result[data-used]').count(), 1);
+    await derivedCall.screenshot({ path: path.join(artifacts, 'carto-memory-recall-derived.png') });
+    await derivedCall.getByRole('button', { expanded: true }).click();
     const unattributedGroup = recallView.getByRole('region', { name: 'Unattributed calls' });
     assert.equal(await unattributedGroup.locator('[data-call="fixture-call"]').count(), 1, 'the no-session call was dropped from the window');
     assert.match(await unattributedGroup.locator('[data-call="fixture-call"] .rc-call-counts').innerText(), /0 marked used/, 'a no_session mark was credited to a call it does not name');
