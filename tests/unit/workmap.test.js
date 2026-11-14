@@ -13,6 +13,7 @@ import { normalizeEvidenceEntries } from '../../explorer/server/transcript-evide
 import { eventTranscriptHref } from '../../explorer/src/components/event-navigation.js';
 import { clip, compact, runsScript, scrub } from '../../explorer/server/workmap-detail.js';
 import { normalizeMemoryRoute } from '../../explorer/src/components/memory-route.js';
+import { sessionMapHref } from '../../explorer/src/components/session-map.js';
 import { actionLocation, mapHref, readMapRoute, readerHref, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, serpSummary, stampFor, stationBoxes } from '../../explorer/src/components/session-map.js';
 import { messageBlocks, resolveTranscriptLocation, safeTranscriptReturn } from '../../explorer/src/components/transcript-navigation.js';
 
@@ -424,6 +425,12 @@ test('the address round-trips, and a session that crosses midnight names the day
   assert.deepEqual(readMapRoute(new URL(mapHref('/', route), 'http://x').search), route);
   assert.deepEqual(readMapRoute(''), { session: '', station: '', at: null });
   assert.equal(mapHref('/base/', { session: 'abc', station: '', at: null }), '/base/map?session=abc');
+
+  // Other views link to a session's map by id; only a session with a transcript the map can read gets a link.
+  const session = { id: 'abc-123', provider: 'codex', transcript: '/t/rollout-abc-123.jsonl' };
+  assert.equal(sessionMapHref('/', session), '/map?session=abc-123');
+  assert.deepEqual(readMapRoute(new URL(sessionMapHref('/x/', { ...session, id: 'not an id' }), 'http://x').search).session, '/t/rollout-abc-123.jsonl');
+  for (const none of [{ ...session, transcript: '' }, { ...session, transcript: undefined }, { ...session, provider: 'hermes' }, null]) assert.equal(sessionMapHref('/', none), null);
 
   const noon = new Date(2026, 10, 12, 12, 0, 0).getTime();
   assert.equal(stampFor({ first: noon, last: noon + 3_600_000 })(noon), '12:00:00');

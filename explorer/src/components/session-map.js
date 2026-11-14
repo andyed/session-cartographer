@@ -32,6 +32,18 @@ export function mapHref(base, { session, station, at }) {
   return `${base.replace(/\/$/, '')}/map${qs ? `?${qs}` : ''}`;
 }
 
+/**
+ * The map's address for a session another view is showing, or null when there is nothing to draw one from.
+ * The map is read from a transcript, so a session without one has no map; Hermes sessions are SQLite rows and
+ * markdown, which the map's two adapters do not read. The id is preferred to the path: it survives a Codex
+ * session being archived, which moves the file.
+ */
+export function sessionMapHref(base, session) {
+  if (!session || typeof session.transcript !== 'string' || session.transcript === '') return null;
+  if (session.provider !== 'claude' && session.provider !== 'codex') return null;
+  return mapHref(base, { session: /^[\w-]{1,256}$/.test(String(session.id ?? '')) ? session.id : session.transcript });
+}
+
 const pct = (v, of) => `${((v / of) * 100).toFixed(3)}%`;
 
 /**

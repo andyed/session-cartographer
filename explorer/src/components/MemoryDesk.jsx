@@ -4,15 +4,18 @@ import { plainLinkClick } from './memory-route';
 import PathContext from './PathContext.jsx';
 import { commonDirectory, relativeDisplayPath } from './path-presentation.js';
 import { isDemoMode } from '../api';
+import { sessionMapHref } from './session-map.js';
 const MATCH_LABELS = { 'query:file': 'Matches file name', 'query:task': 'Matches task', 'query:evidence': 'Matches recorded evidence', 'from-matching-task:query': 'From a matching task', 'from-matching-task:evidence': 'From a task with matching evidence', project: 'Matches project', provider: 'Matches provider', evidence: 'Matches evidence filter' };
 const stamp = t => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const codexLink = session => !isDemoMode && session.provider === 'codex' && /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(session.id) ? `codex://threads/${session.id}` : null;
 export function SessionHandoff({ session, hideConversation = false }) {
   const [message, setMessage] = useState('');
   const command = !isDemoMode && resumeCommand(session);
+  const map = !isDemoMode && sessionMapHref(import.meta.env.BASE_URL || '/', session);
   return <div className="md-handoff">
     {codexLink(session) && <a href={codexLink(session)}>Open in Codex ↗</a>}
     {!hideConversation && !isDemoMode && session.transcript && <a href={`${import.meta.env.BASE_URL || '/'}session/${encodeURIComponent(session.transcript)}?reader=conversation&return=${encodeURIComponent(window.location.pathname + window.location.search)}`}>Read conversation ↗</a>}
+    {map && <a href={map}>Work map ↗</a>}
     {command && <button onClick={async () => {
       try { await navigator.clipboard.writeText(command); setMessage('Resume command copied'); }
       catch { setMessage(command); }
