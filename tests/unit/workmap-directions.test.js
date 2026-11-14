@@ -12,7 +12,7 @@ import { CONTEXT_FULL, CONTEXT_NEAR, HUB_ORDER, HUB_ORDER_TWO_WAY, ROUTE_PX, dra
 import { FAMILIES, FAULT, HEAD_HUES, KIND, familyOf, familyOfStation, isScreen, seatScreen, starterOf, wakeLabel } from '../../explorer/shared/workmap/kinds.js';
 import { DARK } from '../../explorer/shared/workmap/palette.js';
 import { drawPortrait, portraitState } from '../../explorer/shared/workmap/portrait.js';
-import { coloursShown, drawRibbon, ribbonCapacity, ribbonCell, ribbonOf } from '../../explorer/shared/workmap/ribbon.js';
+import { SLOT_CALLS, coloursShown, drawRibbon, drawSlotRibbon, ribbonCapacity, ribbonCell, ribbonOf } from '../../explorer/shared/workmap/ribbon.js';
 import { STATIONS, setupFrom } from '../../explorer/shared/workmap/setup.js';
 import { LOOKS, mapHref, readMapRoute, rowsFor } from '../../explorer/src/components/session-map.js';
 
@@ -261,7 +261,7 @@ test('legs come in three widths a reader can tell apart, and each is cased where
   assert.doesNotMatch(drawHub(state, { layout, size: 64, names, present, motion: 'reduced' }), /casing/);
 });
 
-test('names are 16 px on screen and stand outside the ring; under 400 px there are none', () => {
+test('names are 16 px on screen and stand outside the ring; under 400 px a station has its count and no name', () => {
   const state = hubState(session, T0 + 7500);
   const present = new Set(['you', 'model', 'files', 'shell', 'web']);
   for (const size of [400, 460, 560]) {
@@ -279,7 +279,45 @@ test('names are 16 px on screen and stand outside the ring; under 400 px there a
       assert.ok(Math.abs(y - layout.core.y) > Math.abs(s.y - layout.core.y) - 8, `${id}'s name is outside its station`);
     }
   }
-  assert.doesNotMatch(drawHub(state, { layout, size: 399, names, coreName: 'CLAUDE', present }), /<text/);
+  // Under 400 px no station is named. What is written is the model, in the core, and each station's count.
+  const words = svg => [...svg.matchAll(/<text [^>]*>([^<]+)<\/text>/g)].map(m => m[1]).filter(w => !/^\d+$/.test(w));
+  assert.deepEqual(words(drawHub(state, { layout, size: 399, names, coreName: 'CLAUDE', present })), ['model']);
+  assert.deepEqual(words(drawHub(state, { layout, size: 399, names, coreName: 'CLAUDE', present, model: '' })), []);
+});
+
+test('the core says the model first, at 16 px, at every width it fits', () => {
+  const present = new Set(['you', 'model', 'files', 'shell', 'web']);
+  const recorded = [said(0), call(1, 'model', { label: 'fable 5.2' }), call(2, 'files'), call(3, 'model', { label: 'haiku 5.5', agentId: 'a1' }), call(4, 'model', { label: 'opus 5.5' })];
+  // The model of the main loop's last step: a subagent's is not the session's, and a later switch shows.
+  assert.equal(hubState(recorded, T0 + 2500).model, 'fable 5.2');
+  assert.equal(hubState(recorded, T0 + 3500).model, 'fable 5.2');
+  assert.equal(hubState(recorded, T0 + 5000).model, 'opus 5.5');
+  const words = (size, more = {}) => {
+    const svg = drawHub(hubState(recorded, T0 + 2500, more.state), { layout, size, names: {}, coreName: 'CLAUDE', present, ...more.draw });
+    // The core's own words: those written inside its circle.
+    const texts = [...svg.matchAll(/<text x="[\d.]+" y="([\d.]+)"[^>]*font-size="([\d.]+)"[^>]*>([^<]+)<\/text>/g)].filter(m => Math.abs(Number(m[1]) - layout.core.y) < layout.core.r).map(m => [m[0], m[2], m[3]]);
+    for (const m of texts) assert.ok(Number(m[1]) / (layout.width / size) >= 15.9, `${m[2]} at ${size} px`);
+    return texts.map(m => m[2]);
+  };
+  // With names: the model, then the agent's own name under it.
+  assert.deepEqual(words(560), ['fable 5.2', 'CLAUDE']);
+  assert.deepEqual(words(460), ['fable 5.2', 'CLAUDE']);
+  // At 400 px the letters are larger against the core and the two lines no longer fit: the model stays, alone.
+  assert.deepEqual(words(400), ['fable 5.2']);
+  assert.deepEqual(words(400, { state: { context: 91 } }), ['fable 5.2']);
+  // Once the window nears its limit the second line is how full it is.
+  assert.deepEqual(words(560, { state: { context: 91 } }), ['fable 5.2', '91% full']);
+  // Without station names the model is still there, broken in two where one line would not fit at 16 px.
+  assert.deepEqual(words(340), ['fable', '5.2']);
+  assert.deepEqual(words(280), ['fable', '5.2']);
+  // Smaller than that, letters of 16 px do not fit the core, so it says nothing sooner than say it small.
+  assert.deepEqual(words(240), []);
+  assert.deepEqual(words(200), []);
+  // A long name keeps its two lines and gives up the line under it; one with nowhere to break is left out for the agent's name.
+  assert.deepEqual(words(560, { draw: { model: 'gpt-5.1-codex-max' } }), ['gpt-5.1-', 'codex-max']);
+  assert.deepEqual(words(560, { draw: { model: 'averyveryverylongmodelname' } }), ['CLAUDE']);
+  // No model known: the agent's name alone, as before.
+  assert.deepEqual(words(560, { draw: { model: '' } }), ['CLAUDE']);
 });
 
 test('the context ring is quiet until the window nears its limit, and is never red', () => {
@@ -354,7 +392,12 @@ test('two-way, You is one station: an arrow in is the person speaking, an arrow 
   assert.ok(Math.abs(into.p0.x - outward.p2.x) >= 10, 'two lanes');
   const svg = drawHub(state, { layout: two, size: 560, names, coreName: 'CLAUDE', present: new Set(talk.map(a => a.station)), motion: 'reduced' });
   // You says which count is which, and there is no Tells you on the ring.
-  assert.match(svg, />1 said · 4 told</);
+  // Each count stands beside its own lane: said to the left of the lane in, told to the right of the lane out.
+  const beside = Object.fromEntries([...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" text-anchor="(\w+)"[^>]*>(\d+ (?:said|told))<\/text>/g)].map(m => [m[3], { x: Number(m[1]), anchor: m[2] }]));
+  assert.deepEqual(Object.keys(beside), ['1 said', '4 told']);
+  assert.ok(beside['1 said'].x < two.core.x && beside['1 said'].anchor === 'end' && beside['4 told'].x > two.core.x && beside['4 told'].anchor === 'start');
+  // You's name stands alone above it, so it cannot run into Your screen's name or Model's.
+  assert.doesNotMatch(svg, /said · /);
   assert.doesNotMatch(svg, />Tells you</);
   // At rest the spoke is two lanes, each with a head: one pointing in, one pointing out.
   assert.equal((svg.match(/class="lane" d="M[^"]+Z"/g) ?? []).length, 2);
@@ -395,6 +438,10 @@ test('every station on the hub can be pressed: a control over the node and its n
   }
   const core = hubCoreBox(layout);
   assert.ok(num(core.width) * 300 / 100 >= 40);
+  // A station drawn before anything has happened at it has its name and no "0".
+  const idle = drawHub(hubState(session, T0 + 7500), { layout, size: 560, names, present: new Set(HUB_ORDER) });
+  assert.match(idle, />Memory</);
+  assert.doesNotMatch(idle, />0</);
   // The pressed station is ringed in the drawing, round its node, in the page's accent; no other station is.
   const state = hubState(session, T0 + 7500);
   const ringed = svg => (svg.match(/class="pressed"/g) ?? []).length;
@@ -402,6 +449,30 @@ test('every station on the hub can be pressed: a control over the node and its n
   assert.match(drawHub(state, { layout, size: 560, names, present, pressed: 'you' }), /<rect [^>]*class="pressed" fill="none" stroke="#72e6ef"/);
   assert.equal(ringed(drawHub(state, { layout, size: 560, names, present })), 0);
   assert.equal(ringed(drawHub(state, { layout, size: 560, names, present, pressed: 'browser' })), 0, 'a station the session never used cannot be pressed');
+});
+
+test('a live view that keeps only the newest calls draws the counts it was given', () => {
+  // The pane holds eighty entries of a session of thousands, and a running count per station.
+  const kept = [said(0), call(1, 'files'), call(2, 'tells'), call(3, 'shell')];
+  const state = hubState(kept, T0 + 5000, { totals: { you: 41, tells: 122, files: 77, shell: 245, screen: 3 } });
+  assert.deepEqual([state.stations.you.count, state.stations.you.told, state.stations.files.count, state.stations.shell.count, state.stations.screen.count], [41, 122, 77, 245, 3]);
+  // The route and the light still come from the calls themselves.
+  assert.deepEqual(state.legs.map(l => `${l.from}>${l.to}`), ['you>core', 'core>files', 'core>you', 'files>shell']);
+  assert.ok(state.stations.shell.level > 0 && state.stations.screen.level === 0);
+  // Drawn the earlier way the same totals keep Tells you as its own count.
+  assert.equal(hubState(kept, T0 + 5000, { tells: 'station', totals: { tells: 122 } }).stations.tells.count, 122);
+  // Those counts are in the picture wherever a figure fits: with the names from 400 px, alone from 280, and not under that.
+  const layout = hubLayout();
+  const figures = size => [...drawHub(state, { layout, size, model: 'fable 5.2', present: new Set(layout.order) }).matchAll(/<text [^>]*>([^<]+)<\/text>/g)].map(m => m[1]);
+  for (const n of ['77', '245', '3']) assert.ok(figures(440).includes(n) && figures(300).includes(n), `${n} at 440 and 300 px`);
+  assert.ok(figures(440).includes('41 said') && figures(440).includes('122 told'));
+  assert.ok(figures(300).includes('41') && figures(300).includes('122'));
+  assert.deepEqual(figures(300).filter(w => !/^\d+$/.test(w)), ['fable', '5.2']);
+  // A station with nothing at it has no figure, and every figure is 16 px at the width it is drawn for.
+  assert.ok(!figures(300).includes('0'));
+  const sizes = [...drawHub(state, { layout, size: 300, model: 'fable 5.2', present: new Set(layout.order) }).matchAll(/font-size="([\d.]+)"/g)].map(m => Number(m[1]) * 300 / layout.width);
+  assert.ok(Math.min(...sizes) >= 15.9, `smallest text ${Math.min(...sizes)} px`);
+  assert.deepEqual(figures(260).filter(w => /^\d+$/.test(w)), []);
 });
 
 test('pressed on the hub, You lists what the person said and what the agent told, and counts them apart', () => {
@@ -444,6 +515,32 @@ test('the ribbon is the calls in order, newest at the right edge, in the colours
   assert.deepEqual([fault.fill, fault.h], [FAULT, 20], 'a failed call: full height, red');
   assert.ok(aside.h < read.h, 'beside the main loop: shorter');
   assert.ok(wake.w < person.w && wake.fill === KIND.own, 'a wake nobody typed: narrow, grey');
+});
+
+test('the ribbon in slots: a run of calls a slot, each slot the same share of the width, the held station underlined', () => {
+  const cell = (station, more = {}) => ({ station, family: familyOfStation(station), kind: 'call', fault: false, running: false, beside: false, changes: false, ...more });
+  const runs = [
+    { station: 'files', cells: [cell('files'), cell('files')] },
+    { station: 'shell', cells: Array.from({ length: 11 }, () => cell('shell')) },
+    { station: 'you', cells: [cell('you', { kind: 'person' })] },
+  ];
+  for (const [width, slots] of [[440, 10], [300, 5]]) {
+    const svg = drawSlotRibbon(runs, { width, height: 20, slots, held: 'shell' });
+    const slot = width / slots;
+    const marks = rects(svg).filter(r => r.w < slot && r.h > 2);
+    // Fewer runs than slots fill from the right: the newest run is in the last slot, and every mark is inside its own.
+    const bySlot = marks.map(m => Math.floor(m.x / slot));
+    assert.deepEqual([...new Set(bySlot)], [slots - 3, slots - 2, slots - 1], `${width} px`);
+    assert.ok(marks.every(m => m.x >= Math.floor(m.x / slot) * slot && m.x + m.w <= (Math.floor(m.x / slot) + 1) * slot));
+    // Two reads, the newest eight of eleven commands, one message; none under 2 px wide.
+    assert.deepEqual([slots - 3, slots - 2, slots - 1].map(k => bySlot.filter(b => b === k).length), [2, SLOT_CALLS, 1]);
+    assert.ok(marks.every(m => m.w >= 2));
+    // One bar, under the held station's slot and no other.
+    const bars = [...svg.matchAll(/<rect class="held" x="([\d.]+)" y="18" width="([\d.]+)" height="2"/g)];
+    assert.equal(bars.length, 1);
+    assert.equal(Math.floor(Number(bars[0][1]) / slot), slots - 2);
+  }
+  assert.ok(!drawSlotRibbon(runs, { width: 440, slots: 10 }).includes('class="held"'));
 });
 
 test('a smaller ribbon holds fewer calls and never a cell under 3 px', () => {

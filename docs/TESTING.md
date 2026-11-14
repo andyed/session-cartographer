@@ -154,6 +154,13 @@ look draws every candidate with no text under 16 px or under 8:1, and that at
 390 px the whole map shows and nothing scrolls sideways. Screenshots go to
 `carto-session-map-browser-artifacts`. It is not in CI's list yet.
 
+The sidebar pane (`mods/carto-map`) draws with copies of `explorer/shared/workmap`.
+`tests/unit/carto-map-workmap-sync.test.js` fails when a copy drifts; run
+`scripts/sync-carto-map-workmap.sh` after changing a shared file. The mod's own
+tests run on the desktop app's engine, not on the terminal's older `claude`:
+`"<app's claude binary>" plugin test mods/carto-map`, where the binary is under
+`~/Library/Application Support/Claude/claude-code/<version>/`.
+
 ### The GH Pages demo
 
 `memory-entry.cjs` strips `VITE_DEMO` on purpose, so it says nothing about the

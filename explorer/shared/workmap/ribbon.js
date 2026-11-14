@@ -56,6 +56,21 @@ export function ribbonCapacity(width, height) {
   return Math.max(1, Math.floor((width + gap) / (w + gap)))
 }
 
+/** One call's mark: `x` its left edge, `w` its width. */
+function cellMark(c, x, w, height, callH, besideH, floor) {
+  if (c.kind === 'person') return `<rect x="${x}" y="0" width="${w}" height="${height}" fill="${KIND.you}"/>`
+  if (c.kind === 'wake') {
+    const narrow = Math.max(1, Math.round(w / 2))
+    return `<rect x="${x + Math.floor((w - narrow) / 2)}" y="0" width="${narrow}" height="${height}" fill="${KIND.own}"/>`
+  }
+  if (c.fault) return `<rect x="${x}" y="0" width="${w}" height="${height}" fill="${FAULT}"/>`
+  const h = c.beside ? besideH : callH
+  const colour = KIND[c.family]
+  // A call still running is an outline, where a cell is wide enough to have an inside.
+  if (c.running && w >= 5) return `<rect x="${x + 0.75}" y="${floor - h + 0.75}" width="${w - 1.5}" height="${h - 1.5}" fill="none" stroke="${colour}" stroke-width="1.5"/>`
+  return `<rect x="${x}" y="${floor - h}" width="${w}" height="${h}" fill="${colour}"/>`
+}
+
 /**
  * The ribbon as one SVG string, drawn at CSS pixels: `width` by `height`. The newest call is at the right
  * edge and a short ribbon fills from the right, so "now" never moves.
@@ -68,19 +83,44 @@ export function drawRibbon(cells, { width = 320, height = 20, palette = DARK } =
   const callH = Math.max(3, Math.round(height * 0.6))
   const besideH = Math.max(2, Math.round(height * 0.3))
   const floor = height - Math.round((height - callH) / 2)
-  shown.forEach((c, k) => {
-    const x = width - (shown.length - k) * (w + gap) + gap
-    if (c.kind === 'person') return out.push(`<rect x="${x}" y="0" width="${w}" height="${height}" fill="${KIND.you}"/>`)
-    if (c.kind === 'wake') {
-      const narrow = Math.max(1, Math.round(w / 2))
-      return out.push(`<rect x="${x + Math.floor((w - narrow) / 2)}" y="0" width="${narrow}" height="${height}" fill="${KIND.own}"/>`)
-    }
-    if (c.fault) return out.push(`<rect x="${x}" y="0" width="${w}" height="${height}" fill="${FAULT}"/>`)
-    const h = c.beside ? besideH : callH
-    const colour = KIND[c.family]
-    // A call still running is an outline, where a cell is wide enough to have an inside.
-    if (c.running && w >= 5) return out.push(`<rect x="${x + 0.75}" y="${floor - h + 0.75}" width="${w - 1.5}" height="${h - 1.5}" fill="none" stroke="${colour}" stroke-width="1.5"/>`)
-    return out.push(`<rect x="${x}" y="${floor - h}" width="${w}" height="${h}" fill="${colour}"/>`)
+  // A rule along the floor, so a ribbon with two calls in it reads as a strip with room left and not as a stray mark.
+  out.push(`<line x1="0" y1="${floor + 0.5}" x2="${width}" y2="${floor + 0.5}" stroke="${p.spoke}" stroke-width="1"/>`)
+  shown.forEach((c, k) => out.push(cellMark(c, width - (shown.length - k) * (w + gap) + gap, w, height, callH, besideH, floor)))
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${out.join('')}</svg>`
+}
+
+/** The most calls one slot draws: the newest of a longer run. */
+export const SLOT_CALLS = 8
+
+/**
+ * The ribbon in slots of one width, for a surface where a picture takes no press and a control has to stand under
+ * each thing pressed: a slot is one run of calls at one station, its calls side by side in it, the newest run in
+ * the last slot. `runs` are `{ station, cells }`, oldest first, no more of them than `slots`; fewer fill from the
+ * right. A run of `held`'s station has a bar under it in `accent`: the station the feed is narrowed to.
+ * A slot's place is the same fraction of the width whatever the width, so a row of `slots` equal boxes lines up
+ * with it at any size.
+ */
+export function drawSlotRibbon(runs, { width = 320, height = 20, slots = 8, held = '', accent = '#72e6ef', palette = DARK } = {}) {
+  const p = palette
+  const out = [`<rect width="${width}" height="${height}" fill="${p.ground}"/>`]
+  const callH = Math.max(3, Math.round(height * 0.6))
+  const besideH = Math.max(2, Math.round(height * 0.3))
+  const floor = height - Math.round((height - callH) / 2)
+  out.push(`<line x1="0" y1="${floor + 0.5}" x2="${width}" y2="${floor + 0.5}" stroke="${p.spoke}" stroke-width="1"/>`)
+  const slot = width / slots
+  const shown = runs.slice(-slots)
+  shown.forEach((run, k) => {
+    const left = (slots - shown.length + k) * slot
+    const cells = run.cells.slice(-SLOT_CALLS)
+    // The calls of a run share the slot less a margin each side, so two runs never touch; one call is never wider
+    // than a cell of the plain ribbon, and never under 2 px.
+    const room = slot - 6
+    const gap = cells.length > 4 ? 1 : 2
+    const w = cells.length === 0 ? 0 : Math.max(2, Math.min(10, Math.floor((room - (cells.length - 1) * gap) / cells.length)))
+    const span = cells.length * w + Math.max(0, cells.length - 1) * gap
+    const x0 = Math.round(left + (slot - span) / 2)
+    cells.forEach((c, i) => out.push(cellMark(c, x0 + i * (w + gap), w, height, callH, besideH, floor)))
+    if (held !== '' && run.station === held) out.push(`<rect class="held" x="${Math.round(left + 3)}" y="${height - 2}" width="${Math.round(slot - 6)}" height="2" fill="${accent}"/>`)
   })
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${out.join('')}</svg>`
 }

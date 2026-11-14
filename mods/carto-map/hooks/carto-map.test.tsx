@@ -6,6 +6,9 @@ import { COLOR_NAMES, TRAIL_FADE_MS, TRAIL_HOLD_MS, classify, clean, describeNow
 import { hasGlyph } from './raster'
 import { stringsFor } from './text'
 
+/** On the desktop the pane draws two pictures: the ribbon, then the hub. */
+const hubOf = async (ui: { findAll: (q: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }): Promise<string> => String((await ui.findAll({ type: 'Svg' })).at(-1)?.props.source)
+
 const PANE = {
   plugin: 'carto-map',
   component: 'Pane',
@@ -613,7 +616,8 @@ test('a subagent circles the agents station until its loop ends, and its hanging
   let ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   // The row is running: its mark says so, and its time column holds the word, which the second mount below sees gone.
   expect(await ui.find({ type: 'Text', text: /^● .*субагент/ })).toBeDefined()
-  expect((await ui.find({ type: 'Svg' }))?.props.source).toContain('animateTransform')
+  // lot-map circled the agents station with a dot per subagent. The hub drawn now rings the station whose call is running.
+  expect(await hubOf(ui)).toContain('class="running"')
   await ui.unmount()
 
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer', agentId: 'a1' } as never)
@@ -621,7 +625,7 @@ test('a subagent circles the agents station until its loop ends, and its hanging
   ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await ui.find({ type: 'Text', text: /идёт/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /ответ готов/ })).toBeUndefined()
-  expect((await ui.find({ type: 'Svg' }))?.props.source).not.toContain('animateTransform')
+  expect(await hubOf(ui)).not.toContain('class="running"')
   await ui.unmount()
 })
 
@@ -634,11 +638,12 @@ test('what goes wrong stays on its station until the next message; an interrupte
   await $.tool.call({ tool: 'Bash', command: 'git status', description: 'Показать статус' })
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't1', reason: 'aborted' } as never)
 
+  // A station with a fault since the last message wears a red dot on the hub; the interrupted turn, filed at You, adds none.
   const dots = async (): Promise<number> => {
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-    const source = String((await ui.find({ type: 'Svg' }))?.props.source)
+    const source = await hubOf(ui)
     await ui.unmount()
-    return source.split('font-weight="700"').length - 1
+    return source.split('class="fault"').length - 1
   }
   expect(await dots()).toBe(1)
   await $.turn.start({ text: 'дальше', turnId: 't2' } as never)
@@ -654,9 +659,12 @@ test('the context window shows as soon as the engine tells how full it is', { op
   for await (const _ of $.turn.step(stepOn('claude-opus-5-5'))) void _
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect((await ui.find({ type: 'Svg' }))?.props.source).toContain('>37%<')
-  // Beside the drawing the line of now says only what runs: the drawing has the figure and the model already.
+  // On the hub the window is an arc round the core, 37 of 100 round, and quiet under 70%: no words in the drawing.
+  expect(await hubOf(ui)).toContain('stroke-dasharray="37 100"')
+  expect(await hubOf(ui)).not.toContain('37%')
+  // So the line of now says what runs at its left and, at its right, the figure with its name and the model.
   expect((await ui.find({ type: 'Text', text: /Ожидание/ }))?.text).toBe('Ожидание')
+  expect((await ui.find({ type: 'Text', text: /37%/ }))?.text).toMatch(/^контекст 37% · opus 5\.5/)
   await ui.unmount()
 
   // A terminal has no drawing, so the figure and the model stand at the right of that line, apart from the words.
@@ -856,9 +864,11 @@ test('a background task that failed leaves a fault on its station', { options: O
   await $.tool.call({ tool: 'Bash', command: 'make', description: 'Сборка', run_in_background: true })
   await $.turn.start({ text: NOTICE('b2', 'failed'), turnId: 't2' } as never)
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  const source = String((await ui.find({ type: 'Svg' }))?.props.source)
+  const source = await hubOf(ui)
+  // The task reporting back woke the agent: a row at Hooks says so, and it is no message of the person's.
+  expect(await ui.find({ type: 'Text', text: /background task reported/ })).toBeDefined()
   await ui.unmount()
-  expect(source.split('font-weight="700"').length - 1).toBe(1)
+  expect(source.split('class="fault"').length - 1).toBe(1)
 })
 
 test('a typed slash command keeps a background task that is older than the rows kept, and its name is cleaned', { options: OWN }, async ($, on) => {

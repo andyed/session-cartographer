@@ -9,7 +9,10 @@ export type Row = { entry: Entry; times: number; tookMs: number }
 
 const isPlain = (e: Entry): boolean => e.status === 'ok' && e.mark === undefined
 
-/** The newest rows first. Finished calls that follow one another at one station fold into a single row. */
+/**
+ * The newest rows first. Finished calls that follow one another at one station fold into a single row.
+ * A call into what the person has open and one that is not are two stations on the hub, so they do not fold (not in lot-map).
+ */
 export function foldRows(entries: readonly Entry[], max = 16): Row[] {
   const rows: Row[] = []
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -17,7 +20,7 @@ export function foldRows(entries: readonly Entry[], max = 16): Row[] {
     if (e === undefined) continue
     const took = e.endedAt === undefined ? 0 : Math.max(0, e.endedAt - e.startedAt)
     const last = rows[rows.length - 1]
-    if (last !== undefined && isPlain(e) && isPlain(last.entry) && last.entry.station === e.station && last.entry.from === e.from) {
+    if (last !== undefined && isPlain(e) && isPlain(last.entry) && last.entry.station === e.station && last.entry.from === e.from && (last.entry.yours === true) === (e.yours === true)) {
       last.times++
       last.tookMs += took
       continue

@@ -40,7 +40,8 @@ const CY = 236
 const RX = 176
 const RY = 164
 const NODE = 22
-const CORE = 40
+/** Wide enough for a model's name at 16 px on a map 400 px across. lot-map's core is 40. */
+const CORE = 48
 /** Where spokes and the route's first and last arrows meet the core: outside the context ring. */
 const RIM = CORE + 10
 
@@ -58,6 +59,9 @@ const ICONS = { ...Object.fromEntries(STATIONS.map(s => [s.id, s.icon])), screen
 /** Names are 16 px on screen. Under 400 px wide they would have to shrink, so they go. */
 const LABEL_PX = 16
 const NAMES_FROM = 400
+// Under that, from this width up, a station has its running count and no name: one or two figures at 16 px fit beside a
+// node where a name does not. Narrower still and three digits run into the next station.
+const FIGURES_FROM = 280
 
 export function hubLevel(size) {
   if (size >= NAMES_FROM) return 3
@@ -153,13 +157,17 @@ export function movesOf(entries, { tells = 'lane' } = {}) {
  * What the hub draws at one moment: each station's light, and the route as legs, oldest first.
  * A leg made more than once inside the window is one leg with `n`. `strength` runs 1 to 0 as it fades;
  * `f` is how far the newest leg's pulse has run. Times are session time: a replay passes them longer.
+ * `totals` are counts per station kept elsewhere, for a view that holds only the newest of a session's calls.
  */
-export function hubState(actions, at, { tau = 4000, hold = 40_000, travel = 700, keep = 7, context, tells = 'lane' } = {}) {
+export function hubState(actions, at, { tau = 4000, hold = 40_000, travel = 700, keep = 7, context, tells = 'lane', totals } = {}) {
   const stations = Object.fromEntries((tells === 'lane' ? HUB_ORDER_TWO_WAY : HUB_ORDER).map(id => [id, { count: 0, sum: 0, running: 0, faults: 0 }]))
   if (tells === 'lane') stations.you.told = 0
   const horizon = tau * 8
+  let model
   for (const a of actions) {
     if (!Number.isFinite(a.startedAt) || a.startedAt > at) continue
+    // The model the main loop last ran on: a recorded step is labelled with its short name.
+    if (a.station === 'model' && a.agentId === undefined && typeof a.label === 'string' && a.label !== '') model = a.label
     // Two-way: what the agent told the person lights You and is counted there, apart from what the person said.
     const told = tells === 'lane' && a.station === 'tells'
     const s = stations[told ? 'you' : a.station]
@@ -174,6 +182,14 @@ export function hubState(actions, at, { tau = 4000, hold = 40_000, travel = 700,
     else if (ended && (a.status === 'err' || a.status === 'block')) s.faults++
   }
   for (const s of Object.values(stations)) s.level = 1 - Math.exp(-(s.sum + (s.running > 0 ? 0.7 : 0)))
+  // A live view keeps the last calls and a running count per station: the counts drawn are those, not a count of
+  // the calls it still holds. `tells` among them is what the agent told, drawn under You when You is two-way.
+  if (totals) {
+    for (const [id, n] of Object.entries(totals)) {
+      if (tells === 'lane' && id === 'tells') stations.you.told = n
+      else if (stations[id] !== undefined) stations[id].count = n
+    }
+  }
 
   const fade = hold / 2
   const recent = movesOf(boardAt(actions, at).entries, { tells }).slice(-keep).filter(m => at - m.at < hold + fade)
@@ -191,7 +207,7 @@ export function hubState(actions, at, { tau = 4000, hold = 40_000, travel = 700,
   })
   const head = legs[legs.length - 1]
   if (head) head.f = Math.min(1, head.age / travel)
-  return { at, stations, legs, made: recent.length, ...(Number.isFinite(context) ? { context } : {}) }
+  return { at, stations, legs, made: recent.length, ...(Number.isFinite(context) ? { context } : {}), ...(model !== undefined ? { model } : {}) }
 }
 
 // ─── Geometry ───────────────────────────────────────────────────────────────
@@ -254,6 +270,19 @@ function arrow(curve, length, half) {
   return { d: `M${n1(p0.x)} ${n1(p0.y)}Q${n1(p1.x)} ${n1(p1.y)} ${n1(stop.x)} ${n1(stop.y)}`, head }
 }
 
+/** How wide a letter of the core's text is taken to be, as a share of its size: on the wide side, so a line that passes fits. */
+const CORE_CHAR = 0.54
+
+/** A name in two lines, broken at the space or hyphen nearest its middle; null when it has neither. */
+function breakInTwo(text) {
+  let best = -1
+  for (let i = 1; i < text.length - 1; i++) {
+    if ((text[i] === ' ' || text[i] === '-') && (best < 0 || Math.abs(i - text.length / 2) < Math.abs(best - text.length / 2))) best = i
+  }
+  if (best < 0) return null
+  return [text.slice(0, text[best] === '-' ? best + 1 : best), text.slice(best + 1)]
+}
+
 // ─── Drawing ────────────────────────────────────────────────────────────────
 
 const FONT = "font-family=\"ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif\""
@@ -275,9 +304,10 @@ export const CONTEXT_FULL = 90
 /**
  * The hub as one SVG string. `size` is the width it is shown at in CSS pixels.
  * `present` are the stations the session used at all: the others keep their places and get no ink.
- * `pressed` is the station a page is listing, if any.
+ * `pressed` is the station a page is listing, if any. `model` is the name the core says; left out, it is the
+ * model of the state's last main-loop step.
  */
-export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK, names = {}, coreName = '', present, motion = 'full', pressed = '', accent = '#72e6ef' } = {}) {
+export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK, names = {}, coreName = '', model = state.model ?? '', present, motion = 'full', pressed = '', accent = '#72e6ef' } = {}) {
   const p = palette
   const level = hubLevel(size)
   const unit = layout.width / size
@@ -356,10 +386,34 @@ export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK,
   const coreR = level === 1 ? CORE * 0.55 : CORE
   out.push(`<circle cx="${layout.core.x}" cy="${layout.core.y}" r="${n1(coreR)}" fill="${p.raised}" stroke="${level === 1 && near ? ringHue : mix(p.line, p.bone, 0.3 + 0.5 * coreLevel)}" stroke-width="${px(level === 1 ? 2.2 : 1.6)}"/>`)
   const font = n1(LABEL_PX * unit)
-  if (level === 3) {
-    const y = near ? layout.core.y - 3 : layout.core.y + font * 0.34
-    out.push(`<text x="${layout.core.x}" y="${n1(y)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="700" fill="${p.bone}">${esc(coreName)}</text>`)
-    if (near) out.push(`<text x="${layout.core.x}" y="${n1(y + font * 1.15)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="${full >= CONTEXT_FULL ? 700 : 500}" fill="${p.bone}">${full}% full</text>`)
+  // What the core says, at 16 px: the model first, since which model is at work is the thing to know, and under it the
+  // agent's name or, once the window nears its limit, how full it is. Where both lines do not fit the model keeps its
+  // place and the second line goes; a name too long for one line is broken in two. A short name fits the core from
+  // about 280 px of map up, where the stations have no room for theirs; where nothing fits, the core says nothing.
+  if (level === 3 || (level === 2 && size >= 240 && model !== '')) {
+    const under = near ? `${full}% full` : level === 3 ? coreName : ''
+    const tries = []
+    if (model !== '') {
+      // In order: both lines; the model alone on one line; the model broken in two.
+      if (under !== '') tries.push([model, under])
+      tries.push([model])
+      const cut = breakInTwo(model)
+      if (cut) tries.push(cut)
+    }
+    if (under !== '') tries.push([under])
+    const lead = font * 1.12
+    const fits = lines =>
+      lines.every((line, k) => {
+        const reach = Math.abs((k - (lines.length - 1) / 2) * lead) + font * 0.5
+        return reach < CORE && line.length * font * CORE_CHAR <= 2 * Math.sqrt(CORE * CORE - reach * reach) - 4
+      })
+    const lines = tries.find(fits) ?? []
+    lines.forEach((line, k) => {
+      const y = layout.core.y + (k - (lines.length - 1) / 2) * lead + font * 0.34
+      const isModel = model !== '' && line !== under
+      const weight = isModel || (near && full >= CONTEXT_FULL) ? 700 : 500
+      out.push(`<text x="${layout.core.x}" y="${n1(y)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="${weight}" fill="${isModel || near ? p.bone : p.ash}">${esc(line)}</text>`)
+    })
   }
 
   // The stations.
@@ -382,7 +436,7 @@ export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK,
       out.push(shape(r, `fill="${fault ? FAULT : lit ? (square ? mix(p.ground, hue, 0.72) : hue) : mix(p.ground, hue, 0.5)}"`))
       continue
     }
-    if (st.running > 0) out.push(shape(s.r + 5, `fill="none" stroke="${hue}" stroke-width="${px(1.4)}"`))
+    if (st.running > 0) out.push(shape(s.r + 5, `class="running" fill="none" stroke="${hue}" stroke-width="${px(1.4)}"`))
     // The station whose calls are listed beside the map wears a ring in the page's own accent, round the node alone:
     // a box round the node and its name would cut through a name wider than the box.
     if (id === pressed) out.push(shape(s.r + 8, `class="pressed" fill="none" stroke="${accent}" stroke-width="${px(2)}"`))
@@ -395,20 +449,48 @@ export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK,
       const tone = lit ? p.bone : p.ash
       out.push(`<path d="${ICONS[id]}" transform="translate(${n1(s.x)} ${n1(s.y)})" fill="none" stroke="${tone}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>`)
     }
-    if (fault && level === 2) out.push(`<circle cx="${n1(s.x + s.r * 0.72)}" cy="${n1(s.y - s.r * 0.72)}" r="${n1(Math.max(6, px(3)))}" fill="${FAULT}" stroke="${p.ground}" stroke-width="${px(1.2)}"/>`)
+    if (fault && level === 2) out.push(`<circle class="fault" cx="${n1(s.x + s.r * 0.72)}" cy="${n1(s.y - s.r * 0.72)}" r="${n1(Math.max(6, px(3)))}" fill="${FAULT}" stroke="${p.ground}" stroke-width="${px(1.2)}"/>`)
+    // Names and figures stand outside the ring, so the room inside it is the route's alone.
+    const above = s.y < layout.core.y - 20
+    const rim = `paint-order="stroke" stroke="${p.ground}" stroke-width="${n1(font * 0.3)}" stroke-linejoin="round"`
+    if (level === 2 && size >= FIGURES_FROM) {
+      // Too narrow for names: the count alone, which is what accumulates as a session runs. You's two counts stand
+      // beside their lanes as they do with names, without the words: the lane's arrow says which is which.
+      if (st.told === undefined) {
+        if (st.count > 0) out.push(`<text class="count" x="${n1(s.x)}" y="${n1(above ? s.y - s.r - 10 : s.y + s.r + 8 + font * 0.82)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="500" ${rim} fill="${lit ? p.bone : p.ash}">${st.count}</text>`)
+      } else {
+        for (const [lane, n] of [[{ from: 'you', to: 'core' }, st.count], [{ from: 'core', to: 'you' }, st.told]]) {
+          if (!(n > 0)) continue
+          const curve = hubLeg(layout, lane)
+          const side = rightOf(curve.p0, curve.p2)
+          const anchor = side.x < -0.3 ? 'end' : side.x > 0.3 ? 'start' : 'middle'
+          out.push(`<text class="count" x="${n1(curve.p1.x + side.x * 9)}" y="${n1(curve.p1.y + side.y * 9 + font * 0.34)}" text-anchor="${anchor}" ${FONT} font-size="${font}" font-weight="500" ${rim} fill="${p.ash}">${n}</text>`)
+        }
+      }
+    }
     if (level === 3) {
-      // Names stand outside the ring, so the room inside it is the route's alone.
-      const above = s.y < layout.core.y - 20
-      const rim = `paint-order="stroke" stroke="${p.ground}" stroke-width="${n1(font * 0.3)}" stroke-linejoin="round"`
       const nameY = above ? s.y - s.r - 10 - font * 1.15 : s.y + s.r + 8 + font * 0.82
       const name = names[id] ?? id
-      // Two-way, You carries two counts, and each says which it is.
-      const said = st.told === undefined ? String(st.count) : `${st.count} said · ${st.told} told`
-      const figures = `${said}${fault ? `<tspan fill="${FAULT}"> · ${st.faults} failed</tspan>` : ''}`
+      // A station nothing has happened at yet has its name and no figure: "0" under ten names is ten marks that say nothing.
+      const said = st.told === undefined ? (st.count > 0 ? String(st.count) : '') : ''
+      const figures = `${said}${fault ? `<tspan class="fault" fill="${FAULT}">${said === '' ? '' : ' · '}${st.faults} failed</tspan>` : ''}`
       const halfWidth = (Math.max(name.length, said.length + (fault ? 11 : 0)) * font * 0.56) / 2
       const x = n1(Math.max(4 + halfWidth, Math.min(layout.width - 4 - halfWidth, s.x)))
-      out.push(`<text x="${x}" y="${n1(nameY)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="600" ${rim} fill="${lit ? p.bone : p.ash}">${esc(name)}</text>`)
-      out.push(`<text x="${x}" y="${n1(nameY + font * 1.15)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="500" ${rim} fill="${p.ash}">${figures}</text>`)
+      // With no figure under it a name above its station sits on the line next to the node, where the figure would have been.
+      const y = above && figures === '' ? nameY + font * 1.15 : nameY
+      out.push(`<text x="${x}" y="${n1(y)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="600" ${rim} fill="${lit ? p.bone : p.ash}">${esc(name)}</text>`)
+      if (figures !== '') out.push(`<text x="${x}" y="${n1(nameY + font * 1.15)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="500" ${rim} fill="${p.ash}">${figures}</text>`)
+      // Two-way, You has two counts, and each stands beside its own lane: what the person said by the lane in, what
+      // the agent told by the lane out. One line of both under the name ran into the names of the stations next to it.
+      if (st.told !== undefined && st.count + st.told > 0) {
+        for (const [lane, text] of [[{ from: 'you', to: 'core' }, `${st.count} said`], [{ from: 'core', to: 'you' }, `${st.told} told`]]) {
+          const curve = hubLeg(layout, lane)
+          const side = rightOf(curve.p0, curve.p2)
+          const at = { x: curve.p1.x + side.x * 9, y: curve.p1.y + side.y * 9 }
+          const anchor = side.x < -0.3 ? 'end' : side.x > 0.3 ? 'start' : 'middle'
+          out.push(`<text x="${n1(at.x)}" y="${n1(at.y + font * 0.34)}" text-anchor="${anchor}" ${FONT} font-size="${font}" font-weight="500" ${rim} fill="${p.ash}">${text}</text>`)
+        }
+      }
     }
   }
 

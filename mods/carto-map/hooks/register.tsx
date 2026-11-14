@@ -5,6 +5,10 @@ import type { Board, Entry, StationId, Status, Visit } from '../types'
 import { STATIONS, classify, clean, describeNow, drawMap, firstLine, foldRows, formatMs, memoryIds, nowParts, setupFrom, shortModel, taskNotice, taskOf } from './map'
 import type { Setup } from './map'
 import { drawPicture, terminalPicture } from './terminal'
+import { hubPicture, isAt, pictureWidth, ribbonRuns, ribbonSlots, shownStation, slotRibbonPicture } from './hubview'
+import type { HubStation } from './hubview'
+import { isScreen } from './workmap/kinds.js'
+import { SLOT_CALLS } from './workmap/ribbon.js'
 
 const PANE = 'carto-map'
 const KEEP = 80
@@ -21,8 +25,25 @@ const VISITS = 300
  */
 const EXPLORER = 'http://localhost:2527'
 
-// Change the tag when a field of Entry or Board changes: it declines what an earlier version stored.
-const board = atom({ plugin: 'carto-map', key: 'board' } as const, { entries: [], counts: {} } as Board, { shape: 'board-4' })
+/** How long an answer about the Explorer is good for, in ms. */
+const EXPLORER_EVERY = 60_000
+/**
+ * Whether the Explorer answered when it was last asked, and when that was. The pane offers a way there only while
+ * it does (the owner, 2026-11-14: "this should be contingent on the user having explorer running"). It is asked
+ * beside the session's own events and never while drawing, so neither a call nor the pane waits on it.
+ */
+let explorer = { isUp: false, askedAt: -EXPLORER_EVERY }
+
+// Change the tag when a field of Entry or Board changes its meaning or is taken away: it declines what an earlier
+// version stored, and with it the session's counts. A field only added, and optional, needs no new tag.
+const board = atom({ plugin: 'carto-map', key: 'board' } as const, { entries: [], counts: {} } as Board, { shape: 'board-5' })
+
+/** The name of the station lot-map does not have. English only: the other six languages of text.ts have no word for it yet. */
+const SCREEN_NAME = 'Your screen'
+/** The desktop app's tools for other sessions share a server prefix with its reports to the person, which lot-map files under You. They are work with other agents. */
+const SESSION_TOOLS = /__ccd_session_mgmt__|__ccd_window__|__ccd_sidebar__/
+/** When the drawing is asked to cool after the newest call, in ms: a station's light is mostly gone by the first, a leg of the route by the last. */
+const COOL_AT = [6_000, 20_000, 61_000]
 
 const newId = (now: number): string => `${now.toString(36)}${Math.random().toString(36).slice(2, 7)}`
 
@@ -52,6 +73,19 @@ function addressesOf(input: Record<string, unknown>): string[] {
 /** Whether the desktop surface will make a link of the address. Any other is shown as text, to be read or copied. */
 const isLinkable = (url: string): boolean => /^https:\/\//i.test(url) || /^http:\/\/localhost(?=[:/?#]|$)/i.test(url)
 
+/** The calls that change a file, and where each says which. The Explorer reviews a file a session changed, not one it only read. */
+const EDITS: Readonly<Record<string, string>> = { Edit: 'file_path', MultiEdit: 'file_path', Write: 'file_path', NotebookEdit: 'notebook_path' }
+
+/** The file a call changed, as an absolute path; nothing for any other call. */
+function editedFile(tool: string, input: Record<string, unknown>): string | undefined {
+  const field = EDITS[tool]
+  const path = field === undefined ? undefined : input[field]
+  return typeof path === 'string' && path.startsWith('/') && path.length <= 1000 ? path : undefined
+}
+
+/** The Explorer's review of what a session changed in one file. It answers for files under the Explorer's own root. */
+const reviewLink = (sessionId: string, path: string): string => `${EXPLORER}/memory?session=${encodeURIComponent(sessionId)}&file=${encodeURIComponent(path)}&review=changes`
+
 /** The address without its scheme, for a row: the host and the path are what tell two pages apart. */
 const shortAddress = (url: string): string => url.replace(/^https?:\/\//i, '').replace(/\/$/, '')
 
@@ -64,6 +98,9 @@ type Start = {
   mark?: Entry['mark']
   /** Adds nothing to the station's count: a second view of something already counted. */
   uncounted?: boolean
+  yours?: true
+  wake?: 'task'
+  href?: string
   startedAt?: number
   endedAt?: number
   patch?: Partial<Pick<Board, 'model' | 'step' | 'switchedAt'>>
@@ -79,6 +116,29 @@ const isFault = (status: Status): boolean => status === 'err' || status === 'blo
 
 const oneMore = (faults: Board['faults'], station: StationId): Board['faults'] => ({ ...faults, [station]: (faults?.[station] ?? 0) + 1 })
 
+/** Asks the Explorer whether it is there, at most once a minute, and redraws the pane when the answer changed. */
+async function askExplorer($: EngineInterface): Promise<void> {
+  await quietly(async () => {
+    const now = await $.clock.now()
+    if (now - explorer.askedAt < EXPLORER_EVERY) return
+    const was = explorer.isUp
+    explorer = { isUp: was, askedAt: now }
+    // Its health answer names the logs it reads: some other program on the port does not pass for it.
+    // It listens on 127.0.0.1 alone, and a host that takes `localhost` for ::1 would find nothing there: the number
+    // is asked first, the name after.
+    let isUp = false
+    for (const at of ['http://127.0.0.1:2527', EXPLORER]) {
+      isUp = (await quietly(async () => {
+        const got = await $.http.fetch(`${at}/api/health`)
+        return got.ok && got.text.includes('"changelog"')
+      })) === true
+      if (isUp) break
+    }
+    explorer = { isUp, askedAt: now }
+    if (isUp !== was) await update($, board, b => ({ ...b, tick: (b.tick ?? 0) + 1 }))
+  })
+}
+
 async function begin($: EngineInterface, start: Start): Promise<string | undefined> {
   return quietly(async () => {
     const now = await $.clock.now()
@@ -92,7 +152,11 @@ async function begin($: EngineInterface, start: Start): Promise<string | undefin
       ...(start.status !== undefined ? { endedAt: start.endedAt ?? now } : {}),
       ...(start.agentId !== undefined ? { agentId: start.agentId } : {}),
       ...(start.mark !== undefined ? { mark: start.mark } : {}),
+      ...(start.yours === true ? { yours: true as const } : {}),
+      ...(start.wake !== undefined ? { wake: start.wake } : {}),
+      ...(start.href !== undefined ? { href: start.href } : {}),
     }
+    const isTold = entry.station === 'you' && entry.from !== 'inbound' && !start.uncounted
     await update($, board, b => ({
       ...b,
       ...start.patch,
@@ -100,6 +164,10 @@ async function begin($: EngineInterface, start: Start): Promise<string | undefin
       counts: start.uncounted ? b.counts : { ...b.counts, [entry.station]: (b.counts[entry.station] ?? 0) + 1 },
       // What a hook brought to memory unasked is counted apart from what was asked for.
       ...(entry.station === 'memory' && entry.from === 'inbound' && !start.uncounted ? { pushed: (b.pushed ?? 0) + 1 } : {}),
+      // What the agent told the person is counted apart from what the person said, and a call into what the
+      // person has open apart from the station lot-map files it under: the hub draws both readings' figures.
+      ...(isTold ? { told: (b.told ?? 0) + 1 } : {}),
+      ...(entry.yours === true && !start.uncounted ? { yours: { ...b.yours, [entry.station]: (b.yours?.[entry.station] ?? 0) + 1 } } : {}),
       // An interrupted turn lands on the person's own station and is no fault of anything.
       ...(isFault(entry.status) && entry.station !== 'you' ? { faults: oneMore(b.faults, entry.station) } : {}),
       ...(entry.agentId !== undefined && !(b.agents ?? []).includes(entry.agentId)
@@ -174,9 +242,25 @@ async function noteContext($: EngineInterface, context: readonly string[] | unde
   })
 }
 
+// The hub is drawn when the board changes, and a station's light and a leg of the route are worked out from how
+// long ago a call was. With nothing new the picture would stay lit for as long as the session sat idle, so each
+// call books a few later redraws, and a newer call books its own in their place.
+let cooling: { cancel: () => void }[] = []
+
+function cool($: EngineInterface): void {
+  for (const timer of cooling) timer.cancel()
+  cooling = []
+  try {
+    cooling = COOL_AT.map(ms => $.clock.after(ms, () => void quietly(() => update($, board, b => ({ ...b, tick: (b.tick ?? 0) + 1 })))))
+  } catch {
+    cooling = []
+  }
+}
+
 export const register: Register = (on, options) => {
   const setup = setupFrom(options)
   const { t } = setup
+
   // The feed's second column fits the longest station name of the language.
   const column = Math.max(8, ...Object.values(t.stations).map(name => name.length))
 
@@ -195,6 +279,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     await quietly(() => $.command.register({ name: 'carto-map', description: t.command }))
     void quietly(() => $.ui.open({ id: PANE, title: t.title }))
+    void askExplorer($)
     await quietly(async () => {
       modelKey = `model:${e.cwd}`
       const kept = await $.store.get(modelKey)
@@ -209,14 +294,19 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
+    void askExplorer($)
     const notice = e.agentId === undefined ? taskNotice(e.text) : undefined
     if (notice !== undefined) {
-      // A background task reporting back is no message of the person's.
+      // A background task reporting back is no message of the person's. It did wake the agent, and the hub starts
+      // a stretch of the route there, from Hooks, as it starts one from You at a message.
       if (notice.status !== undefined) await settle($, notice.id, notice.status)
+      await begin($, { station: 'hooks', label: 'background task reported', from: 'inbound', status: 'ok', wake: 'task' })
+      cool($)
     } else if (e.agentId === undefined && e.text !== '') {
       // A new message clears what went wrong on the way to the last answer.
       await quietly(() => update($, board, b => (b.faults === undefined ? b : { ...b, faults: {} })))
       await begin($, { station: 'you', label: t.newMessage, from: 'inbound', status: 'ok' })
+      cool($)
     }
     return next(e)
   })
@@ -286,17 +376,32 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     const id = await quietly(async () => {
       const input = e as unknown as Record<string, unknown>
-      const seen = classify(e.tool, input, setup)
-      // The pages the call went to are kept for the Network and Browser lists.
-      if (seen.station === 'web' || seen.station === 'browser') {
-        const station = seen.station
+      const found = classify(e.tool, input, setup)
+      const seen = found.station === 'you' && SESSION_TOOLS.test(e.tool) ? { ...found, station: 'agents' as const } : found
+      // The main loop reading or acting in what the person has open: their own Chrome, tabs, terminal, desktop.
+      const yours = e.agentId === undefined && isScreen({ tool: e.tool })
+      // The pages the call went to are kept for the Network, Browser and Your screen lists.
+      let href: string | undefined
+      if (seen.station === 'web' || seen.station === 'browser' || yours) {
+        const station = yours ? ('screen' as const) : (seen.station as 'web' | 'browser')
         const urls = addressesOf(input)
         if (urls.length > 0) {
           const at = await $.clock.now()
           await update($, board, b => ({ ...b, visits: [...(b.visits ?? []), ...urls.map((url): Visit => ({ station, url, at }))].slice(-VISITS) }))
         }
+        // The row is a link to the page it went to: the first of a batch's.
+        href = urls.find(isLinkable)
       }
-      return begin($, { ...seen, ...(e.agentId === undefined ? { from: 'core' as const } : { from: 'agents' as const, agentId: e.agentId }) })
+      // A row that changed a file is a link to the Explorer's review of that file in this session.
+      const file = seen.station === 'files' ? editedFile(e.tool, input) : undefined
+      if (file !== undefined) {
+        const sessionId = await quietly(() => $.session.id())
+        if (typeof sessionId === 'string' && sessionId !== '') href = reviewLink(sessionId, file)
+      }
+      const id = await begin($, { ...seen, ...(href !== undefined ? { href } : {}), ...(yours ? { yours: true as const } : {}), ...(e.agentId === undefined ? { from: 'core' as const } : { from: 'agents' as const, agentId: e.agentId }) })
+      cool($)
+      void askExplorer($)
+      return id
     })
     try {
       const ran = await next(e)
@@ -381,6 +486,10 @@ export const register: Register = (on, options) => {
     const now = await $.clock.now()
     const { Box, Text, Button } = $.ui.resolve(e)
     const size = setup.textSize
+    // The desktop app's dim text measured 6.4:1 on its pane (#9c9c9c on #191919, a capture of 2026-11-14), under the
+    // 8:1 this pane's words are held to. So only a terminal, whose dim is the person's own theme, dims anything here.
+    const dims = e.surface === 'terminal'
+    const { Link: RowLink } = e.surface === 'terminal' ? { Link: undefined } : $.ui.resolve(e)
 
     // How long each answer took, from the person's message to it: the one time a row of the moment has to show.
     const turnMs = new Map<string, number>()
@@ -394,8 +503,20 @@ export const register: Register = (on, options) => {
     }
 
     // A pressed station narrows the rows to its own. A station with nothing left to show is not held open.
-    const shown = state.shown !== undefined && (state.counts[state.shown] ?? 0) > 0 ? state.shown : undefined
-    const listed = shown === undefined ? state.entries : state.entries.filter(x => x.station === shown)
+    // On a terminal the stations are lot-map's; on the other surfaces they are the hub's, where a call into what
+    // the person has open is Your screen's and not the station lot-map files it under.
+    const isHub = e.surface !== 'terminal' && setup.theme !== 'light'
+    // A station held narrows the rows to its own. Under the hub it is held by pressing a slot of the ribbon, and a
+    // call into what the person has open is Your screen's; under lot-map's hub, by a station button.
+    const shown = shownStation(state, isHub)
+    const listed = shown === undefined ? state.entries : state.entries.filter(x => (isHub ? isAt(x, shown) : x.station === shown))
+
+    // The pane holds the last rows of a live session. The Explorer holds all of it, and other sessions. The picture
+    // takes no press (drawn in the desktop's frame for pictures, a link inside it went nowhere when the owner tried
+    // one on 2026-11-14), so while the Explorer is running the way to a station there is its name at the head of
+    // each of its rows, and one more link, the last thing in the pane, goes to the session's map whole.
+    const sessionId = explorer.isUp && e.surface !== 'terminal' ? await quietly(() => $.session.id()) : undefined
+    const there = typeof sessionId === 'string' && sessionId !== '' ? sessionId : undefined
 
     const rows = foldRows(listed).map(({ entry, times, tookMs }) => {
       const isSwitch = entry.mark === 'switch'
@@ -406,8 +527,14 @@ export const register: Register = (on, options) => {
       const isMoment = took === '—'
       // Theme keys, so the rows read on a light theme as well as on a dark one.
       const color = isSwitch || entry.status === 'run' ? 'claude' : entry.status === 'ok' ? undefined : 'error'
-      const line = `${mark} ${t.stations[entry.station].padEnd(column)} ${entry.label}${times > 1 ? `  +${times - 1}` : ''}`
-      const isDim = entry.status === 'ok' && !isSwitch
+      const where = isHub && entry.yours === true ? SCREEN_NAME : t.stations[entry.station]
+      const head = `${mark} ${where.padEnd(column)} `
+      const more = times > 1 ? `  +${times - 1}` : ''
+      const line = `${head}${entry.label}${more}`
+      const isDim = dims && entry.status === 'ok' && !isSwitch
+      // Where the row went, if it went somewhere a press can follow: a page, or the Explorer's review of a file.
+      // A link into the Explorer is one only while the Explorer is there to answer it.
+      const href = RowLink !== undefined && entry.href !== undefined && isLinkable(entry.href) && (explorer.isUp || !entry.href.startsWith(`${EXPLORER}/`)) ? entry.href : undefined
       // One row of the pane a row of the feed: the words are cut at the edge, the time keeps a column of its own at the
       // right, so a long label neither wraps nor pushes the time about. A long one can be opened, one at a time.
       const isLong = entry.label.length > LONG_LABEL
@@ -416,7 +543,19 @@ export const register: Register = (on, options) => {
         <Box flexDirection="row" gap={1} alignItems="flex-start">
           <Box flexGrow={1} flexShrink={1} minWidth={0}>
             <Text mono size={size} color={color} dimColor={isDim} wrap={isOpen ? 'wrap' : 'truncate-end'}>
-              {line}
+              {RowLink !== undefined && (href !== undefined || there !== undefined)
+                ? [
+                    `${mark} `,
+                    there !== undefined ? (
+                      <RowLink href={`${EXPLORER}/map?session=${encodeURIComponent(there)}&station=${isHub && entry.yours === true ? 'screen' : entry.station}`} label={where} />
+                    ) : (
+                      where
+                    ),
+                    `${' '.repeat(Math.max(0, column - where.length))} `,
+                    href !== undefined ? <RowLink href={href} label={entry.label} /> : entry.label,
+                    more,
+                  ]
+                : line}
             </Text>
           </Box>
           {isLong
@@ -424,26 +563,30 @@ export const register: Register = (on, options) => {
                 <Button
                   key={`open-${entry.id}`}
                   plain
-                  dimColor
+                  dimColor={dims}
                   label={isOpen ? '▾' : '▸'}
                   onPress={() => void quietly(() => update($, board, b => ({ ...b, open: isOpen ? undefined : entry.id })))}
                 />,
               ]
             : []}
           <Box flexShrink={0} minWidth={TIME_COLUMN} justifyContent="flex-end">
-            <Text mono tabular size={size} color={isMoment ? undefined : color} dimColor={isDim || isMoment} wrap="truncate-end">
+            <Text mono tabular size={size} color={isMoment ? undefined : color} dimColor={isDim || (dims && isMoment)} wrap="truncate-end">
               {took}
             </Text>
           </Box>
         </Box>
       )
     })
-    const feed = rows.length > 0 ? rows : [<Text dimColor>{t.nothingYet}</Text>]
+    const feed = rows.length > 0 ? rows : [<Text dimColor={dims}>{t.nothingYet}</Text>]
     // What runs now at the left, cut if it must be. Where there is no drawing to say them, the context and the model
     // stand at the right, whole; beside the drawing they would be said a second time.
     const now2 = nowParts(state, t)
     const what = now2.what
-    const meter = e.surface === 'terminal' ? now2.meter : ''
+    // lot-map's hub wrote the context figure and the model in its core. The hub drawn here has no words at a pane's
+    // width, so on those surfaces too the line says them, the figure with its name.
+    const figure = state.context === undefined ? '' : `${t.context} ${Math.round(state.context)}%`
+    const model = state.model === undefined || state.entries.some(x => x.status === 'run' && x.station === 'model') ? '' : shortModel(state.model)
+    const meter = e.surface === 'terminal' ? now2.meter : isHub ? [figure, model].filter(Boolean).join(' · ') : ''
     const current = (
       <Box flexDirection="row" gap={1} alignItems="flex-start">
         <Box flexGrow={1} flexShrink={1} minWidth={0}>
@@ -455,7 +598,7 @@ export const register: Register = (on, options) => {
           ? []
           : [
               <Box flexShrink={0}>
-                <Text mono tabular size={size} dimColor>
+                <Text mono tabular size={size} dimColor={dims}>
                   {meter}
                 </Text>
               </Box>,
@@ -478,20 +621,25 @@ export const register: Register = (on, options) => {
 
     const { Svg, Link } = $.ui.resolve(e)
 
-    // The map is one picture, so its stations cannot be pressed. This row is their press targets: one per
-    // station the session has used, with its count. Pressing one shows that station alone; again, the whole feed.
-    const stations = STATIONS.filter(s => (state.counts[s.id] ?? 0) > 0).map(s => (
-      <Button
-        key={`station-${s.id}`}
-        plain
-        dimColor={shown !== undefined && shown !== s.id}
-        label={`${t.stations[s.id]} ${state.counts[s.id]}`}
-        onPress={() => void quietly(() => update($, board, b => ({ ...b, shown: b.shown === s.id ? undefined : s.id })))}
-      />
-    ))
+    // lot-map's hub, which a light theme still gets, is one picture whose stations cannot be pressed. This row is
+    // their press targets: one per station the session has used, with its count. Pressing one shows that station
+    // alone; again, the whole feed. The hub drawn everywhere else says each station's name and count itself, and the
+    // ribbon over it is the calls in order in the stations' colours, so there the row is gone (the owner, 2026-11-14:
+    // "drop the legends").
+    const names: Record<string, string> = { ...t.stations, screen: SCREEN_NAME }
+    const stations = isHub
+      ? []
+      : STATIONS.filter(s => (state.counts[s.id] ?? 0) > 0).map(s => (
+          <Button
+            key={`station-${s.id}`}
+            plain
+            label={`${names[s.id]} ${state.counts[s.id] ?? 0}`}
+            onPress={() => void quietly(() => update($, board, b => ({ ...b, shown: b.shown === s.id ? undefined : s.id })))}
+          />
+        ))
 
-    // Network and Browser open on the pages visited, newest first, each a link.
-    const visits = shown === 'web' || shown === 'browser' ? (state.visits ?? []).filter(v => v.station === shown).reverse() : []
+    // Network, Browser and Your screen open on the pages visited, newest first, each a link.
+    const visits = shown === 'web' || shown === 'browser' || shown === 'screen' ? (state.visits ?? []).filter(v => v.station === shown).reverse() : []
     const pages = visits.map((visit, i) => (
       <Box key={`visit-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
         <Box flexGrow={1} flexShrink={1} minWidth={0}>
@@ -500,27 +648,72 @@ export const register: Register = (on, options) => {
           </Text>
         </Box>
         <Box flexShrink={0} minWidth={TIME_COLUMN} justifyContent="flex-end">
-          <Text mono tabular size={size} dimColor wrap="truncate-end">
+          <Text mono tabular size={size} dimColor={dims} wrap="truncate-end">
             {formatMs(Math.max(0, now - visit.at), t)}
           </Text>
         </Box>
       </Box>
     ))
 
-    // The pane holds the last rows of a live session. The Explorer holds all of it, and other sessions.
-    const sessionId = shown === undefined ? undefined : await quietly(() => $.session.id())
+    // The arrow is the mark of a link that leaves the app.
     const beyond =
-      shown !== undefined && typeof sessionId === 'string' && sessionId !== ''
+      there !== undefined
         ? [
-            <Text key="explorer" size={size} dimColor>
-              <Link href={`${EXPLORER}/map?session=${encodeURIComponent(sessionId)}&station=${shown}`} label={`${t.stations[shown]}: whole session in the Explorer`} />
+            <Text key="explorer" size={size}>
+              <Link href={`${EXPLORER}/map?session=${encodeURIComponent(there)}${shown !== undefined ? `&station=${shown}` : ''}`} label="↗ Explorer" />
             </Text>,
           ]
         : []
+    // The pane's body scrolls as one piece and has no footer of its own. Made at least as tall as the room it is
+    // given, with what is left over above the link, the link stands at the pane's bottom edge whenever the rest fits;
+    // when the rest is taller than the pane it is the end of the scroll.
+    const room = e.props.scroll?.bodyRows
+    const tall = typeof room === 'number' && Number.isFinite(room) && room > 0 ? { minHeight: room } : {}
+
+    // The drawing the Explorer's session map uses, from the same code: the ribbon of the last calls over the hub.
+    // A person who set the light theme keeps lot-map's hub, which has light colours; the new one has none yet.
+    const wide = pictureWidth(e.props.bodyColumns)
+    // The ribbon is a picture, and a picture takes no press; a Button on the desktop is drawn as its plain label, so
+    // a coloured block cannot be one either. So the ribbon is drawn in slots of one width, a slot a run of calls at
+    // one station, and under it stands a row of as many equal boxes, each with the control for the slot over it.
+    // Pressing one narrows the feed to that slot's station; pressing a slot of the held station lets it go. A slot
+    // is a fraction of the width in both, so they line up at any pane width. The mark is hollow, and solid under
+    // the held station's runs; the two are one pair of one size (the smaller pair drew at two sizes in a render). A run that grows stays in its slot:
+    // the slots move along only when the agent goes to another station.
+    const slots = ribbonSlots(e.props.bodyColumns)
+    const runs = isHub ? ribbonRuns(state, now, slots, shown) : []
+    const press = (station: HubStation) => () => void quietly(() => update($, board, b => ({ ...b, shown: b.shown === station ? undefined : station })))
+    const share = `${100 / slots}%`
+    const targets = isHub
+      ? [
+          <Box key="ribbon-press" flexDirection="row" alignItems="flex-start">
+            {Array.from({ length: slots }, (_, i) => {
+              const run = runs[i - (slots - runs.length)]
+              return (
+                <Box key={`slot-${i}`} width={share} flexShrink={0} justifyContent="center" minWidth={0}>
+                  {run === undefined ? [] : [<Button key={`ribbon-${run.key}`} plain label={run.station === shown ? '▲' : '△'} onPress={press(run.station)} />]}
+                </Box>
+              )
+            })}
+          </Box>,
+        ]
+      : []
+    const calls = runs.reduce((n, run) => n + Math.min(run.cells.length, SLOT_CALLS), 0)
+    const pictures = isHub
+      ? [
+          <Svg key="ribbon" source={slotRibbonPicture(runs, slots, wide, shown)} alt={`The last ${calls} calls in ${runs.length} runs, oldest to newest`} />,
+          ...targets,
+          <Svg
+            key="hub"
+            source={hubPicture(state, now, { names, coreName: setup.core, model: state.model === undefined ? '' : shortModel(state.model), motion: setup.motion, width: wide, ...(shown !== undefined ? { pressed: shown } : {}) })}
+            alt={`${t.title}. ${describeNow(state, t)}`}
+          />,
+        ]
+      : [<Svg key="hub" source={drawMap(state, now, setup)} alt={`${t.title}. ${describeNow(state, t)}`} />]
 
     return (
-      <Box flexDirection="column">
-        <Svg source={drawMap(state, now, setup)} alt={`${t.title}. ${describeNow(state, t)}`} />
+      <Box flexDirection="column" {...tall}>
+        {pictures}
         {current}
         {stations.length > 0
           ? [
@@ -531,6 +724,7 @@ export const register: Register = (on, options) => {
           : []}
         {pages}
         {pages.length > 0 ? [] : feed}
+        <Box key="rest" flexGrow={1} />
         {beyond}
       </Box>
     )

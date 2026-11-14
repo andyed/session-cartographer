@@ -40,8 +40,10 @@ export const LIGHT: Palette = {
   line: '#cfc9bc',
   spoke: '#e3ded2',
   bone: '#1f2228',
-  ash: '#5f6570',
-  dim: '#8b909a',
+  // Darker than lot-map's (#5f6570 and #8b909a, 5.24:1 and 2.86:1 on this ground): the station names and counts are
+  // set in them, and measured in a render on 2026-11-14 they were under 8:1. These are 8.10:1 and 8.18:1.
+  ash: '#444951',
+  dim: '#46484d',
   accent: '#b8762a',
   hot: '#8f560f',
   red: '#c5402b',
