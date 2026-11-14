@@ -232,6 +232,27 @@ export function rowDetail(action, calls = new Map()) {
   return parts.filter(Boolean).join(' · ');
 }
 
+/**
+ * How full the context window was at a moment: the last main-loop model request at or before it.
+ * A compaction shows as the next request reading far less. Null when the session records no figure.
+ */
+export function contextAt(map, at) {
+  const window = Number(map?.context?.window);
+  if (!Number.isFinite(window) || window <= 0) return null;
+  for (let i = map.actions.length - 1; i >= 0; i--) {
+    const a = map.actions[i];
+    if (a.startedAt > at || a.ctx === undefined || a.agentId !== undefined) continue;
+    return { tokens: a.ctx, window, percent: Math.min(100, (a.ctx / window) * 100), source: map.context.source };
+  }
+  return null;
+}
+
+/** 933,516 as "934k", 1,000,000 as "1M". */
+export function tokenText(n) {
+  if (n >= 999_500) return `${Math.round(n / 100_000) / 10}M`;
+  return n >= 1000 ? `${Math.round(n / 1000)}k` : String(Math.round(n));
+}
+
 /** The picture as an image source. An image cannot run script or reach the page, so the drawing needs no sanitizer. */
 export function svgDataUri(svg) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

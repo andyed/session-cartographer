@@ -21,7 +21,7 @@ import { formatMs, shortModel } from '../../shared/workmap/classify.js';
 import { boardLayout, drawFlow, drawTape, flowBoxes, flowCoreBox, flowState, holdFor, ringLayout, tapeHeight, tapeOf } from '../../shared/workmap/flow.js';
 import { drawMap, mapGeometry } from '../../shared/workmap/draw.js';
 import { setupFrom } from '../../shared/workmap/setup.js';
-import { MAP_PATH, clockTime, coreBox, mapHref, readMapRoute, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, spanText, stampFor, stationBoxes, svgDataUri } from './session-map.js';
+import { MAP_PATH, contextAt, tokenText, clockTime, coreBox, mapHref, readMapRoute, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, spanText, stampFor, stationBoxes, svgDataUri } from './session-map.js';
 import '../styles/session-map.css';
 
 const BASE = import.meta.env.BASE_URL || '/';
@@ -222,11 +222,14 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
   const scrub = value => (playing ? setPlayAt(value) : (setLive(false), go({ at: value })));
   const station = map && route.station && map.present.includes(route.station) ? route.station : '';
 
+  // The context window at this moment: the ring round the core, as lot-map draws it live.
+  const context = useMemo(() => (map ? contextAt(map, at) : null), [map, at]);
+
   const src = useMemo(() => {
     if (!map || !setup) return '';
-    const board = boardAt(map.actions, at, map.model ? { model: map.model } : {});
+    const board = boardAt(map.actions, at, { ...(map.model ? { model: map.model } : {}), ...(context ? { context: context.percent } : {}) });
     return svgDataUri(drawMap(board, at, setup));
-  }, [map, setup, at]);
+  }, [map, setup, at, context]);
 
   // The flow: each station's light and the route, for the board, the small sizes and the tape.
   const pace = live ? 1 : speed;
@@ -337,6 +340,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
               />
               <output>
                 {stamp(at)} · {spanText(at - map.span.first)} of {spanText(map.span.last - map.span.first)}
+                {context && ` · context ${Math.round(context.percent)}% of ${tokenText(context.window)} tokens`}
               </output>
               <div className="sm-transport">
                 <button type="button" className="sm-play" aria-pressed={playing} onClick={play}>
@@ -382,7 +386,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
             <h2>
               {station ? names[station] : 'All stations'}
               <span>
-                {list.total} calls · {list.failed} failed · {list.byAgents} by subagents
+                {list.total} {list.total === 1 ? 'call' : 'calls'} · {list.failed} failed · {list.byAgents} by subagents
               </span>
             </h2>
             <ol>

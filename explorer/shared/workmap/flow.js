@@ -68,6 +68,8 @@ export function flowState(actions, at, { tau = 4000, hold = 40_000, travel = 700
   const stops = routeOf(boardAt(actions, at).entries, STOPS)
   const legs = []
   for (let k = 1; k < stops.length; k++) {
+    // No leg runs into the first stop after a message from the person: the route starts over there.
+    if (stops[k].fresh === true || stops[k].station === stops[k - 1].station) continue
     const age = at - stops[k].at
     if (age >= hold + fade) continue
     legs.push({ from: stops[k - 1].station, to: stops[k].station, age, strength: age <= hold ? 1 : 1 - (age - hold) / fade })
@@ -94,7 +96,9 @@ const BOX = { w: 96, h: 46 }
 const BOARD = { x: 14, y: 14, w: 432, h: 402 }
 const CPU = { x: 230, y: 212, w: 92, h: 60 }
 const PLACES = {
-  you: { x: 230, y: 40, edge: 'top' },
+  // The person and the agent's reports to the person share the top edge: one connector in, one out.
+  you: { x: 178, y: 40, edge: 'top' },
+  tells: { x: 282, y: 40, edge: 'top' },
   hooks: { x: 82, y: 112 },
   model: { x: 378, y: 112 },
   skills: { x: 82, y: 212 },
@@ -394,7 +398,7 @@ export function tapeOf(actions, at, n = 60) {
     const a = actions[i]
     if (a.startedAt > at || a.station === 'model') continue
     const ended = a.endedAt !== undefined && a.endedAt <= at
-    rows.push({ station: a.station, agentId: a.agentId, status: ended ? a.status : 'run', startedAt: a.startedAt })
+    rows.push({ station: a.station, agentId: a.agentId, status: ended ? a.status : 'run', startedAt: a.startedAt, person: a.station === 'you' && a.from === 'inbound', aside: a.aside === true })
   }
   return rows.reverse()
 }
@@ -425,8 +429,15 @@ export function drawTape(rows, { width = W, palette = DARK, names = {}, capacity
     out.push(`<text x="${TAPE_GUTTER - 10}" y="${yOf(id) + 5.5}" text-anchor="end" ${FONT} font-size="16" font-weight="500" fill="${p.ash}">${esc(names[id] ?? id)}</text>`)
   }
 
-  const main = rows.map((r, i) => [r, i]).filter(([r]) => r.agentId === undefined)
-  if (main.length > 1) out.push(`<path d="${polyline(main.map(([r, i]) => [xOf(i), yOf(r.station)]))}" fill="none" stroke="${mix(p.ground, p.trail, 0.55)}" stroke-width="1.3" stroke-linejoin="round"/>`)
+  // The line is the agent's path. It breaks at a message from the person, and a report sent beside other work is off it.
+  const runs = [[]]
+  rows.forEach((r, i) => {
+    if (r.person) runs.push([])
+    else if (r.agentId === undefined && !r.aside) runs[runs.length - 1].push([xOf(i), yOf(r.station)])
+  })
+  for (const run of runs) {
+    if (run.length > 1) out.push(`<path d="${polyline(run)}" fill="none" stroke="${mix(p.ground, p.trail, 0.55)}" stroke-width="1.3" stroke-linejoin="round"/>`)
+  }
   const agents = new Map()
   rows.forEach((r, i) => {
     if (r.agentId === undefined) return
@@ -440,7 +451,12 @@ export function drawTape(rows, { width = W, palette = DARK, names = {}, capacity
   rows.forEach((r, i) => {
     const colour = r.status === 'err' || r.status === 'block' ? p.red : r.station === 'memory' ? p.memHot : p.hot
     const [x, y] = [n1(xOf(i)), yOf(r.station)]
-    if (r.agentId !== undefined || r.status === 'run') out.push(`<circle cx="${x}" cy="${y}" r="3.4" fill="${p.ground}" stroke="${colour}" stroke-width="1.6"/>`)
+    if (r.person) {
+      // A message from the person: a diamond in the trail's white, with a rule down the tape where the turn begins.
+      out.push(`<line x1="${x}" y1="5" x2="${x}" y2="${height - 5}" stroke="${p.line}" stroke-width="1"/>`)
+      out.push(`<path d="M${x} ${y - 5.5}L${n1(Number(x) + 5.5)} ${y}L${x} ${y + 5.5}L${n1(Number(x) - 5.5)} ${y}Z" fill="${p.bone}"/>`)
+    } else if (r.aside) out.push(`<circle cx="${x}" cy="${y}" r="1.8" fill="${mix(p.ground, colour, 0.7)}"/>`)
+    else if (r.agentId !== undefined || r.status === 'run') out.push(`<circle cx="${x}" cy="${y}" r="3.4" fill="${p.ground}" stroke="${colour}" stroke-width="1.6"/>`)
     else out.push(`<circle cx="${x}" cy="${y}" r="3.2" fill="${colour}"/>`)
   })
 

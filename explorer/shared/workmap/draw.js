@@ -107,14 +107,27 @@ export function legBetween(setup, fromId, toId) {
   return leg(indexOf(fromId), indexOf(toId), shift)
 }
 
-/** The stations the main loop went through, oldest first, a station visited twice in a row counted once. */
+/**
+ * The stations the main loop went through, oldest first, a station visited twice in a row counted once.
+ *
+ * Changed from lot-map in two ways. The person is never a stop: the person can only address the agent, so a
+ * message is a pulse into the core, and the route starts over after it. The first stop after a message is
+ * marked `fresh`, and no leg is drawn into a fresh stop. And a report the agent sends in the same step as real
+ * work (`aside`: a task-list update riding beside a command) is not a place the work went.
+ */
 export function routeOf(entries, max = TRAIL_STOPS) {
   const stops = []
+  let fresh = false
   for (const e of entries) {
-    if (e.from === 'agents' || e.station === 'model') continue
+    if (e.from === 'agents' || e.station === 'model' || e.aside === true) continue
+    if (e.station === 'you' && e.from === 'inbound') {
+      fresh = true
+      continue
+    }
     const last = stops[stops.length - 1]
-    if (last !== undefined && last.station === e.station) last.at = e.startedAt
-    else stops.push({ station: e.station, at: e.startedAt })
+    if (!fresh && last !== undefined && last.station === e.station) last.at = e.startedAt
+    else stops.push({ station: e.station, at: e.startedAt, ...(fresh ? { fresh: true } : {}) })
+    fresh = false
   }
   return stops.slice(-max)
 }
@@ -125,7 +138,7 @@ function trail(entries, now, c, isStill, shift) {
   for (let k = 1; k < stops.length; k++) {
     const from = stops[k - 1]
     const to = stops[k]
-    if (from === undefined || to === undefined) continue
+    if (from === undefined || to === undefined || to.fresh === true || from.station === to.station) continue
     const { path, end } = leg(indexOf(from.station), indexOf(to.station), shift)
     const isHead = k === stops.length - 1
     const age = now - to.at

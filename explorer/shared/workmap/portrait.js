@@ -70,7 +70,9 @@ export function regionOf(action) {
   const writes = action.op === 'edit' || action.op === 'write'
   switch (action.station) {
     case 'you':
-      return action.from === 'inbound' ? { region: 'ear', dir: 'in', part: 'heard' } : { region: 'mouth', dir: 'out', part: 'told' }
+      return { region: 'ear', dir: 'in', part: 'heard' }
+    case 'tells':
+      return { region: 'mouth', dir: 'out', part: 'told' }
     case 'model':
       return { region: 'cortex', dir: 'think', part: 'model' }
     case 'memory':

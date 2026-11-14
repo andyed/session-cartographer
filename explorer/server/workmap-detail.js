@@ -290,8 +290,14 @@ export function describeTool(name, input = {}, outcome = {}, station = '') {
     }
     case 'Skill':
       return { detail: clip(scrub(str(input.args)), 120) };
-    case 'ToolSearch':
-      return { detail: clip(str(input.query), 100) };
+    case 'ToolSearch': {
+      // Not a skill: the agent fetching the definition of a tool it has only by name. lot-map files it under
+      // Skills as "loading tools"; the row names the tool that did it and what it loaded.
+      const query = str(input.query)
+      const picked = /^select:(.+)$/.exec(query)
+      const loaded = picked ? picked[1].split(',').map(name => name.trim()).filter(Boolean) : []
+      return { label: 'ToolSearch', detail: picked ? `loaded ${clip(loaded.join(', '), 100)}` : query ? `searched ${quoted(query)}` : '' };
+    }
     case 'AskUserQuestion':
       return { detail: clip(str(input.questions?.[0]?.question), 120) };
     case 'SendUserFile':

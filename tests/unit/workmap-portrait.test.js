@@ -28,7 +28,8 @@ test('each call lands on one organ, with the direction its information ran', () 
   assert.equal(where(call(0, 'files', { op: 'write' })), 'hand:out');
   assert.equal(where(call(0, 'shell')), 'hand:out');
   assert.equal(where(call(0, 'you', { from: 'inbound' })), 'ear:in');
-  assert.equal(where(call(0, 'you')), 'mouth:out');
+  // The agent's reports have a station of their own now, and it is the mouth.
+  assert.equal(where(call(0, 'tells')), 'mouth:out');
   assert.equal(where(call(0, 'model')), 'cortex:think');
   assert.equal(where(call(0, 'memory')), 'hippocampus:in');
   assert.equal(where(call(0, 'memory', { op: 'edit' })), 'hippocampus:out');

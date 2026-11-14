@@ -34,8 +34,34 @@ import { describeCodexItem, describeHook, describePrompt, describeTool, describe
  * command exactly when it runs one, wherever in the line. Measured on one session: 6 of 15 Memory rows ran none.
  * A line that reads or writes a memory file is Memory either way; that rule is the classifier's and is kept.
  */
+/**
+ * lot-map files a tool that reports to the person (a task-list update, a wrap-up, a question, a file sent) under
+ * "you". Every such row is the agent's call, so it moves to "tells". Only a message the person wrote is "you".
+ */
+const toTells = (found, tool = '') => {
+  if (found.station !== 'you') return found;
+  // The desktop app's session tools share a server prefix with its reporting tools, and lot-map files the lot
+  // under "you". Reading or messaging another session is work with other agents, not a report to the person.
+  return { ...found, station: /__ccd_session_mgmt__|__ccd_window__|__ccd_sidebar__/.test(tool) ? 'agents' : 'tells' };
+};
+
+/** The tokens a model request had in its context: what it was sent, cached or not. */
+const contextTokens = usage => (usage && typeof usage === 'object' ? ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].reduce((sum, key) => sum + (Number(usage[key]) || 0), 0) : 0);
+
+/**
+ * A Claude transcript records how many tokens each request read, and not how many the model could have read.
+ * The window is 200k, or 1M on the long-context variants, so a session that has read more than 200k in one
+ * request is on a 1M window, and a model id that says so is believed. A session on a 1M window that never
+ * passed 200k is read as 200k and its ring runs up to five times too full; `source` says the size was worked out.
+ */
+function claudeWindow(model, peak) {
+  if (peak === 0) return null;
+  const long = /\[1m\]/i.test(String(model ?? '')) || peak > 200_000;
+  return { window: long ? 1_000_000 : 200_000, source: 'inferred' };
+}
+
 function classifyCall(name, input, setup) {
-  const found = classify(name, input, setup);
+  const found = toTells(classify(name, input, setup), name);
   if (name !== 'Bash' && name !== 'PowerShell') return found;
   const runs = setup.memoryCommands.some(script => runsScript(String(input.command ?? ''), script));
   if (runs) return { ...found, station: 'memory' };
@@ -102,11 +128,19 @@ function readClaude(path, agentId, setup, actions, state) {
         // The output count grows line by line; the last line of the request holds the whole of it.
         const said = describeUsage(message.usage);
         if (said !== '') requests.get(message.id).detail = said;
+        // What the request read is how full the context window was when it ran. The main loop's only: a
+        // subagent has a window of its own.
+        const read = contextTokens(message.usage);
+        if (agentId === undefined && read > 0) {
+          requests.get(message.id).ctx = read;
+          state.peak = Math.max(state.peak, read);
+        }
       }
       for (const [block, part] of (Array.isArray(message.content) ? message.content : []).entries()) {
         if (part.type !== 'tool_use') continue;
         const { station, label } = classifyCall(String(part.name), part.input ?? {}, setup);
-        const action = enrich({ station, label, from, agentId, startedAt: ts, status: 'ok', tool: String(part.name), uuid, block }, describeTool(String(part.name), part.input ?? {}, {}, station));
+        // `step` is the model request the call came from: calls of one step went out together.
+        const action = enrich({ station, label, from, agentId, startedAt: ts, status: 'ok', tool: String(part.name), uuid, block, step: typeof message.id === 'string' ? message.id : undefined }, describeTool(String(part.name), part.input ?? {}, {}, station));
         open.set(part.id, { action, input: part.input ?? {} });
         actions.push(action);
       }
@@ -150,7 +184,7 @@ function readClaude(path, agentId, setup, actions, state) {
 
 export function claudeActions(transcriptPath, setup) {
   const actions = [];
-  const state = { model: undefined, unanswered: 0 };
+  const state = { model: undefined, unanswered: 0, peak: 0 };
   readClaude(transcriptPath, undefined, setup, actions, state);
 
   // Claude Code writes each subagent's own transcript under <session>/subagents/.
@@ -166,6 +200,18 @@ export function claudeActions(transcriptPath, setup) {
     }
   }
 
+  // A report sent in the same step as other work rode beside it: the step went to that work, not to the person.
+  const steps = new Map();
+  for (const a of actions) {
+    if (a.step === undefined) continue;
+    const key = `${a.agentId ?? ''}\0${a.step}`;
+    steps.set(key, (steps.get(key) ?? false) || a.station !== 'tells');
+  }
+  for (const a of actions) {
+    if (a.station === 'tells' && a.step !== undefined && steps.get(`${a.agentId ?? ''}\0${a.step}`) === true) a.aside = true;
+    delete a.step;
+  }
+
   // A subagent's row says how much it did: the calls read from its own transcript.
   const calls = {};
   for (const a of actions) if (a.agentId !== undefined && a.tool !== undefined) calls[a.agentId] = (calls[a.agentId] ?? 0) + 1;
@@ -177,7 +223,7 @@ export function claudeActions(transcriptPath, setup) {
   }
 
   actions.sort((a, b) => a.startedAt - b.startedAt);
-  return { actions, model: state.model, agents, sessionId: basename(transcriptPath, '.jsonl'), notes: { subagent_transcripts: Object.keys(agents).length, unanswered: state.unanswered } };
+  return { actions, model: state.model, agents, context: claudeWindow(state.model, state.peak), sessionId: basename(transcriptPath, '.jsonl'), notes: { subagent_transcripts: Object.keys(agents).length, unanswered: state.unanswered } };
 }
 
 // ─── Codex ──────────────────────────────────────────────────────────────────
@@ -222,6 +268,8 @@ export function codexActions(rolloutPath, setup) {
   let subagent = false;
   let sessionId;
   let lastShown;
+  let window;
+  let lastModelAction;
 
   for (const row of rows(rolloutPath)) {
     const ts = Date.parse(row.timestamp);
@@ -251,6 +299,15 @@ export function codexActions(rolloutPath, setup) {
     // One usage record per model request: the nearest thing a rollout has to a model step.
     if (row.type === 'token_usage_record') {
       push('model', shortModel(model ?? 'model'), ts, 'ok', {}, { detail: describeUsage(row.payload?.usage) });
+      lastModelAction = subagent ? undefined : actions[actions.length - 1];
+      continue;
+    }
+    // Codex states both halves after each request: the tokens it had in context and the model's window.
+    if (row.type === 'event_msg' && row.payload?.type === 'token_count') {
+      const info = row.payload.info ?? {};
+      const read = Number(info.last_token_usage?.input_tokens);
+      if (Number.isFinite(Number(info.model_context_window)) && Number(info.model_context_window) > 0) window = Number(info.model_context_window);
+      if (lastModelAction !== undefined && Number.isFinite(read) && read > 0) lastModelAction.ctx = read;
       continue;
     }
     if (row.type !== 'event_msg' || row.payload?.type !== 'item_completed') continue;
@@ -274,7 +331,7 @@ export function codexActions(rolloutPath, setup) {
         break;
       }
       case 'McpToolCall': {
-        const c = classify(`mcp__${item.server}__${item.tool}`, parseObject(item.arguments), setup);
+        const c = toTells(classify(`mcp__${item.server}__${item.tool}`, parseObject(item.arguments), setup));
         push(c.station, c.label, startedAt, status, { tool: `${item.server}.${item.tool}` }, describeCodexItem(item, c.station));
         break;
       }
@@ -308,7 +365,7 @@ export function codexActions(rolloutPath, setup) {
   }
 
   actions.sort((a, b) => a.startedAt - b.startedAt);
-  return { actions, model, sessionId, notes: { subagent_thread: subagent, unknown_items: unknownItems } };
+  return { actions, model, sessionId, context: window === undefined ? null : { window, source: 'recorded' }, notes: { subagent_thread: subagent, unknown_items: unknownItems } };
 }
 
 // ─── One session, either provider ───────────────────────────────────────────
@@ -341,6 +398,9 @@ export function sessionWorkmap(transcriptPath) {
     totals,
     actions,
     agents: read.agents ?? {},
+    // The model's context window, for the ring round the core. Each main-loop model action carries `ctx`, the
+    // tokens its request read. `source` is `recorded` when the transcript states the window and `inferred` when not.
+    context: read.context ?? null,
     // The id the Memory Desk knows this session by: its file review and recall views are addressed with it.
     session_id: read.sessionId ?? null,
     notes: read.notes,

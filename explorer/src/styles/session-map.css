@@ -51,13 +51,17 @@
 .sm-hit.sm-core { border-radius: 50%; }
 .sm-hit:hover { border-color: var(--sm-line); }
 .sm-hit[aria-pressed='true'] { border-color: var(--sm-accent); }
+/* The ring round the core is the context window. "All stations" marks nothing there: the list's heading says it. */
+.sm-hit.sm-core[aria-pressed='true'] { border-color: transparent; }
+.sm-hit.sm-core:hover { border-color: var(--sm-line); }
 .sm-hit:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 2px; }
 
 .sm-scrub { display: grid; gap: 6px; }
 .sm-scrub input { width: 100%; min-height: 44px; margin: 0; accent-color: var(--sm-accent); }
 .sm-scrub output { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
 
-.sm-list { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* A row is read left to right: capped so the duration stays within reach of its label on a wide window. */
+.sm-list { min-width: 0; min-height: 0; max-width: 860px; display: flex; flex-direction: column; }
 .sm-list h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 8px; font-size: 20px; font-weight: 600; }
 .sm-list h2 span { color: var(--sm-meta); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .sm-list ol { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--sm-line); }

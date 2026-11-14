@@ -11,9 +11,9 @@ import { DARK, LIGHT } from '../../explorer/shared/workmap/palette.js';
 import { STATIONS, setupFrom } from '../../explorer/shared/workmap/setup.js';
 import { normalizeEvidenceEntries } from '../../explorer/server/transcript-evidence.js';
 import { eventTranscriptHref } from '../../explorer/src/components/event-navigation.js';
-import { clip, compact, runsScript, scrub } from '../../explorer/server/workmap-detail.js';
+import { clip, compact, describeTool, runsScript, scrub } from '../../explorer/server/workmap-detail.js';
 import { normalizeMemoryRoute } from '../../explorer/src/components/memory-route.js';
-import { sessionMapHref } from '../../explorer/src/components/session-map.js';
+import { contextAt, sessionMapHref, tokenText } from '../../explorer/src/components/session-map.js';
 import { actionLocation, mapHref, readMapRoute, readerHref, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, serpSummary, stampFor, stationBoxes } from '../../explorer/src/components/session-map.js';
 import { messageBlocks, resolveTranscriptLocation, safeTranscriptReturn } from '../../explorer/src/components/transcript-navigation.js';
 
@@ -73,6 +73,8 @@ function codexFixture(t) {
     { timestamp: at(1), type: 'response_item', payload: { type: 'message', id: 'msg_a', role: 'assistant', content: [{ type: 'output_text', text: 'Shipping.' }] } },
     { timestamp: at(1), type: 'response_item', payload: { type: 'custom_tool_call', id: 'ctc_1', call_id: 'c1', name: 'exec', input: 'run()' } },
     { timestamp: at(1), type: 'token_usage_record', payload: { thread_id: 'thread' } },
+    // Codex states the fill and the window after each request.
+    { timestamp: at(1.1), type: 'event_msg', payload: { type: 'token_count', info: { last_token_usage: { input_tokens: 64_600, cached_input_tokens: 13_056, output_tokens: 74 }, model_context_window: 258_400 } } },
     item(5, { type: 'CommandExecution', id: 'e1', command: ['/bin/zsh', '-lc', 'curl -s https://user:pw@example.com/private?key=1'], status: 'failed', exit_code: 7, duration: { secs: 2, nanos: 500_000_000 } }),
     item(6, { type: 'McpToolCall', id: 'e2', server: 'cartographer', tool: 'recall', arguments: '{"query":"release steps","project":"carto"}', status: 'completed', duration: { secs: 0, nanos: 400_000_000 },
       result: { content: [{ type: 'text', text: 'recall "release steps" — 3 results · call_id call-20261113T180006-mcp1-1 · turbo 286 ms' }] } }),
@@ -235,6 +237,15 @@ test('a row says what its call did, from what the transcript holds', t => {
   assert.deepEqual([row(15).op, row(15).detail, row(15).file], ['read', 'read · lines 99–130', undefined]);
   assert.deepEqual([row(17).label, row(17).detail, row(17).spawned], ['Read the docs', 'web-fetch · 1 tool use · 65k tokens', 'abc123']);
   assert.equal(row(19).detail, '2 steps · Tag the release');
+  // A task-list update is the agent telling the person, not the person: it is filed beside "you", not under it.
+  assert.equal(row(19).station, 'tells');
+  assert.deepEqual(map.actions.filter(a => a.station === 'you').map(a => a.from), ['inbound']);
+
+  // Loading a tool's definition is not a skill, and the row says what it is and what it loaded.
+  const loading = (query) => describeTool('ToolSearch', { query }, {}, 'skills');
+  assert.deepEqual(loading('select:TaskStop'), { label: 'ToolSearch', detail: 'loaded TaskStop' });
+  assert.deepEqual(loading('select:mcp__a__b, Monitor'), { label: 'ToolSearch', detail: 'loaded mcp__a__b, Monitor' });
+  assert.deepEqual(loading('notebook jupyter'), { label: 'ToolSearch', detail: 'searched “notebook jupyter”' });
 
   assert.equal(map.actions.find(a => a.station === 'model').detail, '464 tokens out · 93k context');
   assert.equal(map.actions.find(a => a.station === 'hooks').detail, 'added context · A preview server is running.');
@@ -339,9 +350,9 @@ test('a station the session never used gets no ink, and the others keep their pl
   }
   // Control: without `present` every station is drawn, so the absence above is the option's doing.
   assert.ok(STATIONS.every(({ id }) => label(all, id) !== undefined));
-  // Ten spokes drawn in the spoke colour without the option, five with it.
+  // One spoke per station drawn in the spoke colour without the option, five with it.
   const spokes = svg => (svg.match(new RegExp(`stroke="${DARK.spoke}"`, 'g')) ?? []).length;
-  assert.equal(spokes(all), 10);
+  assert.equal(spokes(all), STATIONS.length);
   assert.equal(spokes(some), 5);
 
   const boxes = stationBoxes(mapGeometry(setup), present);
@@ -435,4 +446,35 @@ test('the address round-trips, and a session that crosses midnight names the day
   const noon = new Date(2026, 10, 12, 12, 0, 0).getTime();
   assert.equal(stampFor({ first: noon, last: noon + 3_600_000 })(noon), '12:00:00');
   assert.equal(stampFor({ first: noon, last: noon + 86_400_000 })(noon), 'Nov 12 12:00:00');
+});
+
+test('the context ring is read from the recording: tokens per request, and the window where it is stated', t => {
+  // Codex records both halves, so nothing is worked out.
+  const codex = sessionWorkmap(codexFixture(t));
+  assert.deepEqual(codex.context, { window: 258_400, source: 'recorded' });
+  assert.deepEqual(contextAt(codex, T0 + 60_000), { tokens: 64_600, window: 258_400, percent: 25, source: 'recorded' });
+  // Before the first request there is no figure, and no ring.
+  assert.equal(contextAt(codex, T0 + 500), null);
+
+  // Claude records the tokens each request read. 2 + 44,776 + 47,856 = 92,634, under 200k, so a 200k window.
+  const claude = sessionWorkmap(enrichedFixture(t));
+  assert.deepEqual(claude.context, { window: 200_000, source: 'inferred' });
+  const now = contextAt(claude, T0 + 60_000);
+  assert.equal(now.tokens, 92_634);
+  assert.ok(Math.abs(now.percent - 46.317) < 0.001);
+  // A subagent has a window of its own: its requests carry no figure for this ring.
+  assert.equal(claude.actions.filter(a => a.agentId !== undefined && a.ctx !== undefined).length, 0);
+
+  // One request past 200k and the window is the long one. A compaction is the next request reading far less.
+  const long = { context: { window: 1_000_000, source: 'inferred' }, actions: [
+    { station: 'model', startedAt: 10, ctx: 520_000 },
+    { station: 'shell', startedAt: 20 },
+    { station: 'model', startedAt: 30, ctx: 32_000 },
+    { station: 'model', startedAt: 40, ctx: 2_000_000, agentId: 'a1' },
+  ] };
+  assert.equal(contextAt(long, 25).percent, 52);
+  assert.equal(Math.round(contextAt(long, 35).percent * 10) / 10, 3.2);
+  assert.equal(contextAt(long, 45).tokens, 32_000, 'a subagent request moved the ring');
+  assert.equal(contextAt({ context: null, actions: long.actions }, 45), null);
+  assert.deepEqual([999, 64_600, 934_732, 1_000_000].map(tokenText), ['999', '65k', '935k', '1M']);
 });

@@ -23,10 +23,11 @@ const ratio = (a, b) => {
 
 test('the route is the sequence of stations, oldest first, with the model left out', () => {
   const legs = at => flowState(session, T0 + at * 1000).legs.map(l => `${l.from}>${l.to}`);
-  assert.deepEqual(legs(7.5), ['you>files', 'files>shell', 'shell>files', 'files>shell', 'shell>web']);
+  // The person is not a stop: the route is where the agent's work went after the message.
+  assert.deepEqual(legs(7.5), ['files>shell', 'shell>files', 'files>shell', 'shell>web']);
   // Earlier in the session the route is shorter: a leg appears when its call starts, not before.
-  assert.deepEqual(legs(4.5), ['you>files', 'files>shell']);
-  assert.deepEqual(legs(1.5), []);
+  assert.deepEqual(legs(4.5), ['files>shell']);
+  assert.deepEqual(legs(2.5), []);
 });
 
 test('a leg holds, then fades, then goes; a replay stretches both', () => {
@@ -55,7 +56,7 @@ test('every size keeps the route, down to the glyph', () => {
       // A leg is a path with no fill, a round cap, and a colour on the way to the trail colour; spokes and copper are not round-capped.
       return [...svg.matchAll(/<path d="([^"]+)" fill="none" stroke="(#[0-9a-f]{6})" stroke-width="([\d.]+)" stroke-linecap="round"/g)].map(m => ({ d: m[1], colour: m[2], width: Number(m[3]) }));
     };
-    assert.equal(routeMarks(160).length, 5, `${kind} at 160 px`);
+    assert.equal(routeMarks(160).length, 4, `${kind} at 160 px`);
     // A glyph keeps the three newest legs, and each is at least 1.5 px wide on screen.
     for (const size of [64, 24]) {
       const marks = routeMarks(size);
@@ -137,6 +138,7 @@ test('the tape is the last calls in order, one lane per station, with a subagent
   const rows = tapeOf(actions, T0 + 11_500, 60);
   // In order, without the model's steps.
   assert.deepEqual(rows.map(r => r.station), ['you', 'files', 'shell', 'files', 'shell', 'web', 'web', 'shell', 'shell', 'files']);
+  assert.deepEqual(rows.map(r => r.person), [true, false, false, false, false, false, false, false, false, false]);
   assert.deepEqual(rows.slice(-2).map(r => r.status), ['err', 'run']);
   assert.equal(tapeOf(actions, T0 + 11_500, 3).length, 3);
   // Stopped earlier, the tape ends earlier: it never shows a call that had not started.
@@ -146,9 +148,10 @@ test('the tape is the last calls in order, one lane per station, with a subagent
   const lanes = [...svg.matchAll(/<text [^>]*>([^<]+)<\/text>/g)].map(m => m[1]);
   // Lanes follow the hub's order, and only stations in view get one.
   assert.deepEqual(lanes, STATIONS.map(s => s.id).filter(id => rows.some(r => r.station === id)).map(id => names[id]));
-  // One mark per call; the subagent's two and the running one are hollow; the failure is red.
+  // One mark per call. The person's message is a diamond, not a dot; the subagent's two and the running one are hollow; the failure is red.
   const marks = [...svg.matchAll(/<circle cx="([\d.]+)" cy="([\d.]+)" r="[\d.]+" fill="(#[0-9a-f]{6})"( stroke="(#[0-9a-f]{6})")?/g)];
-  assert.equal(marks.length, rows.length);
+  assert.equal(marks.length, rows.length - 1);
+  assert.equal([...svg.matchAll(/<path d="M[\d.]+ [\d.]+L[\d.]+ [\d.]+L[\d.]+ [\d.]+L[\d.]+ [\d.]+Z" fill="#edf0f5"\/>/g)].length, 1);
   assert.equal(marks.filter(m => m[5] !== undefined).length, 3);
   assert.equal(marks.filter(m => m[3] === DARK.red).length, 1);
   // Left to right is oldest to newest, one equal step per call.
@@ -162,4 +165,31 @@ test('the tape is the last calls in order, one lane per station, with a subagent
   assert.equal(tapeHeight(rows.slice(0, 2), fixed), tapeHeight(rows, fixed));
   assert.ok(tapeHeight(rows.slice(0, 2)) < tapeHeight(rows));
   for (const [, fill] of svg.matchAll(/<text [^>]*fill="(#[0-9a-f]{6})"/g)) assert.ok(ratio(fill, DARK.ground) >= 8);
+});
+
+test('the person is never a stop on the route, and a message starts it over', () => {
+  // Work, a report, then the person speaks, then more work. lot-map drew shell>you and you>files here.
+  const step = (s, station, more = {}) => call(s, station, more);
+  const turn = [
+    step(0, 'you', { from: 'inbound' }), step(1, 'files'), step(2, 'shell'), step(3, 'tells'),
+    step(4, 'you', { from: 'inbound' }), step(5, 'files'), step(6, 'web'),
+  ];
+  const state = flowState(turn, T0 + 6500);
+  assert.deepEqual(state.legs.map(l => `${l.from}>${l.to}`), ['files>shell', 'shell>tells', 'files>web']);
+  assert.ok(state.legs.every(l => l.from !== 'you' && l.to !== 'you'));
+  // The person's message still lights its own station and still counts.
+  assert.equal(state.stations.you.count, 2);
+  assert.equal(state.stations.tells.count, 1);
+
+  // A task-list update sent in the same step as a command rode beside it: the step went to the shell.
+  const beside = [step(0, 'you', { from: 'inbound' }), step(1, 'files'), step(2, 'tells', { aside: true }), step(2, 'shell'), step(3, 'tells')];
+  assert.deepEqual(flowState(beside, T0 + 3500).legs.map(l => `${l.from}>${l.to}`), ['files>shell', 'shell>tells']);
+  // Control: without the mark the same calls make the bounce lot-map drew.
+  const bounce = beside.map(a => ({ ...a, aside: undefined }));
+  assert.deepEqual(flowState(bounce, T0 + 3500).legs.map(l => `${l.from}>${l.to}`), ['files>tells', 'tells>shell', 'shell>tells']);
+
+  // On the tape the agent's line breaks at the person's message and skips the report sent beside other work.
+  const svg = drawTape(tapeOf(turn, T0 + 6500, 60), { width: 460, names });
+  const lines = [...svg.matchAll(/<path d="(M[^"]+)" fill="none" stroke="#[0-9a-f]{6}" stroke-width="1.3"/g)].map(m => m[1].split('L').length);
+  assert.deepEqual(lines, [3, 2], 'one line per turn: files-shell-tells, then files-web');
 });
