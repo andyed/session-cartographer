@@ -1,8 +1,9 @@
 # Third-Party Notices
 
-This project incorporates portions of third-party software, both under the MIT
-License. Portions are derived from claude-code-session-bridge by Shreyas Patil, and
-portions are adapted from claude-devtools by matt1398. Full license texts are
+This project incorporates portions of third-party software, all under the MIT
+License. Portions are derived from claude-code-session-bridge by Shreyas Patil,
+portions are adapted from claude-devtools by matt1398, and the session map's
+drawing is forked from lot-map by Aleksei Volodin. Full license texts are
 reproduced below. The project's own license is in [LICENSE](LICENSE).
 
 ---
@@ -78,6 +79,45 @@ SOFTWARE.
 MIT License
 
 Copyright (c) 2026 Shreyas Patil
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## lot-map
+
+**Source:** https://github.com/alexeyw/lot-map, by Aleksei Volodin
+**License:** MIT
+**What was derived:** the session map in the Explorer. `explorer/shared/workmap/`
+(`classify.js`, `draw.js`, `feed.js`, `palette.js`, `setup.js`, `text.js`) is a
+fork of lot-map 0.6.0 at commit d3102bf, converted from TypeScript. Changed here:
+the palette, the option that leaves unused stations undrawn, and the exported
+station geometry. lot-map's own input, a Claude Code mod, was not taken; the map
+is drawn from recorded transcripts instead.
+
+**MIT License (lot-map):**
+
+```
+MIT License
+
+Copyright (c) 2026 Aleksei Volodin
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

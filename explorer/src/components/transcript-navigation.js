@@ -28,7 +28,7 @@ export function safeTranscriptReturn(value, base = '/') {
   if (!value || !value.startsWith(base) || value.startsWith('//') || value.includes('\\')) return null;
   const url = new URL(value, 'http://explorer.invalid');
   const relative = url.pathname.slice(base.length).replace(/^\/|\/$/g, '');
-  return ['memory', 'timeline', ''].includes(relative) ? `${url.pathname}${url.search}` : null;
+  return ['memory', 'timeline', 'map', ''].includes(relative) ? `${url.pathname}${url.search}` : null;
 }
 
 // Pair only visible, explicitly linked operations. Research owns its own bundles.
