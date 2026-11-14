@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { Board } from '../types'
-import type { Entry } from '../types'
+import type { Board } from '../../types'
+import type { Entry } from '../../types'
 import { COLOR_NAMES, TRAIL_FADE_MS, TRAIL_HOLD_MS, classify, clean, describeNow, drawMap, firstLine, foldRows, formatMs, memoryIds, nowParts, routeOf, setupFrom, shortModel, taskNotice, taskOf } from './map'
 import { hasGlyph } from './raster'
 import { stringsFor } from './text'
@@ -10,7 +10,7 @@ import { stringsFor } from './text'
 const hubOf = async (ui: { findAll: (q: { type: string }) => Promise<{ props: Record<string, unknown> }[]> }): Promise<string> => String((await ui.findAll({ type: 'Svg' })).at(-1)?.props.source)
 
 const PANE = {
-  plugin: 'carto-map',
+  plugin: 'session-cartographer',
   component: 'Pane',
   requestId: 'carto-map',
   props: { title: 'Map', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },

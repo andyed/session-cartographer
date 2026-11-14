@@ -69,6 +69,17 @@ is a finding from this landing.
 env -u CLAUDE_SESSION_ID -u CLAUDE_CODE_SESSION_ID -u CODEX_SESSION_ID -u CARTOGRAPHER_SESSION_ID node --test tests/unit/*.test.js
 ```
 
+## After this note: the pane moved into the plugin
+
+The commit after `f079c0c` moves `mods/carto-map/` to
+`plugins/session-cartographer/hooks/carto-map/` and names its module in the plugin's
+`hooks/hooks.json` beside the command hooks. Read every `mods/carto-map` path
+above as that folder, and the test command as
+`claude plugin test plugins/session-cartographer`. A Claude Code older than the
+desktop app's engine refuses the module and keeps the command hooks: checked on
+the Mac's terminal `claude` 2.1.277, not on Windows. If capture stops on BIGFU
+after pulling, look there first.
+
 ## Seeing it
 
 `/map` in the Explorer, then a session. `Hub` is the new drawing;

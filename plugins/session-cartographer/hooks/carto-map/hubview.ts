@@ -4,7 +4,7 @@
 // calls another way: what the agent tells the person is the outward lane of You, and a call into what the person
 // has open (their own Chrome, tabs, terminal, desktop) is at a station of its own, Your screen. The board keeps
 // lot-map's stations, so the terminal's rows and picture are as they were; this file is the other reading.
-import type { Board, Entry, StationId } from '../types'
+import type { Board, Entry, StationId } from '../../types'
 import { drawHub, hubLayout, hubState } from './workmap/hub.js'
 import type { HubAction } from './workmap/hub'
 import { drawRibbon, drawSlotRibbon, ribbonCapacity, ribbonOf } from './workmap/ribbon.js'

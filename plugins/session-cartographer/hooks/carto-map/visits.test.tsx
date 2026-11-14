@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 const PANE = {
-  plugin: 'carto-map',
+  plugin: 'session-cartographer',
   component: 'Pane',
   requestId: 'carto-map',
   props: { title: 'Map', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
@@ -90,4 +90,26 @@ test('the terminal pane is as lot-map drew it: no station buttons, no page list'
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
   expect((await ui.findAll({ type: 'Button' })).filter(b => String(b.props.key).startsWith('station-')).length).toBe(0)
   await ui.unmount()
+})
+
+// The pane is one part of a plugin a person may want for its recall alone.
+test('with the work map switched off, the plugin opens no pane and adds no command', { options: { workMap: false } }, async ($, on) => {
+  let opened = 0
+  let registered = 0
+  on('ui.open', () => {
+    opened++
+    return { value: { isPlaced: true } }
+  })
+  on('command.register', () => {
+    registered++
+    return { value: { command: 'carto-map' } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('tool.call', () => ({ result: {} }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/a/b/content.py' })
+
+  expect(opened).toBe(0)
+  expect(registered).toBe(0)
 })

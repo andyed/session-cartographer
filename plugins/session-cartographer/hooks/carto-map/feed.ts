@@ -1,6 +1,6 @@
 // The rows under the map: what is folded into one, what a background task says of itself, and the line of what runs now.
 // Nothing here touches the engine.
-import type { Board, Entry, Status } from '../types'
+import type { Board, Entry, Status } from '../../types'
 import { shortModel } from './classify'
 import type { Strings } from './text'
 

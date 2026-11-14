@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Copies the drawing the Explorer's session map uses into the carto-map mod.
+# Copies the drawing the Explorer's session map uses into the sidebar pane that ships in the plugin.
 #
 # A mod loads only its own files, so the pane cannot import explorer/shared/workmap. It carries
 # byte-identical copies instead, and tests/unit/carto-map-workmap-sync.test.js fails when one drifts.
@@ -7,9 +7,9 @@
 set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 from="$root/explorer/shared/workmap"
-to="$root/mods/carto-map/hooks/workmap"
+to="$root/plugins/session-cartographer/hooks/carto-map/workmap"
 mkdir -p "$to"
 for name in hub.js kinds.js ribbon.js tint.js board.js palette.js setup.js text.js; do
   cp "$from/$name" "$to/$name"
 done
-echo "carto-map: copied 8 files into mods/carto-map/hooks/workmap"
+echo "carto-map: copied 8 files into plugins/session-cartographer/hooks/carto-map/workmap"

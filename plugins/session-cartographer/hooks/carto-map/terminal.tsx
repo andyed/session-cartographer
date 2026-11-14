@@ -1,7 +1,7 @@
 // The terminal picture (`terminalView: picture`): the desktop map's drawing painted to pixels, and the loop of frames that keeps it moving.
 import type { EngineInterface, RenderElement, RenderInputOf } from 'claude-code'
 
-import type { Board } from '../types'
+import type { Board } from '../../types'
 import { describeNow, drawMap } from './map'
 import type { Setup } from './map'
 import { endlessEvery, imageSource, nextChangeIn, paint, parseMap, scaleFor } from './raster'

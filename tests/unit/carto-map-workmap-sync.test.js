@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const shared = path.join(root, 'explorer/shared/workmap');
-const mod = path.join(root, 'mods/carto-map/hooks/workmap');
+const mod = path.join(root, 'plugins/session-cartographer/hooks/carto-map/workmap');
 
 // A mod loads only its own files, so the pane carries copies of the drawing the Explorer's session map uses.
 // The Explorer page and the pane are one drawing only while those copies are the same bytes.

@@ -1,6 +1,6 @@
 // What the map is made of and what the person set: the stations, and the mod's options made ready to use.
 // Nothing here touches the engine.
-import type { StationId } from '../types'
+import type { StationId } from '../../types'
 import { COLOR_NAMES } from './palette'
 import type { Palette } from './palette'
 import { stringsFor } from './text'

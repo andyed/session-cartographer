@@ -1,13 +1,13 @@
 // The map's picture in a terminal: the painter that makes it, and the pane that shows it to a person who asked for it.
 import { expect, mock, test } from 'claude-code/testing'
 
-import type { Board, Entry } from '../types'
+import type { Board, Entry } from '../../types'
 import { TRAIL_FADE_MS, TRAIL_HOLD_MS, drawMap, setupFrom } from './map'
 import { ENDLESS_FOR_MS, FASTEST_MS, MAX_IMAGE_BYTES, endlessEvery, fromBase64, imageSource, nextChangeIn, paint, parseMap, valueAt } from './raster'
 import { stringsFor } from './text'
 
 const PANE = {
-  plugin: 'carto-map',
+  plugin: 'session-cartographer',
   component: 'Pane',
   requestId: 'carto-map',
   props: { title: 'Map', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },

@@ -1,6 +1,6 @@
 // Every word the map shows, in each language it speaks.
 // A new language is one more table here and one more value of `language` in plugin.json.
-import type { StationId } from '../types'
+import type { StationId } from '../../types'
 
 export type Strings = {
   title: string

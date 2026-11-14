@@ -1,6 +1,6 @@
 // Which station an action belongs to and what to call it: a name, never content.
 // Nothing here touches the engine.
-import type { StationId } from '../types'
+import type { StationId } from '../../types'
 import type { Setup } from './setup'
 import type { Strings } from './text'
 

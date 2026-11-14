@@ -1,10 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
-import type { Board, Entry } from '../types'
+import type { Board, Entry } from '../../types'
 import { buttonCount, CELL_PX, hubActions, hubPicture, hubTotals, isAt, PICTURE_WIDTH, pictureWidth, ribbonPicture, ribbonRuns, ribbonSlots, shownStation, slotRibbonPicture } from './hubview'
 
 const PANE = {
-  plugin: 'carto-map',
+  plugin: 'session-cartographer',
   component: 'Pane',
   requestId: 'carto-map',
   props: { title: 'Map', isFocused: false, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },

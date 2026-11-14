@@ -164,5 +164,8 @@
         ]
       }
     ]
-  }
+  },
+  "modules": [
+    "./carto-map/register.tsx"
+  ]
 }

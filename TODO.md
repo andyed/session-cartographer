@@ -182,7 +182,7 @@ Open question worth settling before building: whether tracks are per-project (ch
 Open after adoption:
 - [ ] **The Board layout still reads the session the old way.** It has Tells you as a connector and no Your screen, while the ribbon and tape beside it are two-way. Either give the board the same reading or retire it.
 - [ ] **"Your screen" is seated in the browser, not on the server.** `seatScreen` (`kinds.js`) moves the calls in `SessionMap`; `classify` and `STATIONS` still file them under Browser, Network and Shell, and `/api/workmap`'s `present` does not name the station. Move the rule to the server, and check Codex's MCP tool names.
-- [x] **The sidebar pane (`mods/carto-map`) draws the same hub.** On the desktop, editor and mobile surfaces the pane is the ribbon over the hub, drawn by byte-identical copies of `explorer/shared/workmap` in `mods/carto-map/hooks/workmap/` (a mod loads only its own files; `scripts/sync-carto-map-workmap.sh` copies them and `tests/unit/carto-map-workmap-sync.test.js` fails when one drifts). `hooks/hubview.ts` reads lot-map's board the hub's way: what the agent told is taken out of You's count (`told`), a call into what the person has open is Your screen's (`yours`), a background task reporting back is a wake at Hooks, and the desktop app's tools for other sessions are Agents'. The hub has no words at a pane's width, so the line under it says the context figure and the model. A redraw is booked 6, 20 and 61 s after each call so an idle session's picture cools. 77 mod tests pass on the app's engine (2.1.325), it type-checks against the engine's types, and it was loaded as a dev mod in the session that built it. Open:
+- [x] **The sidebar pane (`plugins/session-cartographer/hooks/carto-map`, moved there from `mods/carto-map` on 2026-11-14) draws the same hub.** On the desktop, editor and mobile surfaces the pane is the ribbon over the hub, drawn by byte-identical copies of `explorer/shared/workmap` in `mods/carto-map/hooks/workmap/` (a mod loads only its own files; `scripts/sync-carto-map-workmap.sh` copies them and `tests/unit/carto-map-workmap-sync.test.js` fails when one drifts). `hooks/hubview.ts` reads lot-map's board the hub's way: what the agent told is taken out of You's count (`told`), a call into what the person has open is Your screen's (`yours`), a background task reporting back is a wake at Hooks, and the desktop app's tools for other sessions are Agents'. The hub has no words at a pane's width, so the line under it says the context figure and the model. A redraw is booked 6, 20 and 61 s after each call so an idle session's picture cools. 77 mod tests pass on the app's engine (2.1.325), it type-checks against the engine's types, and it was loaded as a dev mod in the session that built it. Open:
   - [x] **The owner looked at the loaded pane (2026-11-14)** and it was not right: only the stations already used were drawn, so early in a session it was You, Model and an empty core in an empty picture; there were no names; and "the model name is important in the center". Fixed: the live pane draws every station from the first call; the core says the model first, at every width it fits at 16 px, in the Explorer too (the core grew from 40 to 48 to hold it); You's two counts stand beside their lanes ("19 said", "55 told") because one line of both ran into the neighbours' names; a station with no calls has no "0"; the ribbon has a floor rule so two cells read as a strip.
   - [x] **The pane's width, measured (2026-11-14).** The desktop stretches a picture to the pane and tells the mod only `bodyColumns`. The owner's capture: 44 cells, the picture 465 CSS px across (930 px at 2x), so 10.6 px a cell. `CELL_PX` is 10 (was a guessed 7, which drew his pane for 308 px: no names, no counts). One pane on one Mac: a different text size or zoom moves it, and the mod has no way to see that.
   - [x] **Counts in the picture at every pane width** (the owner: "the old system accumulated counts in the grid"). lot-map's hub wrote each station's running count; the new one wrote them only with names, from 400 px. From 280 px a station now has its count alone, and You's two counts stand beside their lanes without the words. Under 280 px there is none: three digits run into the next station. Checked in a render at 440, 340 and 280 px on a 1,192-call session; not seen in the reloaded pane.
@@ -212,8 +212,222 @@ Open after adoption:
   - [ ] **Every station is still a button** (plus Your screen), as the pane had it. The Directions page mocks the other choice, three page buttons only; dropping the rest is the owner's call.
   - [ ] **A terminal and the light theme keep lot-map's hub and its ten stations.** The new hub has no light colours, and `layout: you-bottom` does not turn it.
   - [ ] **"Your screen" and "background task reported" are English only**; `text.ts` has six other languages.
-  - [ ] **The terminal's `claude` (2.1.277 on this Mac) refuses the mod** (`$` passed to an imported `update`), as it did before this change; only the app's engine loads it.
-  - [ ] **Install it for real**: it runs from one session's dev-mods folder. lot-map is still installed beside it.
+  - [ ] **The terminal's `claude` (2.1.277 on this Mac) refuses the pane's module** (`## Archival recall is buried by recency weighting
+
+**Working plan: [docs/ARCHIVAL_RECALL.md](docs/ARCHIVAL_RECALL.md)** (2026-09-24) — frecency over own activity, query-aware decay, and the age-curve measurement that gates both.
+
+Evidence gathered 2026-09-07 while adding the prompt-history source.
+
+A near-exact text match on a January prompt ranks **1st in its own source
+ladder** (verified directly against `bm25-search.awk`) and still does not appear
+in an unscoped result set on either engine. Two effects compound:
+
+- Ebbinghaus decay at `CARTOGRAPHER_DECAY_LAMBDA=0.001` (~30-day half-life):
+  `exp(-0.001 * 5687h) = 0.0034` for a 237-day-old record versus ~0.98 for a
+  recent one — a ~290x handicap before relevance is considered.
+- Promote-on-reuse resets an item's effective age to its last access, so a
+  recently touched row gets a further ~50x over an untouched contemporary, and
+  the 10%-of-top-score noise trim then cuts everything below it. Observed: a
+  173-item in-window pool collapsing to 2 results.
+
+Scoping with `--since`/`--before` reaches the archive correctly (prompts rank
+1-4), so the material is not lost — only unreachable by default.
+
+A decay floor was tried and reverted: at 0.02 it left a 50x age handicap, did
+not change the observed outcome, and is a global ranking change that should not
+ship on a guess. The right fix needs a measured cohort — the truth-query
+fixtures plus live exact-use data — not another constant chosen by eye.
+
+# Session Cartographer — TODO
+
+## [x] Indexing outcomes are unobservable — reject vs fail vs skip (resolved 2026-08-30)
+
+Before this fix, `index-event.sh` had **three** `exit 0` paths and a caller that
+could not tell them apart, so a milestone that never reached Qdrant reported
+the same as one that did. Genuine failures were the only well-handled case:
+they went through
+`fail_index` → `record_failure` → exit 75 and landed in `.carto/index-errors.jsonl`.
+Everything else was silent.
+
+- **Gate reject** (old line ~161). `PE_GATE_REJECT` defaults to 0.85 cosine;
+  above it the script did a bare `exit 0`. Deliberate, but unrecorded — the score
+  that caused it is discarded, so the threshold has never been tunable against
+  evidence, and nobody can answer "how much are we dropping."
+- **Precondition skip** (old lines ~60, ~94, ~127). Missing `jq`, or an empty
+  `EVENT_ID`/`TEXT` after parse, exited 0 with **no record at all**. This was a
+  real failure wearing a success exit code. A malformed record and a healthy
+  one are indistinguishable from outside.
+- **Success** (old line ~198).
+
+**Evidence.** 572 wrapups in `session-milestones.jsonl`. Sampling 8 across two
+months, 3 are absent from Qdrant (07-11, 07-25, 08-16) — so this is
+intermittent and long-standing, not new. Both pointbreak wrapups from the
+2026-08-30 session are absent while that same session's hook events
+(`tool_bash`, `tool_file_edit`) indexed normally, which localizes it to the
+milestone path rather than the pipeline. Practical cost: those syntheses are
+durable in the JSONL and invisible to semantic `/remember`, which is the
+retrieval path they exist to serve.
+
+**Resolved:** `index-event.sh` now offers an opt-in one-line JSON receipt with
+`event_id`, `outcome`, stage, point id, and gate score/threshold where relevant.
+Malformed input is a nonzero precondition failure, service failures remain
+retryable exit 75, ordinary novelty rejection stays exit 0 but is recorded in
+`.carto/index-rejects.jsonl`, and success is emitted only after Qdrant read-back
+confirms the exact event id. Authored `session_wrapup` milestones bypass the
+generic novelty gate.
+
+- **[x] Fix `/wrapup` Step 2 and its write/index boundary.** The old direct GET
+  did read `payload.event_id`, but reduced every miss to the same ambiguous
+  `NOT INDEXED` result; a separate diagnostic attempt to scroll on `milestone`
+  was invalid because the indexed payload does not carry that field.
+  `record-wrapup.sh` now reports durable JSONL logging and semantic indexing as
+  separate states, while Step 2 verifies the configured collection against the
+  exact event id from that receipt.
+
+## Trustmap follow-ups (added 2026-08-15)
+
+`/trustmap` derives `autoMode.environment` from the corpus and ships without a
+way to tell whether the entries it proposed actually helped. The items below
+close that gap and the ones a 2026-08-16 head-to-head with the built-in wizard
+exposed in the merge.
+
+- **[ ] Log classifier denials, and make `/trustmap` self-correcting.** Right now the skill proposes trust for everything you *touched*, which is a superset of what you were *blocked on* — most entries buy nothing. Claude Code ships a [`PermissionDenied` hook](https://code.claude.com/docs/en/hooks#permissiondenied) and records denials under `/permissions` → **Recently denied**; the built-in wizard reads a "Recent auto-mode denial reasons" section that cartographer has no equivalent of. Adding a hook that appends denials to the event log would let the second run propose entries for destinations that actually got blocked, and would give the first honest answer to "did applying this reduce denials." That measurement is the whole argument for the tool, and nothing currently makes it.
+- **[ ] Validate against a second corpus.** Every heuristic in `trust-digest.js` is tuned on one machine: the coreutils stoplist, the `DATA_NOISE` filter, the data-directory regex, the cold-start thresholds. Two bugs surfaced only because it ran against 73k real shell events (`const` outranking `adb`; truncated URLs reading as internal hostnames), so a different tree will surface a third. Needs a run on someone else's corpus before the numbers in the README are claimed as general.
+- **[ ] Recommend skills and plugins from the same corpus.** `trust-digest.js` already derives a frequency-ranked inventory of what you actually run — `adb` 966, `ffmpeg` 958, `xcodebuild` 436, `netlify` 96 — and then uses it for exactly one purpose. That inventory is also the best available answer to "which skills would earn their context cost here," which is currently guessed at install time and never revisited. A `--suggest` mode could join the CLI/host/project distribution against the installed skill set and the marketplace, and report both directions: tools used heavily with no skill covering them, and skills installed that nothing in 100k events ever exercised. The second half matters more — an unused skill is a permanent tax on every prompt, and nothing today measures it. Shares the retrieval-telemetry problem with the access ledger: recommending is easy, knowing whether the recommendation was taken and helped is the part that needs a feedback loop.
+- **[ ] Audit `permissions.allow` for classifier-bypassing rules.** Auto mode suspends broad rules that grant arbitrary execution (`Bash(*)`, wildcarded interpreters) but carries *narrow* ones through, resolving them before the classifier ever runs. A head-to-head against the built-in wizard on 2026-08-15 found it flags these and proposes removals — it caught `Bash(python3 -c ":*)` in live user settings, a wildcarded interpreter that is arbitrary Python execution with no classifier review. `/trustmap` has no equivalent and should: the check is a scan of `permissions.allow` for `*`-terminated interpreter prefixes, and it protects the same boundary the environment block does. See `docs/AUTO_MODE.md` for the full comparison. **Do not scope it to `settings.json`.** A 2026-08-16 re-run showed the wizard's version has two gaps worth not inheriting: it re-proposed the `python3 -c` removal against settings that no longer contained it (receipt: `permissionsAllowNotFound` — a no-op reported as a finding, so match the literal rule text rather than a normalized shape), and it reads `settings.json` only, while `settings.local.json` carries `permissions.allow` too and held the rules that actually bypassed the classifier on the reference machine — wildcarded `curl`, `printenv`, `echo`, `security find-generic-password`, and one rule with a literal API key in its text. A secret embedded in an allow rule is its own finding and should be reported as one; the scan already has the string in hand.
+- **[ ] Classify foreign environment entries by slot, and flag collisions.** The merge preserves foreign entries verbatim, which is correct against clobbering and useless against a foreign entry that is *wrong*: `/trustmap` appends the org it found next to the wizard's "no additional orgs configured" and the classifier reads a contradiction. `SKILL.md` now tells the agent to check three slots by hand (`Trusted repo`, `Primary use of Claude Code`, `Source control`), but hand-checking prose is exactly what the digest should be doing. Entries are `**Slot**: value`-shaped in practice, so parsing the slot name is cheap; emit a `provenance.conflicts` array pairing each proposal with the foreign entry claiming the same slot. Two cases deserve their own flag rather than a generic collision: a `Trusted repo` whose value is a literal path (the built-in default is dynamic, so pinning it at user scope narrows every other project), and any entry asserting `None configured` for a slot the digest has rows for.
+- **[ ] Fold worktree cwds into their parent project.** A git worktree gets its own `~/.claude/projects/…--claude-worktrees-<name>` transcript directory, and cartographer's `project` field is cwd-derived, so sessions run from a worktree attribute to a separate project from the repo they're editing. That splits the corpus for `/focus` and `/remember`, and it is what let the built-in wizard report "only 1 transcript available" for a project holding nine. `git rev-parse --git-common-dir` resolves a worktree to its parent; the same normalization belongs wherever `project` is derived. Related to the 23 "last recorded cwd no longer exists" skips the digest already warns about — a deleted worktree looks identical to a deleted project.
+- **[ ] Test that every script a skill references exists under the plugin root.** `trust-digest.js` shipped to the repo root only and was invisible to the installed plugin, where skills resolve against `CLAUDE_PLUGIN_ROOT`. `/trustmap` worked in a checkout and would have failed at step 0 for every installed user. Caught by hand while cutting 0.6.0, not by a test. A cheap check — grep skill bodies for `$ROOT/scripts/…` and assert each path exists under `plugins/session-cartographer/` — closes a whole class of "works on my checkout" bugs.
+- **[ ] Reconsider the `git.overleaf.com` org grouping.** Remotes are grouped as `host/first-path-segment`, which is right for GitHub and wrong for Overleaf, where the first segment is a per-document id. Harmless today (they surface at 1 hit each and the skill is told to question low counts), but the grouping rule is host-agnostic and will be wrong for any host that isn't org-first.
+
+## Memory research — borrowable ideas + benchmark context (added 2026-04-24)
+
+### Adjacent projects to track
+
+- **[CC Switch](https://github.com/farion1231/cc-switch)** — Cross-platform desktop manager for Claude Code, Codex, OpenCode, OpenClaw, Hermes, and other coding agents. Broader than Cartographer (provider/configuration, MCP, skills, prompts, proxying, and usage), but its **Session Manager** overlaps directly: cross-source conversation-history browsing, search, and restore. Track its session/workspace information architecture and multi-agent normalization choices; treat it as an adjacent orchestration shell, not a direct memory/retrieval engine.
+- **[Claude HUD](https://github.com/jarrodwatts/claude-hud)** — Claude Code statusline plugin that derives live context health, tool activity, running-agent state, todo progress, compactions, and session timing from native statusline data plus transcript JSONL. Relevant prior art for Cartographer's live/ongoing-work lens: track its transcript-to-status state model, information compression, and stale/running-state handling. It observes the current session rather than providing Cartographer-style historical search or cross-session recall.
+- **[Codex plugin for Claude Code](https://github.com/openai/codex-plugin-cc)** — OpenAI-maintained bridge that invokes the machine's existing Codex CLI/app-server runtime from Claude Code for reviews, background delegation, job status/results, and cancellation. Its `/codex:transfer` path imports a Claude transcript into a persistent, resumable Codex thread, making it particularly relevant to Cartographer's cross-provider identity, provenance, and continuation model. Track how it maps repositories, source transcripts, background jobs, and Codex session IDs; it bridges runtimes rather than providing a shared history index.
+- **[Funes](https://github.com/huggingface/funes)** — Local cross-agent transcript indexing and retrieval for Claude, Codex, Pi, Hermes, and Parquet. It is the closest retrieval-substrate neighbor in this list: useful prior art for durable derived blocks, source normalization, and cold-start scheduling, but not a substitute for Cartographer's event IDs, project/time/type facets, cross-project topology, Explorer, or evidence-backed promotion.
+
+### Borrowable ideas from Funes ([huggingface/funes](https://github.com/huggingface/funes))
+
+Borrow the narrow ingestion and read-path mechanics while retaining Cartographer's event-centric model and user-to-next-user turn boundary.
+
+- [ ] **Stored-block reconstruction independent of transcript TTL.** Funes's `get` reconstructs complete blocks from its derived memory even after source transcripts disappear. Cartographer retains turn text in Qdrant, but `/remember` drill-down can still hard-fail after the original transcript expires. Add an index-backed exact-read path (or a bounded verbatim block artifact) with source provenance and range coordinates, while continuing to treat the original transcript as authoritative when it exists. This is the preferred first experiment for the transcript-TTL gap; lossy trace distillation should remain a fallback.
+- [ ] **Source-adapter boundary.** Prototype a `TraceSource`-like interface that enumerates source units, computes signatures/checkpoints, and parses each provider into one common block model. Do not inherit Funes's item-per-response turn semantics: Cartographer's user-to-next-user grouping remains canonical. **Status:** there are now three concrete adapters to extract it from rather than two to design it around. Hermes landed first, as `scripts/hermes-source.js`, because the half of the boundary that protects turn semantics — the shared turn document — was already proven by the Claude and Codex awk adapters, and Hermes could not have shared the other half anyway. Its units are SQLite rows, not files; its change signature is the highest message id, not an mtime; and there is no file for the `--transcript` grep fallback. It keeps enumerate / signature / parse as separate steps, and its test asserts the Codex adapter's field set. What the three disagree on is exactly what the interface has to abstract: discovery (directory walk vs. database query), checkpoints (a line-based progress file vs. a JSON map of per-session high-water marks), and drill-down (a file path vs. `--show`).
+- [ ] **Progressive text/tool/tool-result indexing.** Prioritize text and thinking first, tool uses second, and bulky tool results last under a bounded cold-start budget. Record per-source, per-tier receipts so status can distinguish usable text coverage from full completion, and never checkpoint a source as complete when a later tier failed.
+
+### Industry benchmark: LongMemEval (ICLR 2025)
+
+[arxiv 2410.10813](https://arxiv.org/abs/2410.10813) is the standard eval for long-term memory in chat assistants. 500 questions across **5 ability categories** embedded in scalable chat histories. Headline finding: commercial assistants + long-context LLMs drop **30% accuracy** at sustained-interaction length — empirical justification for purpose-built memory tooling.
+
+**Categories (and SC's current alignment):**
+- **Information extraction** — single-shot recall of an earlier fact. SC's hybrid BM25+semantic addresses this directly. Probably scores fine.
+- **Multi-session reasoning** — synthesizing across multiple past conversations. SC has no explicit cross-session join; relies on the LLM to stitch returned events. Gap.
+- **Knowledge updates** — handling facts that changed (user said X, then later said Y). SC's jsonl is append-only; "last write wins" is implicit but invisible to retrieval. Gap.
+- **Temporal reasoning** — "when did I tell you about Z?" SC has timestamps but no time-aware ranking, no `--since`/`--before` filters, no "what did I know on date X" as a first-class operation. **Highest-leverage gap for SC's actual use cases.**
+- **Abstention** — knowing not to answer when info isn't there. SC always returns top-K regardless of confidence floor. Gap.
+
+SC has never been benchmarked against LongMemEval. It probably shouldn't be the primary target since SC is *human-driven session search*, not *agent memory substrate* — but the benchmark categories are still the right diagnostic frame for where retrieval underperforms.
+
+### Borrowable ideas from MenteDB ([nambok/mentedb](https://github.com/nambok/mentedb))
+
+MenteDB is a Rust-native cognition-aware DB engine for AI agent memory. Different consumer (LLMs in a single forward pass, not humans browsing history), but several architectural choices map cleanly to SC's gaps. Each design choice below targets a specific LongMemEval failure mode.
+
+- **[ ] Temporal reasoning — `--since` / `--before` filters + recency-aware ranking.** *Maintainer's first pick (2026-04-24).* Time-window filtering as a first-class CLI + Explorer concept. Recency boost in RRF formula (small weight, time-decayed score). Time-aware query rewriting in `/remember` ("last week" → `--since 7d`). Targets the LongMemEval temporal-reasoning category.
+- **[ ] Delta serving — track what `/remember` already returned in this session, only send what's new on subsequent calls.** MenteDB claims ~90% retrieval-token reduction across multi-turn conversations. For SC: maintain a per-session bloom filter or LRU of returned event_ids; default `/remember` filters those out unless `--all` requested. Targets multi-session reasoning + token economy.
+- **[ ] U-curve context assembly — when `/remember` returns N results, place highest-confidence at start AND end of the returned block, supporting context in middle.** Research-backed: that's how transformer attention actually works (Liu et al. "Lost in the Middle"). Cheap reorder, no new data, real comprehension delta.
+- **[ ] Phantom detection — when a `/remember` query mentions an entity SC has zero info on, flag the gap rather than return weak top-K matches.** Auto-memory hooks could emit these as "knowledge to capture next session" signals. Targets LongMemEval abstention category — answers "is the gap because the question is bad, or because we genuinely don't know?"
+- **[ ] Pain signals + emotional valence on auto-memory feedback entries.** Existing `feedback_*.md` memories already encode "this approach failed" lessons. Extending with explicit decay (exponential, recent pain weighted higher) and surfacing them via spreading activation would be a small change with big "last time you tried X, here's what broke" payoff. SC adjacent — most relevant in the user's auto-memory layer.
+- **[ ] Knowledge-update edges — when a memory is contradicted or superseded, mark it (Supersedes / Contradicts edge equivalent) so retrieval can suppress stale beliefs without losing them.** Jsonl is append-only, so "edges" are virtual. Could be implemented as a sidecar `event_relations.jsonl` consumed at query time. Targets knowledge-update category. Larger scope.
+
+### Vision-stage MenteDB ideas (track, don't build)
+
+Aspirational research targets in MenteDB's `VISION.md`. None are shipping; worth knowing as adjacent design space:
+
+- **Dream Engine** — background analogical recombination across memory clusters; "your deployment pattern is structurally identical to your migration pattern."
+- **Emergent Identity** — periodic full-corpus analysis to extract "this agent prefers X / strongest in A / weakest in B" statements.
+- **Reconstructive Memory** — same underlying memories produce different context for debugging vs. planning vs. reflecting modes.
+- **Spreading Activation** — accessing one memory temporarily boosts related memories in the graph (Python → Django → web framework → deployment). Closest of the four to something SC could prototype on its existing event graph.
+- **Cognitive mode awareness** — query mode biases retrieval (debug mode surfaces errors aggressively; creative surfaces analogies; review surfaces contradictions).
+
+### Open question for SC's strategic scope
+
+If SC's role expands from "human session search" to "Claude's primary memory while in a long conversation," LongMemEval becomes the actual benchmark. Worth a sandbox test against a single project (one busy project) where MenteDB's ingestion/retrieval is compared to `/remember`'s on the same questions, to size the gap.
+
+## Topic tracks — the missing pyramid layer (added 2026-08-14)
+
+Reference: **NapMem** ([arxiv 2607.05794](https://arxiv.org/html/2607.05794v1)), Qwen team. Organizes user history as a four-layer "memory pyramid" — raw conversations → memory records → topic tracks → user profile — and gives the agent tools to navigate it rather than pre-selecting context for it.
+
+SC already instantiates most of that thesis, and converged independently on the same retrieval mechanics (hybrid keyword + vector, RRF at k=60). Shipped 2026-08-14: `--get` exact-fetch (their `get_records`) and `scripts/build-profile.js` → `.carto/profile.md` (their layer 4). **Topic tracks are the one layer with nothing standing in for them.**
+
+The ablation is the reason to care. Removing the upper layers and running records-only drops their average from 62.74 → 44.93 — a bigger delta than removing RL training (→ 48.39) or removing the navigation interface entirely (→ 54.08). Multi-granularity is doing more work than either of the headline contributions.
+
+**Maintainer's framing (2026-08-14): topic tracks are a dreaming outcome, not a write path.** That resolves the tension that has blocked this. Tracks are consolidated, evolving, *rewritten* narratives — which reads as a direct violation of SC's append-only discipline until you notice they aren't a log at all. They're the output of a background consolidation pass over the log. The JSONL stays immutable; dreaming produces derived, fully regenerable track files. Delete them and the next dream rebuilds them. Same relationship `profile.md` already has to the corpus, one granularity down.
+
+This also connects three things already on this list that have been circling the same idea:
+- **Dream Engine** (MenteDB vision, above) — background analogical recombination across memory clusters. Tracks are the concrete, buildable version: not "your deployment pattern is structurally identical to your migration pattern," just "here is the running narrative of one project's audio work, with links down to the events."
+- **Topics facet** (mindmap-mcp section, below) — its cohesion filter (`cosineExcluding`, candidates surviving only if members are similar *after* removing the shared term) is the natural selector for *which* topics deserve a track. Don't dream 200 tracks; dream the ~20 that cohere.
+- **Knowledge-update edges** — supersession has no home in an append-only log. It has an obvious home in a track: the consolidation pass is exactly where "he said X in March, then Y in June" gets resolved into one current narrative, without mutating either event.
+
+Sketch, when it gets built:
+- [ ] **`.carto/tracks/<slug>.md`, capped at ~20 files.** Each with a metadata header, a length budget (same treatment as `profile.md`), a running narrative, and explicit `event_id` links down to the record layer. Regenerable from scratch — never hand-edited.
+- [ ] **Topic selection via the cohesion filter**, not raw term frequency. Reuse the TF-IDF machinery already in `explorer/server/bm25.js`.
+- [ ] **A dream pass that runs on a cadence, not on every session end.** Consolidation is expensive and its value is cumulative; nightly or weekly is the right granularity, and it composes with Claude Code's own Auto Dream rather than competing with it.
+- [ ] **Supersession resolution inside the pass** — when two events make contradictory claims about the same thing, the track states the current one and links both.
+- [ ] **A `read_file`-shaped entry point** so `/remember` can open a track by name, the way it now reads `profile.md`.
+
+Open question worth settling before building: whether tracks are per-project (cheap, obvious, mostly redundant with `/focus`) or per-*topic-across-projects* (the actual gap — "the AOI work" spans cursor-lib, paper-a, and paper-c, and no current lens holds that together). The co-occurrence graph's `--related` already knows those cross-project threads exist; it just has nowhere to write the narrative down.
+
+---
+
+## Explorer UI
+- [ ] Facet brushing — hover pill → non-matching results collapse to colored pixel bars
+- [ ] Contrast audit — sweep remaining readable text to the 8:1 floor, computed not eyeballed. Shades are not the spec: on the body `#0a0a0f`, `gray-400` is 7.78:1 and `gray-600` is 2.61:1, so both fail. `gray-300` (13.40:1) and the `muted` token (`#abb1bb`, 9.16:1, added to `tailwind.config.js` and matching the existing `--internals-muted`) both pass. Largest remaining cluster is ~10 `text-gray-600` sites in `TranscriptViewer.jsx`.
+- [ ] Loading skeletons instead of text spinners
+- [ ] Infinite scroll (auto-load on scroll vs. manual "show more")
+- [x] ~~Error boundary~~ — shipped as route-level containment with in-place retry (see Infrastructure)
+- [ ] **Transcript match display** — transcript search results show raw JSONL (`{"parentUuid":"...","isSidechain":false,...}`) instead of the conversation text. Need to extract the human-readable content from the message payload and display it as a summary, same as event log results.
+
+## Session work map (`/map`, added 2026-11-13)
+
+**Adopted on the spike branch, 2026-11-13 (`spike/workmap-portrait`, not merged): the Hub view of `/map` draws `shared/workmap/hub.js`.** The owner chose it after the side-by-side ("Yes, adopt it") and chose You as a two-way station ("Yes, two-way"). On the main view now: the new hub with a control over every station (40 px or more, the pressed one ringed round its node), the ribbon directly under the map, the tape in the stations' colours with one You lane, and a list that reads the same actions as the drawing (pressing You lists what was said and what was told, "41 said · 122 told"; an address with `station=tells` opens You). lot-map's hub is kept as the "Before" figure on the Directions page, `/map?session=<id>&look=directions`, and as the control row on the Sizes look. The decisions below record what was shown and measured for each choice.
+
+Open after adoption:
+- [ ] **The Board layout still reads the session the old way.** It has Tells you as a connector and no Your screen, while the ribbon and tape beside it are two-way. Either give the board the same reading or retire it.
+- [ ] **"Your screen" is seated in the browser, not on the server.** `seatScreen` (`kinds.js`) moves the calls in `SessionMap`; `classify` and `STATIONS` still file them under Browser, Network and Shell, and `/api/workmap`'s `present` does not name the station. Move the rule to the server, and check Codex's MCP tool names.
+- [x] **The sidebar pane (`plugins/session-cartographer/hooks/carto-map`, moved there from `mods/carto-map` on 2026-11-14) draws the same hub.** On the desktop, editor and mobile surfaces the pane is the ribbon over the hub, drawn by byte-identical copies of `explorer/shared/workmap` in `mods/carto-map/hooks/workmap/` (a mod loads only its own files; `scripts/sync-carto-map-workmap.sh` copies them and `tests/unit/carto-map-workmap-sync.test.js` fails when one drifts). `hooks/hubview.ts` reads lot-map's board the hub's way: what the agent told is taken out of You's count (`told`), a call into what the person has open is Your screen's (`yours`), a background task reporting back is a wake at Hooks, and the desktop app's tools for other sessions are Agents'. The hub has no words at a pane's width, so the line under it says the context figure and the model. A redraw is booked 6, 20 and 61 s after each call so an idle session's picture cools. 77 mod tests pass on the app's engine (2.1.325), it type-checks against the engine's types, and it was loaded as a dev mod in the session that built it. Open:
+  - [x] **The owner looked at the loaded pane (2026-11-14)** and it was not right: only the stations already used were drawn, so early in a session it was You, Model and an empty core in an empty picture; there were no names; and "the model name is important in the center". Fixed: the live pane draws every station from the first call; the core says the model first, at every width it fits at 16 px, in the Explorer too (the core grew from 40 to 48 to hold it); You's two counts stand beside their lanes ("19 said", "55 told") because one line of both ran into the neighbours' names; a station with no calls has no "0"; the ribbon has a floor rule so two cells read as a strip.
+  - [x] **The pane's width, measured (2026-11-14).** The desktop stretches a picture to the pane and tells the mod only `bodyColumns`. The owner's capture: 44 cells, the picture 465 CSS px across (930 px at 2x), so 10.6 px a cell. `CELL_PX` is 10 (was a guessed 7, which drew his pane for 308 px: no names, no counts). One pane on one Mac: a different text size or zoom moves it, and the mod has no way to see that.
+  - [x] **Counts in the picture at every pane width** (the owner: "the old system accumulated counts in the grid"). lot-map's hub wrote each station's running count; the new one wrote them only with names, from 400 px. From 280 px a station now has its count alone, and You's two counts stand beside their lanes without the words. Under 280 px there is none: three digits run into the next station. Checked in a render at 440, 340 and 280 px on a 1,192-call session; not seen in the reloaded pane.
+  - [x] **Three asks relayed from the owner's other session (2026-11-14):** "Can we put hyperlinks into the work map?", "the counts on each map cell seem really low contarst.", and, of the station row, "and replace this with our color map?".
+    - **Contrast, measured in a headless render against the pixels behind each glyph** (`workmap-pane-contrast-2026-11-14.json` in the session notes). New hub at 465, 359 and 296 px, pressed and not: every text is 16.9 px; counts 10.78:1 beside names (#b9c0cb on #0a0a0f) and 17.29:1 without names; names 17.29:1; "N failed" 10.32:1; core 15.99:1, agent name 9.97:1. Nothing under 8:1. The ribbon has no text. lot-map's hub, which his other session's pane still had loaded and a light theme still gets: counts 4.05:1 at 9.6 px, names 7.53:1 at 11.6 px, model 7.03:1 at 9.1 px, context 3.78:1 at 8.1 px (dark); 2.86, 5.24, 5.86 and 3.20:1 (light).
+    - **The desktop app's own dim text is 6.4:1** (#9c9c9c on #191919, sampled from his capture). The pane used it for finished rows, times, the context and model line, the station row when one was pressed, and the Explorer link. Off a terminal the pane now dims nothing. A row still running is in the app's accent colour, which is not measured.
+    - **Station row: built as a colour key, then dropped the same day.** I read "our color map" as the station colours and built a fixed grid of all eleven stations with a square each. In the loaded pane a used station drew as its plain label with no square (the desktop draws a Button's `label`, not its Text children, when it has both), so the grid was half marks, half not. The owner: "drop this, we had a timeline using colored blocks", "ahh, its at top", "so drop the legends". The hub's pane now has no station row: the hub names each station with its count and the ribbon over it is the calls in the stations' colours. **Gone with it there:** pressing a station to narrow the feed, and the per-station list of pages. Both remain under lot-map's hub (light theme), which has no names a press could do without. `shownStation()` in `hubview.ts` lets go of a station held from the grid.
+    - **Links.** A feed row that went to a page links to it; a row that changed a file links to the Explorer's review of that file in this session (checked: `/api/memory/file` answered for a file this session edited). One link to this session's map in the Explorer, "↗ Explorer", is the last thing in the pane (the owner: "should be a fixed bottom of sheet link and glyph it"). The pane's body scrolls as one piece and the API has no footer, so the pane is made at least as tall as its room (`scroll.bodyRows`) with the slack above the link: at the bottom edge when the rest fits, the end of the scroll when it does not. The arrow has a word beside it because a lone glyph is a target under 40 px with no name. The hub is one picture and cannot hold links: the desktop draws an Svg as an image, or in a sandboxed frame with no script.
+  - [x] **Pressing a station opens the Explorer: not possible on the picture; done on the rows' station names (2026-11-14).** The owner: "pressing a station should open carto explorer, that's what i mean by hyperlinking... this should be contingent on the user having explorer running".
+    - **Tried and failed:** the hub drawn with `isInteractive` (the desktop's sandboxed frame for pictures) and each station wrapped in `<a href target="_blank">`. The owner clicked one: "nothing happens when i click a station". Taken back out, of `hub.js` too. The mod API has no other way to press part of a picture: a Button takes only text, a Box takes no press.
+    - **Done instead, in the pane's own text, where a link is known to work:** while the Explorer answers, the station's name at the head of each feed row links to that station on this session's map (`/map?session=…&station=<id>`; a call into the person's own things goes to Your screen).
+    - **Contingent on the Explorer.** `askExplorer()` fetches `/api/health` on port 2527 through the host (127.0.0.1 first, then `localhost`) at session start, turn start and on a call, at most once a minute, never while drawing; an answer naming the logs counts. While it does not answer: no station link, no "↗ Explorer", and a row that changed a file is not a link. A row's link to a web page needs no Explorer and stays.
+    - **Not known:** whether the check succeeds inside the app. If the pane shows no "↗ Explorer" and no linked station names while the Explorer is up, the check is what failed, not the links.
+    - **Decided against (the owner, 2026-11-14: "Feed links are enough"):** laying the stations' names over the picture as real links (an absolute Box over the Svg, placed by percentages). Not built.
+  - [x] **Feed links and the bottom link, seen by the owner (2026-11-14: "Yes" to both):** a station's name in the feed opens the Explorer at that station, and "↗ Explorer" sits at the bottom edge of the pane. So the health check works inside the app, and so does the `minHeight` layout.
+  - [ ] **The ribbon filters the feed by station (2026-11-14, "make the ribbon blocks clickable to filter by station"; not yet seen in the app).**
+    - **What the app allows.** A picture takes no press. A Button on the desktop is drawn as its plain `label`: the engine's own note on the wire says children "are drawn in the label's place" and the label "is what a surface that draws no children draws", and the colour grid showed the desktop is one of those. So a coloured block cannot itself be a control.
+    - **Built.** The pane's ribbon is drawn in slots of one width (`drawSlotRibbon` in `ribbon.js`): a slot is a run of calls at one station, its calls side by side in it (the newest 8 of a longer run), newest run at the right. Under it a row of as many equal boxes, each with one plain Button, "△", for the slot above. Pressing narrows the feed to that station and brings back the pages list for Network, Browser and Your screen; pressing a slot of the held station lets it go. Held: "▲" under each of its runs, a 2 px bar under them on the ribbon, and the hub's ring on the station. Nothing is dimmed.
+    - **Target size.** Ten slots from 40 cells: at the owner's 465 px pane a slot is 46 px across. Five slots under 40 cells. The Button itself is narrower than its box (a glyph and the app's padding); its real size is not known.
+    - **Under the hand.** A slot is a run, so it stays put while the agent keeps calling one station; the slots move along one place only when it goes to another. The control is named by the run's first call, so a press that lands as the slots move still acts on the station it was aimed at, if the surface finds controls by name as the API says. A held station that has scrolled out of the newest runs takes the oldest slot, so there is always something to press to let it go.
+    - **Cost.** The ribbon was the last 44 calls, a cell each; it is now the last 10 runs. The plain ribbon is unchanged in the Explorer.
+    - **Not done:** the Explorer's `/map` ribbon. It is a page, where a block can simply be a control, so it needs none of this; it is a separate, small change.
+  - [ ] **Not measured:** the contrast of the app's link blue and of its accent on a running row (the capture that showed them was not saved as a file).
+  - [ ] **A light theme still fails.** It keeps lot-map's hub. Its two text greys are now 8.10:1 and 8.18:1 (`palette.ts`), but its text is 8 to 14 px, the fault badge is 4.53:1, and a count can sit on a lit route line (3.17:1 in the measured frame). The fix is a light palette for the new hub, which needs light family colours.
+  - [ ] **A folded row links to its newest call only.** An edit followed by a read at Files shows as the read, with no link. A review link for a file outside the Explorer's root opens a review with nothing in it; the mod cannot know that root.
+  - [ ] **"Not updating as we talk"** was reported once and then it was seen updating. The pane redraws when a call starts or ends and 6, 20 and 61 s after; whether it lags a turn's first events is not known.
+  - [ ] **Every station is still a button** (plus Your screen), as the pane had it. The Directions page mocks the other choice, three page buttons only; dropping the rest is the owner's call.
+  - [ ] **A terminal and the light theme keep lot-map's hub and its ten stations.** The new hub has no light colours, and `layout: you-bottom` does not turn it.
+  - [ ] **"Your screen" and "background task reported" are English only**; `text.ts` has six other languages.
+ passed to an imported `update`); only the app's engine loads it. Checked 2026-11-14 with a probe plugin on 2.1.277: a refused module beside command hooks in one `hooks.json` leaves the command hooks running (its SessionStart and UserPromptSubmit hooks both fired), so a terminal session keeps its capture and gets no pane.
+  - [x] **Installed for real (2026-11-14, the owner: "move the pane into the carto plugin and uninstall lot-map").** The pane is a hooks module of the plugin: `hooks/hooks.json` names `./carto-map/register.tsx` under `modules` beside the command hooks, its state contract is `types/index.d.ts` (the state's owner is now `session-cartographer`), and its options are in the plugin's `userConfig`. `workMap` (on by default) switches it off: the module then hooks nothing. Not done: the pane's three copies of the drawing are now one too many, since `hooks/carto-map/workmap/` sits in the same plugin as `explorer/shared/workmap/` and could import it.
 - [ ] **lot-map's live motion is gone from the main view**: the flying pulses, the clock hands round a running station, the subagent orbit. The new hub shows a running call as a second ring and redraws per frame.
 - [ ] **Arrivals at one station are not fanned out round its rim**, the ribbon has no mark for "now", and under 32 px the arrowhead is as large as the gap between the core and the ring.
 

@@ -1,6 +1,6 @@
 // How the board is drawn: one SVG, the agent in the centre and a station for each kind of work.
 // Nothing here touches the engine.
-import type { Board, Entry, StationId } from '../types'
+import type { Board, Entry, StationId } from '../../types'
 import { shortModel } from './classify'
 import { DARK, LIGHT, lightRules } from './palette'
 import type { Palette } from './palette'

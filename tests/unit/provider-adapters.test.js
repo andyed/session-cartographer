@@ -177,7 +177,12 @@ describe('shared hook configuration', () => {
     for (const event of CLAUDE_ONLY_EVENTS) assert.ok(claude.hooks[event], `${event} is listed as Claude-only but hooks.json does not register it`);
     const expected = structuredClone(claude);
     for (const event of CLAUDE_ONLY_EVENTS) delete expected.hooks[event];
-    assert.deepEqual(codex, expected, "codex-hooks.json drifted from hooks.json; regenerate: jq 'del(.hooks.PostToolUseFailure)' hooks.json > codex-hooks.json");
+    // `modules` names Claude Code's hooks modules (the work map pane). Codex has no such key, and a file it
+    // rejects switches off every Codex hook, so the Codex file must not carry it.
+    assert.deepEqual(claude.modules, ['./carto-map/register.tsx']);
+    delete expected.modules;
+    assert.equal(codex.modules, undefined, 'codex-hooks.json must not name Claude Code hooks modules');
+    assert.deepEqual(codex, expected, "codex-hooks.json drifted from hooks.json; regenerate: jq 'del(.hooks.PostToolUseFailure) | del(.modules)' hooks.json > codex-hooks.json");
     for (const event of Object.keys(codex.hooks)) assert.ok(CODEX_EVENTS.has(event), `${event} is not a Codex hook event`);
   });
 });

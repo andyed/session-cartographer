@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Board, Entry, StationId, Status, Visit } from '../types'
+import type { Board, Entry, StationId, Status, Visit } from '../../types'
 import { STATIONS, classify, clean, describeNow, drawMap, firstLine, foldRows, formatMs, memoryIds, nowParts, setupFrom, shortModel, taskNotice, taskOf } from './map'
 import type { Setup } from './map'
 import { drawPicture, terminalPicture } from './terminal'
@@ -36,7 +36,7 @@ let explorer = { isUp: false, askedAt: -EXPLORER_EVERY }
 
 // Change the tag when a field of Entry or Board changes its meaning or is taken away: it declines what an earlier
 // version stored, and with it the session's counts. A field only added, and optional, needs no new tag.
-const board = atom({ plugin: 'carto-map', key: 'board' } as const, { entries: [], counts: {} } as Board, { shape: 'board-5' })
+const board = atom({ plugin: 'session-cartographer', key: 'board' } as const, { entries: [], counts: {} } as Board, { shape: 'board-5' })
 
 /** The name of the station lot-map does not have. English only: the other six languages of text.ts have no word for it yet. */
 const SCREEN_NAME = 'Your screen'
@@ -258,6 +258,10 @@ function cool($: EngineInterface): void {
 }
 
 export const register: Register = (on, options) => {
+  // The pane ships inside Session Cartographer, whose other parts (recall, the hooks, the Explorer) a person may want
+  // without it. Off, this module hooks nothing.
+  if ((options as { workMap?: unknown }).workMap === false) return
+
   const setup = setupFrom(options)
   const { t } = setup
 

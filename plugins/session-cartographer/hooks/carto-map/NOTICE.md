@@ -4,6 +4,10 @@ The pane, the drawing and the classifier in `hooks/` are forked from
 [lot-map](https://github.com/alexeyw/lot-map) 0.6.0 by Aleksei Volodin, MIT
 licensed. Its licence text is kept beside this file as `LICENSE-lot-map`.
 
+It began as a mod of its own, carto-map, and now ships inside the Session
+Cartographer plugin as one of its hooks modules; the plugin's `workMap` option
+switches it off.
+
 Changed here: the mod's name, the defaults that send Session Cartographer's
 recall to the Memory station, and a list of the pages a session visited, opened
 from a row of station buttons under the map.
@@ -11,7 +15,7 @@ from a row of station buttons under the map.
 On the desktop, editor and mobile surfaces the pane no longer draws lot-map's
 hub. It draws the hub and the ribbon of the Explorer's session map, from
 byte-identical copies of that code in `hooks/workmap/` (kept in step by
-`scripts/sync-carto-map-workmap.sh` in the repository this mod lives in). That
+`scripts/sync-carto-map-workmap.sh` in the repository). That
 drawing is Session Cartographer's own; its ring of stations and their glyphs
 began as lot-map's. A terminal, and a person who sets the light theme, still get
 lot-map's rows and picture.

@@ -67,6 +67,6 @@ export type Board = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'carto-map': { board: Shaped<Board> }
+    'session-cartographer': { board: Shaped<Board> }
   }
 }
