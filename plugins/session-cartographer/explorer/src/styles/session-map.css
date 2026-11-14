@@ -36,11 +36,19 @@
 .sm-span { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
 .sm-error { color: var(--sm-fault); }
 
-/* Two columns that never trade places: the map keeps its size, the list takes the rest. */
+/* Two columns that never trade places: the map and the moment on the left, the sequence and the calls on the right. */
 .sm-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 560px) minmax(300px, 1fr); gap: 24px; }
-.sm-stage { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.sm-map { position: relative; width: 100%; }
+/* The map takes the height the column has left after the scrubber, and is never wider than that height allows:
+   nothing on the left is ever below the fold. */
+.sm-stage { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.sm-stage > .sm-scrub { flex: none; }
+.sm-mapbox { flex: 0 1 auto; width: 100%; min-height: 0; aspect-ratio: var(--sm-aspect, 1.07); container-type: size; }
+.sm-map { position: relative; width: min(100cqw, calc(100cqh * var(--sm-aspect, 1.07))); }
 .sm-map img { display: block; width: 100%; height: 100%; user-select: none; }
+/* The ribbon: the last calls in one row, exactly as wide as the map above it. */
+.sm-ribbon { flex: none; display: block; max-width: 100%; user-select: none; }
+.sm-side { min-width: 0; min-height: 0; max-width: 860px; display: flex; flex-direction: column; gap: 16px; }
+.sm-side[hidden] { display: none; }
 
 /* A control over a station. It draws nothing until it is hovered, focused or pressed. */
 .sm-hit {
@@ -50,13 +58,19 @@
 .sm-hit.sm-core { border-radius: 50%; }
 .sm-hit:hover { border-color: var(--sm-line); }
 .sm-hit[aria-pressed='true'] { border-color: var(--sm-accent); }
+/* The ring round the core is the context window. "All stations" marks nothing there: the list's heading says it. */
+.sm-hit.sm-core[aria-pressed='true'] { border-color: transparent; }
+.sm-hit.sm-core:hover { border-color: var(--sm-line); }
 .sm-hit:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 2px; }
 
-.sm-scrub { display: grid; gap: 6px; }
-.sm-scrub input { width: 100%; min-height: 44px; margin: 0; accent-color: var(--sm-accent); }
-.sm-scrub output { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+/* One row of controls, the figures under it. The transport is first so it never moves when the range resizes. */
+.sm-scrub { display: grid; grid-template-columns: auto minmax(80px, 1fr); gap: 6px 12px; align-items: center; }
+.sm-scrub input { grid-area: 1 / 2; width: 100%; min-height: 44px; margin: 0; accent-color: var(--sm-accent); }
+.sm-scrub .sm-transport { grid-area: 1 / 1; }
+.sm-scrub output { grid-area: 2 / 1 / 3 / 3; color: var(--sm-meta); font-variant-numeric: tabular-nums; }
 
-.sm-list { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+/* A row is read left to right: capped so the duration stays within reach of its label on a wide window. */
+.sm-list { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .sm-list h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 8px; font-size: 20px; font-weight: 600; }
 .sm-list h2 span { color: var(--sm-meta); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .sm-list ol { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--sm-line); }
@@ -65,12 +79,12 @@
 .sm-item { display: flex; align-items: stretch; border-bottom: 1px solid #1c222d; }
 /* Two targets in a row: the time sets the map's moment, the rest opens the call in the reader. */
 .sm-at {
-  flex: none; min-height: 36px; padding: 6px 10px 6px 8px;
+  flex: none; min-height: 40px; padding: 6px 10px 6px 8px;
   font: inherit; color: var(--sm-meta); font-variant-numeric: tabular-nums;
   background: transparent; border: 0; border-radius: 0; cursor: pointer;
 }
 .sm-row {
-  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 12px; min-height: 36px; padding: 6px 8px 6px 2px;
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 12px; min-height: 40px; padding: 8px 8px 8px 2px;
   color: var(--sm-ink); text-decoration: none;
 }
 .sm-at:hover, a.sm-row:hover { background: var(--sm-surface); }
@@ -88,7 +102,100 @@ a.sm-row:hover .sm-label { text-decoration: underline; text-underline-offset: 3p
 .sm-run .sm-state { color: var(--sm-accent); }
 .sm-took { min-width: 4.5em; text-align: right; }
 
+/* One column: the map is as wide as the page, and the page scrolls as a whole. */
 @media (max-width: 760px) {
-  .sm-body { grid-template-columns: 1fr; overflow: auto; }
+  .sm-body { display: block; overflow: auto; }
+  .sm-stage { display: block; }
+  .sm-mapbox { container-type: inline-size; aspect-ratio: auto; }
+  .sm-map { width: 100%; }
+  .sm-scrub { grid-template-columns: minmax(0, 1fr); margin: 12px 0 20px; }
+  /* The transport stays next to the range; the figures, which can wrap, come last so they never push a button. */
+  .sm-scrub input { grid-area: 1 / 1; }
+  .sm-scrub .sm-transport { grid-area: 2 / 1; flex-wrap: wrap; }
+  .sm-scrub output { grid-area: 3 / 1; }
+  .sm-side { max-width: none; }
   .sm-list ol { overflow: visible; }
+  /* A row's fixed parts (station, subagent, state, duration) can be wider than a phone: they take the first
+     line and the call's own words take the next, so no row pushes the page sideways. */
+  .sm-row { flex-wrap: wrap; row-gap: 2px; }
+  .sm-where { width: auto; }
+  .sm-took { margin-left: auto; }
+  .sm-text { order: 5; flex: 1 1 100%; }
+  .sm-directions { overflow: visible; }
 }
+
+/* ─── Replay and live follow ─── */
+.sm-transport { display: flex; align-items: center; gap: 8px; }
+.sm-play, .sm-look button, .sm-transport select {
+  min-height: 44px; padding: 0 14px; font: inherit; font-weight: 600; color: var(--sm-ink);
+  background: var(--sm-surface); border: 1px solid var(--sm-line); border-radius: 8px; cursor: pointer;
+}
+/* Play and Pause share one width, so the control beside them never shifts. */
+.sm-play { min-width: 76px; }
+.sm-play[aria-pressed="true"], .sm-look button[aria-pressed="true"] { border-color: var(--sm-accent); box-shadow: inset 0 0 0 1px var(--sm-accent); }
+.sm-play:focus-visible, .sm-look button:focus-visible, .sm-transport select:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 2px; }
+.sm-look { display: flex; gap: 0; margin-left: auto; }
+.sm-layout { margin-left: 0; }
+.sm-look button:first-child { border-radius: 8px 0 0 8px; }
+.sm-look button:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+
+/* ─── Sizes: the same moment at the sizes a rendering has to survive ─── */
+.sm-sizes { min-width: 0; min-height: 0; overflow: auto; }
+.sm-shrink { border-collapse: collapse; }
+.sm-shrink th { padding: 6px 16px 6px 0; font-weight: 500; text-align: left; color: var(--sm-meta); white-space: nowrap; }
+.sm-shrink thead th { font-variant-numeric: tabular-nums; }
+.sm-shrink td { padding: 8px 16px 8px 0; vertical-align: bottom; }
+.sm-shrink img { display: block; }
+.sm-list[hidden] { display: none; }
+
+/* ─── The tape: the last calls in order, one lane per station ─── */
+.sm-tape { flex: none; margin: 0; display: grid; gap: 4px; min-width: 0; }
+.sm-tape figcaption { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+.sm-tape img { display: block; max-width: 100%; }
+
+/* On the hub the pressed station is ringed in the drawing itself, round its node: the control's own box, which
+   takes in the name, would cut through a name wider than it. */
+.sm-map[data-layout="hub"] .sm-hit[aria-pressed='true'] { border-color: transparent; }
+.sm-map[data-layout="hub"] .sm-hit[aria-pressed='true']:hover { border-color: var(--sm-line); }
+
+/* On the board the processor is a chip, so its control is square like it. */
+.sm-map[data-layout="board"] .sm-core { border-radius: 8px; }
+
+/* ─── Directions: the candidates, side by side on this session and moment ───
+   Text colours as above: ink 17.29, meta 14.05 on the page. Swatches colour marks, never letters. */
+.sm-directions { flex: 1; min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 36px; padding-bottom: 32px; }
+.sd-fig { margin: 0; display: grid; gap: 10px; justify-items: start; min-width: 0; }
+.sd-fig figcaption { display: grid; gap: 6px; }
+.sd-fig h3 { margin: 0; font-size: 20px; font-weight: 600; }
+.sd-fig h4 { margin: 0; font-size: 16px; font-weight: 600; }
+.sd-fig p { margin: 0; color: var(--sm-meta); font-variant-numeric: tabular-nums; max-width: 62ch; }
+.sd-fig img { display: block; max-width: 100%; }
+.sd-row { display: flex; flex-wrap: wrap; gap: 20px 28px; align-items: flex-start; }
+.sd-cell { display: grid; gap: 8px; justify-items: start; min-width: 0; }
+.sd-cell .sd-note { max-width: 320px; overflow-wrap: anywhere; }
+.sd-stack { display: grid; gap: 2px; }
+.sd-key { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0; padding: 0; list-style: none; }
+.sd-key li { display: flex; align-items: center; gap: 8px; }
+.sd-key i, .sd-stations i { flex: none; width: 14px; height: 14px; border-radius: 3px; }
+.sd-pane { display: grid; gap: 8px; justify-items: start; border: 1px solid var(--sm-line); border-radius: 6px; overflow: hidden; }
+.sd-pane { padding-top: 8px; }
+.sd-pane h4 { padding: 0 8px; }
+.sd-pane .sd-bounce { display: flex; align-items: center; min-height: 40px; padding: 0 8px; color: var(--sm-accent); text-underline-offset: 3px; }
+.sd-shapes li img { flex: none; }
+/* A fixed grid and a count set at the right in tabular figures: a button is where it was when a count gains a digit. */
+.sd-stations { width: 100%; display: grid; grid-template-columns: repeat(auto-fill, minmax(136px, 1fr)); gap: 6px; padding: 0 8px; }
+.sd-stations button span { flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sd-stations button {
+  display: flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 10px;
+  font: inherit; color: var(--sm-ink); background: var(--sm-surface); border: 1px solid var(--sm-line); border-radius: 8px; cursor: pointer;
+}
+.sd-stations button b { font-weight: 500; color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+.sd-stations button[aria-pressed='true'] { border-color: var(--sm-accent); box-shadow: inset 0 0 0 1px var(--sm-accent); }
+.sd-stations button:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 2px; }
+.sd-rows { width: 100%; margin: 0; padding: 0; list-style: none; border-top: 1px solid #1c222d; }
+.sd-rows li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 6px 8px; border-bottom: 1px solid #1c222d; }
+.sd-rows time { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+.sd-rows span { overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.sm-shrink td { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+.sd-strip thead th { white-space: normal; max-width: 7.5em; vertical-align: bottom; font-variant-numeric: normal; }
+.sd-strip td { vertical-align: middle; }

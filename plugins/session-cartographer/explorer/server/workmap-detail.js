@@ -290,8 +290,14 @@ export function describeTool(name, input = {}, outcome = {}, station = '') {
     }
     case 'Skill':
       return { detail: clip(scrub(str(input.args)), 120) };
-    case 'ToolSearch':
-      return { detail: clip(str(input.query), 100) };
+    case 'ToolSearch': {
+      // Not a skill: the agent fetching the definition of a tool it has only by name. lot-map files it under
+      // Skills as "loading tools"; the row names the tool that did it and what it loaded.
+      const query = str(input.query)
+      const picked = /^select:(.+)$/.exec(query)
+      const loaded = picked ? picked[1].split(',').map(name => name.trim()).filter(Boolean) : []
+      return { label: 'ToolSearch', detail: picked ? `loaded ${clip(loaded.join(', '), 100)}` : query ? `searched ${quoted(query)}` : '' };
+    }
     case 'AskUserQuestion':
       return { detail: clip(str(input.questions?.[0]?.question), 120) };
     case 'SendUserFile':
@@ -333,9 +339,13 @@ export function describeHook(attachment = {}) {
 }
 
 /** The first line of what the person wrote. */
+/** The words of something that arrived in the person's turn, whole and unmasked: for telling who sent it, never for showing. */
+export function promptText(content) {
+  return typeof content === 'string' ? content : (Array.isArray(content) ? content : []).filter(p => p?.type === 'text' || p?.type === 'input_text').map(p => p.text ?? '').join(' ');
+}
+
 export function describePrompt(content) {
-  const text = typeof content === 'string' ? content : (Array.isArray(content) ? content : []).filter(p => p?.type === 'text' || p?.type === 'input_text').map(p => p.text ?? '').join(' ');
-  return clip(scrub(text), 140);
+  return clip(scrub(promptText(content)), 140);
 }
 
 // ─── Codex items ────────────────────────────────────────────────────────────

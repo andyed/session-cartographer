@@ -7,6 +7,10 @@ import { stringsFor } from './text.js'
 
 export const STATIONS = [
   { id: 'you', icon: `${ring(0, -3.6, 3.4)}M-6.5 8c0-4 3-6.2 6.5-6.2s6.5 2.2 6.5 6.2` },
+  // Not in lot-map. There "you" holds both what the person said and what the agent reported back; here the
+  // person's messages stay on "you" and the agent's reports (task-list updates, wrap-ups, questions, files sent)
+  // sit beside it, so the map never shows the person doing something the agent did.
+  { id: 'tells', icon: 'M-7.5 -6.5h15v10h-8.5l-4 4v-4h-2.5z' },
   { id: 'model', icon: 'M-5 -5h10v10h-10zM-2 -8.5v3.5M2 -8.5v3.5M-2 5v3.5M2 5v3.5M-8.5 -2h3.5M-8.5 2h3.5M5 -2h3.5M5 2h3.5' },
   { id: 'memory', icon: `M-5 4.5L0 -5L6 3.5M-5 4.5L6 3.5${ring(-5, 4.5, 2.1)}${ring(0, -5, 2.1)}${ring(6, 3.5, 2.1)}` },
   { id: 'files', icon: 'M-5.5 -8h7.5l3.5 3.5v12.5h-11zM2 -8v3.5h3.5' },

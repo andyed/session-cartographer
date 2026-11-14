@@ -8,6 +8,7 @@ const en = {
   cannotOpen: reason => `Nowhere to show the map right now: ${reason}`,
   stations: {
     you: 'You',
+    tells: 'Tells you',
     model: 'Model',
     memory: 'Memory',
     files: 'Files',
@@ -57,6 +58,7 @@ const ru = {
   cannotOpen: reason => `Карту сейчас негде показать: ${reason}`,
   stations: {
     you: 'Ты',
+    tells: 'Сообщает',
     model: 'Модель',
     memory: 'Память',
     files: 'Файлы',
@@ -106,6 +108,7 @@ const es = {
   cannotOpen: reason => `Ahora no hay dónde mostrar el mapa: ${reason}`,
   stations: {
     you: 'Tú',
+    tells: 'Te dice',
     model: 'Modelo',
     memory: 'Memoria',
     files: 'Archivos',
@@ -155,6 +158,7 @@ const fr = {
   cannotOpen: reason => `Impossible d'afficher la carte pour le moment : ${reason}`,
   stations: {
     you: 'Vous',
+    tells: 'Vous dit',
     model: 'Modèle',
     memory: 'Mémoire',
     files: 'Fichiers',
@@ -204,6 +208,7 @@ const de = {
   cannotOpen: reason => `Die Karte kann gerade nirgends angezeigt werden: ${reason}`,
   stations: {
     you: 'Du',
+    tells: 'Meldet dir',
     model: 'Modell',
     memory: 'Gedächtnis',
     files: 'Dateien',
@@ -253,6 +258,7 @@ const it = {
   cannotOpen: reason => `Al momento non c'è dove mostrare la mappa: ${reason}`,
   stations: {
     you: 'Tu',
+    tells: 'Ti dice',
     model: 'Modello',
     memory: 'Memoria',
     files: 'File',
@@ -303,6 +309,7 @@ const pt = {
   cannotOpen: reason => `De momento não há onde mostrar o mapa: ${reason}`,
   stations: {
     you: 'Tu',
+    tells: 'Diz-te',
     model: 'Modelo',
     memory: 'Memória',
     files: 'Ficheiros',
