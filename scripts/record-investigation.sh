@@ -35,7 +35,10 @@ command -v jq >/dev/null 2>&1 || fail jq_missing not_written 69
 INPUT=$(cat)
 printf '%s' "$INPUT" | jq -e 'type == "object"' >/dev/null 2>&1 || fail invalid_json
 
-field() { printf '%s' "$INPUT" | jq -r --arg k "$1" '.[$k] // empty'; }
+# A native Windows jq (winget's, scoop's) writes text mode: every newline in a
+# value comes out as CR LF, and $(…) strips only the last, so a multi-line
+# symptom was stored as "toast\r never shows". A CR is never part of a field.
+field() { printf '%s' "$INPUT" | jq -r --arg k "$1" '.[$k] // empty' | tr -d '\r'; }
 KIND=$(field kind)
 flat() { printf '%s' "$1" | tr '\n\t' '  '; }
 

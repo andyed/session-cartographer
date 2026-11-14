@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import { existsSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
 import { normalizeEvidenceEntries } from './transcript-evidence.js';
 import { listCodexRollouts } from '../../scripts/codex-call-evidence.js';
 import { isCompressedTranscript, readTranscriptText } from '../../scripts/transcript-file.js';
@@ -128,6 +129,19 @@ export function normalizeTranscriptEntries(entries) {
 
 const RESOLVER = resolve(fileURLToPath(import.meta.url), '..', '..', '..', 'scripts', 'resolve-transcript.sh');
 
+// Windows cannot exec a .sh file (EFTYPE), so every lookup by session id and
+// every moved or archived transcript came back unresolved there. The resolver
+// runs under Git's bash.exe, found as the hook launcher finds it (`bash` on
+// PATH may be WSL's), with a /-path as the launcher passes it. A miss leaves
+// it unresolved, as before.
+function resolverCommand(platform = process.platform) {
+  if (platform !== 'win32') return [RESOLVER, []];
+  const here = fileURLToPath(new URL('.', import.meta.url));
+  const launcher = [resolve(here, '..', '..', 'hooks', 'run-hook.cjs'),
+    resolve(here, '..', '..', 'plugins', 'session-cartographer', 'hooks', 'run-hook.cjs')].find(existsSync);
+  return [createRequire(import.meta.url)(launcher).resolveBash(platform), [RESOLVER.replaceAll('\\', '/')]];
+}
+
 // A miss is cached briefly, not forever: a transcript can appear after a query
 // (catch-up backfill, a session that archives mid-view). A hit is kept while
 // its file is still there: Codex archives and compresses under a long-running
@@ -160,11 +174,15 @@ export function resolveTranscriptPath(needle, { cache = resolutionCache, now = D
     path = needle; // the common case, one stat
   } else {
     try {
-      path = execFileSync(RESOLVER, [needle], {
+      const [command, prefix] = resolverCommand();
+      path = execFileSync(command, [...prefix, needle], {
         encoding: 'utf8',
         timeout: 10_000,
         stdio: ['ignore', 'pipe', 'ignore'],
       }).trim();
+      // find joins its root and the file with `/`, which a Windows root
+      // (C:\…\archived_sessions) leaves half-converted.
+      if (path) path = resolve(path);
     } catch {
       path = ''; // exit 1 is "not found", not a failure worth surfacing
     }

@@ -61,3 +61,34 @@ test('an unwritable served log does not suppress valid search results', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('a query with backslashes is logged as written, in a row that parses', () => {
+  // The telemetry awk took the query, project and fallback detail through -v,
+  // which expands escapes: `\a` became a raw BEL and the row was not JSON. A
+  // Windows path in the detail did the same on every fallback.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'carto-telemetry-escapes-'));
+  const query = String.raw`C:\apps\zztelemetry`;
+  try {
+    fs.writeFileSync(path.join(dir, 'changelog.jsonl'), `${JSON.stringify({
+      event_id: 'evt-escapefixture', timestamp: '2026-01-01T00:00:00Z', type: 'tool_bash',
+      project: 'fixtureproject', summary: 'Ran: zztelemetry fixture',
+    })}\n`);
+    const calls = path.join(dir, 'search-calls.jsonl');
+    const result = spawnSync('bash', [SEARCH, query, '--limit', '1', '--all'], {
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CARTOGRAPHER_TURBO: '0',
+        CARTOGRAPHER_DEV_DIR: dir,
+        CARTOGRAPHER_SEARCH_CALL_LOG: calls,
+        CARTOGRAPHER_TRANSCRIPTS_DIR: path.join(dir, 'no-transcripts'),
+        ...OFFLINE_INDEX_ENV,
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const rows = fs.readFileSync(calls, 'utf8').trim().split('\n');
+    assert.equal(JSON.parse(rows[rows.length - 1]).query, query);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

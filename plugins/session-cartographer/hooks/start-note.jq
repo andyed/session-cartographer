@@ -66,7 +66,8 @@ def threads:
 # A peer's file by name, when it is in this project's checkout. Roster paths are
 # worktree-collapsed onto the main checkout, so the project directory is in them;
 # a scratchpad or memory file elsewhere says nothing about where not to edit.
-def inproject($p): select(contains("/" + $p + "/")) | split("/") | last;
+# A Windows roster path (C:\dev\repo\a.js) is read with `/` for `\`.
+def inproject($p): gsub("\\\\"; "/") | select(contains("/" + $p + "/")) | split("/") | last;
 
 def unset: . == null or . == "" or . == "none" or . == "unknown";
 

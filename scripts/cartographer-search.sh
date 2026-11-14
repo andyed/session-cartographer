@@ -107,17 +107,20 @@ append_portable_call_log() {
 
   # The row is built first and appended in one write: awk writes its own
   # output through a 4 KB stdio buffer, which a long query can overflow.
-  row=$(LC_ALL=C awk \
-    -v timestamp="$timestamp" -v call_id="$CALL_ID" \
+  # Text a caller or the environment supplies reaches awk through ENVIRON, as
+  # the fusion awk's paths do: -v expands backslash escapes, so a Windows path
+  # in fallback_detail (or a `\a` in a query) arrived as a raw BEL, and the
+  # row was not JSON.
+  row=$(CARTO_T_QUERY="$QUERY" CARTO_T_PROJECT="$PROJECT" CARTO_T_SINCE="$SINCE" \
+    CARTO_T_BEFORE="$BEFORE" CARTO_T_DETAIL="$fallback_detail" CARTO_T_CALL_ID="$CALL_ID" \
+    CARTO_T_PURPOSE="$PURPOSE" CARTO_T_SESSION_ID="$CONTEXT_SESSION_ID" LC_ALL=C awk \
+    -v timestamp="$timestamp" \
     -v request_started_at="$REQUEST_STARTED_AT" -v request_started_ms="$REQUEST_STARTED_MS" \
     -v results_served_ms="$PORTABLE_ENDED_MS" \
-    -v requested_backend="$requested_backend" -v purpose="$PURPOSE" \
-    -v session_id="$CONTEXT_SESSION_ID" -v provider="$CONTEXT_PROVIDER" \
+    -v requested_backend="$requested_backend" -v provider="$CONTEXT_PROVIDER" \
     -v attribution_status="$SESSION_ATTRIBUTION" -v session_source="$SESSION_SOURCE" \
-    -v query="$QUERY" -v project="$PROJECT" -v since="$SINCE" -v before="$BEFORE" \
     -v result_count="$result_count" -v elapsed_ms="$elapsed_ms" \
     -v stage_total_ms="$stage_total_ms" -v fallback_reason="$fallback_reason" \
-    -v fallback_detail="$fallback_detail" \
     -v min_score="$MIN_SCORE" -v floor_top="$floor_top" -v floor_below="${floor_below:-0}" '
       function esc(value) {
         gsub(/\\/, "\\\\", value)
@@ -129,6 +132,10 @@ append_portable_call_log() {
       }
       function quoted(value) { return "\"" esc(value) "\"" }
       BEGIN {
+        query = ENVIRON["CARTO_T_QUERY"]; project = ENVIRON["CARTO_T_PROJECT"]
+        since = ENVIRON["CARTO_T_SINCE"]; before = ENVIRON["CARTO_T_BEFORE"]
+        fallback_detail = ENVIRON["CARTO_T_DETAIL"]; call_id = ENVIRON["CARTO_T_CALL_ID"]
+        purpose = ENVIRON["CARTO_T_PURPOSE"]; session_id = ENVIRON["CARTO_T_SESSION_ID"]
         fallback = fallback_reason == "" ? "null" : quoted(fallback_reason)
         detail = fallback_detail == "" ? "null" : quoted(fallback_detail)
         # min_score/top_score/below_min_score match turbo-search-client.js.

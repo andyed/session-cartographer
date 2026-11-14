@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn, execFile } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const HOOKS = new Set(['check-edit-collision.sh', 'log-compact-summary.sh', 'log-research.sh',
   'log-session-milestones.sh', 'log-tool-use.sh', 'start-transcript-catch-up.sh',
   'surface-focus-on-start.sh', 'surface-recall-on-prompt.sh', 'surface-turbo-on-start.sh', 'warn-missing-jq-on-start.sh']);
@@ -59,13 +59,18 @@ function launchHook(script, { bash = resolveBash(), timeoutMs = 10000, env = pro
     const timer = setTimeout(() => {
       timingOut = true;
       // Kill the exact child tree, not every Bash/Node process on the machine.
+      // taskkill takes ~400 ms idle and longer under load. Capped at 500 ms, it
+      // was itself killed part-way, and child.kill() then reached only Git's
+      // bin\bash.exe stub: usr\bin\bash.exe and the hook's tree ran on. So it
+      // runs on its own, unwaited, and finishes after this returns.
       if (process.platform === 'win32' && child.pid) {
         const taskkill = path.join(env.SystemRoot || 'C:/Windows', 'System32', 'taskkill.exe');
-        execFile(taskkill, ['/PID', String(child.pid), '/T', '/F'],
-          { windowsHide: true, shell: false, timeout: Math.min(500, timeoutMs) }, error => {
-            if (error) child.kill();
-            finish({ code: 1, fault: 'hook timed out; child tree termination requested' });
-          });
+        try {
+          spawn(taskkill, ['/PID', String(child.pid), '/T', '/F'],
+            { windowsHide: true, shell: false, detached: true, stdio: 'ignore' })
+            .once('error', () => child.kill()).unref();
+        } catch { child.kill(); }
+        finish({ code: 1, fault: 'hook timed out; child tree termination requested' });
       } else {
         try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill(); }
         finish({ code: 1, fault: 'hook timed out; child process group terminated' });

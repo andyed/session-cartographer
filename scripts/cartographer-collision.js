@@ -41,6 +41,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync, realpathSync } from 'fs';
 import { join, basename, isAbsolute, resolve as resolvePath } from 'path';
 import { homedir, tmpdir } from 'os';
+import { fileURLToPath } from 'url';
 import { HOUR, fmtAge, readTail, eventFiles, contentionKey } from './contention.js';
 import { isResolved } from './sentinels.js';
 
@@ -205,6 +206,9 @@ async function main() {
   }));
 }
 
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+// Compared as paths, not as `file://${argv[1]}`: that string is never a URL on
+// Windows (C:\...), and a space or a symlink in the path breaks it anywhere, so
+// the hook ran nothing and printed nothing.
+if (process.argv[1] && fileURLToPath(import.meta.url) === realpathSync(process.argv[1])) {
   main().catch(() => { /* fail open: the edit proceeds */ });
 }

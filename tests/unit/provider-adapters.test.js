@@ -133,6 +133,20 @@ describe('hook provider detection', () => {
     assert.equal(detectProvider({ transcript_path: '/Users/me/.codex/sessions/2026/07/13/r.jsonl' }), 'codex');
   });
 
+  test('detects providers from a Windows transcript path', () => {
+    // Claude Code and Codex on Windows send C:\Users\me\.claude\projects\…;
+    // 538 of BIGFU's changelog rows were filed as "unknown" (2026-11-03). The
+    // path goes in as an argument, not inside a JSON payload: a payload's
+    // doubled backslashes do not survive a Windows command line into MSYS
+    // bash, and the hooks read theirs from stdin.
+    const from = (transcript) => execFileSync('bash', [
+      '-c', '. "$1"; detect_provider_from "$2" "" ""', '--', COMMON_HOOKS, transcript,
+    ], { encoding: 'utf8' }).trim();
+    assert.equal(from(String.raw`C:\Users\me\.claude\projects\C--dev-p\s.jsonl`), 'claude');
+    assert.equal(from(String.raw`C:\Users\me\.codex\sessions\2026\07\13\r.jsonl`), 'codex');
+    assert.equal(from(String.raw`C:\Users\me\.codex\archived_sessions\r.jsonl`), 'codex');
+  });
+
   test('supports an explicit custom-producer override', () => {
     assert.equal(detectProvider({}, { CARTOGRAPHER_PROVIDER: 'codex' }), 'codex');
   });

@@ -74,7 +74,9 @@ import { fileURLToPath } from 'node:url';
 import { NO_INDEXER_ROOT } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'log-tool-use.sh');
+// With `/`, as hooks/run-hook.cjs launches it: the hook finds common.sh from
+// "$0", and a Windows path written with `\` names no directory there.
+const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'log-tool-use.sh').replaceAll('\\', '/');
 const AUTHOR = ['-c', 'user.email=t@t', '-c', 'user.name=t'];
 
 function makeWorkspace() {
@@ -317,6 +319,45 @@ test('a -C path written with ~, $HOME, or quotes around spaces resolves', () => 
       assert.match(last(recs).summary, new RegExp(`Commit ${headOf(repo)}: chore: ${tag}`), cmd);
       assert.equal(last(recs).project, path.basename(repo), cmd);
     }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('Windows drive paths in a hop or -C, and a relative hop from a Windows cwd, name the repo',
+  { skip: process.platform !== 'win32' && 'drive paths exist only on Windows' }, () => {
+  // Git Bash runs `cd C:/dev/repo` and `git -C "C:\dev\repo"`; 8% of the cd and
+  // -C hops in BIGFU's transcripts were spelled with a drive (2026-11-03). Read
+  // as relative paths they named no repo, so the commit was lost. A relative
+  // hop from the payload's own C:\… cwd lost it too: awk -v turned that cwd
+  // into "C:Users…".
+  const ws = makeWorkspace();
+  try {
+    const fwd = ws.repo.replaceAll('\\', '/');
+    const cases = [
+      ['fwd-cd', `cd ${fwd} && git commit -q -m 'fix: fwd-cd'`, ws.dev],
+      ['fwd-C', `git -C ${fwd} commit -q -m 'fix: fwd-C'`, ws.dev],
+      ['dq-cd', `cd "${ws.repo}" && git commit -q -m 'fix: dq-cd'`, ws.dev],
+      ['dq-C', `git -C "${ws.repo}" commit -q -m 'fix: dq-C'`, ws.dev],
+      ['rel-cd', `cd repo && git commit -q -m 'fix: rel-cd'`, ws.dir],
+    ];
+    for (const [tag, cmd, cwd] of cases) {
+      commit(ws, `${tag}.js`, `fix: ${tag}`, ['-q']);
+      const recs = fire(ws, cmd, '', { cwd });
+      assert.match(last(recs).summary, new RegExp(`Commit ${headOf(ws.repo)}: fix: ${tag}`), cmd);
+      assert.equal(last(recs).project, 'repo', cmd);
+    }
+  } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('inside double quotes a backslash before an ordinary character stays in the path',
+  { skip: process.platform === 'win32' && 'a backslash separates on Windows; covered by the drive-path test' }, () => {
+  // Bash keeps `\b` in "a\b"; the hop reader dropped every backslash in double
+  // quotes, so the hop named `ab`.
+  const ws = makeWorkspace();
+  try {
+    const odd = makeRepo(ws, 'a\\b');
+    commitIn(odd, 'q.js', 'fix: odd name', ['-q']);
+    const recs = fire(ws, `cd "${odd}" && git commit -q -m 'fix: odd name'`, '', { cwd: ws.dev });
+    assert.match(last(recs).summary, new RegExp(`Commit ${headOf(odd)}: fix: odd name`));
   } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
 });
 

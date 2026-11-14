@@ -133,10 +133,26 @@ function parseState(line) {
   return { kind, pid: Number(pid), gen: line.trim() === '' ? 0 : (/^\d+$/.test(gen) ? Number(gen) : NaN) };
 }
 
+// Windows refuses to rename onto a file another process has open (a hook
+// reading the state, an appender writing the log) and to rename a file opened
+// without FILE_SHARE_DELETE. Each holds it for one read or write, so wait it out.
+function renameRetrying(from, to, waitMs = 2000) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (error) {
+      if (process.platform !== 'win32' || !['EPERM', 'EACCES', 'EBUSY'].includes(error.code) || Date.now() >= deadline) throw error;
+    }
+    sleepSync(10);
+  }
+}
+
 function writeState(file, line) {
   const temporary = `${statePath(file)}.${process.pid}`;
   fs.writeFileSync(temporary, `${line}\n`);
-  fs.renameSync(temporary, statePath(file));
+  renameRetrying(temporary, statePath(file));
 }
 
 const heldLive = (state) => {
@@ -326,6 +342,43 @@ function moveSpool(file, known, append) {
   return rows;
 }
 
+// The rename in replaceJsonl, for Windows. Windows will not rename onto an
+// open file, and replaceJsonl holds the log open for its last look, so every
+// rewrite failed with EPERM there. An open file can itself be renamed (Node and
+// MSYS open with FILE_SHARE_DELETE), and the descriptor follows it, as it
+// follows the old inode on POSIX. So the log moves aside, and the copy is
+// linked in: unlike a rename, a link refuses a log that an appender recreated
+// in between rather than replacing it. That file moves aside too, and its rows
+// are read with the late ones. <asides> collects every path moved aside.
+function swapIn(temporary, file, asides) {
+  for (;;) {
+    const aside = `${file}.replaced-${process.pid}-${asides.length}`;
+    renameRetrying(file, aside);
+    asides.push(aside);
+    try {
+      fs.linkSync(temporary, file);
+    } catch (error) {
+      if (error.code === 'EEXIST') continue;
+      // A volume without hard links: the name is free, so a rename replaces nothing.
+      fs.renameSync(temporary, file);
+      return;
+    }
+    fs.unlinkSync(temporary);
+    return;
+  }
+}
+
+// Put the log back when the swap failed after moving it aside, with the rows
+// of any log an appender recreated meanwhile.
+function restoreAsides(file, asides) {
+  fs.renameSync(asides[0], file);
+  for (const aside of asides.slice(1)) {
+    fs.appendFileSync(file, completeRows(fs.readFileSync(aside)));
+    fs.unlinkSync(aside);
+  }
+  asides.length = 0;
+}
+
 /**
  * Replace <file> with <body>, a rewrite of <original>: the bytes the caller
  * read from it earlier with snapshotJsonl (pass that Buffer; a string is
@@ -347,6 +400,7 @@ export function replaceJsonl(file, { original, body, graceMs = DEFAULT_GRACE_MS,
   let bytes = Buffer.isBuffer(body) ? body : Buffer.from(String(body), 'utf8');
   const handle = acquireRewriteLock(file, { waitMs });
   const temporary = `${file}.rewrite-${process.pid}`;
+  const asides = [];
   let fd;
   let position;
   let renamedSize;
@@ -377,9 +431,11 @@ export function replaceJsonl(file, { original, body, graceMs = DEFAULT_GRACE_MS,
     }
     fs.chmodSync(temporary, stat.mode & 0o7777);
     renamedSize = bytes.length + carried.length;
-    fs.renameSync(temporary, file);
+    if (process.platform === 'win32') swapIn(temporary, file, asides);
+    else fs.renameSync(temporary, file);
   } catch (error) {
     try { fs.unlinkSync(temporary); } catch {}
+    if (asides.length && !fs.existsSync(file)) restoreAsides(file, asides);
     if (fd !== undefined) fs.closeSync(fd);
     releaseRewriteLock(handle);
     // Nothing was replaced, so rows spooled while this held the log belong in
@@ -402,6 +458,9 @@ export function replaceJsonl(file, { original, body, graceMs = DEFAULT_GRACE_MS,
   } finally {
     fs.closeSync(fd);
   }
+  // Windows: a log an appender recreated during the swap holds only late rows.
+  for (const aside of asides.slice(1)) late = Buffer.concat([late, completeRows(fs.readFileSync(aside))]);
+  for (const aside of asides) try { fs.unlinkSync(aside); } catch {}
   const known = new Set(linesOf(carried));
   try {
     const now = fs.openSync(file, 'r');
