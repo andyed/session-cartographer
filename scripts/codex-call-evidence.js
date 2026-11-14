@@ -45,9 +45,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
-import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { isResolved } from './sentinels.js';
+import { canReadZstd, isCompressedTranscript, transcriptStream } from './transcript-file.js';
 import { FETCHED_SOURCE, USED_SOURCE, buildRecallIndex, namedKey, parseJsonl } from './recall-join.js';
 
 export const CALL_DERIVATION = 'codex_rollout';
@@ -59,7 +59,9 @@ const HEADER_CALL_ID = /· call_id (call-[A-Za-z0-9-]+)/g;
 // The access-ledger source each tool writes (cartographer-search.sh --get / --touch).
 const NAMING_TOOLS = { get: FETCHED_SOURCE, mark_used: USED_SOURCE };
 
-export const canReadZstd = typeof zlib.createZstdDecompress === 'function';
+// Decompression lives in transcript-file.js, shared with every other reader
+// of a rollout; the name stays exported here for this module's callers.
+export { canReadZstd };
 
 /** Both Codex stores, under the same variables resolve-transcript.sh reads. */
 export function codexRolloutRoots(env = process.env, home = os.homedir()) {
@@ -147,14 +149,6 @@ export function rolloutLineEvidence(line) {
   return minted || named.length ? { threadId, minted, named } : null;
 }
 
-function rolloutStream(file) {
-  if (!file.endsWith('.zst')) return fs.createReadStream(file, { encoding: 'utf8' });
-  const source = fs.createReadStream(file);
-  const decoded = source.pipe(zlib.createZstdDecompress());
-  source.on('error', (error) => decoded.destroy(error));
-  return decoded.setEncoding('utf8');
-}
-
 /**
  * Read one rollout to its end. Structured-clone safe, so a worker can post it.
  * A row whose thread is not this rollout's own session is counted in
@@ -164,9 +158,9 @@ function rolloutStream(file) {
 export async function scanRollout(file) {
   const sessionId = rolloutSessionId(file);
   const result = { file, session_id: sessionId, readable: true, reason: null, minted: [], named: [], foreign_rows: 0 };
-  if (file.endsWith('.zst') && !canReadZstd) return { ...result, readable: false, reason: 'zstd' };
+  if (isCompressedTranscript(file) && !canReadZstd) return { ...result, readable: false, reason: 'zstd' };
   try {
-    const lines = readline.createInterface({ input: rolloutStream(file), crlfDelay: Infinity });
+    const lines = readline.createInterface({ input: transcriptStream(file), crlfDelay: Infinity });
     for await (const line of lines) {
       const evidence = rolloutLineEvidence(line);
       if (!evidence) continue;

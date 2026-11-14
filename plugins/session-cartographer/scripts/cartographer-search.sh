@@ -897,8 +897,13 @@ if [ -n "$GET_IDS" ]; then
 
     if command -v jq >/dev/null 2>&1; then
       if [ -n "$get_resolved" ]; then
-        printf '%s' "$line" | jq --arg r "$get_resolved" \
-          '. + {transcript_path_resolved: $r, transcript_path_status: "archived"}' 2>/dev/null \
+        # Codex zstd-compresses a rollout about a week after its session, and
+        # the resolver then answers with the .jsonl.zst path. Say so: read as
+        # text, that file is zstd bytes (`zstd -dc <path>` decodes it).
+        get_status="archived"
+        case "$get_resolved" in *.jsonl.zst) get_status="compressed" ;; esac
+        printf '%s' "$line" | jq --arg r "$get_resolved" --arg s "$get_status" \
+          '. + {transcript_path_resolved: $r, transcript_path_status: $s}' 2>/dev/null \
           || echo "$line"
       elif [ -n "$get_tpath" ] && [ ! -f "$get_tpath" ]; then
         printf '%s' "$line" | jq '. + {transcript_path_status: "missing"}' 2>/dev/null || echo "$line"

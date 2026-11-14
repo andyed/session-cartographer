@@ -7,6 +7,7 @@ import { ArtifactError, discoverSessionArtifacts, openArtifactFile } from './ses
 import { createGuardedInspector, isUnreadable } from './guarded-open.js';
 import { CORPUS_ROOT } from './jsonl.js';
 import { isNonProject } from '../../scripts/non-projects.js';
+import { readTranscriptText } from '../../scripts/transcript-file.js';
 
 // A Wunderkammer collection (wunderkammer.collection v1) of the images the
 // sessions in a window wrote or named. The wall itself is Wunderkammer's; this
@@ -30,7 +31,7 @@ const AGENTS = { claude: 'Claude Code', codex: 'Codex', hermes: 'Hermes' };
 const FORMATS = { 'image/png': 'PNG', 'image/jpeg': 'JPEG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/svg+xml': 'SVG', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/x-icon': 'ICO' };
 
 function readEntries(file) {
-  return fs.readFileSync(file, 'utf8').split('\n').flatMap(line => {
+  return readTranscriptText(file).split('\n').flatMap(line => {
     try { return line.trim() ? [JSON.parse(line)] : []; } catch { return []; }
   });
 }

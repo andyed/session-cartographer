@@ -572,7 +572,10 @@ async function toolGet(args, { signal }) {
     lines.push(`${record.event_id} · ${provider || '?'}`);
     const shown = { ...record };
     if (record.transcript_path_resolved || record.transcript_path) {
-      if (record.transcript_path_resolved) {
+      if (record.transcript_path_status === 'compressed') {
+        // Codex compressed the rollout; the Read tool would return zstd bytes.
+        lines.push(`  transcript: ${record.transcript_path_resolved} (zstd-compressed; read it with \`zstd -dc <path>\`, not as text)`);
+      } else if (record.transcript_path_resolved) {
         lines.push(`  transcript: ${record.transcript_path_resolved} (archived; read this path, not the recorded one)`);
       } else {
         lines.push(`  transcript: ${record.transcript_path}${record.transcript_path_status === 'missing' ? ' (MISSING on disk)' : ''}`);

@@ -77,6 +77,7 @@ import { promisify } from 'node:util';
 import { isNonPromptNoise, normalizeLiteralPrompt, recallCue } from './classify-prompt-intent.js';
 import { exactServedPairs, indexExactAccesses, pairKey, parseJsonl, positiveRank, recordSession, timestampMs } from './recall-join.js';
 import { isResolved } from './sentinels.js';
+import { transcriptStream } from './transcript-file.js';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -613,7 +614,8 @@ function readPersistedOutput(filePath) {
 
 async function readTranscript(filePath, { sidechain = false } = {}) {
   const rows = [];
-  const lines = readline.createInterface({ input: createReadStream(filePath, { encoding: 'utf8' }), crlfDelay: Infinity });
+  // transcriptStream inflates a rollout Codex has compressed (.jsonl.zst).
+  const lines = readline.createInterface({ input: transcriptStream(filePath), crlfDelay: Infinity });
   for await (const line of lines) {
     if (!line) continue;
     try { rows.push(JSON.parse(line)); } catch { /* skipped, as above */ }

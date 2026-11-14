@@ -6,6 +6,7 @@ import { Worker, isMainThread, parentPort, workerData } from 'node:worker_thread
 import { serialize } from 'node:v8';
 import { transcriptRoots, isAllowedTranscriptPath } from './transcripts.js';
 import { epochMsFromTimestamp } from './event-time.js';
+import { COMPRESSED_UNREADABLE, canReadZstd, isCompressedTranscript, readTranscriptBuffer } from '../../scripts/transcript-file.js';
 
 const FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite', 'total'];
 const MAX_PASS_BYTES = 64 * 1024 * 1024;
@@ -148,6 +149,13 @@ let cacheHits = 0;
 const cacheBudget = workerData?.cacheBytes ?? TRANSCRIPT_CACHE_BYTES;
 function parseFile({ filePath, expected, start, end }) {
   const stat = fs.statSync(filePath);
+  // Codex zstd-compresses a rollout about a week after its session. zstd has
+  // no byte offsets to resume from, so a compressed rollout is inflated whole
+  // and state.offset counts decompressed bytes. Codex compresses only a
+  // rollout it has stopped writing, so the file itself (inode, size, mtime) is
+  // the identity and there is no appended tail to follow.
+  const compressed = isCompressedTranscript(filePath);
+  if (compressed && !canReadZstd) return { valid: false, reason: COMPRESSED_UNREADABLE };
   const key = `${filePath}\0${expected}`;
   const cached = parsed.get(key);
   const bytesBefore = transcriptBytesRead;
@@ -155,21 +163,35 @@ function parseFile({ filePath, expected, start, end }) {
   let fd;
   try {
     fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
-    let reset = !state || state.inode !== stat.ino || stat.size < state.offset || (stat.size === state.size && stat.mtimeMs !== state.mtime);
-    if (!reset && state.offset && state.boundary) {
+    let reset = !state || state.inode !== stat.ino || (compressed
+      ? stat.size !== state.size || stat.mtimeMs !== state.mtime
+      : stat.size < state.offset || (stat.size === state.size && stat.mtimeMs !== state.mtime));
+    if (!compressed && !reset && state.offset && state.boundary) {
       const check = Buffer.alloc(state.boundary.length);
       fs.readSync(fd, check, 0, check.length, state.offset - check.length);
       reset = !check.equals(state.boundary);
     }
-    if (!reset && state.offset === stat.size) cacheHits++;
+    if (compressed && !reset && !state.limited) {
+      // Parsed to its end already; nothing to inflate.
+      cacheHits++;
+      parsed.delete(key);
+      parsed.set(key, cached);
+      return windowResult(state, start, end, filePath);
+    }
+    const inflated = compressed ? readTranscriptBuffer(fd, { compressed: true, file: filePath }) : null;
+    const size = inflated ? inflated.length : stat.size;
+    const readAt = (buffer, position) => (inflated
+      ? inflated.copy(buffer, 0, position, position + buffer.length)
+      : fs.readSync(fd, buffer, 0, buffer.length, position));
+    if (!reset && state.offset === size) cacheHits++;
     if (reset) state = fresh(expected);
-    const until = Math.min(stat.size, state.offset + MAX_PASS_BYTES);
+    const until = Math.min(size, state.offset + MAX_PASS_BYTES);
     let cursor = state.offset;
     let carry = Buffer.alloc(0);
     let oversized = false;
     while (cursor < until) {
       const buffer = Buffer.alloc(Math.min(256 * 1024, until - cursor));
-      const length = fs.readSync(fd, buffer, 0, buffer.length, cursor);
+      const length = readAt(buffer, cursor);
       if (!length) break;
       transcriptBytesRead += length;
       cursor += length;
@@ -191,9 +213,9 @@ function parseFile({ filePath, expected, start, end }) {
     state.inode = stat.ino;
     state.size = stat.size;
     state.mtime = stat.mtimeMs;
-    state.limited = cursor < stat.size;
+    state.limited = cursor < size;
     state.incomplete = carry.length > 0;
-    state.boundary = Buffer.alloc(Math.min(64, state.offset));
+    state.boundary = Buffer.alloc(compressed ? 0 : Math.min(64, state.offset));
     if (state.boundary.length) fs.readSync(fd, state.boundary, 0, state.boundary.length, state.offset - state.boundary.length);
     // Keep normalized facts across wide windows, bounded by encoded bytes
     // instead of 64 sessions. Window edges are still evaluated on every read;
@@ -221,7 +243,11 @@ if (!isMainThread && workerData?.kind === 'memory-transcript') {
       const result = parseFile(request);
       parentPort.postMessage({ id, result, cacheStats: { entries: parsed.size, bytes: parsedBytes, budget: cacheBudget, hits: cacheHits, transcriptBytesRead } });
     }
-    catch { parentPort.postMessage({ id, result: { valid: false, reason: 'Transcript is not currently readable.' } }); }
+    catch (error) {
+      // A compressed transcript that will not decode says so; it is not "missing".
+      const reason = error?.code === 'TRANSCRIPT_COMPRESSED' ? error.message : 'Transcript is not currently readable.';
+      parentPort.postMessage({ id, result: { valid: false, reason } });
+    }
   });
 }
 
@@ -237,7 +263,7 @@ export function createTranscriptEnricher({ roots = transcriptRoots(), cacheBytes
   let cacheStats = { entries: 0, bytes: 0, budget: cacheBytes, hits: 0, transcriptBytesRead: 0 };
   async function allowed(candidate) {
     try {
-      if (typeof candidate !== 'string' || !candidate.endsWith('.jsonl')) return null;
+      if (typeof candidate !== 'string' || !/\.jsonl(?:\.zst)?$/.test(candidate)) return null;
       const canonical = await fs.promises.realpath(candidate);
       const realRoots = (await Promise.all(roots.map((root) => fs.promises.realpath(root).catch(() => null)))).filter(Boolean);
       if (!isAllowedTranscriptPath(canonical, realRoots)) return null;
@@ -257,12 +283,16 @@ export function createTranscriptEnricher({ roots = transcriptRoots(), cacheBytes
         for (const entry of entries) {
           inspected++;
           if (entry.isDirectory()) stack.push(path.join(dir, entry.name));
-          else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+          else if (entry.isFile() && /\.jsonl(?:\.zst)?$/.test(entry.name)) {
             // Session discovery previously scanned every filename once per
             // session. Index the same filename identities once per refresh.
+            // A rollout Codex has compressed is rollout-….jsonl.zst; a plain
+            // file for the same session is tried first.
+            const plain = entry.name.endsWith('.jsonl');
             for (const [id] of entry.name.matchAll(/[\da-f]{8}-[\da-f-]{27}/ig)) {
               if (!files.has(id)) files.set(id, []);
-              files.get(id).push(path.join(dir, entry.name));
+              if (plain) files.get(id).unshift(path.join(dir, entry.name));
+              else files.get(id).push(path.join(dir, entry.name));
             }
           }
         }
@@ -273,7 +303,9 @@ export function createTranscriptEnricher({ roots = transcriptRoots(), cacheBytes
     return fileIndex;
   }
   async function resolveSession(session) {
-    const candidates = [...(session.transcriptPaths || []), session.transcript, pathCache.get(session.id)].filter(Boolean);
+    // A recorded .jsonl path may have been compressed where it sits since.
+    const candidates = [...(session.transcriptPaths || []), session.transcript, pathCache.get(session.id)].filter(Boolean)
+      .flatMap((candidate) => (typeof candidate === 'string' && candidate.endsWith('.jsonl') ? [candidate, `${candidate}.zst`] : [candidate]));
     // A shared event may carry a subagent transcript. Its filename is not a
     // match, even if the parent session id was copied onto the event.
     for (const candidate of candidates) if (path.basename(candidate).includes(session.id)) {

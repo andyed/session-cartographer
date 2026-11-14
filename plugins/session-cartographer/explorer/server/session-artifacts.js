@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { normalizeTranscriptEntries } from './transcripts.js';
 import { literalToolInputs } from './memory-transcript.js';
 import { firstResolved } from '../../scripts/sentinels.js';
+import { readTranscriptText } from '../../scripts/transcript-file.js';
 import { imageDimensions } from './image-probe.js';
 
 const IMAGE_EXT = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|ico)$/i;
@@ -398,7 +399,7 @@ export function openSessionArtifact(entries, id) {
 }
 
 function readEntries(file) {
-  return fs.readFileSync(file, 'utf8').split('\n').flatMap(line => {
+  return readTranscriptText(file).split('\n').flatMap(line => {
     try { return line.trim() ? [JSON.parse(line)] : []; } catch { return []; }
   });
 }

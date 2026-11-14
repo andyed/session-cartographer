@@ -18,8 +18,10 @@
 // reader's message id (transcript-evidence.js, normalizeEvidenceEntries) and
 // `block` the index of the part inside that message. A list row links there.
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
+
+import { readTranscriptText } from '../../scripts/transcript-file.js';
 
 import { tally } from '../shared/workmap/board.js';
 import { classify, shortModel } from '../shared/workmap/classify.js';
@@ -62,7 +64,7 @@ export const WORKMAP_OPTIONS = Object.freeze({
 });
 
 function* rows(path) {
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
+  for (const line of readTranscriptText(path).split('\n')) {
     if (line === '') continue;
     try {
       yield JSON.parse(line);

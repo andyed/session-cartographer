@@ -1,5 +1,5 @@
 import express from 'express';
-import { readAllEvents, watchFiles, LOG_FILES, readJsonlFile, logHealth, isHighSignal, CORPUS_ROOT, mergeDuplicateEvent } from './jsonl.js';
+import { readAllEvents, watchFiles, LOG_FILES, logHealth, isHighSignal, CORPUS_ROOT, mergeDuplicateEvent } from './jsonl.js';
 import { buildIndex, addToIndex } from './bm25.js';
 import { hybridSearch, computeFacets, parseTimeArg } from './search.js';
 import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js';
@@ -18,7 +18,8 @@ import {
   FACTS_VERBS,
   FactsContractError,
 } from './facts-contract.js';
-import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
+import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, readTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
+import { COMPRESSED_UNREADABLE, canReadZstd, isCompressedTranscript } from '../../scripts/transcript-file.js';
 import { summarizeSessions } from './sessions.js';
 import { sessionWorkmap } from './workmap.js';
 import { MAX_FOCUS_DURATION_MS } from '../shared/focus.js';
@@ -435,10 +436,13 @@ export function createExplorerApp() {
       const hit = codexSessionIndex().get(session_id);
       if (hit) return hit;
       // A stale recorded path still names its own file; the archive is flat.
+      // Either may have been compressed since (rollout-….jsonl.zst).
       if (recorded_path) {
         const base = recorded_path.slice(recorded_path.lastIndexOf('/') + 1);
         const archived = resolve(CODEX_ARCHIVE_ROOT, base);
-        if (existsSync(archived)) return archived;
+        for (const candidate of [archived, `${recorded_path}.zst`, `${archived}.zst`]) {
+          if (existsSync(candidate)) return candidate;
+        }
       }
     }
 
@@ -487,7 +491,12 @@ export function createExplorerApp() {
   // then authorize it. Resolution and authorization are deliberately separate:
   // the resolver hunts across both providers' stores, including the Codex
   // archive, and its answer still has to fall inside TRANSCRIPT_ROOTS.
-  function locateTranscript(req) {
+  //
+  // The resolver returns a rollout Codex has compressed as its .jsonl.zst path.
+  // A route whose reader cannot decompress passes readsCompressed: false and
+  // answers TRANSCRIPT_COMPRESSED; handing that reader the path would parse
+  // zstd bytes as one bad JSONL line and report an empty transcript.
+  function locateTranscript(req, { readsCompressed = true } = {}) {
     const raw = req.query.path || req.query.session_id || '';
     if (!raw) return { error: 'path or session_id required', code: 'TRANSCRIPT_PATH_REQUIRED', status: 400 };
 
@@ -505,6 +514,12 @@ export function createExplorerApp() {
       accessSync(resolved, constants.R_OK);
     } catch {
       return { error: 'transcript exists but is not readable', code: 'TRANSCRIPT_UNREADABLE', status: 503 };
+    }
+    if (isCompressedTranscript(resolved) && !(readsCompressed && canReadZstd)) {
+      const error = readsCompressed ? COMPRESSED_UNREADABLE : 'Transcript is zstd-compressed, and this view reads only uncompressed transcripts.';
+      // 503, not 422: the client words a 422 as "no readable messages", and
+      // this transcript has them. 503 is its "found but could not read".
+      return { error, code: 'TRANSCRIPT_COMPRESSED', status: 503 };
     }
     return { path: resolved, recorded: expanded };
   }
@@ -660,7 +675,13 @@ export function createExplorerApp() {
     const located = locateTranscript(req);
     if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
 
-    const entries = readJsonlFile(located.path);
+    let entries;
+    try {
+      entries = readTranscriptEntries(located.path);
+    } catch (error) {
+      // On disk but not decodable (a truncated zstd frame): never "not found".
+      return res.status(503).json({ error: error.message, code: error.code === 'TRANSCRIPT_COMPRESSED' ? error.code : 'TRANSCRIPT_UNREADABLE' });
+    }
     if (entries.length === 0) {
       return res.status(404).json({ error: 'transcript not found or empty', code: 'TRANSCRIPT_EMPTY' });
     }
@@ -715,7 +736,9 @@ export function createExplorerApp() {
   // in those modules won't take down the whole API server.
 
   app.get('/api/transcript/analysis', async (req, res) => {
-    const located = locateTranscript(req);
+    // The devtools parser opens the file itself and reads Claude transcripts,
+    // which are never compressed.
+    const located = locateTranscript(req, { readsCompressed: false });
     if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
     const resolved = located.path;
 

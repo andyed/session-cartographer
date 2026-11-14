@@ -96,7 +96,9 @@ minted only once, so it is never used.
   path; both paths fold to one session.
 - Node before 22.15 has no zlib zstd. Compressed rollouts are then reported in
   `transcript_attribution.unreadable`, and calls they hold stay unattributed.
-- Other readers of rollouts in this repo (`codexSessionIndex()`,
-  `resolve-transcript.sh`, the transcript indexers) match `*.jsonl` only and do
-  not see `*.jsonl.zst`. That is outside this change.
+- When this was measured, the other readers of rollouts in this repo
+  (`codexSessionIndex()`, `resolve-transcript.sh`, the transcript indexers)
+  matched `*.jsonl` only. The resolver, the index and the Explorer's readers
+  now read `*.jsonl.zst` too; the indexers do not
+  ([COMPRESSED_ROLLOUTS.md](COMPRESSED_ROLLOUTS.md)).
 - Hermes also gives an MCP child no session. Nothing here reads Hermes.

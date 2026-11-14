@@ -93,6 +93,10 @@ no longer resolves, the record gains:
 - **`transcript_path_resolved`** + `transcript_path_status: "archived"` — Codex
   moved that session into `~/.codex/archived_sessions/`. **Read the resolved
   path**; the recorded one is kept for provenance only.
+- **`transcript_path_resolved`** ending `.jsonl.zst` + `transcript_path_status:
+  "compressed"` — Codex zstd-compresses a rollout about a week after its
+  session. The transcript is all there, but the Read tool returns zstd bytes.
+  Read it with `zstd -dc <resolved path> | jq …` (or `rg -z`).
 - **`transcript_path_status: "missing"`** — genuinely unrecoverable (a deleted
   Claude transcript). Say so rather than answering around the gap. Ids that resolve to nothing are reported as missing rather than
 dropped — if you asked for five and got four, say so instead of answering
@@ -333,11 +337,13 @@ finished sessions into `~/.codex/archived_sessions/` rather than deleting
 them — so a `transcript_path` recorded by the hooks goes stale while the file
 is still on disk. Prefer it over a hand-rolled `find`; a bare
 `find ~/.codex/sessions` misses every archived session and reports a
-recoverable transcript as missing.
+recoverable transcript as missing. It also knows Codex **compresses** a rollout
+about a week after its session: the path it prints may end in `.jsonl.zst`, and
+then every `jq` or `grep` below reads `zstd -dc <path>` instead of the file.
 
 ```bash
-# manual equivalent, if you need it
-find ~/.codex/archived_sessions ~/.codex/sessions -name "*<session-id>*.jsonl" 2>/dev/null
+# manual equivalent, if you need it (both spellings)
+find ~/.codex/archived_sessions ~/.codex/sessions -name "*<session-id>*.jsonl*" 2>/dev/null
 ```
 
 For a Claude transcript, read around the relevant moment:

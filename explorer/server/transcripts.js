@@ -1,9 +1,11 @@
-import { join, resolve, sep } from 'path';
+import { resolve, sep } from 'path';
 import { homedir } from 'os';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { normalizeEvidenceEntries } from './transcript-evidence.js';
+import { listCodexRollouts } from '../../scripts/codex-call-evidence.js';
+import { isCompressedTranscript, readTranscriptText } from '../../scripts/transcript-file.js';
 
 export function transcriptRoots(env = process.env, home = homedir()) {
   return [
@@ -60,6 +62,26 @@ function noiseSummary(content, noiseType) {
   }
 }
 
+/**
+ * Every parseable row of a transcript, in either spelling. A missing file is
+ * no rows. A compressed file this process cannot decode throws
+ * CompressedTranscriptError, so its caller can say "compressed" instead of
+ * "empty".
+ */
+export function readTranscriptEntries(file) {
+  let text;
+  try {
+    text = readTranscriptText(file);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+  return text.split('\n').flatMap((line) => {
+    // The last line of a live transcript can be a row still being written.
+    try { return line.trim() ? [JSON.parse(line)] : []; } catch { return []; }
+  });
+}
+
 export function normalizeTranscriptEntries(entries) {
   const normalized = normalizeEvidenceEntries(entries);
   for (const message of normalized.messages) {
@@ -96,11 +118,20 @@ export function normalizeTranscriptEntries(entries) {
 //
 // Both cover both Codex roots. Do not reintroduce a bare find over
 // ~/.codex/sessions alone.
+//
+// Both also cover both SPELLINGS. Codex zstd-compresses a rollout in place
+// about a week after its session (rollout-….jsonl → rollout-….jsonl.zst), so a
+// reader matching *.jsonl alone sees only the last week: 270 of 3,916 rollouts
+// on 2026-11-13 (docs/COMPRESSED_ROLLOUTS.md). A path either function returns
+// may end in .jsonl.zst, and whatever opens it reads through
+// scripts/transcript-file.js.
 
 const RESOLVER = resolve(fileURLToPath(import.meta.url), '..', '..', '..', 'scripts', 'resolve-transcript.sh');
 
 // A miss is cached briefly, not forever: a transcript can appear after a query
-// (catch-up backfill, a session that archives mid-view). A hit never changes.
+// (catch-up backfill, a session that archives mid-view). A hit is kept while
+// its file is still there: Codex archives and compresses under a long-running
+// server, and either one renames the file a cached hit points at.
 const MISS_TTL_MS = 60_000;
 const resolutionCache = new Map();
 
@@ -122,7 +153,7 @@ export function resolveTranscriptPath(needle, { cache = resolutionCache, now = D
   if (!isResolvableNeedle(needle)) return '';
 
   const cached = cache.get(needle);
-  if (cached && (cached.path || cached.until > now())) return cached.path;
+  if (cached && (cached.path ? existsSync(cached.path) : cached.until > now())) return cached.path;
 
   let path = '';
   if (existsSync(needle)) {
@@ -143,43 +174,32 @@ export function resolveTranscriptPath(needle, { cache = resolutionCache, now = D
   return path;
 }
 
-function walkJsonl(dir, out, depth = 0) {
-  if (depth > 6) return out;
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const entry of entries) {
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) walkJsonl(full, out, depth + 1);
-    else if (entry.name.endsWith('.jsonl')) out.push(full);
-  }
-  return out;
-}
-
 const INDEX_TTL_MS = 30_000;
 let codexIndexCache = null;
 
 /**
- * Map of Codex session id → transcript path, across live and archived stores.
- * Rollout files are named rollout-<timestamp>-<session-uuid>.jsonl, so the id
- * is the tail of the basename — the same relationship the hooks record.
+ * Map of Codex session id → transcript path, across live and archived stores
+ * and both spellings. Rollout files are named
+ * rollout-<timestamp>-<session-uuid>.jsonl[.zst], so the id is the tail of the
+ * basename — the same relationship the hooks record. The walk and the name
+ * rule are listCodexRollouts' (scripts/codex-call-evidence.js); this adds only
+ * the choice between two files for one session.
  */
 export function codexSessionIndex({ env = process.env, home = homedir(), now = Date.now, force = false } = {}) {
   if (!force && codexIndexCache && codexIndexCache.until > now()) return codexIndexCache.map;
 
-  const [, sessions, archived] = transcriptRoots(env, home);
+  const [, sessions] = transcriptRoots(env, home);
   const map = new Map();
-  for (const file of [...walkJsonl(archived, []), ...walkJsonl(sessions, [])]) {
-    const base = file.slice(file.lastIndexOf(sep) + 1, -'.jsonl'.length);
-    // Match the timestamp shape exactly rather than trimming leading digits:
-    // a session uuid whose first group happens to be all digits (01234567-…)
-    // would otherwise have its own head eaten along with the timestamp.
-    const id = base.match(/^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-(.+)$/)?.[1] || base;
-    // Live sessions win over archived copies of the same id: both are readable,
-    // the live one is the path the hooks are still stamping.
+  const rank = new Map();
+  for (const { file, session_id: id } of listCodexRollouts({ env, home })) {
+    if (!id) continue;
+    // A plain file beats a compressed one: both are readable, the plain one
+    // without a decompression, and it is the one Codex is still writing if the
+    // two ever coexist. Then live beats archived, as before: the live path is
+    // the one the hooks are still stamping.
+    const score = (isCompressedTranscript(file) ? 0 : 2) + (file.startsWith(`${sessions}${sep}`) ? 1 : 0);
+    if (rank.has(id) && rank.get(id) >= score) continue;
+    rank.set(id, score);
     map.set(id, file);
   }
 
