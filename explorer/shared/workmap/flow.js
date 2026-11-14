@@ -20,6 +20,7 @@
 
 import { boardAt } from './board.js'
 import { legBetween, mapGeometry, routeOf } from './draw.js'
+import { KIND, familyOfStation } from './kinds.js'
 import { DARK } from './palette.js'
 import { STATIONS } from './setup.js'
 import { mix } from './tint.js'
@@ -398,13 +399,13 @@ export function tapeOf(actions, at, n = 60) {
     const a = actions[i]
     if (a.startedAt > at || a.station === 'model') continue
     const ended = a.endedAt !== undefined && a.endedAt <= at
-    rows.push({ station: a.station, agentId: a.agentId, status: ended ? a.status : 'run', startedAt: a.startedAt, person: a.station === 'you' && a.from === 'inbound', aside: a.aside === true })
+    rows.push({ station: a.station, agentId: a.agentId, status: ended ? a.status : 'run', startedAt: a.startedAt, person: a.station === 'you' && a.from === 'inbound', wake: a.wake !== undefined && a.from === 'inbound', aside: a.aside === true })
   }
   return rows.reverse()
 }
 
 /** The lanes a tape draws, in the hub's order: the ones named, or else the stations its rows touch. */
-const tapeLanes = (rows, lanes) => STATIONS.map(s => s.id).filter(id => (lanes ? lanes.includes(id) : rows.some(r => r.station === id)))
+const tapeLanes = (rows, lanes) => [...STATIONS.map(s => s.id), 'screen'].filter(id => (lanes ? lanes.includes(id) : rows.some(r => r.station === id)))
 
 export function tapeHeight(rows, lanes) {
   return Math.max(1, tapeLanes(rows, lanes).length) * TAPE_LANE + 10
@@ -414,26 +415,34 @@ export function tapeHeight(rows, lanes) {
  * `lanes` fixes which stations get a lane. Give it the session's stations and the tape keeps its
  * height while it plays; leave it out and only the lanes in view are drawn.
  */
-export function drawTape(rows, { width = W, palette = DARK, names = {}, capacity = 60, lanes: fixed } = {}) {
+export function drawTape(rows, { width = W, palette = DARK, names = {}, capacity = 60, lanes: fixed, kinds = false, tells = 'station' } = {}) {
   const p = palette
+  // Two-way: what the agent told the person is drawn in You's own lane, as on the hub, and is not on the agent's path.
+  const twoWay = tells === 'lane'
+  if (twoWay) {
+    rows = rows.map(r => (r.station === 'tells' ? { ...r, station: 'you', told: true } : r))
+    if (fixed) fixed = fixed.filter(id => id !== 'tells').concat(fixed.includes('tells') && !fixed.includes('you') ? ['you'] : [])
+  }
   const lanes = tapeLanes(rows, fixed)
   const height = tapeHeight(rows, fixed)
   const out = [`<rect width="${width}" height="${height}" fill="${p.ground}"/>`]
   const yOf = id => 5 + lanes.indexOf(id) * TAPE_LANE + TAPE_LANE / 2
+  // The gutter holds the longest lane name at 16 px.
+  const gutter = Math.max(TAPE_GUTTER, ...lanes.map(id => String(names[id] ?? id).length * 8.6 + 16))
   // Newest at the right edge, one step per call. A short tape fills from the right, so "now" never moves.
-  const step = (width - TAPE_GUTTER - 10) / Math.max(1, capacity - 1)
+  const step = (width - gutter - 10) / Math.max(1, capacity - 1)
   const xOf = i => width - 8 - (rows.length - 1 - i) * step
 
   for (const id of lanes) {
-    out.push(`<line x1="${TAPE_GUTTER}" y1="${yOf(id)}" x2="${width - 4}" y2="${yOf(id)}" stroke="${p.spoke}" stroke-width="1"/>`)
-    out.push(`<text x="${TAPE_GUTTER - 10}" y="${yOf(id) + 5.5}" text-anchor="end" ${FONT} font-size="16" font-weight="500" fill="${p.ash}">${esc(names[id] ?? id)}</text>`)
+    out.push(`<line x1="${gutter}" y1="${yOf(id)}" x2="${width - 4}" y2="${yOf(id)}" stroke="${p.spoke}" stroke-width="1"/>`)
+    out.push(`<text x="${gutter - 10}" y="${yOf(id) + 5.5}" text-anchor="end" ${FONT} font-size="16" font-weight="500" fill="${p.ash}">${esc(names[id] ?? id)}</text>`)
   }
 
   // The line is the agent's path. It breaks at a message from the person, and a report sent beside other work is off it.
   const runs = [[]]
   rows.forEach((r, i) => {
-    if (r.person) runs.push([])
-    else if (r.agentId === undefined && !r.aside) runs[runs.length - 1].push([xOf(i), yOf(r.station)])
+    if (r.person || r.wake) runs.push([])
+    else if (r.agentId === undefined && !r.aside && !r.told) runs[runs.length - 1].push([xOf(i), yOf(r.station)])
   })
   for (const run of runs) {
     if (run.length > 1) out.push(`<path d="${polyline(run)}" fill="none" stroke="${mix(p.ground, p.trail, 0.55)}" stroke-width="1.3" stroke-linejoin="round"/>`)
@@ -449,8 +458,16 @@ export function drawTape(rows, { width = W, palette = DARK, names = {}, capacity
   }
 
   rows.forEach((r, i) => {
-    const colour = r.status === 'err' || r.status === 'block' ? p.red : r.station === 'memory' ? p.memHot : p.hot
+    // With `kinds` a mark has its family's colour as well as its lane, so the tape and the ribbon read alike.
+    const own = kinds ? KIND[familyOfStation(r.station)] : r.station === 'memory' ? p.memHot : p.hot
+    const colour = r.status === 'err' || r.status === 'block' ? p.red : own
     const [x, y] = [n1(xOf(i)), yOf(r.station)]
+    if (r.wake) {
+      // Woken by a task or the harness, not by the person: the same rule down the tape, and a hollow diamond.
+      out.push(`<line x1="${x}" y1="5" x2="${x}" y2="${height - 5}" stroke="${p.line}" stroke-width="1" stroke-dasharray="2 3"/>`)
+      out.push(`<path d="M${x} ${y - 5}L${n1(Number(x) + 5)} ${y}L${x} ${y + 5}L${n1(Number(x) - 5)} ${y}Z" fill="${p.ground}" stroke="${p.ash}" stroke-width="1.4"/>`)
+      return
+    }
     if (r.person) {
       // A message from the person: a diamond in the trail's white, with a rule down the tape where the turn begins.
       out.push(`<line x1="${x}" y1="5" x2="${x}" y2="${height - 5}" stroke="${p.line}" stroke-width="1"/>`)

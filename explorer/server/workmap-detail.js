@@ -339,9 +339,13 @@ export function describeHook(attachment = {}) {
 }
 
 /** The first line of what the person wrote. */
+/** The words of something that arrived in the person's turn, whole and unmasked: for telling who sent it, never for showing. */
+export function promptText(content) {
+  return typeof content === 'string' ? content : (Array.isArray(content) ? content : []).filter(p => p?.type === 'text' || p?.type === 'input_text').map(p => p.text ?? '').join(' ');
+}
+
 export function describePrompt(content) {
-  const text = typeof content === 'string' ? content : (Array.isArray(content) ? content : []).filter(p => p?.type === 'text' || p?.type === 'input_text').map(p => p.text ?? '').join(' ');
-  return clip(scrub(text), 140);
+  return clip(scrub(promptText(content)), 140);
 }
 
 // ─── Codex items ────────────────────────────────────────────────────────────

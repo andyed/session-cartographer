@@ -25,8 +25,9 @@ import { readTranscriptText } from '../../scripts/transcript-file.js';
 
 import { tally } from '../shared/workmap/board.js';
 import { classify, shortModel } from '../shared/workmap/classify.js';
+import { starterOf, wakeLabel } from '../shared/workmap/kinds.js';
 import { STATIONS, setupFrom } from '../shared/workmap/setup.js';
-import { describeCodexItem, describeHook, describePrompt, describeTool, describeUsage, runsScript } from './workmap-detail.js';
+import { describeCodexItem, describeHook, describePrompt, describeTool, describeUsage, promptText, runsScript } from './workmap-detail.js';
 
 /**
  * lot-map files a shell line under Memory by the words of its first command: `grep -n x scripts/cartographer-feed.sh`
@@ -44,6 +45,20 @@ const toTells = (found, tool = '') => {
   // under "you". Reading or messaging another session is work with other agents, not a report to the person.
   return { ...found, station: /__ccd_session_mgmt__|__ccd_window__|__ccd_sidebar__/.test(tool) ? 'agents' : 'tells' };
 };
+
+/**
+ * Something arrived in the person's turn. Only what the person typed is filed under "you". A background task
+ * reporting back, a reminder the harness added and a summary written at a compaction woke the agent without
+ * anyone speaking: they are filed under Hooks, which is where the map keeps what fires on an event, and
+ * carry `wake` so a drawing can start a new stretch of the route there as it does at a message.
+ */
+function arrival(content, setup, ts, uuid) {
+  const text = promptText(content);
+  const starter = starterOf(text);
+  if (starter === 'person') return { station: 'you', label: describePrompt(content) || setup.t.stations.you, from: 'inbound', startedAt: ts, endedAt: ts, status: 'ok', uuid };
+  // What arrived is markup written for the agent: the row says what it was, in words.
+  return { station: 'hooks', label: wakeLabel(text), from: 'inbound', wake: starter, startedAt: ts, endedAt: ts, status: 'ok', uuid };
+}
 
 /** The tokens a model request had in its context: what it was sent, cached or not. */
 const contextTokens = usage => (usage && typeof usage === 'object' ? ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].reduce((sum, key) => sum + (Number(usage[key]) || 0), 0) : 0);
@@ -166,7 +181,7 @@ function readClaude(path, agentId, setup, actions, state) {
       const hasText = typeof content === 'string' ? content.trim() !== '' : parts.some(p => p.type === 'text');
       // A subagent's "user" lines are its parent's prompts, not the person.
       if (agentId === undefined && !answered && hasText && row.isMeta !== true) {
-        actions.push({ station: 'you', label: describePrompt(content) || setup.t.stations.you, from: 'inbound', startedAt: ts, endedAt: ts, status: 'ok', uuid });
+        actions.push(arrival(content, setup, ts, uuid));
       }
       continue;
     }
@@ -320,7 +335,7 @@ export function codexActions(rolloutPath, setup) {
         if (!subagent) {
           const uuid = typeof item.id === 'string' && item.id !== '' ? item.id : undefined;
           if (uuid !== undefined) lastShown = uuid;
-          actions.push({ station: 'you', label: describePrompt(item.content) || setup.t.stations.you, from: 'inbound', startedAt: ts, endedAt: ts, status: 'ok', uuid });
+          actions.push(arrival(item.content, setup, ts, uuid));
         }
         break;
       case 'CommandExecution': {

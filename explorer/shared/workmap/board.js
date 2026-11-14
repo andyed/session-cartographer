@@ -36,6 +36,7 @@ export function boardAt(actions, at = Infinity, extra = {}) {
       ...(a.agentId !== undefined ? { agentId: a.agentId } : {}),
       ...(a.mark !== undefined ? { mark: a.mark } : {}),
       ...(a.aside === true ? { aside: true } : {}),
+      ...(a.wake !== undefined ? { wake: a.wake } : {}),
     })
     counts[a.station] = (counts[a.station] ?? 0) + 1
     // Faults are counted since the person's last message, so a new message clears them.

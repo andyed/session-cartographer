@@ -78,6 +78,7 @@ export function regionOf(action) {
     case 'memory':
       return { region: 'hippocampus', dir: writes ? 'out' : 'in', part: 'memory' }
     case 'web':
+    case 'screen':
       return { region: 'eye', dir: 'in', part: 'web' }
     case 'browser':
       return { region: 'eye', dir: 'in', part: 'browser' }
@@ -252,7 +253,7 @@ function labelsFor(state, names) {
  * `size` is the width it will be shown at in CSS pixels; it picks the level of detail and the stroke weight.
  * `clock` is display time in ms, for the slow breathing of a call still running.
  */
-export function drawPortrait(state, { size = 460, palette = DARK, names = {}, clock = 0, motion = 'full' } = {}) {
+export function drawPortrait(state, { size = 460, palette = DARK, names = {}, clock = 0, motion = 'full', hues } = {}) {
   const p = palette
   const level = portraitLevel(size)
   const box = level === 3 ? PORTRAIT_FULL : PORTRAIT_TIGHT
@@ -266,11 +267,13 @@ export function drawPortrait(state, { size = 460, palette = DARK, names = {}, cl
   const lit = id => {
     const region = r[id]
     const level01 = (region.running > 0 ? Math.max(region.level, 0.55 + 0.25 * breath) : region.level) * (GAIN[id] ?? 1)
-    return { level: level01, hue: hueOf(region.dir, p), used: region.count > 0, fault: region.faults > 0 }
+    // With `hues` a region has one colour whatever the direction, and wears it at rest: the head is then a key to the ribbon.
+    return { level: level01, hue: hues?.[id] ?? hueOf(region.dir, p), keyed: hues?.[id] !== undefined, used: region.count > 0, fault: region.faults > 0 }
   }
   // A region the session never used is drawn in the head's own colour with the faintest edge: its place is kept, its ink is not spent.
-  const fillOf = l => (l.level > 0.02 ? mix(p.raised, l.hue, 0.18 + 0.82 * l.level) : l.used ? mix(p.raised, p.ash, 0.2) : p.raised)
-  const edgeOf = l => (l.fault ? p.red : l.level > 0.02 ? mix(p.line, l.hue, 0.35 + 0.65 * l.level) : l.used ? p.line : p.spoke)
+  const restOf = l => (l.keyed ? mix(p.raised, l.hue, 0.34) : mix(p.raised, p.ash, 0.2))
+  const fillOf = l => (l.level > 0.02 ? mix(p.raised, l.hue, (l.keyed ? 0.34 : 0.18) + (l.keyed ? 0.66 : 0.82) * l.level) : l.used ? restOf(l) : p.raised)
+  const edgeOf = l => (l.fault ? p.red : l.level > 0.02 ? mix(p.line, l.hue, 0.35 + 0.65 * l.level) : l.used ? (l.keyed ? mix(p.line, l.hue, 0.6) : p.line) : p.spoke)
 
   // A soft light under an active region. At a glyph's size this, not the outline, is what is seen.
   const halo = id => {
@@ -355,7 +358,7 @@ export function drawPortrait(state, { size = 460, palette = DARK, names = {}, cl
         const outward = pulse.dir === 'out'
         const t = OUTWARD.has(id) === outward ? pulse.f : 1 - pulse.f
         const [x, y] = onTract(tract, t)
-        out.push(`<circle cx="${n1(x)}" cy="${n1(y)}" r="${px(4)}" fill="${hueOf(pulse.dir, p)}" stroke="${p.ground}" stroke-width="${px(1)}"/>`)
+        out.push(`<circle cx="${n1(x)}" cy="${n1(y)}" r="${px(4)}" fill="${hues?.[id] ?? hueOf(pulse.dir, p)}" stroke="${p.ground}" stroke-width="${px(1)}"/>`)
       }
     }
     for (const pulse of r.cortex.pulses) {

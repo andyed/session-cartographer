@@ -120,19 +120,20 @@ export function routeOf(entries, max = TRAIL_STOPS) {
   let fresh = false
   for (const e of entries) {
     if (e.from === 'agents' || e.station === 'model' || e.aside === true) continue
-    if (e.station === 'you' && e.from === 'inbound') {
-      fresh = true
+    // A wake (a background task reporting back, a reminder from the harness) starts a new stretch as a message does.
+    if (e.from === 'inbound' && (e.station === 'you' || e.wake !== undefined)) {
+      fresh = { by: e.wake ?? 'person', at: e.startedAt }
       continue
     }
     const last = stops[stops.length - 1]
     if (!fresh && last !== undefined && last.station === e.station) last.at = e.startedAt
-    else stops.push({ station: e.station, at: e.startedAt, ...(fresh ? { fresh: true } : {}) })
+    else stops.push({ station: e.station, at: e.startedAt, ...(fresh ? { fresh: true, by: fresh.by, askedAt: fresh.at } : {}) })
     fresh = false
   }
   return stops.slice(-max)
 }
 
-function trail(entries, now, c, isStill, shift) {
+function trail(entries, now, c, isStill, shift, { hold = TRAIL_HOLD_MS, fade = TRAIL_FADE_MS } = {}) {
   const stops = routeOf(entries)
   let out = ''
   for (let k = 1; k < stops.length; k++) {
@@ -142,20 +143,22 @@ function trail(entries, now, c, isStill, shift) {
     const { path, end } = leg(indexOf(from.station), indexOf(to.station), shift)
     const isHead = k === stops.length - 1
     const age = now - to.at
-    if (age >= TRAIL_HOLD_MS + TRAIL_FADE_MS) continue
-    const opacity = n1(0.12 + (0.5 * k) / (stops.length - 1))
+    if (age >= hold + fade) continue
+    // lot-map drew these at 1.1 to 1.5 wide and .12 to .62 opaque, under spokes that wear in to 3.6 wide: at full
+    // size the route was the faintest line on the map, and fainter than on the map's own thumbnail.
+    const opacity = n1(0.3 + (0.6 * k) / Math.max(1, stops.length - 1))
     // The fading is written into the drawing, so a leg goes out on time even when nothing redraws the map.
-    const fade = `<animate attributeName="opacity" values="${opacity};0" begin="${clock(TRAIL_HOLD_MS - age)}" dur="${clock(TRAIL_FADE_MS)}" fill="freeze"/>`
+    const fading = `<animate attributeName="opacity" values="${opacity};0" begin="${clock(hold - age)}" dur="${clock(fade)}" fill="freeze"/>`
     // The newest leg draws itself; the rest are already there.
     const drawing = isHead && !isStill
       ? ` pathLength="1" stroke-dasharray="1 1" stroke-dashoffset="1"><animate attributeName="stroke-dashoffset" values="1;0" begin="${clock(to.at - now)}" dur=".5s" fill="freeze"/>`
       : '>'
-    out += `<path d="${path}" fill="none" stroke="${c.trail}" stroke-width="${isHead ? 1.5 : 1.1}" stroke-linecap="round" opacity="${opacity}"${drawing}${fade}</path>`
+    out += `<path d="${path}" fill="none" stroke="${c.trail}" stroke-width="${isHead ? 2.4 : 1.6}" stroke-linecap="round" opacity="${opacity}"${drawing}${fading}</path>`
     if (isHead) {
       out +=
         `<circle cx="${n1(end.x)}" cy="${n1(end.y)}" r="2.4" fill="${c.trail}" opacity="${isStill ? '.85' : '0'}">` +
         (isStill ? '' : `<animate attributeName="opacity" values="0;.85" begin="${clock(to.at - now + 400)}" dur=".15s" fill="freeze"/>`) +
-        `<animate attributeName="opacity" values=".85;0" begin="${clock(TRAIL_HOLD_MS - age)}" dur="${clock(TRAIL_FADE_MS)}" fill="freeze"/></circle>`
+        `<animate attributeName="opacity" values=".85;0" begin="${clock(hold - age)}" dur="${clock(fade)}" fill="freeze"/></circle>`
     }
   }
   return out
@@ -303,7 +306,9 @@ export function drawMap(board, now, setup) {
   const scene = { entries: recent, board, now, c, names: setup.t.stations, isStill, shift }
   const drawn = STATIONS.map((s, i) => (inPlay(s.id) ? station(s, i, scene) : { under: '', over: '' }))
   body += drawn.map(d => d.under).join('')
-  body += trail(recent, now, c, isStill, shift)
+  // A replay tells the drawing how long a leg stays, in session time: at 60x the hub's own 40 s would be gone
+  // in two thirds of a second, and a paused frame would show the route of the last minute alone.
+  body += trail(recent, now, c, isStill, shift, setup.trail)
 
   /** The two ends of an entry's spoke: where it starts (the core or the agents station) and its own station. */
   const ends = (e) => {

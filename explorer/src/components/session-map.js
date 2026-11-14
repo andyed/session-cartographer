@@ -9,6 +9,9 @@ export const MAP_PATH = /^\/map\/?$/;
 /** Rows a list renders at most. A session can hold thousands of calls; the rest are counted, not drawn. */
 export const ROW_CAP = 300;
 
+/** What can sit beside the map in place of the list of calls: the same moment at small sizes, or the candidate directions. */
+export const LOOKS = ['sizes', 'directions'];
+
 /**
  * The map's address: `/map?session=<id or transcript path>&station=<id>&at=<epoch ms>`.
  * `station` and `at` are optional. A link carries the moment, so it reopens on the same frame.
@@ -21,7 +24,7 @@ export function readMapRoute(search = '') {
     station: params.get('station') || '',
     at: params.get('at') !== null && Number.isFinite(at) && at > 0 ? at : null,
     // What sits beside the map: the list of calls (default) or the same moment at small sizes.
-    look: params.get('look') === 'sizes' ? 'sizes' : '',
+    look: LOOKS.includes(params.get('look')) ? params.get('look') : '',
     // How the map is laid out: the hub's ring (default) or a circuit board.
     layout: params.get('layout') === 'board' ? 'board' : '',
   };
@@ -32,7 +35,7 @@ export function mapHref(base, { session, station, at, look, layout }) {
   if (session) params.set('session', session);
   if (station) params.set('station', station);
   if (at !== null && at !== undefined) params.set('at', String(Math.round(at)));
-  if (look === 'sizes') params.set('look', 'sizes');
+  if (LOOKS.includes(look)) params.set('look', look);
   if (layout === 'board') params.set('layout', 'board');
   const qs = params.toString();
   return `${base.replace(/\/$/, '')}/map${qs ? `?${qs}` : ''}`;
@@ -78,15 +81,29 @@ export function coreBox(geometry) {
 /**
  * The rows under the map: what one station (or every station, for '') had done by the moment `at`, newest first.
  * The list stops at `at` so that it and the map's count for that station are the same number.
+ * `steps` are the model's steps left out of the every-station list. With `tells: 'lane'` the list for You holds
+ * the agent's reports too, and `told` says how many of its rows they are.
  */
-export function rowsFor(actions, station, at) {
+export function rowsFor(actions, station, at, { tells = 'station' } = {}) {
   const rows = [];
   let total = 0;
   let failed = 0;
   let byAgents = 0;
+  let steps = 0;
+  let told = 0;
+  // Two-way, You is what the person said and what the agent told the person: one station on the hub, one list here.
+  const twoWay = tells === 'lane';
+  const here = a => a.station === station || (twoWay && station === 'you' && a.station === 'tells');
   for (let i = actions.length - 1; i >= 0; i--) {
     const a = actions[i];
-    if (a.startedAt > at || (station !== '' && a.station !== station)) continue;
+    if (a.startedAt > at || (station !== '' && !here(a))) continue;
+    if (twoWay && station === 'you' && a.station === 'tells') told++;
+    // A call is something done at a station. A step of the model sits between every two of them: it is counted
+    // apart and listed only under Model, so "calls" is one set here, on the tape and on the route.
+    if (station === '' && a.station === 'model') {
+      steps++;
+      continue;
+    }
     total++;
     // A call that had not answered by `at` was still running then, whatever it came to later.
     const ended = a.endedAt !== undefined && a.endedAt <= at;
@@ -95,7 +112,7 @@ export function rowsFor(actions, station, at) {
     if (a.agentId !== undefined) byAgents++;
     if (rows.length < ROW_CAP) rows.push({ key: i, action: a, status, tookMs: ended ? Math.max(0, a.endedAt - a.startedAt) : null });
   }
-  return { rows, total, failed, byAgents };
+  return { rows, total, failed, byAgents, steps, told };
 }
 
 const two = n => String(n).padStart(2, '0');

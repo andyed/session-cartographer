@@ -14,14 +14,18 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AgentBadge from './AgentBadge';
+import SessionDirections from './SessionDirections.jsx';
 import SessionSizes from './SessionSizes.jsx';
 import { apiRequest, fetchSessions } from '../api';
 import { boardAt } from '../../shared/workmap/board.js';
 import { formatMs, shortModel } from '../../shared/workmap/classify.js';
 import { boardLayout, drawFlow, drawTape, flowBoxes, flowCoreBox, flowState, holdFor, ringLayout, tapeHeight, tapeOf } from '../../shared/workmap/flow.js';
-import { drawMap, mapGeometry } from '../../shared/workmap/draw.js';
+import { drawMap } from '../../shared/workmap/draw.js';
+import { drawHub, hubBoxes, hubCoreBox, hubLayout, hubState } from '../../shared/workmap/hub.js';
+import { seatScreen } from '../../shared/workmap/kinds.js';
+import { drawRibbon, ribbonCapacity, ribbonOf } from '../../shared/workmap/ribbon.js';
 import { setupFrom } from '../../shared/workmap/setup.js';
-import { MAP_PATH, contextAt, tokenText, clockTime, coreBox, mapHref, readMapRoute, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, spanText, stampFor, stationBoxes, svgDataUri } from './session-map.js';
+import { MAP_PATH, contextAt, tokenText, clockTime, mapHref, readMapRoute, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, spanText, stampFor, svgDataUri } from './session-map.js';
 import '../styles/session-map.css';
 
 const BASE = import.meta.env.BASE_URL || '/';
@@ -37,7 +41,10 @@ function sessionLabel(s) {
 /** Where a row's link leads, as its tooltip. */
 const TARGET_TITLE = { recall: 'Ranked results and what was used', review: 'Diff for this session', reader: 'In the conversation' };
 
-const EMPTY_LIST = { rows: [], total: 0, failed: 0, byAgents: 0 };
+const EMPTY_LIST = { rows: [], total: 0, failed: 0, byAgents: 0, steps: 0, told: 0 };
+/** The ribbon under the map: tall enough to tell a call from one beside the main loop. */
+const RIBBON_HEIGHT = 20;
+const SCREEN_NAME = 'Your screen';
 /** Calls the tape holds: enough to see a loop repeat, few enough that each is a mark. */
 const TAPE_CALLS = 60;
 
@@ -169,7 +176,10 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map?.provider, map?.present.join(',')]);
 
-  const geometry = useMemo(() => (setup ? mapGeometry(setup) : null), [setup]);
+  // The hub as it is drawn since 2026-11-13: You is two-way, and what the person has open is its own station.
+  const hub = useMemo(() => hubLayout(), []);
+  const seated = useMemo(() => (map ? seatScreen(map.actions) : []), [map]);
+  const seatedPresent = useMemo(() => new Set(seated.map(a => a.station)), [seated]);
   const end = map?.span ? map.span.last + 400 : 0;
   const at = map?.span ? (live && playAt !== null ? playAt : Math.min(end, Math.max(map.span.first, playAt ?? route.at ?? end))) : 0;
   frame.current = { end, speed };
@@ -220,23 +230,47 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
     setLive(l => !l);
   };
   const scrub = value => (playing ? setPlayAt(value) : (setLive(false), go({ at: value })));
-  const station = map && route.station && map.present.includes(route.station) ? route.station : '';
+  const onBoard = route.layout === 'board';
+  // On the hub what the agent tells the person is part of You, so an address that names it opens You.
+  const asked = !onBoard && route.station === 'tells' ? 'you' : route.station;
+  const inPlay = onBoard ? map?.present.includes(asked) : hub.stations[asked] !== undefined && (seatedPresent.has(asked) || (asked === 'you' && seatedPresent.has('tells')));
+  const station = map && asked && inPlay ? asked : '';
 
   // The context window at this moment: the ring round the core, as lot-map draws it live.
   const context = useMemo(() => (map ? contextAt(map, at) : null), [map, at]);
 
-  const src = useMemo(() => {
-    if (!map || !setup) return '';
-    const board = boardAt(map.actions, at, { ...(map.model ? { model: map.model } : {}), ...(context ? { context: context.percent } : {}) });
-    return svgDataUri(drawMap(board, at, setup));
-  }, [map, setup, at, context]);
-
   // The flow: each station's light and the route, for the board, the small sizes and the tape.
   const pace = live ? 1 : speed;
-  const flow = useMemo(() => (map ? flowState(map.actions, at, { tau: 4000 * pace, hold: holdFor(pace), travel: 700 * pace }) : null), [map, at, pace]);
-  const layouts = useMemo(() => (setup ? { ring: ringLayout(setup), board: boardLayout() } : null), [setup]);
+  const hold = holdFor(pace);
+
   const [stageRef, stageWidth] = useWidth(460);
-  const onBoard = route.layout === 'board';
+  const [sideRef, sideWidth] = useWidth(640);
+  const names = useMemo(() => ({ ...(setup?.t.stations ?? {}), screen: SCREEN_NAME }), [setup]);
+  const coreName = String(map?.provider || 'agent').toUpperCase();
+
+  const src = useMemo(() => {
+    if (!map || !setup) return '';
+    const state = hubState(seated, at, { tau: 4000 * pace, hold, travel: 700 * pace, context: context?.percent });
+    return svgDataUri(drawHub(state, { layout: hub, size: stageWidth, names, coreName, present: seatedPresent, motion: reducedMotion ? 'reduced' : 'full', pressed: onBoard ? '' : station }));
+  }, [map, setup, seated, seatedPresent, hub, at, pace, hold, context?.percent, stageWidth, names, coreName, reducedMotion, station, onBoard]);
+
+  // lot-map's hub, which this view drew until 2026-11-13: kept for the two looks that compare against it.
+  const beforeSrc = useMemo(() => {
+    if (!map || !setup || route.look === '') return '';
+    const board = boardAt(map.actions, at, { ...(map.model ? { model: map.model } : {}), ...(context ? { context: context.percent } : {}) });
+    return svgDataUri(drawMap(board, at, { ...setup, trail: { hold, fade: hold / 2 } }));
+  }, [map, setup, at, context, hold, route.look]);
+
+  // The same calls in one row under the map, in the stations' colours.
+  const ribbon = useMemo(() => {
+    if (!map) return null;
+    const width = Math.max(120, stageWidth);
+    const cells = ribbonOf(seated, at, 80);
+    return { src: svgDataUri(drawRibbon(cells, { width, height: RIBBON_HEIGHT })), width, shown: Math.min(cells.length, ribbonCapacity(width, RIBBON_HEIGHT)) };
+  }, [map, seated, at, stageWidth]);
+
+  const flow = useMemo(() => (map ? flowState(map.actions, at, { tau: 4000 * pace, hold, travel: 700 * pace }) : null), [map, at, pace]);
+  const layouts = useMemo(() => (setup ? { ring: ringLayout(setup), board: boardLayout() } : null), [setup]);
   const drawOptions = useMemo(
     () => (map && setup ? { names: setup.t.stations, coreName: String(map.provider || 'agent').toUpperCase(), model: map.model ? shortModel(map.model) : '', present: setup.present } : null),
     [map, setup],
@@ -248,20 +282,22 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
   // Lanes are the stations the session used, fixed for the session, so the tape does not change height as it plays.
   const tape = useMemo(() => {
     if (!map || !setup) return null;
-    const lanes = map.present.filter(id => id !== 'model');
-    const rows = tapeOf(map.actions, at, TAPE_CALLS);
-    const width = Math.max(300, stageWidth);
-    return { src: svgDataUri(drawTape(rows, { width, names: setup.t.stations, capacity: TAPE_CALLS, lanes })), aspect: width / tapeHeight(rows, lanes), shown: rows.length };
-  }, [map, setup, at, stageWidth]);
+    // As on the hub: the stations' colours, one You lane for both directions, and Your screen its own lane.
+    const lanes = hub.order.filter(id => id !== 'model' && (seatedPresent.has(id) || (id === 'you' && seatedPresent.has('tells'))));
+    const rows = tapeOf(seated, at, TAPE_CALLS);
+    const width = Math.max(300, Math.min(860, sideWidth));
+    return { src: svgDataUri(drawTape(rows, { width, names, capacity: TAPE_CALLS, lanes, kinds: true, tells: 'lane' })), width, aspect: width / tapeHeight(rows, lanes), shown: rows.length };
+  }, [map, setup, seated, seatedPresent, hub, names, at, sideWidth]);
 
   // The list is not on screen beside the sizes, and a replay moves `at` twelve times a second: skip the fold then.
-  const listed = route.look !== 'sizes';
-  const list = useMemo(() => (map && listed ? rowsFor(map.actions, station, at) : EMPTY_LIST), [map, station, at, listed]);
+  const listed = route.look === '';
+  // The list reads the same actions as the drawing beside it: seated and two-way for the hub, as recorded for the board.
+  const list = useMemo(() => (map && listed ? (onBoard ? rowsFor(map.actions, station, at) : rowsFor(seated, station, at, { tells: 'lane' })) : EMPTY_LIST), [map, seated, station, at, listed, onBoard]);
   const stamp = useMemo(() => (map?.span ? stampFor(map.span) : clockTime), [map]);
 
   if (!isActive) return null;
 
-  const names = setup?.t.stations ?? {};
+  const shape = onBoard && layouts ? layouts.board : hub;
   // Read at render, after `go` has written the frame into the address: the reader's Back returns to this frame.
   const here = window.location.pathname + window.location.search;
   const known = sessions.some(s => s.session_id === route.session);
@@ -287,8 +323,11 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
           <button type="button" aria-pressed={listed} onClick={() => go({ look: '' })}>
             Calls
           </button>
-          <button type="button" aria-pressed={!listed} onClick={() => go({ look: 'sizes' })}>
+          <button type="button" aria-pressed={route.look === 'sizes'} onClick={() => go({ look: 'sizes' })}>
             Sizes
+          </button>
+          <button type="button" aria-pressed={route.look === 'directions'} onClick={() => go({ look: 'directions' })}>
+            Directions
           </button>
         </div>
         <div className="sm-look sm-layout" role="group" aria-label="Layout">
@@ -303,20 +342,21 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
 
       {error && <p className="sm-error" role="alert">{error}</p>}
 
-      {map && setup && geometry && list && (
+      {map && setup && layouts && list && (
         <div className="sm-body">
           <section className="sm-stage" aria-label="Work map">
-            <div className="sm-map" data-layout={onBoard ? 'board' : 'hub'} ref={stageRef} style={{ aspectRatio: `${geometry.width} / ${geometry.height}` }}>
+            <div className="sm-mapbox" style={{ '--sm-aspect': shape.width / shape.height }}>
+            <div className="sm-map" data-layout={onBoard ? 'board' : 'hub'} ref={stageRef} style={{ aspectRatio: `${shape.width} / ${shape.height}`, '--sm-aspect': shape.width / shape.height }}>
               <img src={onBoard ? boardSrc : src} alt="" draggable="false" />
               <button
                 type="button"
                 className="sm-hit sm-core"
-                style={onBoard ? flowCoreBox(layouts.board) : coreBox(geometry)}
+                style={onBoard ? flowCoreBox(layouts.board) : hubCoreBox(hub)}
                 aria-pressed={station === ''}
                 aria-label="All stations"
                 onClick={() => go({ station: '' })}
               />
-              {(onBoard ? flowBoxes(layouts.board, setup.present) : stationBoxes(geometry, setup.present)).map(box => (
+              {(onBoard ? flowBoxes(layouts.board, setup.present) : hubBoxes(hub, seatedPresent)).map(box => (
                 <button
                   key={box.id}
                   type="button"
@@ -328,6 +368,8 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
                 />
               ))}
             </div>
+            </div>
+            {ribbon && <img className="sm-ribbon" src={ribbon.src} alt={`The last ${ribbon.shown} calls, oldest to newest`} draggable="false" style={{ width: ribbon.width, aspectRatio: String(ribbon.width / RIBBON_HEIGHT) }} />}
             <div className="sm-scrub">
               <input
                 type="range"
@@ -358,17 +400,28 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
                 </button>
               </div>
             </div>
-            {tape && (
-              <figure className="sm-tape">
-                <figcaption>
-                  Last {tape.shown} calls, oldest to newest
-                </figcaption>
-                <img src={tape.src} alt="" draggable="false" style={{ aspectRatio: String(tape.aspect) }} />
-              </figure>
-            )}
           </section>
 
-          {!listed && flow && layouts && drawOptions && (
+          {route.look === 'directions' && flow && layouts && drawOptions && (
+            <div className="sm-side" ref={sideRef}>
+              <SessionDirections
+                map={map}
+                at={at}
+                speed={pace}
+                hold={hold}
+                names={setup.t.stations}
+                coreName={drawOptions.coreName}
+                before={beforeSrc}
+                stamp={stamp}
+                reducedMotion={reducedMotion}
+                context={context}
+                width={sideWidth}
+                now={{ flow, layout: layouts.ring, options: drawOptions }}
+              />
+            </div>
+          )}
+
+          {route.look === 'sizes' && flow && layouts && drawOptions && (
             <SessionSizes
               actions={map.actions}
               at={at}
@@ -376,17 +429,30 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
               flow={flow}
               layouts={layouts}
               drawOptions={drawOptions}
-              hubSrc={src}
+              hubSrc={beforeSrc}
               names={names}
               reducedMotion={reducedMotion}
             />
           )}
 
-          <section className="sm-list" hidden={!listed} aria-label={station ? names[station] : 'All stations'}>
+          <div className="sm-side" hidden={!listed} ref={listed ? sideRef : undefined}>
+          {tape && (
+            <figure className="sm-tape">
+              <figcaption>
+                Last {tape.shown} calls, oldest to newest
+              </figcaption>
+              <img src={tape.src} alt="" draggable="false" style={{ width: tape.width, aspectRatio: String(tape.aspect) }} />
+            </figure>
+          )}
+          <section className="sm-list" aria-label={station ? names[station] : 'All stations'}>
             <h2>
               {station ? names[station] : 'All stations'}
               <span>
-                {list.total} {list.total === 1 ? 'call' : 'calls'} · {list.failed} failed · {list.byAgents} by subagents
+                {station === 'model'
+                  ? `${list.total} ${list.total === 1 ? 'step' : 'steps'} · ${list.byAgents} by subagents`
+                  : station === 'you' && !onBoard
+                  ? `${list.total - list.told} said · ${list.told} told`
+                  : `${list.total} ${list.total === 1 ? 'call' : 'calls'} · ${list.failed} failed · ${list.byAgents} by subagents${station === '' ? ` · ${list.steps} model steps not listed` : ''}`}
               </span>
             </h2>
             <ol>
@@ -435,6 +501,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
             </ol>
             {list.total > list.rows.length && <p className="sm-more">{list.total - list.rows.length} earlier calls not listed</p>}
           </section>
+          </div>
         </div>
       )}
     </div>

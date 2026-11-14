@@ -142,6 +142,18 @@ bar stays on one row at 390 px. Screenshots go to `carto-image-wall-browser-arti
 The stall watchdog is covered in `tests/unit/image-wall.test.js` with a fake
 worker, because a real TCC prompt cannot be produced in CI.
 
+### Session map
+
+`node tests/browser/session-map.cjs` (add `--preview` after a build) runs the
+Explorer against a fixture session that uses ten stations, so the tape is at its
+tallest, with one failed call, one background task reporting back and a
+subagent. It checks what the unit tests cannot see: that the map, the scrubber
+and the tape are all on the first screen at 1440x900, that the list's count of
+calls is the tape's set with the model's steps named apart, that the Directions
+look draws every candidate with no text under 16 px or under 8:1, and that at
+390 px the whole map shows and nothing scrolls sideways. Screenshots go to
+`carto-session-map-browser-artifacts`. It is not in CI's list yet.
+
 ### The GH Pages demo
 
 `memory-entry.cjs` strips `VITE_DEMO` on purpose, so it says nothing about the
