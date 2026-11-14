@@ -103,7 +103,7 @@ around the gap.
 Results include faceted summaries (project, source, event type, time range). Use these to narrow searches:
 
 - **`--project <name>`** — filter to a specific project
-- **`--since WHEN` / `--before WHEN`** — temporal filter. WHEN accepts natural-language phrases (`today`, `yesterday`, `"this morning"`, `"this afternoon"`, `"this evening"`, `tonight`, `"this week"`, `"last week"`, `"this month"`, `"last month"`), relative durations (`7d`, `2h`, `30m`, `1w`, `3mo`), or absolute dates (`2026-04-20`). When the user mentions time — "what did I work on Wednesday", "this morning's debugging session", "last week's audio fixes" — translate to the matching `--since` flag rather than searching unbounded.
+- **`--since WHEN` / `--before WHEN`** — temporal filter. WHEN accepts natural-language phrases (`today`, `yesterday`, `"this morning"`, `"this afternoon"`, `"this evening"`, `tonight`, `"this week"`, `"last week"`, `"this month"`, `"last month"`), relative durations (`7d`, `2h`, `30m`, `1w`, `3mo`), or absolute dates (`2026-04-20`). When the user mentions time and a topic — "Wednesday's shader work", "this morning's debugging session", "last week's audio fixes" — translate to the matching `--since` flag rather than searching unbounded. Time with no topic ("what did I work on Wednesday") is a census, not a search: see the census section below.
 - **Commit types** — git commits are classified as `feature`, `fix`, `refactor`, `enhancement`, `docs`, `test`, `chore`, `perf`, `ci`, `style`, `revert`, or `other`. These appear in summaries as `[feature] Commit abc1234: ...` and are searchable as keywords.
 - **Event types** in results: `git_commit`, `research_fetch`, `research_search`, `milestone_session_end_*`, `milestone_compaction_*`, `tool_file_edit`, `tool_bash`
 - **Session end events** now include git branch, dirty file count, and session event count — useful for finding "what was I working on last time"
@@ -125,6 +125,54 @@ Results include faceted summaries (project, source, event type, time range). Use
 | "between A and B" | `--since A --before B` |
 
 Beyond ~30 days, transcript files are deleted by Claude Codes default TTL — event-log results still surface but the "read the transcript" step (Step 3 below) will hit a missing file. When that happens, present the event metadata as the answer and note that full context isn't available.
+
+### Census: "what happened", not "find the thing"
+
+A question with a window and no topic is a count: "what did I do yesterday",
+"what happened on widget this week", "which projects were active", "how many
+commits". Search ranks by relevance, and a window has nothing to rank by, so it
+returns a few rows that read like the whole day (measured: 1 row from a 24h
+window holding 736 events). Count first, then search inside what the count shows.
+
+| Question | Use |
+|----------|-----|
+| what happened / how much / which projects, in a window | the `facts` MCP tool (verb `census`), or `cartographer-facts.js` |
+| what did I do on one day, by project, with commits | the day digest |
+| both, plus ranked highlights, for named projects | the pulse |
+
+```bash
+# Counted: events, sessions and commit events by project, type and provider.
+# Omit --project to count every project.
+node "$ROOT/scripts/cartographer-facts.js" --verb census --since yesterday --before today [--project <name>]
+
+# One local calendar day, by project. Every commit is checked against git.
+node "$ROOT/scripts/session-digest.js" --day yesterday --md [--projects <a,b>]
+
+# Census, day digest and a ranked sample in one report. --projects is required.
+bash "$ROOT/scripts/cartographer-pulse.sh" --projects <a,b> --since 24h --day-digest yesterday
+```
+
+`--since`/`--before` take the same WHEN forms as search. `--day` takes `today`,
+`yesterday` or `YYYY-MM-DD`.
+
+- **The pulse refuses to run unscoped.** Name the projects the user asked about
+  (family aliases expand). For "everything", run the unscoped census first, pass
+  the projects it lists, and say which you left out.
+- **Take commits from the day digest.** The census counts commit events the
+  hooks logged; the digest reads git, so it lists commits no session logged. A
+  census can report zero commits for a day git has three.
+- **Say which window a number came from.** The census window is rolling or
+  bounded by `--since`/`--before`; the day digest is a local calendar day. Their
+  totals differ.
+- **Counted sections are exhaustive; the pulse's "What the search surfaced" is a
+  ranked sample.** Never quote it as a count. Absent there means "did not
+  rank", not "did not happen".
+- **Every bucket cites sample event_ids.** Fetch them with `--get` when a number
+  carries the answer, or to open the work behind it, then continue at Step 2.5.
+- **Exit 75 or "turbo unavailable" means the count is unavailable.** Say so. Do
+  not run a search instead and present its rows as the count.
+
+None of the three writes retrieval telemetry.
 
 ### Threading: trace a work-arc with `--thread`
 
@@ -348,8 +396,12 @@ The access ledger records that order for first- and last-access MRR.
 /remember --project session-cartographer
     → orientation: recent activity + --related + --maneuvers (no query)
 /remember what was I working on last session
-/remember what did I do this morning on Widget
-    → bash cartographer-search.sh "Widget" --since today
+/remember what did I do yesterday
+    → node session-digest.js --day yesterday --md           (census, not a search)
+/remember what happened on Widget this week
+    → node cartographer-facts.js --verb census --project Widget --since "this week"
+/remember the caching fix from this morning on Widget
+    → bash cartographer-search.sh "caching fix" --project Widget --since today
 /remember the audio reactivity work from last week
     → bash cartographer-search.sh "audio reactivity" --since "last week"
 /remember Wednesday's debugging session
