@@ -1,0 +1,94 @@
+/* The session map.
+   Every text colour clears 8:1 on the grounds it sits on:
+                    page #0a0a0f   row hover #11151e
+     ink    #edf0f5    17.29          15.99
+     meta   #d4dae3    14.05          12.99
+     fault  #ffa2a6    10.32           9.54
+     agent  #f0c595    12.35          11.42
+   The map's own colours are measured in shared/workmap/palette.js. */
+
+.session-map {
+  --sm-bg: #0a0a0f;
+  --sm-surface: #11151e;
+  --sm-ink: #edf0f5;
+  --sm-meta: #d4dae3;
+  --sm-line: #3b4658;
+  --sm-accent: #72e6ef;
+  --sm-fault: #ffa2a6;
+  --sm-agent: #f0c595;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 16px clamp(12px, 2vw, 28px);
+  background: var(--sm-bg);
+  color: var(--sm-ink);
+  font: 500 16px/1.4 ui-sans-serif, system-ui, sans-serif;
+  color-scheme: dark;
+}
+
+.sm-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; flex: none; padding-bottom: 12px; }
+.sm-head select {
+  min-height: 44px; max-width: min(100%, 34rem); padding: 8px 10px;
+  font: inherit; color: var(--sm-ink); background: var(--sm-surface);
+  border: 1px solid var(--sm-line); border-radius: 5px;
+}
+.sm-span { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+.sm-error { color: var(--sm-fault); }
+
+/* Two columns that never trade places: the map keeps its size, the list takes the rest. */
+.sm-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 560px) minmax(300px, 1fr); gap: 24px; }
+.sm-stage { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.sm-map { position: relative; width: 100%; }
+.sm-map img { display: block; width: 100%; height: 100%; user-select: none; }
+
+/* A control over a station. It draws nothing until it is hovered, focused or pressed. */
+.sm-hit {
+  position: absolute; padding: 0; background: transparent; cursor: pointer;
+  border: 2px solid transparent; border-radius: 12px;
+}
+.sm-hit.sm-core { border-radius: 50%; }
+.sm-hit:hover { border-color: var(--sm-line); }
+.sm-hit[aria-pressed='true'] { border-color: var(--sm-accent); }
+.sm-hit:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 2px; }
+
+.sm-scrub { display: grid; gap: 6px; }
+.sm-scrub input { width: 100%; min-height: 44px; margin: 0; accent-color: var(--sm-accent); }
+.sm-scrub output { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+
+.sm-list { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.sm-list h2 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; margin: 0 0 8px; font-size: 20px; font-weight: 600; }
+.sm-list h2 span { color: var(--sm-meta); font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.sm-list ol { flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--sm-line); }
+.sm-more { margin: 8px 0 0; color: var(--sm-meta); }
+
+.sm-item { display: flex; align-items: stretch; border-bottom: 1px solid #1c222d; }
+/* Two targets in a row: the time sets the map's moment, the rest opens the call in the reader. */
+.sm-at {
+  flex: none; min-height: 36px; padding: 6px 10px 6px 8px;
+  font: inherit; color: var(--sm-meta); font-variant-numeric: tabular-nums;
+  background: transparent; border: 0; border-radius: 0; cursor: pointer;
+}
+.sm-row {
+  flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 12px; min-height: 36px; padding: 6px 8px 6px 2px;
+  color: var(--sm-ink); text-decoration: none;
+}
+.sm-at:hover, a.sm-row:hover { background: var(--sm-surface); }
+.sm-at:hover { color: var(--sm-accent); }
+a.sm-row:hover .sm-label { text-decoration: underline; text-underline-offset: 3px; }
+.sm-at:focus-visible, .sm-row:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: -2px; }
+.sm-took { flex: none; color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+.sm-where { flex: none; width: 5.5em; color: var(--sm-meta); }
+.sm-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.sm-label, .sm-detail { min-width: 0; overflow-wrap: anywhere; }
+/* Two lines at most: a row is scanned, and the whole of a call is one click away. */
+.sm-detail { color: var(--sm-meta); display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.sm-agent { flex: none; color: var(--sm-agent); }
+.sm-state { flex: none; color: var(--sm-fault); }
+.sm-run .sm-state { color: var(--sm-accent); }
+.sm-took { min-width: 4.5em; text-align: right; }
+
+@media (max-width: 760px) {
+  .sm-body { grid-template-columns: 1fr; overflow: auto; }
+  .sm-list ol { overflow: visible; }
+}

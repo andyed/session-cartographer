@@ -1,0 +1,4 @@
+.path-context { margin-block: 8px 12px; color: #d4dae3; min-width: 0; }
+.path-context > summary { cursor: pointer; min-height: 44px; padding-block: 10px; overflow-wrap: anywhere; font-size: 16px; font-weight: 500; }
+.path-context > code { display: block; overflow-wrap: anywhere; white-space: pre-wrap; padding-block: 8px; font-size: 16px; font-weight: 500; }
+.path-context > summary:focus-visible { outline: 2px solid #72e6ef; outline-offset: 2px; }

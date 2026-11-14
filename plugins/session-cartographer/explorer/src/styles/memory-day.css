@@ -23,10 +23,10 @@
 .dd-receipt { display: block; width: 100%; min-height: 200px; margin: 8px 0; font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .dd-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin: 16px 0 8px; }
 .dd-head h2 { margin: 0; font-size: 22px; font-weight: 600; color: var(--rc-ink); }
-.dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin: 12px 0; }
-.dd-stats > div { border: 1px solid var(--rc-line); border-radius: 5px; padding: 10px 12px; }
-.dd-stats dt { color: var(--rc-meta); font-size: 14px; }
-.dd-stats dd { margin: 2px 0 0; font-size: 24px; font-weight: 600; color: var(--rc-ink); }
+.dd-stats { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: 12px 0; }
+.dd-stats > div { display: flex; align-items: baseline; gap: 6px; }
+.dd-stats dt { color: var(--rc-meta); font-size: 16px; }
+.dd-stats dd { order: -1; margin: 0; font-size: 18px; font-weight: 600; color: var(--rc-ink); }
 .dd-agents { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 8px 0; color: var(--rc-ink); }
 .dd-agents > span { display: inline-flex; gap: 6px; align-items: center; }
 .dd-hours { margin: 12px 0; max-width: 640px; }
@@ -45,7 +45,11 @@
 .dd-project-head h3 { margin: 0; font-size: 18px; font-weight: 600; color: var(--rc-ink); overflow-wrap: anywhere; }
 .dd-project-head .rc-quiet { font-variant-numeric: tabular-nums; }
 .dd-commits, .dd-files ul, .dd-sessions { list-style: none; margin: 0; padding: 0; }
-.dd-commit { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--rc-line); }
+.dd-commit { border-bottom: 1px solid var(--rc-line); }
+.dd-commit-body { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 4px 12px; align-items: baseline; min-height: 44px; padding: 8px 0; }
+.dd-commit-body[href] .dd-subject { color: var(--rc-link); }
+.dd-commit-body[href]:hover .dd-subject { text-decoration: underline; text-underline-offset: 4px; }
+.dd-commit-body:focus-visible { outline: 2px solid var(--rc-link); outline-offset: 2px; }
 .dd-commit time, .dd-commit code { color: var(--rc-meta); font-variant-numeric: tabular-nums; }
 .dd-commit code { font-size: 14px; }
 .dd-subject { color: var(--rc-ink); overflow-wrap: anywhere; min-width: 0; }
@@ -61,19 +65,26 @@
 .dd-files { margin: 10px 0; }
 .dd-files p { margin: 0 0 4px; }
 .dd-files li { display: flex; gap: 12px; justify-content: space-between; padding: 2px 0; }
-.dd-path { color: var(--rc-ink); overflow-wrap: anywhere; min-width: 0; font-size: 15px; }
+.dd-path { color: var(--rc-ink); overflow-wrap: anywhere; min-width: 0; font-size: 16px; }
+.dd-more-files > summary { min-height: 44px; padding: 10px 0; cursor: pointer; color: var(--rc-link); }
+.dd-more-files > summary:focus-visible { outline: 2px solid var(--rc-link); outline-offset: 2px; }
 .dd-sessions { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; }
 .dd-sessions li { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; min-height: 32px; }
 .dd-minor, .dd-foot { margin: 16px 0; }
+.dd-activity { margin-top: 20px; }
+.dd-activity > summary { min-height: 44px; padding: 10px 0; color: var(--rc-meta); cursor: pointer; }
+.dd-activity > summary:focus-visible { outline: 2px solid var(--rc-link); outline-offset: 2px; }
 @media (max-width: 600px) {
   /* Four rows of controls would pin a third of a phone screen; let them scroll. */
   .fw-day .fw-results-head { position: static; }
   .dd-actions { margin-left: 0; }
   /* SVG text scales with the chart; at phone width 12 units render near 7px. */
   .dd-hours .dd-tick { font-size: 20px; }
-  .dd-commit { grid-template-columns: auto minmax(0, 1fr); }
+  .dd-commit-body { grid-template-columns: auto minmax(0, 1fr); }
   .dd-commit code { grid-column: 2; grid-row: 1; justify-self: start; }
   .dd-commit time { grid-row: 1; }
   .dd-subject, .dd-commit-tail { grid-column: 1 / -1; }
   .dd-commit-tail { justify-content: flex-start; }
 }
+
+.dd-picker button{min-width:44px;min-height:44px}

@@ -1,0 +1,23 @@
+.session-identity { min-width: 0; }
+.session-identity-title {
+  margin: 0;
+  color: #edf0f5;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.session-identity-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-top: 4px;
+  color: #d4dae3;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.session-identity-id { white-space: nowrap; }
+.session-identity-cwd { min-width: 0; overflow-wrap: anywhere; }
+
+.session-card-actions .timeline-inspect{min-width:44px}

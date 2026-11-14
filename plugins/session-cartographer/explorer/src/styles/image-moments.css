@@ -1,0 +1,51 @@
+/* Image moments in the Timeline's event feed. The moment sits on the page
+   ground (#0a0a0f), the surface AgentBadge and ProjectBadge are measured on,
+   so it takes no fill of its own. Text colours on #0a0a0f:
+   #edf0f5 17.3:1 · #d4dae3 14.1:1 · #a6edf3 15.1:1; on the #20333d hover
+   ground #a6edf3 is 10.0:1. */
+.image-moment { margin: 0 0 8px; padding: 10px 12px 12px; border: 1px solid #3b4658; border-radius: 8px; color: #edf0f5; }
+.image-moment-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-bottom: 10px; font-size: 14px; }
+.image-moment-head time { color: #d4dae3; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; cursor: help; }
+.image-moment-count { color: #d4dae3; font-variant-numeric: tabular-nums; }
+.image-moment-session { min-width: 0; max-width: 100%; overflow-wrap: anywhere; font-weight: 600; color: #edf0f5; }
+.focus-timeline-workspace button.image-moment-session { padding: 4px 6px; margin-inline: -6px 0; color: #a6edf3; text-align: left; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.image-moment-transcript { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px; color: #a6edf3; border-radius: 4px; }
+
+/* A justified row: each tile grows in proportion to its aspect ratio, so a
+   row of mixed shapes keeps one height until it wraps. */
+.image-moment-strip { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.image-moment-thumb { flex: var(--aspect) 1 calc(var(--aspect) * 120px); max-width: calc(var(--aspect) * 200px); min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.image-moment-frame { display: flex; align-items: center; justify-content: center; aspect-ratio: var(--aspect); overflow: hidden; border: 1px solid #3b4658; border-radius: 4px; background: #05070b; }
+.image-moment-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.image-moment-missing { padding: 8px; color: #d4dae3; font-size: 13px; text-align: center; }
+.image-moment-name { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #d4dae3; font-size: 13px; }
+.focus-timeline-workspace button.image-moment-more { margin-top: 10px; min-height: 40px; border-color: #3b4658; font-size: 14px; }
+
+.image-moment:focus { outline: none; }
+.image-moment:focus-visible, .image-moment[data-arrived] { border-color: #72e6ef; }
+
+/* The window overview: smaller tiles, one per picked burst. */
+.image-overview { margin: 0 0 14px; padding: 0 0 14px; border-bottom: 1px solid #3b4658; color: #edf0f5; }
+.image-overview-summary { margin: 0 0 10px; color: #d4dae3; font-size: 14px; }
+.image-overview-summary strong { color: #edf0f5; font-weight: 600; }
+.image-overview-strip { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.image-overview-thumb { flex-basis: calc(var(--aspect) * 84px); max-width: calc(var(--aspect) * 128px); }
+.focus-timeline-workspace button.image-moment-frame { width: 100%; padding: 0; border: 1px solid #3b4658; border-radius: 4px; background: #05070b; cursor: pointer; }
+.image-overview-note { margin: 0 0 12px; color: #d4dae3; font-size: 14px; }
+
+/* On a phone a wrapped strip stacks into a screen of tiles. The strips scroll
+   sideways inside themselves instead; the page itself never does, and the
+   tile cut at the edge says there is more. An expanded moment still wraps. */
+@media (max-width: 640px) {
+  .image-overview-strip, .image-moment-strip:not([data-expanded]) { flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; padding-bottom: 6px; }
+  .image-overview-strip > .image-overview-thumb { flex: 0 0 calc(var(--aspect) * 72px); max-width: none; scroll-snap-align: start; }
+  .image-moment-strip:not([data-expanded]) > .image-moment-thumb { flex: 0 0 calc(var(--aspect) * 110px); max-width: none; scroll-snap-align: start; }
+  .image-moment-strip[data-expanded] > .image-moment-thumb { flex-basis: calc(var(--aspect) * 80px); max-width: calc(var(--aspect) * 140px); }
+}
+
+@media (hover: hover) {
+  .focus-timeline-workspace button.image-moment-frame:hover { border-color: #a6edf3; background: #05070b; }
+  .image-moment-frame:hover { border-color: #a6edf3; }
+  .image-moment-transcript:hover { background: #20333d; }
+}
+.image-moment :focus-visible { outline: 2px solid #72e6ef; outline-offset: 3px; }

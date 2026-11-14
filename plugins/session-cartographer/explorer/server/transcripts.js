@@ -3,6 +3,7 @@ import { homedir } from 'os';
 import { existsSync, readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { normalizeEvidenceEntries } from './transcript-evidence.js';
 
 export function transcriptRoots(env = process.env, home = homedir()) {
   return [
@@ -59,75 +60,16 @@ function noiseSummary(content, noiseType) {
   }
 }
 
-function codexMessage(e) {
-  const p = e.payload || {};
-  let content = '';
-  let role = 'tool';
-
-  if (e.type === 'event_msg') {
-    content = p.message || '';
-    role = 'user';
-  } else if (p.type === 'message') {
-    content = Array.isArray(p.content)
-      ? p.content.map(block => block.text || block.content || '').filter(Boolean).join('\n')
-      : p.content || '';
-    role = p.role || 'assistant';
-  } else if (p.type === 'custom_tool_call' || p.type === 'function_call') {
-    const input = p.input || p.arguments || '';
-    content = `${p.name || 'tool'}${input ? `\n${input}` : ''}`;
-  } else {
-    content = typeof p.output === 'string' ? p.output : JSON.stringify(p.output || '');
-  }
-
-  const noise = classifyNoise(content);
-  return {
-    uuid: p.id || p.call_id || '',
-    type: p.type || e.type,
-    timestamp: e.timestamp,
-    role,
-    content,
-    model: '',
-    toolUseID: p.call_id || '',
-    parentToolUseID: '',
-    isSidechain: false,
-    agentId: '',
-    noise,
-    noiseSummary: noise ? noiseSummary(content, noise) : null,
-  };
-}
-
-function claudeMessage(e) {
-  const content = typeof e.message?.content === 'string'
-    ? e.message.content
-    : Array.isArray(e.message?.content)
-      ? e.message.content.filter(block => block.type === 'text').map(block => block.text).join('\n')
-      : e.data?.type || '';
-  const noise = classifyNoise(content);
-  return {
-    uuid: e.uuid,
-    type: e.type,
-    timestamp: e.timestamp,
-    role: e.message?.role || e.type,
-    content,
-    model: e.message?.model || '',
-    toolUseID: e.toolUseID || '',
-    parentToolUseID: e.parentToolUseID || '',
-    isSidechain: e.isSidechain ?? false,
-    agentId: e.agentId || '',
-    noise,
-    noiseSummary: noise ? noiseSummary(content, noise) : null,
-  };
-}
-
 export function normalizeTranscriptEntries(entries) {
-  const provider = entries.some(entry => entry.type === 'session_meta') ? 'codex' : 'claude';
-  const messages = entries.filter(entry => provider === 'codex'
-    ? (entry.type === 'event_msg' && entry.payload?.type === 'user_message') ||
-      (entry.type === 'response_item' && ['message', 'custom_tool_call', 'custom_tool_call_output', 'function_call', 'function_call_output'].includes(entry.payload?.type))
-    : entry.type === 'user' || entry.type === 'assistant' || entry.type === 'progress'
-  ).map(provider === 'codex' ? codexMessage : claudeMessage).filter(message => message.content);
-
-  return { provider, messages };
+  const normalized = normalizeEvidenceEntries(entries);
+  for (const message of normalized.messages) {
+    // A result containing the word <task-notification> is still tool evidence,
+    // never a collapsible machinery-only notice.
+    const proseOnly = message.blocks.every(block => block.type === 'text');
+    message.noise = proseOnly ? classifyNoise(message.content) : null;
+    message.noiseSummary = message.noise ? noiseSummary(message.content, message.noise) : null;
+  }
+  return normalized;
 }
 
 // ─── Resolution ──────────────────────────────────────────────────────────────

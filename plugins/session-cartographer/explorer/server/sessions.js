@@ -67,8 +67,11 @@ export function attributeProvider(events) {
  *        → a path that exists, or ''. Injected because resolution is I/O and
  *        differs per provider; see transcripts.js for the two shapes.
  * @param {number}   options.now   epoch ms, for deterministic tests
+ * @param {number}   options.minEvents  fewest events a listed session has; the
+ *        image wall passes 1, because a Codex session that made graphics may
+ *        log a single hook event
  */
-export function summarizeSessions(events, { days = 7, isHighSignal = () => true, deriveTranscript = () => '', now = Date.now() } = {}) {
+export function summarizeSessions(events, { days = 7, isHighSignal = () => true, deriveTranscript = () => '', now = Date.now(), minEvents = 2 } = {}) {
   const cutoff = new Date(now - days * DAY_MS).toISOString();
 
   const bySession = new Map();
@@ -81,7 +84,7 @@ export function summarizeSessions(events, { days = 7, isHighSignal = () => true,
 
   const sessions = [];
   for (const [sid, evts] of bySession) {
-    if (evts.length < 2) continue;
+    if (evts.length < minEvents) continue;
     let start = evts[0].timestamp, end = evts[0].timestamp;
     const projectCounts = {}, typeCounts = {}, quadrantCounts = {}, commitTypeCounts = {};
     let recordedPath = '';

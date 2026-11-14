@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@git-diff-view/react": "^0.1.7",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "wunderkammer": "github:andyed/wunderkammer#v0.3.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.5.2",

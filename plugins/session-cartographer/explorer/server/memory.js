@@ -10,7 +10,7 @@ import { CORPUS_ROOT } from './jsonl.js';
 import { createTranscriptEnricher, missingTokens } from './memory-transcript.js';
 import { activityFromMemory, normalizeActivityScope, projectMemoryScope } from '../shared/activity-scope.js';
 import { createDayDigestSource, readDayParams } from './memory-day.js';
-import { createRecallSource, fetchIndexedEvents, listRecallCalls, recallCallDetail, resolveUnplacedMarks, RECALL_CALL_LIMIT, RECALL_DEFAULT_WINDOW_MS, RECALL_MAX_WINDOW_MS } from './memory-recall.js';
+import { createRecallSource, fetchIndexedEvents, listRecallCalls, loadRecall, recallCallDetail, resolveUnplacedMarks, RECALL_CALL_LIMIT, RECALL_DEFAULT_WINDOW_MS, RECALL_MAX_WINDOW_MS } from './memory-recall.js';
 
 const execFileAsync = promisify(execFile);
 const HOUR_MS = 60 * 60 * 1000;
@@ -526,7 +526,7 @@ async function reviewRange(filePath, content, bounds, nowMs, contentTruncated = 
 }
 
 /** Shared by Express and the zero-dependency Turbo HTTP server. */
-export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher(), recallSource = createRecallSource(), lookupIndexed = fetchIndexedEvents, dayDigest = createDayDigestSource({ corpusRoot }) }) {
+export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher(), recallSource = createRecallSource(), callEvidence = null, lookupIndexed = fetchIndexedEvents, dayDigest = createDayDigestSource({ corpusRoot }) }) {
   // Keep historical windows and session links isolated from the live cache.
   const cache = new Map();
   function readEnd(value) {
@@ -692,12 +692,13 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     const rawLimit = params.get('limit');
     const limit = rawLimit === null ? RECALL_CALL_LIMIT : /^\d+$/.test(rawLimit) ? Number(rawLimit) : NaN;
     if (!Number.isInteger(limit) || limit < 1 || limit > RECALL_CALL_LIMIT) throw new MemoryError(400, `Recall limit must be an integer between 1 and ${RECALL_CALL_LIMIT}.`);
-    return resolveUnplacedMarks(listRecallCalls(recallSource(), { from, through, session, purpose, limit }), { events: getEvents(), lookupIndexed });
+    const recall = await loadRecall(recallSource, callEvidence, { from, through, session });
+    return resolveUnplacedMarks(listRecallCalls(recall, { from, through, session, purpose, limit }), { events: getEvents(), lookupIndexed });
   }
   async function recallCall(params) {
     const id = params.get('call');
     if (!id || !/^[\w.:-]{1,128}$/.test(id)) throw new MemoryError(400, 'A valid recall call id is required.');
-    const detail = await recallCallDetail(recallSource(), id, { events: getEvents(), lookupIndexed });
+    const detail = await recallCallDetail(await loadRecall(recallSource, callEvidence, { callId: id }), id, { events: getEvents(), lookupIndexed });
     if (!detail) throw new MemoryError(404, 'No recall call with this id is recorded.');
     return detail;
   }

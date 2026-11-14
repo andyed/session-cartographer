@@ -6,7 +6,13 @@ import { executeRecall, recallHealth, recallIndexGeneration } from './recall.js'
 import { RecallContractError } from './recall-contract.js';
 import { executeFacts } from './facts.js';
 import { createMemoryHandler } from './memory.js';
+import { createCallEvidenceSource } from './call-evidence.js';
 import { createTranscriptEnricher } from './memory-transcript.js';
+import { artifactHeaders, canonicalSessionArtifacts, createSessionArtifactCache, documentHeaders } from './session-artifacts.js';
+import { createImageWall, IMAGE_WALL_DAYS, IMAGE_WALL_SCOPES } from './image-wall.js';
+import { createGuardedInspector } from './guarded-open.js';
+import { createThumbnailer, snapThumbWidth } from './image-thumbs.js';
+import { pipeline } from 'node:stream/promises';
 import {
   FACTS_CONTRACT_VERSION,
   FACTS_VERBS,
@@ -14,11 +20,15 @@ import {
 } from './facts-contract.js';
 import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { summarizeSessions } from './sessions.js';
+import { sessionWorkmap } from './workmap.js';
+import { MAX_FOCUS_DURATION_MS } from '../shared/focus.js';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 import { createInternalsHandler } from './internals-route.js';
 import { guardLoopback } from './loopback-guard.js';
 import { ensurePayloadIndexes, missingPayloadIndexes, PAYLOAD_INDEXES } from '../../scripts/qdrant-collection.js';
 import { qdrantFetch } from '../../scripts/qdrant-auth.js';
-import { accessSync, constants, existsSync, statSync } from 'fs';
+import { accessSync, closeSync, constants, createReadStream, existsSync, realpathSync, statSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 
@@ -35,6 +45,12 @@ function indexEventsById(list) {
  */
 export function createExplorerApp() {
   const app = express();
+  // One inspector, so a folder macOS keeps closed is learned once for every
+  // route that opens corpus-named files (guarded-open.js).
+  const inspector = createGuardedInspector();
+  const artifactCache = createSessionArtifactCache({ inspector });
+  const imageWall = createImageWall({ inspector });
+  const thumbnailer = createThumbnailer();
   // First, so a rebound or cross-site request is refused before its body is
   // parsed. The headless Turbo server binds this same port and runs the same
   // guard (loopback-guard.js); the UI host checks again before mounting this app.
@@ -109,7 +125,7 @@ export function createExplorerApp() {
   // ─── Endpoints ───
 
   const transcriptEnricher = createTranscriptEnricher();
-  const handleMemory = createMemoryHandler({ getEvents: () => events, transcriptEnricher });
+  const handleMemory = createMemoryHandler({ getEvents: () => events, transcriptEnricher, callEvidence: createCallEvidenceSource() });
   app.use(async (req, res, next) => {
     if (!await handleMemory(req, res)) next();
   });
@@ -493,6 +509,153 @@ export function createExplorerApp() {
     return { path: resolved, recorded: expanded };
   }
 
+  function locateArtifactTranscript(req) {
+    const located = locateTranscript(req);
+    if (located.error) return located;
+    try {
+      if (!isAllowedTranscriptPath(realpathSync(located.path), TRANSCRIPT_ROOTS)) return { error: 'transcript resolves outside allowed roots', code: 'TRANSCRIPT_FORBIDDEN', status: 403 };
+    } catch { return { error: 'transcript is unavailable', code: 'TRANSCRIPT_UNREADABLE', status: 404 }; }
+    return located;
+  }
+
+  app.get('/api/session/artifacts', async (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) {
+      if (located.status === 404 && req.query.session_id) {
+        // A stale allowed transcript does not erase canonical commit evidence.
+        // A caller-supplied outside path never gains access through this fallback.
+        if (req.query.path && !isAllowedTranscriptPath(resolve(String(req.query.path).replace(/^~/, homedir())), TRANSCRIPT_ROOTS)) return res.status(403).json({ error: 'path outside transcript roots', code: 'TRANSCRIPT_FORBIDDEN' });
+        const fallback = canonicalSessionArtifacts(events, String(req.query.session_id));
+        if (fallback) return res.set('Cache-Control', 'no-store').json(fallback);
+      }
+      return res.status(located.status).json({ error: located.error, code: located.code });
+    }
+    res.set('Cache-Control', 'no-store');
+    try { res.json({ path: located.path, ...(await artifactCache.list(located.path, { events })) }); }
+    catch (error) { res.status(error.status || 500).json({ error: error.message, code: 'ARTIFACTS_UNAVAILABLE' }); }
+  });
+
+  app.get('/api/session/artifact', async (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
+    let opened, stream;
+    try {
+      opened = await artifactCache.open(located.path, String(req.query.id || ''));
+      res.writeHead(200, artifactHeaders(opened));
+      if (req.method === 'HEAD') { closeSync(opened.fd); opened = null; res.end(); return; }
+      stream = createReadStream(opened.artifact.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
+      await pipeline(stream, res);
+    } catch (error) {
+      if (opened && !stream) closeSync(opened.fd);
+      if (res.headersSent) res.destroy(error);
+      else res.status(error.status || 500).json({ error: error.message, code: 'ARTIFACT_UNAVAILABLE' });
+    }
+  });
+
+  app.get('/api/session/document', async (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
+    let opened, stream;
+    try {
+      opened = await artifactCache.openDocument(located.path, String(req.query.id || ''));
+      res.writeHead(200, documentHeaders(opened));
+      if (req.method === 'HEAD' || !opened.stat.size) { closeSync(opened.fd); opened = null; res.end(); return; }
+      stream = createReadStream(opened.document.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
+      await pipeline(stream, res);
+    } catch (error) {
+      if (opened && !stream) closeSync(opened.fd);
+      if (res.headersSent) res.destroy(error);
+      else res.status(error.status || 500).json({ error: error.message, code: 'DOCUMENT_UNAVAILABLE' });
+    }
+  });
+
+  // The image wall: every image the window's sessions wrote (or, with
+  // scope=named, named), as a Wunderkammer collection. Paths are authorized
+  // here, exactly as /api/session/artifacts authorizes one transcript.
+  const imageTranscripts = sessions => {
+    const transcripts = [];
+    for (const session of sessions) {
+      if (!session.transcript_path) continue;
+      try {
+        const canonical = realpathSync(session.transcript_path);
+        if (isAllowedTranscriptPath(canonical, TRANSCRIPT_ROOTS)) transcripts.push({ path: canonical, session });
+      } catch { /* gone since the event was written */ }
+    }
+    return transcripts;
+  };
+  const imageFileUrl = (path, id, w) => `/api/images/file?${new URLSearchParams({ path, id, ...(w ? { w: String(w) } : {}) })}`;
+
+  app.get('/api/images/collection', async (req, res) => {
+    const days = IMAGE_WALL_DAYS.includes(Number(req.query.days)) ? Number(req.query.days) : 7;
+    const scope = IMAGE_WALL_SCOPES.includes(req.query.scope) ? req.query.scope : 'changed';
+    const { sessions } = summarizeSessions(events, { days, isHighSignal, deriveTranscript: deriveSessionTranscript, minEvents: 1 });
+    const transcripts = imageTranscripts(sessions);
+    // The loopback guard has already refused any other Host.
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const fileUrl = imageFileUrl;
+    const transcriptUrl = (path, link) => `${origin}/session/${encodeURIComponent(path)}?${new URLSearchParams({ reader: 'conversation', uuid: link.messageId, ...(link.blockId ? { block: link.blockId } : {}) })}`;
+    res.set('Cache-Control', 'no-store');
+    try {
+      const result = await imageWall.collection({ transcripts, days, scope, fileUrl, transcriptUrl });
+      if (req.query.document !== '1') return res.json(result);
+      if (!result.collection) return res.status(404).json({ error: 'No images in this window.', code: 'IMAGES_EMPTY', stats: result.stats });
+      res.json(result.collection);
+    } catch (error) { res.status(500).json({ error: error.message, code: 'IMAGES_UNAVAILABLE' }); }
+  });
+
+  // The images sessions wrote inside a focus window, for the Timeline's event
+  // feed. `through` defaults to now, so a live window is not cut at the
+  // client's last snapshot. Sessions are those whose events overlap the
+  // window; the image's own mtime does the exact bounding.
+  app.get('/api/images/window', async (req, res) => {
+    const instant = value => (/^\d+$/.test(String(value)) ? Number(value) : Date.parse(String(value)));
+    const from = instant(req.query.from);
+    const through = req.query.through == null || req.query.through === '' ? Date.now() : instant(req.query.through);
+    if (!Number.isFinite(from) || !Number.isFinite(through) || through <= from) {
+      return res.status(400).json({ error: 'from and through must be instants with from before through.', code: 'IMAGES_WINDOW_INVALID' });
+    }
+    if (through - from > MAX_FOCUS_DURATION_MS) return res.status(400).json({ error: 'An image window is at most 90 days.', code: 'IMAGES_WINDOW_INVALID' });
+    // summarizeSessions keeps sessions ending at or after now - days; with
+    // now = through that is exactly "ended at or after from".
+    const { sessions } = summarizeSessions(events, { days: (through - from) / DAY_MS, now: through, isHighSignal, deriveTranscript: deriveSessionTranscript, minEvents: 1 });
+    const overlapping = sessions.filter(session => !(Date.parse(session.start) > through));
+    res.set('Cache-Control', 'no-store');
+    try {
+      res.json(await imageWall.windowImages({ transcripts: imageTranscripts(overlapping), from, through, fileUrl: imageFileUrl }));
+    } catch (error) { res.status(500).json({ error: error.message, code: 'IMAGES_UNAVAILABLE' }); }
+  });
+
+  app.get('/api/images/file', async (req, res) => {
+    const located = locateArtifactTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
+    let opened, stream;
+    try {
+      opened = await imageWall.open(realpathSync(located.path), String(req.query.id || ''));
+      const width = snapThumbWidth(req.query.w);
+      let thumb = null;
+      if (width) {
+        try { thumb = await thumbnailer.thumbnail(opened, width); }
+        catch (error) { if (error.status === 409) throw error; thumb = null; }
+      }
+      if (thumb) {
+        closeSync(opened.fd); opened = null;
+        if (req.headers['if-none-match'] === thumb.etag) return res.status(304).end();
+        const size = statSync(thumb.file).size;
+        res.writeHead(200, { ...artifactHeaders({ artifact: { name: req.query.id + (thumb.mime === 'image/png' ? '.png' : '.jpg') }, stat: { size }, mime: thumb.mime }), 'Cache-Control': 'private, no-cache', ETag: thumb.etag });
+        if (req.method === 'HEAD') return res.end();
+        return await pipeline(createReadStream(thumb.file), res);
+      }
+      res.writeHead(200, artifactHeaders(opened));
+      if (req.method === 'HEAD') { closeSync(opened.fd); opened = null; res.end(); return; }
+      stream = createReadStream(opened.artifact.path, { fd: opened.fd, autoClose: true, start: 0, end: opened.stat.size - 1 });
+      await pipeline(stream, res);
+    } catch (error) {
+      if (opened && !stream) closeSync(opened.fd);
+      if (res.headersSent) res.destroy(error);
+      else res.status(error.status || 500).json({ error: error.message, code: 'IMAGE_UNAVAILABLE' });
+    }
+  });
+
   app.get('/api/transcript', (req, res) => {
     const located = locateTranscript(req);
     if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
@@ -502,7 +665,7 @@ export function createExplorerApp() {
       return res.status(404).json({ error: 'transcript not found or empty', code: 'TRANSCRIPT_EMPTY' });
     }
 
-    const { provider, messages } = normalizeTranscriptEntries(entries);
+    const { provider, identity, messages, evidence } = normalizeTranscriptEntries(entries);
     if (messages.length === 0) {
       return res.status(422).json({ error: 'transcript contains no readable conversation messages', code: 'TRANSCRIPT_NO_MESSAGES' });
     }
@@ -514,9 +677,32 @@ export function createExplorerApp() {
       // the same thing as a transcript that is simply gone.
       path_status: located.path === located.recorded ? 'recorded' : 'resolved',
       provider,
+      identity,
       messages,
+      evidence,
       total: messages.length,
     });
+  });
+
+  // ─── Work map: one session's actions, by station ────────────────────────────
+  //
+  // Takes the same `path` or `session_id` as /api/transcript and goes through the
+  // same locator, so it can read nothing a transcript request could not. Each
+  // action carries one clipped line about its call with credentials masked
+  // (workmap-detail.js), never a result or a file's contents.
+
+  app.get('/api/workmap', (req, res) => {
+    const located = locateTranscript(req);
+    if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
+    try {
+      const map = sessionWorkmap(located.path);
+      if (map.actions.length === 0) {
+        return res.status(404).json({ error: 'transcript holds no actions to map', code: 'WORKMAP_EMPTY' });
+      }
+      res.json({ path: located.path, ...map });
+    } catch (error) {
+      res.status(500).json({ error: error.message, code: 'WORKMAP_FAILED' });
+    }
   });
 
   // ─── Transcript analysis (devtools-enriched metadata) ───────────────────────
@@ -685,6 +871,8 @@ export function createExplorerApp() {
     for (const res of sseClients) res.end();
     sseClients.clear();
     transcriptEnricher.close();
+    artifactCache.clear();
+    imageWall.clear();
   }
 
   return { app, close };

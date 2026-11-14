@@ -27,6 +27,8 @@
 }
 
 .timeline-focus-header {
+  flex-shrink: 0;
+  flex-wrap: wrap;
   min-height: 60px;
   justify-content: space-between;
   gap: 16px;
@@ -38,7 +40,16 @@
 .timeline-focus-views,
 .concurrent-frame {
   gap: 8px;
+  flex-wrap: wrap;
 }
+
+.timeline-focus-views { flex-shrink: 0; }
+.timeline-focus-main > .fw-toolbar,
+.timeline-focus-error,
+.timeline-focus-new,
+.timeline-focus-loading,
+.concurrent-focus-controls,
+.concurrent-limit { flex-shrink: 0; }
 
 .timeline-focus-status,
 .concurrent-counts,
@@ -148,12 +159,16 @@
   margin: 0 auto 14px;
 }
 
-.timeline-inspect {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  z-index: 2;
-}
+.session-card-header { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.session-card-header > .session-identity { flex: 1 1 260px; }
+.session-card-badges,
+.session-card-metadata,
+.session-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.session-card-badges { min-width: 0; max-width: 100%; }
+.session-card-badges > * { max-width: 100%; overflow-wrap: anywhere; }
+.session-card-metadata { margin-block: 8px; color: #d4dae3; font-size: 16px; }
+.session-card-actions { margin-top: 10px; }
+.session-card-actions > button { flex-shrink: 0; }
 
 .timeline-focus-pages {
   justify-content: center;

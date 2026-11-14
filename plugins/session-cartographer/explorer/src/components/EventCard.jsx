@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import ProjectBadge from './ProjectBadge';
 import AgentBadge from './AgentBadge';
 import SourceBadge from './SourceBadge';
 import { safeArtifactLink } from './memory-artifact.js';
+import { plainLinkClick } from './memory-route.js';
+import { eventTranscriptHref, eventTranscriptHighlight } from './event-navigation.js';
+import '../styles/search-review.css';
 import { HUE, NEUTRAL, QUADRANT_HUES } from '../lib/palette.js';
 
 // 2×2 grid icon: active quadrant highlighted, others dim.
@@ -72,6 +75,8 @@ function eventCategory(event) {
 
 export default function EventCard({ event, showScore, showSource, onOpenTranscript, onProjectClick, onProviderClick, active }) {
   const [expanded, setExpanded] = useState(false);
+  const [fullText, setFullText] = useState(false);
+  const metadataId = useId();
   const cat = eventCategory(event);
 
   // Build display text — prefer the most useful human-readable field
@@ -120,25 +125,22 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
   // refused url still reads as text. extractedUrl is event.url when present.
   const href = safeArtifactLink(extractedUrl);
 
-  // Click handler: open transcript if available, using summary text as highlight
-  const handleCardClick = (e) => {
-    // Don't intercept clicks on links, buttons, or interactive elements
-    if (e.target.closest('a, button, details')) return;
-    if (!onOpenTranscript || !event.transcript_path) return;
-
-    // Use a short search-friendly excerpt from summary for highlight
-    const highlightText = (event.summary || event.query || event.prompt || '').slice(0, 80);
-    onOpenTranscript(event.transcript_path, event.uuid, highlightText);
+  const transcriptHref = eventTranscriptHref(event, window.location.pathname + window.location.search, import.meta.env.BASE_URL || '/');
+  const openTranscript = e => {
+    if (!plainLinkClick(e)) return;
+    const selection = window.getSelection();
+    if (selection && !selection.isCollapsed && e.currentTarget.contains(selection.anchorNode)) { e.preventDefault(); return; }
+    if (!onOpenTranscript) return;
+    e.preventDefault();
+    onOpenTranscript(event.transcript_path, event.uuid, eventTranscriptHighlight(event), event.block_id || event.blockId);
   };
-
-  const isClickable = onOpenTranscript && event.transcript_path;
+  const displayedText = fullText || summary.length <= 300 ? summary : summary.slice(0, 300) + '…';
 
   return (
     <div
-      onClick={handleCardClick}
-      className={`border rounded-lg p-3 mb-2 transition-colors ${
+      className={`event-review-card border rounded-lg p-3 mb-2 transition-colors ${
         active ? 'border-gray-500 bg-gray-800/50 ring-1 ring-gray-600' : 'border-gray-800 hover:border-gray-600'
-      } ${isClickable ? 'cursor-pointer' : ''}`}
+      }`}
     >
       <div className="flex items-center gap-2 flex-wrap mb-1">
         <span
@@ -151,6 +153,7 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         {/* Event type badge: outlined, never tinted (lib/palette.js) */}
         <span
           className="inline-block text-xs px-1.5 py-0.5 rounded font-mono"
+          data-copy-content
           style={{ color: cat.color, border: `1px solid ${cat.color}44` }}
         >
           {cat.label}
@@ -171,7 +174,8 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
             target="_blank"
             rel="noopener"
             title={extractedUrl}
-            className="text-blue-400/60 hover:text-blue-400 transition-colors"
+            aria-label={`Open source: ${summary}`}
+            className="event-evidence-action text-blue-400/60 hover:text-blue-400 transition-colors"
           >
             <svg className="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -180,36 +184,39 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
         )}
 
         {/* Transcript indicator */}
-        {event.transcript_path && onOpenTranscript && (
-          <button
-            onClick={() => onOpenTranscript(event.transcript_path, event.uuid)}
+        {transcriptHref && (
+          <a
+            href={transcriptHref}
+            onClick={openTranscript}
             title="Open transcript"
-            className="text-green-400/60 hover:text-green-400 transition-colors"
+            aria-label="Open transcript"
+            className="event-evidence-action text-green-400/60 hover:text-green-400 transition-colors"
           >
             <svg className="w-3.5 h-3.5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-          </button>
+          </a>
         )}
 
         {showSource && <SourceBadge source={event._sources} score={event._score} />}
       </div>
 
-      <p className="text-sm text-gray-300 leading-relaxed">
-        {summary.length > 300 ? summary.slice(0, 300) + '...' : summary}
-      </p>
+      {transcriptHref ? <a className="event-primary" draggable={false} href={transcriptHref} onClick={openTranscript}>
+        <p data-copy-content className="text-sm text-gray-300 leading-relaxed">{displayedText}</p>
+      </a> : <p data-copy-content className="event-summary text-sm text-gray-300 leading-relaxed">{displayedText}</p>}
+      {summary.length > 300 && <button className="event-text-toggle" aria-expanded={fullText} onClick={() => setFullText(value => !value)}>{fullText ? 'Collapse text' : 'Show full text'}</button>}
 
       {/* Fetch context — show the prompt that triggered this fetch */}
       {event.prompt && event.prompt !== summary && (
-        <p className="text-xs text-muted mt-0.5 leading-relaxed italic">
-          {event.prompt.length > 150 ? event.prompt.slice(0, 150) + '...' : event.prompt}
+        <p data-copy-content className="text-xs text-muted mt-0.5 leading-relaxed italic">
+          {event.prompt}
         </p>
       )}
 
       {/* Search query context */}
       {event.query && event.query !== summary && (
-        <p className="text-xs text-muted mt-0.5 leading-relaxed italic">
-          query: {event.query.length > 150 ? event.query.slice(0, 150) + '...' : event.query}
+        <p data-copy-content className="text-xs text-muted mt-0.5 leading-relaxed italic">
+          query: {event.query}
         </p>
       )}
 
@@ -224,15 +231,16 @@ export default function EventCard({ event, showScore, showSource, onOpenTranscri
 
       {(event.event_id || event.deeplink || event.session_id || event.commit_hash) && (
         <button
-          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
-          className="text-xs text-muted hover:text-gray-300 mt-1"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded} aria-controls={metadataId}
+          className="event-metadata-toggle text-xs text-muted mt-1"
         >
-          {expanded ? 'less' : 'more'}
+          Metadata <span aria-hidden="true">{expanded ? '▴' : '▾'}</span>
         </button>
       )}
 
       {expanded && (
-        <div className="mt-2 text-xs text-muted font-mono space-y-0.5">
+        <div id={metadataId} className="event-metadata mt-2 text-xs text-muted font-mono space-y-0.5">
           {event.event_id && <div>id: {event.event_id}</div>}
           {event.commit_hash && (
             <div>

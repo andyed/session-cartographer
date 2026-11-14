@@ -36,10 +36,11 @@ export function FocusExactFields({ workspace, focus, onClose }) {
   </form>;
 }
 
-export default function FocusToolbar({ workspace, focus }) {
+export default function FocusToolbar({ workspace, focus, compact = false, rangeContext }) {
   const { route, data, scoped, interval, navigate, query, endQuery, activate, refreshing } = workspace;
   const [copied, setCopied] = useState('');
   const [editing, setEditing] = useState(false);
+  const [scopeOpen, setScopeOpen] = useState(false);
   const find = useRef(null), rangeButton = useRef(null), editor = useRef(null), facets = useRef(null);
   const closeEditor = (restore = true) => { setEditing(false); if (restore) requestAnimationFrame(() => rangeButton.current?.focus({ preventScroll: true })); };
   useEffect(() => {
@@ -60,11 +61,14 @@ export default function FocusToolbar({ workspace, focus }) {
   const fixed = route.mode === 'fixed' || isDemoMode;
   const label = !interval ? 'Time range' : !fixed && route.mode === 'rolling' ? `Last ${Math.round((interval.through - interval.from) / 3600000)} hours` : route.mode === 'since-saved' ? 'Since return point' : rangeLabel(interval);
   const preset = hours => { const through = isDemoMode ? data.end : Date.now(); activate({ from: through - hours * 3600000, through, lower: 'closed' }, {}, isDemoMode ? 'fixed' : 'rolling'); closeEditor(); };
-  return <header className="fw-toolbar">
+  return <header className={`fw-toolbar${compact ? " fw-toolbar-compact" : ""}`} data-scope-open={scopeOpen || undefined}>
     <div className="fw-scope-row">
       <label className="fw-find"><span className="md-sr">Find in this window</span><input ref={find} type="search" aria-label="Find in this window" placeholder="Find tasks, files, or recorded notes…" value={route.q} onChange={e => query(e.target.value)} onBlur={endQuery} onKeyDown={e => { if (e.key === 'Enter') endQuery(); }} />{route.q && <button aria-label="Clear find" onClick={() => { endQuery(); query(''); endQuery(); }}>×</button>}</label>
+      {compact && <button className="fw-scope-toggle" aria-expanded={scopeOpen} aria-controls="memory-scope-options" onClick={() => setScopeOpen(value => !value)}>Scope <span aria-hidden="true">{scopeOpen ? '▴' : '▾'}</span></button>}
+      <div id={compact ? 'memory-scope-options' : undefined} className="fw-scope-options" hidden={compact && !scopeOpen}>
       <label className="fw-project"><span className="md-sr">Project</span><select aria-label="Project" value={route.project || ''} onChange={e => navigate({ project: e.target.value || null, offset: 0 })}><option value="">All projects</option>{route.project && !projects.includes(route.project) && <option>{route.project}</option>}{projects.map(p => <option key={p}>{p}</option>)}</select></label>
       <details ref={facets} className="fw-facets" onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); e.currentTarget.open = false; e.currentTarget.querySelector('summary').focus(); } }}><summary>Filters{(route.providers?.length || 0) + (route.evidence?.length || 0) ? ` · ${(route.providers?.length || 0) + (route.evidence?.length || 0)}` : ''}</summary><div className="fw-facet-panel"><fieldset><legend>Provider</legend>{['codex', 'claude'].map(value => <label key={value}><input type="checkbox" checked={route.providers?.includes(value) || false} onChange={() => toggle('providers', value)} />{value}</label>)}</fieldset><fieldset><legend>Recorded evidence</legend>{EVIDENCE.map(([value, label]) => <label key={value}><input type="checkbox" checked={route.evidence?.includes(value) || false} onChange={() => toggle('evidence', value)} />{label}</label>)}</fieldset><button onClick={() => { facets.current.open = false; facets.current.querySelector('summary').focus(); }}>Done</button></div></details>
+      </div>
     </div>
     <div className="fw-chips" aria-label="Active filters">
       {route.project && <button onClick={() => navigate({ project: null })}>Project: {route.project} ×</button>}
@@ -78,6 +82,7 @@ export default function FocusToolbar({ workspace, focus }) {
       <span className="fw-range-state">{isDemoMode ? 'Recorded example' : fixed ? 'Fixed' : 'Following latest'}</span>
     </div>
     {editing && interval && <section ref={editor} className="fw-range-editor" aria-label="Edit time range">
+      {rangeContext?.(range => { workspace.commitRange(range); closeEditor(); })}
       <div className="fw-range-presets" aria-label="Time presets">{[[1,'Last hour'],[24,'Last 24 hours'],[168,'Last 7 days']].map(([hours,text]) => <button key={hours} disabled={!data} onClick={() => preset(hours)}>{text}</button>)}{focus.saved && <button onClick={() => { focus.since(); closeEditor(); }}>Since return point</button>}</div>
       <FocusExactFields workspace={workspace} focus={focus} onClose={closeEditor} />
       <div className="fw-range-secondary">

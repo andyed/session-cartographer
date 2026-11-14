@@ -1,4 +1,5 @@
 import { validateUiRequest } from './turbo-entry.js';
+import { createWunderkammerMiddleware } from './wunderkammer-static.js';
 
 // These are the existing browser APIs. Headless Turbo deliberately serves a
 // narrower contract, so forwarding these to its port returns 404. Mount the
@@ -7,7 +8,9 @@ import { validateUiRequest } from './turbo-entry.js';
 const EXPLORER_PATHS = new Set([
   '/api/health', '/api/activity-scope', '/api/events', '/api/autocomplete', '/api/coterms',
   '/api/search', '/api/projects', '/api/sessions', '/api/stream',
-  '/api/transcript', '/api/transcript/analysis',
+  '/api/transcript', '/api/transcript/analysis', '/api/workmap',
+  '/api/session/artifacts', '/api/session/artifact', '/api/session/document',
+  '/api/images/collection', '/api/images/window', '/api/images/file',
 ]);
 
 async function loadExplorer() {
@@ -67,6 +70,7 @@ export function explorerUiPlugin(options) {
   const install = server => {
     const middleware = createExplorerUiMiddleware(options);
     hosts.add(middleware);
+    server.middlewares.use(createWunderkammerMiddleware());
     server.middlewares.use(middleware);
     server.httpServer?.once('close', () => {
       hosts.delete(middleware);

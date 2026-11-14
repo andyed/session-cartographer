@@ -44,3 +44,21 @@ export function formatCount(value) {
   if (!Number.isFinite(value)) return 'Unrecorded';
   return new Intl.NumberFormat(undefined, { notation: value >= 10000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
 }
+
+// One fixed reference for the visible outcome list, independent of wall-clock
+// refreshes and input ordering. Replay must not reveal later outcomes.
+export function outcomeTimeline(outcomes = [], at = Infinity) {
+  return outcomes.filter(note => Number.isFinite(note.t) && note.t <= at && /commit|wrapup/.test(note.type || ''))
+    .slice().sort((a,b) => b.t-a.t);
+}
+
+export function formatTimeOffset(time, baseline) {
+  const delta=time-baseline;
+  if (!Number.isFinite(delta)) return '';
+  if (delta===0) return '0m';
+  const sign=delta<0?'−':'+';
+  const minutes=Math.floor(Math.abs(delta)/60000);
+  if (!minutes) return `${sign}<1m`;
+  const hours=Math.floor(minutes/60), days=Math.floor(hours/24);
+  return sign + [days && `${days}d`, hours%24 && `${hours%24}h`, minutes%60 && `${minutes%60}m`].filter(Boolean).join(' ');
+}

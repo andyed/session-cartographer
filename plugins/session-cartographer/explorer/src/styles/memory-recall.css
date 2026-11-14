@@ -38,15 +38,26 @@
 .rc-calls .rc-call-toggle:hover .rc-call-query { text-decoration: underline; text-underline-offset: 4px; }
 .rc-call-query { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
 .rc-call-agent { align-self: start; padding: 14px 12px 0 0; }
-.rc-meta, .rc-call-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 15px; align-items: center; }
+.rc-meta, .rc-call-counts { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 16px; align-items: center; }
 .rc-call-counts { color: var(--rc-meta); font-variant-numeric: tabular-nums; }
 .rc-used-count { color: var(--rc-used); }
 .rc-warn-text { color: var(--rc-warn); }
 .rc-results ol { counter-reset: none; }
+.rc-result-context { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 4px 0 10px; color: var(--rc-meta); font-size: 16px; overflow-wrap: anywhere; }
+.rc-result-context > span:first-child { color: var(--rc-ink); font-weight: 600; }
+.rc-result-time { min-width: 0; max-width: 100%; color: var(--rc-meta); font-size: 16px; }
+.rc-result-time > summary { min-height: 44px; padding-block: 10px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.rc-result-time > summary:focus-visible { outline: 2px solid var(--rc-link); outline-offset: 2px; }
+.rc-result-time > time { display: block; padding-bottom: 8px; overflow-wrap: anywhere; }
 .rc-result { display: grid; grid-template-columns: 2.5em minmax(0, 1fr); gap: 8px; padding: 10px 0; border-top: 1px solid var(--rc-line); }
 .rc-rank { color: var(--rc-meta); font-variant-numeric: tabular-nums; text-align: right; font-weight: 600; }
 .rc-result[data-used] .rc-rank { color: var(--rc-used); }
 .rc-result-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.rc-result-destination { display: flex; flex-direction: column; gap: 4px; min-width: 0; min-height: 44px; padding-block: 4px; }
+.rc-result-destination[href]:hover .rc-summary { text-decoration: underline; text-underline-offset: 4px; }
+.rc-result-destination:focus-visible, .rc-results:focus-visible { outline: 2px solid var(--rc-link); outline-offset: 2px; }
+.rc-detail-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; color: var(--rc-warn); padding-block: 10px; }
+.rc-detail-error > button { min-height: 44px; color: var(--rc-link); }
 .rc-summary { color: var(--rc-ink); overflow-wrap: anywhere; }
 .rc-summary.rc-quiet { color: var(--rc-meta); }
 .rc-summary code, .rc-quiet code { font-size: 14px; overflow-wrap: anywhere; }
@@ -66,3 +77,5 @@
 .rc-session-head span { color: var(--rc-meta); font-variant-numeric: tabular-nums; }
 .rc-session .rc-calls .rc-call-toggle { padding: 10px 8px !important; }
 .rc-session .rc-call > div { padding: 0 4px 12px; }
+
+.rc-episode{display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px}.rc-episode:focus-visible{outline:2px solid var(--rc-link);outline-offset:2px}

@@ -1,0 +1,11 @@
+/* Explicit primary targets and source controls remain peers, never nested. */
+.event-review-card .event-primary { display: block; width: 100%; min-height: 44px; padding-block: 8px; color: #edf0f5; text-decoration: none; border-radius: 3px; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; }
+.event-review-card .event-summary { overflow-wrap: anywhere; }
+.event-review-card .event-text-toggle, .event-review-card .event-metadata-toggle, .search-occurrences-toggle { min-height: 44px; min-width: 44px; padding: 8px 10px; color: #d4dae3; font-size: 16px; font-weight: 500; cursor: pointer; border-radius: 3px; }
+.event-review-card .event-metadata { overflow-wrap: anywhere; }
+.event-primary:focus-visible, .event-text-toggle:focus-visible, .event-metadata-toggle:focus-visible, .search-occurrences-toggle:focus-visible { outline: 2px solid #72e6ef; outline-offset: 2px; }
+.search-result-group { min-width: 0; }
+.search-occurrences { margin: 0 0 16px 12px; padding-left: 12px; border-left: 2px solid #3b4658; }
+.search-occurrence-context { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 8px 0; color: #d4dae3; font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+@media (hover: hover) { .event-primary:hover, .event-text-toggle:hover, .event-metadata-toggle:hover, .search-occurrences-toggle:hover { background: #20333d; } }
+@media (max-width: 440px) { .search-occurrences { margin-left: 4px; padding-left: 8px; } }
