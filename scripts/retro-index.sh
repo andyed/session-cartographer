@@ -11,6 +11,17 @@
 # the completed sessions when restarted; only the interrupted session onward
 # is reprocessed. Pass --fresh to clear the checkpoint and reindex everything.
 #
+# Codex rollouts are read in both spellings, from the live tree and from the
+# archive. Codex moves a finished session to archived_sessions/ and, about a
+# week after its last write, zstd-compresses the rollout in place
+# (rollout-….jsonl becomes rollout-….jsonl.zst, mtime kept). A compressed one
+# is streamed through `zstd -dc`. The checkpoint key holds no path and no
+# spelling, so a rollout indexed while it was plain, or before it was archived,
+# is skipped afterwards. Measured 2026-11-13 (docs/COMPRESSED_ROLLOUTS.md):
+# 3,646 of 3,916 rollouts were compressed, and 241 of the 641 in the archive
+# were not indexed at their last write, because this script walked the live
+# tree only and they were archived before the next catch-up.
+#
 # Usage: ./retro-index.sh [--provider all|claude|codex] [--limit-days N]
 #                         [--project NAME] [--transcript PATH] [--fresh]
 
@@ -44,6 +55,9 @@ CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSC
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 # Codex archives sessions rather than deleting them; index that root too.
 CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
+# The zstd binary that reads a compressed rollout. Overridable so a test can
+# name one that is not there and see the skip counted.
+ZSTD_BIN="${CARTOGRAPHER_ZSTD:-zstd}"
 SCRIPT_DIR="$(dirname "$0")"
 INDEXER="$SCRIPT_DIR/index-event.sh"
 CLAUDE_TURN_GROUPER="$SCRIPT_DIR/transcript-to-turns.awk"
@@ -101,6 +115,22 @@ file_mtime() {
     echo 0
 }
 
+# Codex's compressed spelling of a rollout, by name alone.
+is_compressed() {
+    case "$1" in *.jsonl.zst) return 0 ;; esac
+    return 1
+}
+
+# A transcript's rows on stdout, in either spelling. Every reader below takes
+# its rows from here, so none of them opens a compressed file as text.
+transcript_rows() {
+    if is_compressed "$1"; then
+        "$ZSTD_BIN" -dc -- "$1" 2>/dev/null
+    else
+        cat -- "$1"
+    fi
+}
+
 mkdir -p "$STATE_DIR"
 if [ "$FRESH" = "1" ]; then
     : > "$PROGRESS_FILE"
@@ -123,6 +153,10 @@ FAILED_FILE=$(mktemp)
 SESSION_FAILED_FILE=$(mktemp)
 trap 'rm -f "$COUNTER_FILE" "$SKIPPED_FILE" "$FAILED_FILE" "$SESSION_FAILED_FILE"' EXIT
 total_indexed=0
+# Compressed rollouts that were found and not read, by reason. The main loop
+# below is not a subshell, so plain counters hold.
+compressed_no_zstd=0
+compressed_undecodable=0
 
 # Emit provider + path pairs. Provider is metadata on every normalized turn,
 # never a separate index or collection.
@@ -136,7 +170,9 @@ discover_transcripts() {
         while IFS= read -r path; do printf 'claude\t%s\n' "$path"; done
     fi
     if [ "$PROVIDER_FILTER" = "all" ] || [ "$PROVIDER_FILTER" = "codex" ]; then
-        find "$CODEX_TRANSCRIPTS" -name "*.jsonl" -type f "${FIND_ARGS[@]}" -print 2>/dev/null | \
+        # Both stores, both spellings. A root that does not exist costs one
+        # suppressed error and the other is still walked.
+        find "$CODEX_TRANSCRIPTS" "$CODEX_ARCHIVED" \( -name "*.jsonl" -o -name "*.jsonl.zst" \) -type f "${FIND_ARGS[@]}" -print 2>/dev/null | \
         while IFS= read -r path; do printf 'codex\t%s\n' "$path"; done
     fi
 }
@@ -145,7 +181,17 @@ while IFS=$'\t' read -r provider transcript; do
     [ -z "$transcript" ] && continue
 
     session_file=$(basename "$transcript")
+    # The name without either suffix: rollout-<ts>-<id> in both spellings.
+    session_stem="${session_file%.zst}"
+    session_stem="${session_stem%.jsonl}"
     if [ "$provider" = "codex" ]; then
+        # A plain file beside its compressed twin means Codex is partway
+        # through compressing it, or left both. The plain one is in this walk
+        # and is the one read, as in resolve-transcript.sh.
+        if [ -z "$TRANSCRIPT_FILTER" ] && is_compressed "$transcript" && [ -f "${transcript%.zst}" ]; then
+            echo "Skipping (plain copy beside it is read instead): $session_file"
+            continue
+        fi
         # Checkpoint pre-check, before the two jq passes and the node inferer
         # below. Those cost ~150 ms per transcript, and on a zero-work
         # catch-up (78 of 123 runs in the two weeks to 2026-10-07) they were
@@ -158,10 +204,12 @@ while IFS=$'\t' read -r provider transcript; do
         # through to the full derivation and the full key check, so the
         # project-in-key invalidation is untouched. --project is excluded
         # because it needs the inferred project to decide inclusion at all.
-        pre_sid="${session_file%.jsonl}"
+        # Compression keeps the mtime and the name carries no spelling, so
+        # this also skips a rollout that was indexed while plain.
+        pre_sid="$session_stem"
         pre_sid="${pre_sid#rollout-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-}"
         case "$pre_sid" in
-            "${session_file%.jsonl}"|*[!0-9a-fA-F-]*) pre_sid="" ;;
+            "$session_stem"|*[!0-9a-fA-F-]*) pre_sid="" ;;
         esac
         if [ -n "$pre_sid" ] && [ -z "$PROJECT_FILTER" ]; then
             pre_mtime=$(file_mtime "$transcript")
@@ -173,10 +221,35 @@ while IFS=$'\t' read -r provider transcript; do
                 continue
             fi
         fi
-        session_id=$(jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' "$transcript" 2>/dev/null | head -1)
-        session_id="${session_id:-${session_file%.jsonl}}"
-        session_cwd=$(jq -r 'select(.type == "session_meta") | .payload.cwd // empty' "$transcript" 2>/dev/null | head -1)
-        project_dir=$(node "$CODEX_PROJECT_INFERER" "$transcript" "$DEV" 2>/dev/null)
+        if is_compressed "$transcript"; then
+            # Not checkpointed, so it has to be read. Say why when it cannot
+            # be: a compressed rollout that is passed over without a word is
+            # the defect this branch exists for. Neither case checkpoints, so
+            # the rollout is tried again on the next run.
+            if ! command -v "$ZSTD_BIN" >/dev/null 2>&1; then
+                echo "Skipping (compressed, and zstd is not installed): $session_stem"
+                compressed_no_zstd=$((compressed_no_zstd + 1))
+                continue
+            fi
+            # One test pass before any row is used. A frame that stops short
+            # would otherwise index the turns before the break and checkpoint
+            # the session as whole.
+            if ! "$ZSTD_BIN" -tq -- "$transcript" 2>/dev/null; then
+                echo "Skipping (compressed, and it does not decompress): $session_stem"
+                compressed_undecodable=$((compressed_undecodable + 1))
+                continue
+            fi
+        fi
+        session_id=$(transcript_rows "$transcript" | jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' 2>/dev/null | head -1)
+        session_id="${session_id:-$session_stem}"
+        session_cwd=$(transcript_rows "$transcript" | jq -r 'select(.type == "session_meta") | .payload.cwd // empty' 2>/dev/null | head -1)
+        if is_compressed "$transcript"; then
+            # Rows on stdin: the inferer then needs nothing from Node's zlib,
+            # which reads zstd only from 22.15.
+            project_dir=$(transcript_rows "$transcript" | node "$CODEX_PROJECT_INFERER" - "$DEV" 2>/dev/null)
+        else
+            project_dir=$(node "$CODEX_PROJECT_INFERER" "$transcript" "$DEV" 2>/dev/null)
+        fi
         project_dir="${project_dir:-$(basename "${session_cwd:-$(dirname "$transcript")}")}"
         turn_grouper="$CODEX_TURN_GROUPER"
     else
@@ -215,9 +288,11 @@ while IFS=$'\t' read -r provider transcript; do
     # parallel reconstruct-history.js runs dedupe cleanly via the point-id hash.
     # Piping through a while loop would put the counter in a subshell where
     # increments don't propagate; write to a counter file and sum at the end.
-    awk -f "$turn_grouper" \
+    # tpath is the path on disk, .zst included: resolve-transcript.sh takes a
+    # recorded path in either spelling.
+    transcript_rows "$transcript" | awk -f "$turn_grouper" \
         -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" \
-        "$transcript" 2>/dev/null | \
+        2>/dev/null | \
     while IFS= read -r payload; do
         [ -z "$payload" ] && continue
         if echo "$payload" | PE_GATE_REJECT="${PE_GATE_REJECT:-2.0}" "$INDEXER"; then
@@ -244,5 +319,11 @@ total_indexed=$(wc -l < "$COUNTER_FILE" | tr -d ' ')
 total_skipped=$(wc -l < "$SKIPPED_FILE" | tr -d ' ')
 total_failed=$(wc -l < "$FAILED_FILE" | tr -d ' ')
 rm -f "$COUNTER_FILE" "$SKIPPED_FILE" "$FAILED_FILE" "$SESSION_FAILED_FILE"
-echo "Retro-indexing complete! Backfilled $total_indexed turns; skipped $total_skipped already-indexed session(s); $total_failed turn failure(s)."
+# Unread compressed rollouts ride on the summary line, which is the one line
+# catch-up-transcripts.sh keeps. They do not fail the run: a missing zstd
+# would otherwise void the catch-up cooldown on every session start.
+unread=""
+[ "$compressed_no_zstd" -gt 0 ] && unread="$unread; $compressed_no_zstd compressed rollout(s) not read (zstd not installed)"
+[ "$compressed_undecodable" -gt 0 ] && unread="$unread; $compressed_undecodable compressed rollout(s) not read (did not decompress)"
+echo "Retro-indexing complete! Backfilled $total_indexed turns; skipped $total_skipped already-indexed session(s); $total_failed turn failure(s)$unread."
 [ "$total_failed" -eq 0 ]

@@ -1196,6 +1196,39 @@ grep_jsonl_to_tsv() {
       "$file" - 2>/dev/null
 }
 
+# A transcript's rows in either spelling. Codex zstd-compresses a rollout in
+# place about a week after its session (rollout-….jsonl.zst, mtime kept).
+transcript_rows() {
+  case "$1" in
+    *.jsonl.zst) zstd -dc -- "$1" 2>/dev/null ;;
+    *) cat -- "$1" ;;
+  esac
+}
+
+# Compressed Codex rollouts that hold the query, live tree first. Measured
+# 2026-11-13: 3,646 of 3,916 rollouts were compressed (14.6 of 15.8 GiB of
+# Codex text), and `rg -z` scanned all of them in 3.3-3.9 s. One of the four
+# logged --transcript queries had free slots and 15 compressed rollouts holding
+# its needle (docs/COMPRESSED_ROLLOUTS.md). Without ripgrep and zstd the scan
+# is a process pair per file, so they are counted on stderr instead of read.
+compressed_rollout_hits() {
+  local dir found
+  local dirs=()
+  for dir in "$CODEX_TRANSCRIPTS" "$CODEX_ARCHIVED"; do
+    [ -d "$dir" ] && dirs+=("$dir")
+  done
+  [ "${#dirs[@]}" -gt 0 ] || return 0
+  if command -v rg >/dev/null 2>&1 && command -v zstd >/dev/null 2>&1; then
+    for dir in "${dirs[@]}"; do
+      rg -z -l "$GREP_QUERY" "$dir" --glob '*.jsonl.zst' --max-depth 5 2>/dev/null
+    done
+    return 0
+  fi
+  found=$(find "${dirs[@]}" -name '*.jsonl.zst' -type f 2>/dev/null | wc -l | tr -d ' ')
+  [ "$found" -gt 0 ] && echo "($found compressed Codex rollouts not searched: that needs ripgrep and zstd)" >&2
+  return 0
+}
+
 grep_transcripts_to_tsv() {
   [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || [ -d "$CODEX_ARCHIVED" ] || return 0
 
@@ -1212,9 +1245,10 @@ grep_transcripts_to_tsv() {
     case "$transcript" in
       "$CODEX_TRANSCRIPTS"/*|"$CODEX_ARCHIVED"/*)
         provider="codex"
-        session_id=$(jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' "$transcript" 2>/dev/null | head -1)
+        session_file="${session_file%.zst}"
+        session_id=$(transcript_rows "$transcript" | jq -r 'select(.type == "session_meta") | .payload.id // .payload.session_id // empty' 2>/dev/null | head -1)
         session_id="${session_id:-${session_file%.jsonl}}"
-        session_cwd=$(jq -r 'select(.type == "session_meta") | .payload.cwd // empty' "$transcript" 2>/dev/null | head -1)
+        session_cwd=$(transcript_rows "$transcript" | jq -r 'select(.type == "session_meta") | .payload.cwd // empty' 2>/dev/null | head -1)
         project_dir=$(basename "${session_cwd:-$(dirname "$transcript")}")
         ;;
       *)
@@ -1232,7 +1266,7 @@ grep_transcripts_to_tsv() {
 
     # The paths go through ENVIRON, not -v, for the reason given at the fusion
     # awk's BEGIN: rg on Windows joins the components it walks with "\".
-    LC_ALL=C grep -niE "$GREP_QUERY" "$transcript" 2>/dev/null | head -20 | \
+    transcript_rows "$transcript" | LC_ALL=C grep -niE "$GREP_QUERY" 2>/dev/null | head -20 | \
       CARTO_PROJ="$project_dir" CARTO_TPATH="$transcript" \
       awk -F: -v sid="$session_id" -v provider="$provider" '
         BEGIN { proj = ENVIRON["CARTO_PROJ"]; tpath = ENVIRON["CARTO_TPATH"] }
@@ -1254,19 +1288,27 @@ grep_transcripts_to_tsv() {
       break
     fi
   done < <(
-    if command -v rg >/dev/null 2>&1; then
-      {
-        [ -d "$CLAUDE_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CLAUDE_TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null
-        [ -d "$CODEX_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CODEX_TRANSCRIPTS" --glob '*.jsonl' --max-depth 5 2>/dev/null
-        [ -d "$CODEX_ARCHIVED" ] && rg -l "$GREP_QUERY" "$CODEX_ARCHIVED" --glob '*.jsonl' --max-depth 5 2>/dev/null
-      } | head -20
-    else
-      {
-        [ -d "$CLAUDE_TRANSCRIPTS" ] && find "$CLAUDE_TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
-        [ -d "$CODEX_TRANSCRIPTS" ] && find "$CODEX_TRANSCRIPTS" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
-        [ -d "$CODEX_ARCHIVED" ] && find "$CODEX_ARCHIVED" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
-      } | head -20
-    fi
+    plain_hits=$(
+      if command -v rg >/dev/null 2>&1; then
+        {
+          [ -d "$CLAUDE_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CLAUDE_TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null
+          [ -d "$CODEX_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CODEX_TRANSCRIPTS" --glob '*.jsonl' --max-depth 5 2>/dev/null
+          [ -d "$CODEX_ARCHIVED" ] && rg -l "$GREP_QUERY" "$CODEX_ARCHIVED" --glob '*.jsonl' --max-depth 5 2>/dev/null
+        } | head -20
+      else
+        {
+          [ -d "$CLAUDE_TRANSCRIPTS" ] && find "$CLAUDE_TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+          [ -d "$CODEX_TRANSCRIPTS" ] && find "$CODEX_TRANSCRIPTS" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+          [ -d "$CODEX_ARCHIVED" ] && find "$CODEX_ARCHIVED" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+        } | head -20
+      fi
+    )
+    [ -n "$plain_hits" ] && printf '%s\n' "$plain_hits"
+    # Compressed rollouts are at least a week old, so they take only the
+    # slots the plain transcripts left, and the scan is skipped when there
+    # are none: its cost is paid by the queries that came up short.
+    free_slots=$((20 - $(printf '%s' "$plain_hits" | grep -c .)))
+    [ "$free_slots" -gt 0 ] && compressed_rollout_hits | head -n "$free_slots"
   )
 }
 

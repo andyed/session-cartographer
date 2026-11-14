@@ -24,6 +24,18 @@
  * schedule rather than archiving, so a missing Claude transcript is genuinely
  * gone and rewriting it would be a lie.
  *
+ * A compressed rollout is counted and left as recorded. About a week after a
+ * session Codex zstd-compresses its rollout in place (rollout-….jsonl becomes
+ * rollout-….jsonl.zst), in the live tree and in the archive. The recorded
+ * name is then one suffix short of a file that is on disk, and
+ * resolve-transcript.sh already tries both spellings at the recorded path and
+ * at the archive. Rewriting those records would touch most of the corpus and
+ * be stale again a week later, so they are not rewritten; but they are not
+ * "unresolved" either. Measured 2026-11-13: of 194,747 Codex records this
+ * script reported missing and unresolved, 194,535 named a rollout that was on
+ * disk compressed (140,610 in place, 53,925 in the archive) and 212 named one
+ * that was gone (docs/COMPRESSED_ROLLOUTS.md).
+ *
  * Dry run by default. Nothing is modified without --write.
  *
  * Usage:
@@ -73,15 +85,30 @@ const TARGETS = args.includes('--file')
 // unique key; building the index once turns per-record repair into a map hit
 // instead of a filesystem walk over ~900 files per record.
 const archiveIndex = new Map();
+// Plain basenames whose archive copy is the compressed spelling.
+const archiveCompressed = new Set();
 if (existsSync(CODEX_ARCHIVED)) {
   for (const name of readdirSync(CODEX_ARCHIVED)) {
+    if (name.endsWith('.jsonl.zst')) { archiveCompressed.add(name.slice(0, -'.zst'.length)); continue; }
     if (!name.endsWith('.jsonl')) continue;
     if (archiveIndex.has(name)) { archiveIndex.set(name, null); continue; } // ambiguous → refuse
     archiveIndex.set(name, join(CODEX_ARCHIVED, name));
   }
 }
 
-const stats = { scanned: 0, ok: 0, repaired: 0, unresolved: 0, claudeMissing: 0, noPath: 0, raced: 0 };
+// A recorded Codex path with no file behind it, whose rollout is on disk in
+// the compressed spelling: beside the recorded name, or in the archive. One
+// stat per distinct path; a log names the same rollout thousands of times.
+const compressedSeen = new Map();
+function onDiskCompressed(recorded) {
+  if (!recorded.endsWith('.jsonl')) return false;
+  if (!compressedSeen.has(recorded)) {
+    compressedSeen.set(recorded, existsSync(`${recorded}.zst`) || archiveCompressed.has(basename(recorded)));
+  }
+  return compressedSeen.get(recorded);
+}
+
+const stats = { scanned: 0, ok: 0, repaired: 0, compressed: 0, unresolved: 0, claudeMissing: 0, noPath: 0, raced: 0 };
 const samples = [];
 const perFile = [];
 
@@ -116,7 +143,12 @@ for (const TARGET of (DO_QDRANT ? [] : TARGETS)) {
     }
 
     const hit = archiveIndex.get(basename(p));
-    if (!hit) { stats.unresolved++; out.push(line); continue; }
+    if (!hit) {
+      if (onDiskCompressed(p)) stats.compressed++;
+      else stats.unresolved++;
+      out.push(line);
+      continue;
+    }
 
     stats.repaired++; fileRepaired++;
     if (samples.length < 8) samples.push({ event_id: rec.event_id, from: p, to: hit });
@@ -145,7 +177,7 @@ for (const TARGET of (DO_QDRANT ? [] : TARGETS)) {
 }
 
 if (DO_QDRANT) {
-  const qs = { scanned: 0, broken: 0, fixable: 0, updated: 0, unresolved: 0 };
+  const qs = { scanned: 0, broken: 0, fixable: 0, updated: 0, compressed: 0, unresolved: 0 };
   const byTarget = new Map(); // resolved path → [point ids]
   let offset = null;
   for (;;) {
@@ -166,7 +198,11 @@ if (DO_QDRANT) {
       if (existsSync(tp)) continue;
       qs.broken++;
       const hit = archiveIndex.get(basename(tp));
-      if (!hit) { qs.unresolved++; continue; }
+      if (!hit) {
+        if (onDiskCompressed(tp)) qs.compressed++;
+        else qs.unresolved++;
+        continue;
+      }
       qs.fixable++;
       if (!byTarget.has(hit)) byTarget.set(hit, []);
       byTarget.get(hit).push(pt.id);
@@ -196,6 +232,7 @@ if (DO_QDRANT) {
     console.log(`  points with a codex/sessions path : ${qs.scanned}`);
     console.log(`  broken (file not at that path)    : ${qs.broken}`);
     console.log(`  fixable from archive              : ${qs.fixable}  across ${byTarget.size} sessions`);
+    console.log(`  on disk compressed, left as is    : ${qs.compressed}`);
     console.log(`  broken and unresolved             : ${qs.unresolved}`);
     if (DO_WRITE) console.log(`  UPDATED                           : ${qs.updated}`);
     else console.log('\n  DRY RUN — re-run with --qdrant --write to apply.');
@@ -210,6 +247,7 @@ if (AS_JSON) {
   console.log(`  records with a transcript_path : ${stats.scanned}`);
   console.log(`  path resolves as recorded      : ${stats.ok}`);
   console.log(`  REPAIRABLE (codex → archive)   : ${stats.repaired}`);
+  console.log(`  codex, on disk as .jsonl.zst   : ${stats.compressed}  (left as recorded; the resolver reads both spellings)`);
   console.log(`  codex, missing and unresolved  : ${stats.unresolved}`);
   console.log(`  claude, genuinely gone         : ${stats.claudeMissing}`);
   if (samples.length) {
