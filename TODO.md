@@ -175,6 +175,13 @@ Open question worth settling before building: whether tracks are per-project (ch
 - [x] ~~Error boundary~~ — shipped as route-level containment with in-place retry (see Infrastructure)
 - [ ] **Transcript match display** — transcript search results show raw JSONL (`{"parentUuid":"...","isSidechain":false,...}`) instead of the conversation text. Need to extract the human-readable content from the message payload and display it as a summary, same as event log results.
 
+## Session work map (`/map`, added 2026-11-13)
+
+- [ ] **Files station: name notes as their own subtypes.** A file call is a read or an edit today. Images and Markdown files are the files a person goes back to, so split them out as subtypes ("image", "markdown") in the row's detail line and in the Files count, and link an image row to the image wall and a Markdown row to the document preview.
+- [ ] **Levels of detail, a board layout and a tape (spike on `spike/workmap-portrait`).** The route of recent transitions is what the hub is for, so it is kept at every size: `shared/workmap/flow.js` draws the hub's ring and a circuit-board layout at three levels on fixed positions, and a tape of the last 60 calls by station lane. Open: tape marks are not clickable, a repeated pair fills the board's bus with parallel lanes, live follow re-reads the whole transcript every 4 s, and the full-size hub restarts its own animation on every replay frame. Candidate for an upstream PR to lot-map as a compact mode and a `board` layout.
+- [ ] **Portrait (head in profile) is shelved.** `shared/workmap/portrait.js` stays as the comparison row on the Sizes panel. It shows the kind of work at 24 px and drops the route, which made it worse than the hub.
+- [ ] **Codex subagent threads** are separate rollouts and are not joined to their parent's map.
+
 ## Search
 - [ ] Stemming / lemmatization — collapse word variants in autocomplete (refactor/refactored/refactoring → one entry). Two approaches: (a) Porter stemmer at index time, classical NLP. (b) Embed top-N suggestions via mxbai-embed-large (already on :8890), cluster by cosine similarity, show one representative per cluster. Option b handles domain terms (widget/widgetplus) that stemmers can't.
 - [ ] Stopword model refinement — co-terms flyout still surfaces noise. Consider TF-IDF distinctiveness scoring or a learned stopword list from the index.

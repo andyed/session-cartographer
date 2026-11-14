@@ -20,14 +20,20 @@ export function readMapRoute(search = '') {
     session: params.get('session') || '',
     station: params.get('station') || '',
     at: params.get('at') !== null && Number.isFinite(at) && at > 0 ? at : null,
+    // What sits beside the map: the list of calls (default) or the same moment at small sizes.
+    look: params.get('look') === 'sizes' ? 'sizes' : '',
+    // How the map is laid out: the hub's ring (default) or a circuit board.
+    layout: params.get('layout') === 'board' ? 'board' : '',
   };
 }
 
-export function mapHref(base, { session, station, at }) {
+export function mapHref(base, { session, station, at, look, layout }) {
   const params = new URLSearchParams();
   if (session) params.set('session', session);
   if (station) params.set('station', station);
   if (at !== null && at !== undefined) params.set('at', String(Math.round(at)));
+  if (look === 'sizes') params.set('look', 'sizes');
+  if (layout === 'board') params.set('layout', 'board');
   const qs = params.toString();
   return `${base.replace(/\/$/, '')}/map${qs ? `?${qs}` : ''}`;
 }

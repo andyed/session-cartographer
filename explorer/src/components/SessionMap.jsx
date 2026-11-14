@@ -12,11 +12,13 @@
  * labels in it come from the corpus, and an image cannot run script.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AgentBadge from './AgentBadge';
+import SessionSizes from './SessionSizes.jsx';
 import { apiRequest, fetchSessions } from '../api';
 import { boardAt } from '../../shared/workmap/board.js';
-import { formatMs } from '../../shared/workmap/classify.js';
+import { formatMs, shortModel } from '../../shared/workmap/classify.js';
+import { boardLayout, drawFlow, drawTape, flowBoxes, flowCoreBox, flowState, holdFor, ringLayout, tapeHeight, tapeOf } from '../../shared/workmap/flow.js';
 import { drawMap, mapGeometry } from '../../shared/workmap/draw.js';
 import { setupFrom } from '../../shared/workmap/setup.js';
 import { MAP_PATH, clockTime, coreBox, mapHref, readMapRoute, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, spanText, stampFor, stationBoxes, svgDataUri } from './session-map.js';
@@ -34,6 +36,33 @@ function sessionLabel(s) {
 
 /** Where a row's link leads, as its tooltip. */
 const TARGET_TITLE = { recall: 'Ranked results and what was used', review: 'Diff for this session', reader: 'In the conversation' };
+
+const EMPTY_LIST = { rows: [], total: 0, failed: 0, byAgents: 0 };
+/** Calls the tape holds: enough to see a loop repeat, few enough that each is a mark. */
+const TAPE_CALLS = 60;
+
+/** The width an element has on screen, so a drawing can pick its level of detail and keep its names at 16 px. */
+function useWidth(fallback) {
+  const [width, setWidth] = useState(fallback);
+  const observer = useRef(null);
+  // A callback ref: the element is not there until the map has loaded, and it is replaced when the session changes.
+  const ref = useCallback(node => {
+    observer.current?.disconnect();
+    observer.current = null;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    observer.current = new ResizeObserver(([entry]) => setWidth(Math.max(24, Math.round(entry.contentRect.width))));
+    observer.current.observe(node);
+  }, []);
+  return [ref, width];
+}
+
+/** Replay speeds: session seconds per second on screen. */
+const SPEEDS = [1, 10, 60, 600];
+/** How often a replay or a live view draws a frame. */
+const FRAME_MS = 80;
+/** How often a live view re-reads the transcript, and how far behind now it draws, so a call arrives before its moment does. */
+const LIVE_POLL_MS = 4000;
+const LIVE_LAG_MS = 6500;
 
 /** A click the browser should handle itself: a new tab, a new window, a download. */
 const leavesThePage = e => e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey;
@@ -84,6 +113,16 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
     };
   }, [go]);
 
+  // A replay or a live view owns the moment while it runs; the address gets it back on pause.
+  const [playing, setPlaying] = useState(false);
+  const [live, setLive] = useState(false);
+  const [speed, setSpeed] = useState(60);
+  const [playAt, setPlayAt] = useState(null);
+  const [clock, setClock] = useState(0);
+  const [refresh, setRefresh] = useState(0);
+  const reducedMotion = useMemo(() => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches, []);
+  const frame = useRef({ end: 0, speed: 60 });
+
   useEffect(() => {
     if (!route.session) return undefined;
     const controller = new AbortController();
@@ -97,7 +136,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
         setError(e.message || 'The session map could not be read');
       });
     return () => controller.abort();
-  }, [route.session]);
+  }, [route.session, refresh]);
 
   // What the Memory Desk holds for this session: its recall calls and the files it can show a diff for.
   // Both are optional. Without them every row still opens in the reader.
@@ -120,16 +159,67 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
       if (!signal.aborted) setExtras({ calls: recallIndex(own, all), files: reviewableFiles(desk, session) });
     });
     return () => controller.abort();
-  }, [map]);
+    // Keyed on the session, not the map: a live view replaces the map every few seconds.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map?.session_id]);
 
   const setup = useMemo(() => {
     if (!map) return null;
     return { ...setupFrom({ coreName: String(map.provider || 'agent').toUpperCase(), theme: 'dark' }), present: new Set(map.present) };
-  }, [map]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map?.provider, map?.present.join(',')]);
 
   const geometry = useMemo(() => (setup ? mapGeometry(setup) : null), [setup]);
   const end = map?.span ? map.span.last + 400 : 0;
-  const at = map?.span ? Math.min(end, Math.max(map.span.first, route.at ?? end)) : 0;
+  const at = map?.span ? (live && playAt !== null ? playAt : Math.min(end, Math.max(map.span.first, playAt ?? route.at ?? end))) : 0;
+  frame.current = { end, speed };
+
+  useEffect(() => {
+    if (!playing && !live) return undefined;
+    const started = performance.now();
+    let last = started;
+    const timer = setInterval(() => {
+      const now = performance.now();
+      const dt = now - last;
+      last = now;
+      setClock(now - started);
+      if (live) setPlayAt(Date.now() - LIVE_LAG_MS);
+      else {
+        setPlayAt(prev => {
+          const next = (prev ?? frame.current.end) + dt * frame.current.speed;
+          if (next >= frame.current.end) setPlaying(false);
+          return Math.min(next, frame.current.end);
+        });
+      }
+    }, FRAME_MS);
+    return () => clearInterval(timer);
+  }, [playing, live]);
+
+  useEffect(() => {
+    if (!live) return undefined;
+    const timer = setInterval(() => setRefresh(n => n + 1), LIVE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [live]);
+
+  // A replay that reaches the end, or is paused, hands its moment back to the address.
+  useEffect(() => {
+    if (playing || live || playAt === null) return;
+    go({ at: playAt });
+    setPlayAt(null);
+  }, [playing, live, playAt, go]);
+
+  const play = () => {
+    setLive(false);
+    // Starting from the end would be a replay of nothing: start over.
+    if (!playing && map?.span && at >= end - 1000) setPlayAt(map.span.first);
+    else if (!playing) setPlayAt(at);
+    setPlaying(p => !p);
+  };
+  const follow = () => {
+    setPlaying(false);
+    setLive(l => !l);
+  };
+  const scrub = value => (playing ? setPlayAt(value) : (setLive(false), go({ at: value })));
   const station = map && route.station && map.present.includes(route.station) ? route.station : '';
 
   const src = useMemo(() => {
@@ -138,7 +228,32 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
     return svgDataUri(drawMap(board, at, setup));
   }, [map, setup, at]);
 
-  const list = useMemo(() => (map ? rowsFor(map.actions, station, at) : null), [map, station, at]);
+  // The flow: each station's light and the route, for the board, the small sizes and the tape.
+  const pace = live ? 1 : speed;
+  const flow = useMemo(() => (map ? flowState(map.actions, at, { tau: 4000 * pace, hold: holdFor(pace), travel: 700 * pace }) : null), [map, at, pace]);
+  const layouts = useMemo(() => (setup ? { ring: ringLayout(setup), board: boardLayout() } : null), [setup]);
+  const [stageRef, stageWidth] = useWidth(460);
+  const onBoard = route.layout === 'board';
+  const drawOptions = useMemo(
+    () => (map && setup ? { names: setup.t.stations, coreName: String(map.provider || 'agent').toUpperCase(), model: map.model ? shortModel(map.model) : '', present: setup.present } : null),
+    [map, setup],
+  );
+  const boardSrc = useMemo(
+    () => (onBoard && flow && layouts && drawOptions ? svgDataUri(drawFlow(flow, { ...drawOptions, layout: layouts.board, size: stageWidth, motion: reducedMotion ? 'reduced' : 'full' })) : ''),
+    [onBoard, flow, layouts, drawOptions, stageWidth, reducedMotion],
+  );
+  // Lanes are the stations the session used, fixed for the session, so the tape does not change height as it plays.
+  const tape = useMemo(() => {
+    if (!map || !setup) return null;
+    const lanes = map.present.filter(id => id !== 'model');
+    const rows = tapeOf(map.actions, at, TAPE_CALLS);
+    const width = Math.max(300, stageWidth);
+    return { src: svgDataUri(drawTape(rows, { width, names: setup.t.stations, capacity: TAPE_CALLS, lanes })), aspect: width / tapeHeight(rows, lanes), shown: rows.length };
+  }, [map, setup, at, stageWidth]);
+
+  // The list is not on screen beside the sizes, and a replay moves `at` twelve times a second: skip the fold then.
+  const listed = route.look !== 'sizes';
+  const list = useMemo(() => (map && listed ? rowsFor(map.actions, station, at) : EMPTY_LIST), [map, station, at, listed]);
   const stamp = useMemo(() => (map?.span ? stampFor(map.span) : clockTime), [map]);
 
   if (!isActive) return null;
@@ -165,6 +280,22 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
             {stamp(map.span.first)} to {stamp(map.span.last)} · {spanText(map.span.last - map.span.first)}
           </span>
         )}
+        <div className="sm-look" role="group" aria-label="Beside the map">
+          <button type="button" aria-pressed={listed} onClick={() => go({ look: '' })}>
+            Calls
+          </button>
+          <button type="button" aria-pressed={!listed} onClick={() => go({ look: 'sizes' })}>
+            Sizes
+          </button>
+        </div>
+        <div className="sm-look sm-layout" role="group" aria-label="Layout">
+          <button type="button" aria-pressed={!onBoard} onClick={() => go({ layout: '' })}>
+            Hub
+          </button>
+          <button type="button" aria-pressed={onBoard} onClick={() => go({ layout: 'board' })}>
+            Board
+          </button>
+        </div>
       </header>
 
       {error && <p className="sm-error" role="alert">{error}</p>}
@@ -172,17 +303,17 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
       {map && setup && geometry && list && (
         <div className="sm-body">
           <section className="sm-stage" aria-label="Work map">
-            <div className="sm-map" style={{ aspectRatio: `${geometry.width} / ${geometry.height}` }}>
-              <img src={src} alt="" draggable="false" />
+            <div className="sm-map" data-layout={onBoard ? 'board' : 'hub'} ref={stageRef} style={{ aspectRatio: `${geometry.width} / ${geometry.height}` }}>
+              <img src={onBoard ? boardSrc : src} alt="" draggable="false" />
               <button
                 type="button"
                 className="sm-hit sm-core"
-                style={coreBox(geometry)}
+                style={onBoard ? flowCoreBox(layouts.board) : coreBox(geometry)}
                 aria-pressed={station === ''}
                 aria-label="All stations"
                 onClick={() => go({ station: '' })}
               />
-              {stationBoxes(geometry, setup.present).map(box => (
+              {(onBoard ? flowBoxes(layouts.board, setup.present) : stationBoxes(geometry, setup.present)).map(box => (
                 <button
                   key={box.id}
                   type="button"
@@ -202,15 +333,52 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
                 max={end}
                 step={1000}
                 value={at}
-                onChange={e => go({ at: Number(e.target.value) })}
+                onChange={e => scrub(Number(e.target.value))}
               />
               <output>
                 {stamp(at)} · {spanText(at - map.span.first)} of {spanText(map.span.last - map.span.first)}
               </output>
+              <div className="sm-transport">
+                <button type="button" className="sm-play" aria-pressed={playing} onClick={play}>
+                  {playing ? 'Pause' : 'Play'}
+                </button>
+                <select aria-label="Replay speed" value={speed} onChange={e => setSpeed(Number(e.target.value))}>
+                  {SPEEDS.map(s => (
+                    <option key={s} value={s}>
+                      {s}× speed
+                    </option>
+                  ))}
+                </select>
+                <button type="button" className="sm-play" aria-pressed={live} onClick={follow}>
+                  Live
+                </button>
+              </div>
             </div>
+            {tape && (
+              <figure className="sm-tape">
+                <figcaption>
+                  Last {tape.shown} calls, oldest to newest
+                </figcaption>
+                <img src={tape.src} alt="" draggable="false" style={{ aspectRatio: String(tape.aspect) }} />
+              </figure>
+            )}
           </section>
 
-          <section className="sm-list" aria-label={station ? names[station] : 'All stations'}>
+          {!listed && flow && layouts && drawOptions && (
+            <SessionSizes
+              actions={map.actions}
+              at={at}
+              speed={pace}
+              flow={flow}
+              layouts={layouts}
+              drawOptions={drawOptions}
+              hubSrc={src}
+              names={names}
+              reducedMotion={reducedMotion}
+            />
+          )}
+
+          <section className="sm-list" hidden={!listed} aria-label={station ? names[station] : 'All stations'}>
             <h2>
               {station ? names[station] : 'All stations'}
               <span>

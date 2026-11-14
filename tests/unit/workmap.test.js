@@ -421,9 +421,9 @@ test('a list row links to a message and a part the transcript reader really has'
 });
 
 test('the address round-trips, and a session that crosses midnight names the day', () => {
-  const route = { session: 'abc', station: 'shell', at: 1794608515323 };
+  const route = { session: 'abc', station: 'shell', at: 1794608515323, look: '', layout: '' };
   assert.deepEqual(readMapRoute(new URL(mapHref('/', route), 'http://x').search), route);
-  assert.deepEqual(readMapRoute(''), { session: '', station: '', at: null });
+  assert.deepEqual(readMapRoute(''), { session: '', station: '', at: null, look: '', layout: '' });
   assert.equal(mapHref('/base/', { session: 'abc', station: '', at: null }), '/base/map?session=abc');
 
   // Other views link to a session's map by id; only a session with a transcript the map can read gets a link.

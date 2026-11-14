@@ -38,7 +38,8 @@
 
 /* Two columns that never trade places: the map keeps its size, the list takes the rest. */
 .sm-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 560px) minmax(300px, 1fr); gap: 24px; }
-.sm-stage { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+.sm-stage { min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 12px; }
+.sm-stage > * { flex: none; }
 .sm-map { position: relative; width: 100%; }
 .sm-map img { display: block; width: 100%; height: 100%; user-select: none; }
 
@@ -92,3 +93,35 @@ a.sm-row:hover .sm-label { text-decoration: underline; text-underline-offset: 3p
   .sm-body { grid-template-columns: 1fr; overflow: auto; }
   .sm-list ol { overflow: visible; }
 }
+
+/* ─── Replay and live follow ─── */
+.sm-transport { display: flex; align-items: center; gap: 8px; }
+.sm-play, .sm-look button, .sm-transport select {
+  min-height: 44px; padding: 0 14px; font: inherit; font-weight: 600; color: var(--sm-ink);
+  background: var(--sm-surface); border: 1px solid var(--sm-line); border-radius: 8px; cursor: pointer;
+}
+/* Play and Pause share one width, so the control beside them never shifts. */
+.sm-play { min-width: 76px; }
+.sm-play[aria-pressed="true"], .sm-look button[aria-pressed="true"] { border-color: var(--sm-accent); box-shadow: inset 0 0 0 1px var(--sm-accent); }
+.sm-play:focus-visible, .sm-look button:focus-visible, .sm-transport select:focus-visible { outline: 2px solid var(--sm-accent); outline-offset: 2px; }
+.sm-look { display: flex; gap: 0; margin-left: auto; }
+.sm-layout { margin-left: 0; }
+.sm-look button:first-child { border-radius: 8px 0 0 8px; }
+.sm-look button:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+
+/* ─── Sizes: the same moment at the sizes a rendering has to survive ─── */
+.sm-sizes { min-width: 0; min-height: 0; overflow: auto; }
+.sm-shrink { border-collapse: collapse; }
+.sm-shrink th { padding: 6px 16px 6px 0; font-weight: 500; text-align: left; color: var(--sm-meta); white-space: nowrap; }
+.sm-shrink thead th { font-variant-numeric: tabular-nums; }
+.sm-shrink td { padding: 8px 16px 8px 0; vertical-align: bottom; }
+.sm-shrink img { display: block; }
+.sm-list[hidden] { display: none; }
+
+/* ─── The tape: the last calls in order, one lane per station ─── */
+.sm-tape { margin: 0; display: grid; gap: 4px; }
+.sm-tape figcaption { color: var(--sm-meta); font-variant-numeric: tabular-nums; }
+.sm-tape img { display: block; width: 100%; }
+
+/* On the board the processor is a chip, so its control is square like it. */
+.sm-map[data-layout="board"] .sm-core { border-radius: 8px; }

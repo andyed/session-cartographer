@@ -101,6 +101,12 @@ function leg(i, j, shift) {
   return { path: `M${n1(a.x)} ${n1(a.y)}Q${n1(bend.x)} ${n1(bend.y)} ${n1(b.x)} ${n1(b.y)}`, end: b }
 }
 
+/** The curve the full map draws between two stations, for a smaller drawing that keeps the same route. */
+export function legBetween(setup, fromId, toId) {
+  const shift = setup.layout === 'you-bottom' ? STATIONS.length / 2 : 0
+  return leg(indexOf(fromId), indexOf(toId), shift)
+}
+
 /** The stations the main loop went through, oldest first, a station visited twice in a row counted once. */
 export function routeOf(entries, max = TRAIL_STOPS) {
   const stops = []
