@@ -97,6 +97,7 @@ test('"changed" keeps only images written inside a naming session; "named" adds 
   const [clip] = changed.collection.clips;
   assert.equal(clip.props.project, 'repo-a', 'a workspace-root session falls back to its first real project');
   assert.equal(clip.props.shape, 'landscape');
+  assert.deepEqual(clip.props.dims, ['1600x900'], 'the image\'s own size, in the form Wunderkammer shapes a card from');
   assert.equal(clip.props.attention, 'only produced', 'named by a command\'s output and nothing else');
   assert.deepEqual(changed.collection.facetTypes, { attention: { type: 'ordinal', order: ATTENTION } });
   assert.ok(changed.collection.ui.facetOrder.includes('attention'));
@@ -453,7 +454,8 @@ test('the wall counts a refused image with the blocked ones, for the copy script
     },
   };
   const wall = createImageWall({ scan: inline, inspector, now: () => NOW });
-  const { stats } = await wall.collection({ transcripts: [{ path: transcript, session }], days: 7, scope: 'named', ...urls });
+  const { stats, collection } = await wall.collection({ transcripts: [{ path: transcript, session }], days: 7, scope: 'named', ...urls });
+  assert.equal('dims' in collection.clips[0].props, false, 'an image whose size could not be read states none');
   assert.equal(stats.blocked, 1);
   assert.equal(stats.unavailable, 0);
   assert.deepEqual(stats.blockedFiles, [older]);

@@ -282,6 +282,9 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
           location: folderOf(file),
           format: FORMATS[mime] || mime,
           shape: shapeOf(dimensions),
+          // Wunderkammer shapes a floating card from this; without it every card is 4:3
+          // and the image is stretched to fit. A list, which every release reads.
+          ...(dimensions ? { dims: [`${dimensions.width}x${dimensions.height}`] } : {}),
           day: localDay(mtime),
           ...(scope === 'named' ? { written: writer ? 'during a session' : 'outside sessions' } : {}),
         },
