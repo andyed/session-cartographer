@@ -39,6 +39,44 @@ Then read it before writing anything. This step exists so the synthesis is writt
 
 If the digest exits non-zero (no events logged for this session), say so plainly and write the synthesis from the conversation, noting that it is unverified.
 
+## Step 0.5: Reconcile the project roadmap
+
+For projects touched by this session that maintain `roadmap.toml` or
+`roadmap.json`, reconcile the plan before writing the synthesis. Skip projects
+without a roadmap; do not create one just to satisfy this step.
+
+- Read the owning roadmap and the session's decisions, relevant commits and
+  release/validation receipts. Every material feature, experiment or changed
+  dependency should map to an existing item or a justified new backlog item.
+- Inspect branch-local plan changes as well as the main checkout. If Roadmaip
+  is available, use its read-only `branch-review --roadmap <owning-plan> --json`
+  command (or `node <roadmaip-checkout>/src/cli.mjs branch-review ...`). It
+  compares committed local branch plans to their merge base and current plan,
+  and reports unresolved/cyclic dependencies. It does not inspect uncommitted
+  work on other worktrees, infer features from code, or verify delivery. If it
+  is unavailable, inspect the relevant Git refs and roadmap diffs directly.
+- Update authored entries within the session's authorized scope. Preserve
+  feature ids, ownership, dependency edges, and source/branch references.
+  Record implementation, validation, staging, TestFlight and publication as
+  separate evidence states. A branch, push, build or upload does not establish
+  a release commitment or store availability. Keep unscheduled work in the
+  backlog; never invent a release assignment or convert a tentative decision
+  into an accepted one.
+- When a plan change is only on a feature branch, make that explicit. Reconcile
+  it into the owning plan when supported and within scope, or leave a named
+  unresolved item with branch/commit and the remaining decision. Do not merge
+  implementation branches just to make their features visible. Resolve
+  contradictory branch versions from evidence rather than taking the newest.
+- Check dependency references, cycles and the remaining prerequisites of
+  downstream features. “Depends on” is authored; don't derive it automatically
+  from prose, release coordination, or shared names. Run the owning roadmap's
+  validator when available, and inspect the diff for unintended scheduling.
+
+Report the outcome in the wrapup: which items changed, where their plan is
+committed, and any unreconciled work. A reconciliation gap is an `unresolved[]`
+entry, not grounds to claim the plan is current. Keep the roadmap edits with
+normal task commits. This step does not install a Git hook or authorize a push.
+
 ## What to capture
 
 The digest already covers *what happened* mechanically — do not restate it. Your synthesis adds the layer no hook can infer:
