@@ -54,6 +54,12 @@ case "$url" in
     ;;
   */v1/embeddings)
     [ "$FAKE_FAIL_STAGE" = "embedding" ] && exit 22
+    # The input length of every embedding call, in order; a cap stands in for
+    # an embedder whose token budget the input overruns.
+    len=$(printf '%s' "$data" | jq -r '.input | length')
+    printf '%s\n' "$len" >> "$FAKE_CALLS.embed"
+    [ -n "$FAKE_EMBED_EXIT" ] && exit "$FAKE_EMBED_EXIT"
+    [ -n "$FAKE_EMBED_MAX_CHARS" ] && [ "$len" -gt "$FAKE_EMBED_MAX_CHARS" ] && exit 22
     printf '%s\n' '{"data":[{"embedding":[0.1,0.2,0.3]}]}'
     ;;
   */points/search)
@@ -91,6 +97,8 @@ esac
     FAKE_GATE_SCORE: '0.2',
     FAKE_VERIFY_MISMATCH: '0',
     FAKE_PAYLOAD_SCHEMA: '',
+    FAKE_EMBED_MAX_CHARS: '',
+    FAKE_EMBED_EXIT: '',
     CODEX_SANDBOX_NETWORK_DISABLED: '0',
     ...overrides,
   });
@@ -429,4 +437,39 @@ test('a refused index build is recorded, never fails the event, and backs off', 
   assert.equal(second.status, 0);
   assert.equal(indexCalls(h).length, 2, 'no further PUTs inside the cooldown');
   assert.equal(readJsonl(path.join(h.dev, '.carto', 'index-errors.jsonl')).length, 2);
+});
+
+const embedLengths = h => fs.readFileSync(`${h.calls}.embed`, 'utf8').trim().split('\n').map(Number);
+// Dots and paths: the shape of the turns that measured 516 tokens in 600 characters.
+const dense = 'tests/unit/a.py ' + '.'.repeat(2400);
+
+test('an input over the embedder\'s budget is halved until it fits, and the payload keeps the whole summary', () => {
+  const h = harness();
+  const result = h.run({ event_id: 'evt-dense', type: 'tool_bash', summary: dense }, { FAKE_EMBED_MAX_CHARS: '300' });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(receipt(result).outcome, 'indexed');
+  // One retry at half (600) is what failed these turns before; the ladder reaches 300.
+  assert.deepEqual(embedLengths(h), [1200, 600, 300]);
+  const payload = JSON.parse(fs.readFileSync(h.stored, 'utf8'));
+  assert.equal(payload.points[0].payload.summary.length, dense.length);
+});
+
+test('the ladder stops at the 256-character floor and reports embedding_failed', () => {
+  const h = harness();
+  const result = h.run({ event_id: 'evt-never-fits', type: 'tool_bash', summary: dense }, { FAKE_EMBED_MAX_CHARS: '100' });
+  assert.equal(result.status, 75);
+  assert.equal(receipt(result).stage, 'embedding_failed');
+  assert.deepEqual(embedLengths(h), [1200, 600, 300, 256]);
+});
+
+test('a refused connection is not retried shorter, a timeout is, and a short text is never cut further', () => {
+  const refused = harness();
+  assert.equal(refused.run({ event_id: 'evt-refused', type: 'tool_bash', summary: dense }, { FAKE_EMBED_EXIT: '7' }).status, 75);
+  assert.deepEqual(embedLengths(refused), [1200]);
+  const slow = harness();
+  assert.equal(slow.run({ event_id: 'evt-slow', type: 'tool_bash', summary: dense }, { FAKE_EMBED_EXIT: '28' }).status, 75);
+  assert.deepEqual(embedLengths(slow), [1200, 600, 300, 256]);
+  const short = harness();
+  assert.equal(short.run({ event_id: 'evt-short', type: 'tool_bash', summary: 'x'.repeat(200) }, { FAKE_EMBED_MAX_CHARS: '100' }).status, 75);
+  assert.deepEqual(embedLengths(short), [200]);
 });

@@ -287,21 +287,32 @@ curl -sf "${CURL_PROBE[@]}" "${EMBED_URL%/v1/embeddings}/health" >/dev/null 2>&1
 # line stops at ~32K characters, which a 1024-float vector plus a 50K summary
 # overruns. Both measured on BIGFU 2026-10-27, where they failed 297 of 418
 # Codex turns.
-EMBED_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$EMBED_TEXT" '{model: $m, input: $i}') || { fail_index "embed_request_invalid"; exit $?; }
-if ! EMBED_RESPONSE=$(printf '%s' "$EMBED_BODY" | curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
-  -H "Content-Type: application/json" \
-  --data-binary @- 2>/dev/null); then
-  # Code-dense text can exceed an embedder's token budget even under the
-  # character cap. Retry once at half length before treating it as a service
-  # failure; the complete normalized summary still remains in Qdrant payload.
-  RETRY_TEXT_MAX=$((EMBED_TEXT_MAX / 2))
-  [ "$RETRY_TEXT_MAX" -lt 256 ] && RETRY_TEXT_MAX=256
-  RETRY_TEXT=$(printf '%.*s' "$RETRY_TEXT_MAX" "$TEXT")
-  RETRY_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$RETRY_TEXT" '{model: $m, input: $i}') || { fail_index "embed_retry_request_invalid"; exit $?; }
-  EMBED_RESPONSE=$(printf '%s' "$RETRY_BODY" | curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
+# Code-dense text can exceed the embedder's token budget well under the
+# character cap: mxbai-embed-large takes 512 tokens, and a turn of pytest dots
+# and paths measured 516 tokens in 600 characters and 705 in 1,200 (2026-11-15).
+# One retry at half length still failed for three turns, every catch-up run
+# from Oct 25 to Oct 31, and their sessions never checkpointed. So the text
+# halves until the embedder accepts it, down to EMBED_TEXT_FLOOR, where even a
+# token per character fits. An HTTP error (curl -f's 22) or a deadline (28,
+# a long input on a loaded machine) earns a shorter try; a refused or reset
+# connection is the service itself, and fails at once.
+# The complete normalized summary still goes into the Qdrant payload.
+EMBED_TEXT_FLOOR=256
+EMBED_LEN="$EMBED_TEXT_MAX"
+while :; do
+  EMBED_BODY=$(jq -n -c --arg m "$EMBED_MODEL" --arg i "$EMBED_TEXT" '{model: $m, input: $i}') || { fail_index "embed_request_invalid"; exit $?; }
+  EMBED_RESPONSE=$(printf '%s' "$EMBED_BODY" | curl -sf "${CURL_CALL[@]}" "$EMBED_URL" \
     -H "Content-Type: application/json" \
-    --data-binary @- 2>/dev/null) || { fail_index "embedding_failed"; exit $?; }
-fi
+    --data-binary @- 2>/dev/null)
+  EMBED_RC=$?
+  [ "$EMBED_RC" -eq 0 ] && break
+  if { [ "$EMBED_RC" -ne 22 ] && [ "$EMBED_RC" -ne 28 ]; } || [ "$EMBED_LEN" -le "$EMBED_TEXT_FLOOR" ] || [ "${#EMBED_TEXT}" -le "$EMBED_TEXT_FLOOR" ]; then
+    fail_index "embedding_failed"; exit $?
+  fi
+  EMBED_LEN=$((EMBED_LEN / 2))
+  [ "$EMBED_LEN" -lt "$EMBED_TEXT_FLOOR" ] && EMBED_LEN="$EMBED_TEXT_FLOOR"
+  EMBED_TEXT=$(printf '%.*s' "$EMBED_LEN" "$TEXT")
+done
 
 VECTOR=$(echo "$EMBED_RESPONSE" | jq -c '.data[0].embedding // empty' 2>/dev/null)
 [ -z "$VECTOR" ] && { fail_index "embedding_missing_vector"; exit $?; }

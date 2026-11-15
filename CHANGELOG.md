@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+### fix(index): halve an over-budget embedding input until it fits
+
+`index-event.sh` cuts the embedding input to 1,200 characters and, when the
+embedder refused it, retried once at 600. Code-dense text overruns
+mxbai-embed-large's 512-token budget well under that: a turn of pytest dots and
+paths measured 705 tokens at 1,200 characters and 516 at 600. Three transcript
+turns failed on every catch-up run from Oct 25 to Oct 31, and their sessions
+never checkpointed. The input now halves until the embedder accepts it, down to
+256 characters, on an HTTP error or a timeout; a refused connection still fails
+at once. The Qdrant payload keeps the whole summary either way.
+
 ### feat(memory): Hermes in the provider filter, newest outcome first, wrapup handoffs, connection recovery
 
 - The Memory Desk's provider filter lists every agent the window recorded,
