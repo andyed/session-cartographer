@@ -92,6 +92,18 @@ function ActivityTrace({ metrics, tokens, tokenSeries }) {
   );
 }
 
+/** A wrapup's decisions and unresolved items, open on the newest outcome. */
+function Handoff({ handoff, open }) {
+  const lists = [['Unresolved', handoff.unresolved], ['Decisions', handoff.decisions]].filter(([, items]) => items?.length);
+  return <>
+    {handoff.keyInsight && <p className="ms-handoff-insight" data-copy-content><span>Key insight</span> {handoff.keyInsight}</p>}
+    {lists.length > 0 && <details className="ms-handoff" open={open}>
+      <summary>{lists.map(([label, items]) => `${items.length} ${label.toLowerCase()}`).join(' · ')}</summary>
+      {lists.map(([label, items]) => <section key={label} aria-label={label}><h3>{label}</h3><ul>{items.map((item, i) => <li key={i} data-copy-content>{item}</li>)}</ul></section>)}
+    </details>}
+  </>;
+}
+
 function OutcomeTime({ timestamp, baseline }) {
   const [open, setOpen] = useState(false);
   const id = useId();
@@ -166,12 +178,14 @@ export default function MemorySession({ session, files = [], at, onBack, onRevie
         {outcomes.slice(0,3).map((note,i) => {
           return <div className="ms-outcome" key={note.id || i}>
             <OutcomeTime timestamp={note.t} baseline={baseline} />
-            <p data-copy-content>{note.text}</p>
+            <p data-copy-content>{note.handoff?.description || note.text}</p>
+            {note.handoff && <Handoff handoff={note.handoff} open={i === 0} />}
           </div>;
         })}
         {outcomes.length > 3 && <details className="ms-more-outcomes"><summary>More outcomes ({outcomes.length - 3})</summary>{outcomes.slice(3).map((note, i) => <div className="ms-outcome" key={note.id || i}>
           <OutcomeTime timestamp={note.t} baseline={baseline} />
-          <p data-copy-content>{note.text}</p>
+          <p data-copy-content>{note.handoff?.description || note.text}</p>
+          {note.handoff && <Handoff handoff={note.handoff} open={false} />}
         </div>)}</details>}
       </section>}
       {(visibleFiles.length > 0 || metrics.counts.edit > 0 || selectedPath || notes.length > 0) && <div className={`ms-evidence-columns${visibleFiles.length ? '' : ' ms-no-files'}`}>

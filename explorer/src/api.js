@@ -1,13 +1,7 @@
-export const isDemoMode = import.meta.env.VITE_DEMO === 'true';
+import { ExplorerApiError, explainRequestFailure } from './lib/api-error.js';
+export { ExplorerApiError, explainRequestFailure };
 
-export class ExplorerApiError extends Error {
-  constructor(message, { status = 0, code = '' } = {}) {
-    super(message);
-    this.name = 'ExplorerApiError';
-    this.status = status;
-    this.code = code;
-  }
-}
+export const isDemoMode = import.meta.env.VITE_DEMO === 'true';
 
 // ─── Demo data loader (lazy, single import) ───
 
@@ -33,8 +27,15 @@ async function apiFetch(url, options = {}) {
 // came to be excluded from the demo in the first place.
 export async function apiRequest(url, options = {}) {
   if (isDemoMode) return (await demo()).handleFetch(url);
-  const res = await fetch(url, { ...options, cache: 'no-store' });
-  const body = await res.json().catch(() => ({}));
+  let res, body;
+  try {
+    res = await fetch(url, { ...options, cache: 'no-store' });
+    // A proxy's HTML error page is not JSON; keep its status. A body cut off
+    // mid-read is a connection failure, not an empty answer.
+    body = await res.json().catch(error => { if (error?.name === 'SyntaxError') return {}; throw error; });
+  } catch (error) {
+    throw explainRequestFailure(error, options.signal);
+  }
   if (!res.ok) {
     throw new ExplorerApiError(body.error || `Explorer connection failed (${res.status})`, {
       status: res.status,

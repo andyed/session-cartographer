@@ -561,3 +561,34 @@ test('desk counts a loaded /wrapup milestone among the session outcomes', async 
   assert.deepEqual(session.outcomes.map((note) => note.id), ['landed', 'wrapped']);
   assert.match(session.notes.find((note) => note.id === 'wrapped').type, /wrapup/);
 });
+
+test('a wrapup outcome carries its decisions, unresolved items and key insight, bounded, through both projections', async () => {
+  const { projectMemoryScope } = await import('../../explorer/shared/activity-scope.js');
+  const description = `Landed the reader. ${'Context sentence. '.repeat(60)}`;
+  const wrapup = {
+    event_id: 'wrapped', timestamp: new Date(now - 1000).toISOString(), event: 'Wrapup', milestone: 'session_wrapup',
+    session_id: 'session-h', project: 'alpha', description,
+    decisions: [...Array.from({ length: 24 }, (_, i) => `decision ${i + 1}`), 'x'.repeat(700)],
+    unresolved: ['pull the main checkout', { note: 'not a string' }, ''],
+    key_insight: 'The commit is the unit, not the session.',
+  };
+  const commit = { event_id: 'landed', timestamp: new Date(now - 2000).toISOString(), type: 'git_commit', session_id: 'session-h', project: 'alpha', summary: 'Commit abc: the fix' };
+  const bare = { event_id: 'bare', timestamp: new Date(now - 500).toISOString(), event: 'Wrapup', milestone: 'session_wrapup', session_id: 'session-h', project: 'alpha', description: 'Short.' };
+  const snapshot = projectMemory([commit, wrapup, bare], { now, corpusRoot: fixtureRoot });
+  const outcomes = snapshot.sessions.find(s => s.id === 'session-h').outcomes;
+  const byId = Object.fromEntries(outcomes.map(o => [o.id, o]));
+  // The fixture's description must be longer than the 500-character note, or the full text is never needed.
+  assert.ok(byId.wrapped.text.length === 500 && description.trim().length > 500);
+  const handoff = byId.wrapped.handoff;
+  assert.equal(handoff.description, description.replace(/\s+/g, ' ').trim());
+  assert.equal(handoff.keyInsight, 'The commit is the unit, not the session.');
+  assert.equal(handoff.decisions.length, 20);
+  assert.deepEqual(handoff.decisions.slice(0, 2), ['decision 1', 'decision 2']);
+  assert.deepEqual(handoff.unresolved, ['pull the main checkout', '{"note":"not a string"}']);
+  assert.equal(byId.landed.handoff, undefined, 'a commit has no handoff');
+  assert.equal(byId.bare.handoff, undefined, 'a wrapup that records none of the fields has no handoff');
+  // The exact-window path rebuilds outcomes from the evidence index.
+  const scoped = projectMemoryScope(snapshot, { from: now - 10000, through: now, lower: 'closed' });
+  const scopedWrap = scoped.sessions.find(s => s.id === 'session-h').outcomes.find(o => o.id === 'wrapped');
+  assert.deepEqual(scopedWrap.handoff, handoff);
+});

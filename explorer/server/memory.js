@@ -100,6 +100,33 @@ function noteText(event) {
   return text(firstResolved([event.summary, event.display, event.description, event.prompt, event.url, event.query, event.event_id, event.milestone])).replace(/\s+/g, ' ').slice(0, 500);
 }
 
+// A wrapup's structured fields, bounded: the desk polls this snapshot every few
+// seconds, and a handoff is read, not archived, here (the full row is one
+// --get away). 1,119 wrapups on 2026-11-15: 607 carry string-array decisions
+// and unresolved plus a key_insight string; the rest carry none of them.
+const HANDOFF_ITEMS = 20;
+const HANDOFF_ITEM_CHARS = 600;
+const HANDOFF_TEXT_CHARS = 4000;
+const handoffText = (value, limit) => {
+  const raw = typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
+  const flat = raw.replace(/\s+/g, ' ').trim();
+  return flat.length > limit ? `${flat.slice(0, limit - 1).trimEnd()}…` : flat;
+};
+const handoffList = value => (Array.isArray(value) ? value : []).map(item => handoffText(item, HANDOFF_ITEM_CHARS)).filter(Boolean).slice(0, HANDOFF_ITEMS);
+
+/** decisions / unresolved / key insight of a wrapup, plus its description when the note cut it. Null when it records none. */
+export function wrapupHandoff(event, note = '') {
+  const handoff = {
+    keyInsight: handoffText(event.key_insight, HANDOFF_ITEM_CHARS * 2),
+    decisions: handoffList(event.decisions),
+    unresolved: handoffList(event.unresolved),
+    description: '',
+  };
+  const description = handoffText(event.description, HANDOFF_TEXT_CHARS);
+  if (description.length > note.length) handoff.description = description;
+  return handoff.keyInsight || handoff.decisions.length || handoff.unresolved.length || handoff.description ? handoff : null;
+}
+
 function stableHash(values) {
   let hash = 0x811c9dc5;
   for (const value of values) for (let index = 0; index < value.length; index++) {
@@ -167,6 +194,7 @@ export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW
     const eventId = text(event.event_id) || null;
     const provider = providerLabel(event);
     const resolvedPaths = cat === 'edit' ? editPaths(event, corpusRoot) : [];
+    const handoff = /wrapup/.test(eventType(event)) ? wrapupHandoff(event, noteText(event)) : null;
     evidenceIndex.push({
       key: eventId || `anonymous:${t}:${rowIndex}`,
       id: eventId,
@@ -187,6 +215,7 @@ export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW
       quadrant: text(event.diff_shape?.quadrant) || null,
       commit_type: text(event.diff_shape?.commit_type) || null,
       evidence: [cat, ...(cat === 'commit' || /wrapup/.test(eventType(event)) ? ['outcome'] : [])],
+      ...(handoff ? { handoff } : {}),
     });
     if (!id) { unattributed += 1; continue; }
     if (!sessions.has(id)) {
@@ -213,7 +242,7 @@ export function projectMemory(events, { now = Date.now(), hours = DEFAULT_WINDOW
     if (note) {
       const observation = { t, id: eventId, type: eventType(event), text: note };
       session.notes.push(observation);
-      if (cat === 'commit' || /wrapup/.test(eventType(event))) session.outcomes.push(observation);
+      if (cat === 'commit' || /wrapup/.test(eventType(event))) session.outcomes.push(handoff ? { ...observation, handoff } : observation);
     }
     if (cat === 'edit') session._editEvidence.push({ ...event, t });
     if (cat !== 'edit' || !eventId) continue;

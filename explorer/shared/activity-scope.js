@@ -155,7 +155,7 @@ export function projectMemoryScope(snapshot, inputScope = {}) {
     const events = records.map((record) => [record.t, record.category, record.id, record.project]);
     const allNotes = records.filter((record) => record.text).map((record) => ({ t: record.t, id: record.id, type: record.type, text: record.text }));
     const notes = allNotes.slice(-60);
-    const outcomes = records.filter((record) => record.evidence?.includes('outcome')).map((record) => ({ t: record.t, id: record.id, type: record.type, text: record.text }));
+    const outcomes = records.filter((record) => record.evidence?.includes('outcome')).map((record) => ({ t: record.t, id: record.id, type: record.type, text: record.text, ...(record.handoff ? { handoff: record.handoff } : {}) }));
     const wraps = records.filter((record) => /wrapup/.test(record.type)).map((record) => ({ t: record.t, id: record.id }));
     const tokenSeries = (original.tokenSeries || []).filter((sample) => containsActivityTimestamp(sample.t, scope));
     const projects = Object.create(null);

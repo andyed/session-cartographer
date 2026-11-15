@@ -7,6 +7,7 @@ import { projectMemoryScope } from '../../shared/activity-scope.js';
 
 const BASE = import.meta.env.BASE_URL || '/';
 const HOUR = 3600000;
+const CONNECTION_FAILURES = new Set(['connection-unavailable', 'request-timeout']);
 const LENSES = ['concurrent', 'sessions', 'chronological'];
 export function readWorkspaceRoute(search = window.location.search) {
   const params = new URLSearchParams(search);
@@ -71,6 +72,9 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [retry, setRetry] = useState(0);
+  // Why the last poll failed, so recovery clears only a connection failure and
+  // never the message from a failed Start or Refresh the person asked for.
+  const errorCode = useRef('');
   const [draft, setDraft] = useState(null);
   const [frozen, setFrozen] = useState(null);
   const [frozenBounds, setFrozenBounds] = useState(null);
@@ -122,10 +126,15 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
       try {
         let nextStatus = { ready: true };
         if (tab === 'memory') {
-          nextStatus = await apiRequest('/api/turbo/status', { signal: controller.signal });
+          // Bounded: an unanswered status request held `running` and stopped polling for good.
+          nextStatus = await apiRequest('/api/turbo/status', { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(20000)]) });
           if (controller.signal.aborted) return;
           setStatus(nextStatus);
-          if (!nextStatus.ready) return;
+          if (!nextStatus.ready) {
+            // The UI host answered, so the connection is back; the offline notice takes over.
+            if (CONNECTION_FAILURES.has(errorCode.current)) { setError(''); errorCode.current = ''; }
+            return;
+          }
         }
         const params = new URLSearchParams();
         const unresolvedDemo = isDemoMode && viewportSpec.from == null && viewportSpec.end == null && !dataRef.current;
@@ -145,7 +154,7 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
         const snapshot = tab === 'timeline' ? result.context : result;
         if (!snapshot?.sessions) throw new Error('The running backend does not support focus windows. Open this preview with its matching backend.');
         const resolvedViewport = viewport || { from: snapshot.start, through: snapshot.end };
-        setData(snapshot); setViewportBounds(resolvedViewport); setError(''); setStatus(nextStatus);
+        setData(snapshot); setViewportBounds(resolvedViewport); setError(''); errorCode.current = ''; setStatus(nextStatus);
         if (unresolvedDemo) setViewportSpec({ ...resolvedViewport, live: false });
         const current = routeRef.current;
         if (current.from == null && !current.routeError) {
@@ -157,7 +166,7 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
           if (range) navigate(range, { replace: true });
         }
       } catch (failure) {
-        if (!controller.signal.aborted) setError(failure.message);
+        if (!controller.signal.aborted) { errorCode.current = failure.code || ''; setError(failure.message); }
       } finally {
         running = false;
         if (!controller.signal.aborted) {
@@ -207,6 +216,16 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
     queryTransaction.current = true;
   }, [navigate]);
   const endQuery = useCallback(() => { queryTransaction.current = false; }, []);
+  // Returning to a failed view, or the network coming back, retries at once
+  // instead of waiting out the poll interval. The polling effect still owns
+  // the request, so a retry cancels the one in flight.
+  useEffect(() => {
+    if (!isActive || !error || !CONNECTION_FAILURES.has(errorCode.current)) return;
+    const reconnect = () => setRetry(value => value + 1);
+    window.addEventListener('online', reconnect);
+    window.addEventListener('focus', reconnect);
+    return () => { window.removeEventListener('online', reconnect); window.removeEventListener('focus', reconnect); };
+  }, [isActive, error]);
   const handoff = useCallback((destination, patch = {}) => {
     const href = workspaceHref({ ...routeRef.current, ...(interval || {}), ...patch }, destination);
     const state = { tab: destination, origin: window.location.pathname + window.location.search };
@@ -218,7 +237,7 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
   }, [navigate, tab]);
   const launch = useCallback(async () => {
     if (!status?.action || busy) return;
-    setBusy(true); setError('');
+    setBusy(true); setError(''); errorCode.current = '';
     try {
       await apiRequest('/api/turbo/start', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Cartographer-Action': 'start' }, body: JSON.stringify({ action: status.action }), signal: AbortSignal.timeout(60000) });
       setRetry(n => n + 1);

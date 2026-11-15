@@ -82,3 +82,14 @@ test('artifacts group by path across threads, documents first, with the query na
   const changed = projectDesk(data, { filter: 'changed', since: at - 2500 }).artifacts;
   assert.deepEqual(changed.map(g => `${g.path}:${g.threads.map(t => t.session.id)}`), ['/p/TODO.md:a,b', '/p/src/app.js:a', '/p/src/parser.js:b'], 'work filters scope the trail before grouping, so a quiet thread drops out of a shared file');
 });
+test('a task card leads with its newest outcome, whatever order the session recorded them in', () => {
+  const one = session('one', [[at - 3000, 'commit'], [at - 2000, 'commit'], [at - 1000, 'lifecycle']]);
+  // Sessions record outcomes oldest first; the card shows outcomes[0].
+  one.outcomes = [
+    { t: at - 3000, id: 'c1', type: 'git_commit', text: 'first commit' },
+    { t: at - 1000, id: 'w1', type: 'wrapup', text: 'the handoff' },
+    { t: at - 2000, id: 'c2', type: 'git_commit', text: 'second commit' },
+  ];
+  const row = projectDesk({ start: at - 10000, end: at, sessions: [one], files: {} }, { since: at - 10000 }).sessions[0];
+  assert.deepEqual(row.outcomes.map(note => note.id), ['w1', 'c2', 'c1']);
+});

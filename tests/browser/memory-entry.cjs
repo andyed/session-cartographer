@@ -144,6 +144,10 @@ async function port() {
   fs.writeFileSync(largeFile, largeCurrent);
   events.push({ event_id: 'document-edit', session_id: docSession, session_title: 'Review the handoff', project: 'writing', provider: 'codex', timestamp: now + 1500, type: 'tool_file_edit', file_path: document, summary: `Modified: ${document}`, cwd: corpus });
   events.push({ event_id: 'large-document-edit', session_id: docSession, session_title: 'Review the handoff', project: 'writing', provider: 'codex', timestamp: now + 1400, type: 'tool_file_edit', file_path: largeFile, summary: `Modified: ${largeFile}`, cwd: corpus });
+  // A Hermes session whose commit is recorded after its wrapup in the log but
+  // happened first: the filter must list Hermes, and the card must lead with the wrapup.
+  events.push({ event_id: 'hermes-wrapup', session_id: 'hermes-session', session_title: 'Nightly pulse', project: 'writing', provider: 'hermes', timestamp: now + 700, type: 'milestone_session_wrapup', event: 'Wrapup', milestone: 'session_wrapup', summary: 'Wrapup: pulse refreshed and filed', key_insight: 'The pulse reads facts, not rankings.', decisions: ['Count commits from git, not the log', 'Keep the pulse daily'], unresolved: ['Backfill last week', 'Name the stale ledger', 'Retire the old cron'] });
+  events.push({ event_id: 'hermes-commit', session_id: 'hermes-session', session_title: 'Nightly pulse', project: 'writing', provider: 'hermes', timestamp: now + 600, type: 'git_commit', summary: 'Commit 1234567: refresh the pulse' });
   fs.writeFileSync(log, events.map(e => JSON.stringify(e)).join('\n')+'\n');
   fs.appendFileSync(log, JSON.stringify({ event_id: 'archived-edit', session_id: 'archived-session', session_title: 'Earlier session', timestamp: now - 3 * 86400000, project: projects[0], type: 'tool_file_edit', file_path: target })+'\n');
   // Recall telemetry: one call with no session (the majority case on
@@ -1261,6 +1265,57 @@ async function port() {
     await deskPage.setViewportSize({ width: 1280, height: 920 });
     await deskPage.keyboard.press('Escape');
     await deskPage.keyboard.press('Escape');
+
+    // Hermes is offered by the provider filter because the window recorded it,
+    // its card leads with the newest outcome, and its handoff lists render.
+    await deskPage.getByRole('button', { name: 'Tasks', exact: true }).click();
+    const scopeToggle = deskPage.locator('.fw-scope-toggle');
+    if (await scopeToggle.isVisible() && await scopeToggle.getAttribute('aria-expanded') === 'false') await scopeToggle.click();
+    const facetPanel = deskPage.locator('details.fw-facets');
+    if (!(await facetPanel.evaluate(el => el.open))) await facetPanel.locator('summary').click();
+    const hermesBox = facetPanel.getByRole('checkbox', { name: 'hermes', exact: true });
+    await hermesBox.check();
+    await facetPanel.getByRole('button', { name: 'Done', exact: true }).click();
+    const hermesCard = deskPage.locator('.fw-task-row', { hasText: 'Nightly pulse' });
+    await hermesCard.waitFor();
+    assert.deepEqual(await deskPage.locator('.fw-task-row strong').allInnerTexts(), ['Nightly pulse'], 'the Hermes filter keeps only Hermes tasks');
+    assert.equal(await hermesCard.locator('.fw-row-outcome').innerText(), 'Wrapup: pulse refreshed and filed', 'the card leads with the newest outcome');
+    await hermesCard.locator('.fw-result-open').click();
+    const hermesOutcomes = deskPage.getByRole('region', { name: 'Recorded outcomes', exact: true });
+    await hermesOutcomes.waitFor();
+    const unresolved = hermesOutcomes.getByRole('region', { name: 'Unresolved' });
+    await unresolved.waitFor();
+    assert.deepEqual(await unresolved.locator('li').allInnerTexts(), ['Backfill last week', 'Name the stale ledger', 'Retire the old cron']);
+    assert.match(await hermesOutcomes.locator('.ms-handoff-insight').innerText(), /The pulse reads facts, not rankings\./);
+    assert.equal(await hermesOutcomes.locator('.ms-handoff summary').first().innerText(), '3 unresolved · 2 decisions');
+    const handoffContrast = await deskPage.evaluate(() => {
+      const rgb = value => value.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => [r, g, b].map(c => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const ground = element => { for (let node = element; node; node = node.parentElement) { const bg = getComputedStyle(node).backgroundColor; if (!/rgba\(.*, 0\)$/.test(bg) && bg !== 'transparent') return bg; } return 'rgb(255, 255, 255)'; };
+      return [...document.querySelectorAll('.ms-handoff-insight, .ms-handoff-insight > span, .ms-handoff summary, .ms-handoff h3, .ms-handoff li, .fw-row-outcome')].map(element => {
+        const a = lum(rgb(getComputedStyle(element).color)), b = lum(rgb(ground(element)));
+        return { name: element.className || element.tagName, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+      });
+    });
+    assert.ok(handoffContrast.length >= 5, 'the handoff elements must be on the page to be measured');
+    for (const item of handoffContrast) assert.ok(item.ratio >= 8, `handoff text under 8:1: ${JSON.stringify(item)}`);
+    await hermesOutcomes.screenshot({ path: path.join(artifacts, 'carto-memory-handoff.png') });
+    await deskPage.keyboard.press('Escape');
+    await deskPage.locator('.fw-chips').getByRole('button', { name: 'hermes ×' }).click();
+
+    // A stopped backend reads as a connection failure, keeps the snapshot, and
+    // recovers when the window regains focus, without waiting for the next poll.
+    const stateRoute = '**/api/memory/state?**';
+    await deskPage.route(stateRoute, route => route.abort('connectionrefused'));
+    await deskPage.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await deskPage.getByRole('button', { name: 'Tasks', exact: true }).click();
+    const lost = deskPage.locator('.fw-error[role="alert"]');
+    await lost.waitFor({ timeout: 20000 });
+    assert.match(await lost.innerText(), /Cannot reach Cartographer\. It may have stopped\. The last snapshot stays visible\./);
+    assert.ok(await deskPage.locator('.fw-task-row').count() > 0, 'the last snapshot stays on screen');
+    await deskPage.unroute(stateRoute);
+    await deskPage.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await lost.waitFor({ state: 'detached', timeout: 5000 });
 
     // New matching work is incorporated only on refresh, and the fixed focus
     // keeps unrelated projects and timestamps governed by its exact bounds.

@@ -83,3 +83,11 @@
 .fw-outcomes .ms-outcome-exact { display: none; position: absolute; top: 100%; left: 0; z-index: 3; width: max-content; max-width: min(280px,70vw); padding: 8px; border: 1px solid var(--ms-line); border-radius: 4px; background: #11151e; color: #edf0f5; font: 500 16px/1.5 ui-sans-serif,system-ui,sans-serif; }
 .ms-outcome-time[data-open] .ms-outcome-exact { display: block; }
 .memory-session button.ms-outcome-time { padding: 0; border: 0; background: transparent; text-align: left; }
+/* Wrapup handoff: labels in the muted token, items in body text, summary in the accent, all measured by memory-entry.cjs. */
+.memory-session .ms-outcome .ms-handoff-insight { margin-top: 8px; }
+.memory-session .ms-handoff-insight > span, .memory-session .ms-handoff h3 { color: var(--fw-muted,var(--ms-muted)); font-size: 14px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.memory-session .ms-handoff > summary { min-height: 44px; padding: 10px 0; color: var(--fw-accent,var(--ms-accent)); cursor: pointer; }
+.memory-session .ms-handoff > summary:focus-visible { outline: 2px solid var(--ms-accent); outline-offset: 2px; border-radius: 3px; }
+.memory-session .ms-handoff h3 { margin: 6px 0 4px; }
+.memory-session .ms-handoff ul { margin: 0 0 8px; padding-left: 1.2em; }
+.memory-session .ms-handoff li { margin: 3px 0; overflow-wrap: anywhere; }

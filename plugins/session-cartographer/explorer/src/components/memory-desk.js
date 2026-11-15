@@ -69,7 +69,8 @@ export function projectDesk(data, { at = data.end, since = data.start, query = '
     const fresh = events.filter(e => e[0] > since);
     const files = (data.files[session.id] || []).filter(f => f.edits.some(e => e.t <= at));
     const notes = (session.notes || []).filter(n => n.t <= at).sort((a, b) => b.t - a.t);
-    const outcomes = (session.outcomes || session.notes || []).filter(n => n.t > since && n.t <= at && /commit|wrapup/.test(n.type));
+    // Newest first: the task card shows outcomes[0], and sessions record them oldest first.
+    const outcomes = (session.outcomes || session.notes || []).filter(n => n.t > since && n.t <= at && /commit|wrapup/.test(n.type)).sort((a, b) => b.t - a.t);
     const state = sessionWorkState(session, at);
     return { session, files, notes, outcomes, state, fresh, events };
   }).filter(row => row.events.length && matchesQuery(row.session, row.files, row.notes, needle))

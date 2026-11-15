@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### feat(memory): Hermes in the provider filter, newest outcome first, wrapup handoffs, connection recovery
+
+- The Memory Desk's provider filter lists every agent the window recorded,
+  Hermes included, instead of a fixed Claude/Codex pair.
+- A task card leads with its newest outcome. Sessions record outcomes oldest
+  first, so the card showed the first commit rather than the closing wrapup.
+- A wrapup outcome carries its key insight, decisions and unresolved items
+  (20 items, 600 characters each), and its full description when the
+  500-character note cut it. The session view shows them under the outcome,
+  unresolved first, open on the newest.
+- A stopped server or a deadline reads as "Cannot reach Cartographer" or "took
+  too long" instead of the browser's "Failed to fetch". The status poll is
+  bounded at 20 s (an unanswered one stopped polling for good), and after a
+  connection failure the desk retries as soon as the window regains focus or
+  the network returns. The last snapshot stays on screen meanwhile.
+
 ### feat(memory): read a long file a page at a time, search it, open it in an editor
 
 The Memory Desk's file review stopped at the first 2,000 lines (256 KiB) of a
