@@ -77,6 +77,49 @@ committed, and any unreconciled work. A reconciliation gap is an `unresolved[]`
 entry, not grounds to claim the plan is current. Keep the roadmap edits with
 normal task commits. This step does not install a Git hook or authorize a push.
 
+## Step 0.75: Leave the disk as you found it
+
+Clean up what this session created, and nothing else. The digest's `leaving`
+lines are the starting list. Several sessions share one machine, so another
+session's worktree, build output or cache is never yours to remove, however idle
+it looks.
+
+A sweep on 2026-11-15 found why this step exists. Of 59 worktrees, 49 could not
+be removed, nearly all because they held commits that were never pushed, so the
+branch existed only on that disk. Release build staging had grown to 30 GB
+because nobody ran the documented prune after an upload.
+
+1. **Push or record.** For each branch this session committed to, run
+   `git rev-list --count HEAD --not --remotes`. If it is not 0, push when the
+   session is authorized to push. Otherwise add an `unresolved[]` item that names
+   the branch and why it stays local: "Push feat/x (3 commits, this machine
+   only) once the copy is approved".
+2. **Remove worktrees this session made and has finished with**, such as an
+   agent's scratch worktree or a side-task checkout. Remove one only if all of
+   these hold:
+   - `git status --porcelain` is empty;
+   - it has no commits that aren't on a remote;
+   - no process has its cwd inside (`lsof -d cwd`);
+   - `git worktree list --porcelain` does not mark it `locked`;
+   - every untracked or ignored file is rebuildable (`node_modules` next to a
+     `package.json`, `dist/` from a build script).
+
+   Then run `git worktree remove <path>`; the branch is kept. Captures,
+   screenshots and `test-results/` receipts are not rebuildable. Copy them
+   somewhere durable first, or keep the worktree. Use `--force` only after that
+   check passes. Leave alone the worktree the session is still running in, but
+   say in the hand-off whether it is safe to remove.
+3. **Prune build output the project's docs say to prune**, for example a release
+   staging prune once an upload has finished. Leave output whose upload or
+   publication you can't confirm.
+4. **Check free space.** Run `df -k "$HOME"`. Below
+   `CARTOGRAPHER_DISK_WARN_GIB` (default 50 GiB), give the figure in the
+   synthesis and add an `unresolved[]` item: "Free disk is 31 GiB; reclaim
+   before the next build".
+
+Report what was removed and what was kept, with the reason. A kept worktree that
+holds unpushed work is an `unresolved[]` item, not a footnote.
+
 ## What to capture
 
 The digest already covers *what happened* mechanically — do not restate it. Your synthesis adds the layer no hook can infer:
@@ -266,6 +309,7 @@ If the session produced a non-obvious discovery, preference, or decision that fu
 - Don't be verbose — one paragraph, specific, done
 - Don't retype the digest's numbers into prose. It already showed them, aligned and correct; restating them is where drift enters
 - Don't claim work the digest doesn't show. If you believe something happened that isn't logged, say it's unlogged rather than asserting it flatly
+- Don't clean up another session's worktrees, builds or caches, and don't empty the Trash or clear shared caches as part of a wrapup. Step 0.75 covers only what this session made
 
 ## Examples
 
