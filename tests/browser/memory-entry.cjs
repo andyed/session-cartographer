@@ -42,6 +42,8 @@ async function port() {
     CARTOGRAPHER_TURBO_STATE_DIR: path.join(work, 'turbo'),
     CARTOGRAPHER_TURBO_URL: `http://127.0.0.1:${apiPort}`,
     CARTOGRAPHER_SEMANTIC: '0',
+    // "Open in editor" runs a command that does nothing, so clicking it launches no app.
+    CARTOGRAPHER_EDITOR: '/usr/bin/true',
     CARTOGRAPHER_QDRANT_URL: 'http://127.0.0.1:1',
     CARTOGRAPHER_EMBED_URL: 'http://127.0.0.1:1/v1/embeddings',
     CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR: path.join(work, 'codex-sessions'),
@@ -1165,17 +1167,69 @@ async function port() {
     assert.equal(await deskPage.getByRole('button', { name: 'Current file', exact: true }).getAttribute('aria-pressed'), 'false');
     await deskPage.getByRole('button', { name: 'Open current file', exact: true }).click();
     assert.equal(await deskPage.getByRole('button', { name: 'Current file', exact: true }).getAttribute('aria-pressed'), 'true');
-    const boundedSource = deskPage.getByLabel('File source');
-    await boundedSource.waitFor();
-    const boundedText = await boundedSource.innerText();
-    assert.match(boundedText, /^current 00000 z+/);
-    assert.ok(Buffer.byteLength(boundedText) <= 256 * 1024, `bounded preview exceeded 256 KiB: ${Buffer.byteLength(boundedText)} bytes`);
-    const boundedLines = boundedText === '' ? 0 : boundedText.split('\n').length - (boundedText.endsWith('\n') ? 1 : 0);
-    assert.ok(boundedLines <= 2000, `bounded preview exceeded 2,000 lines: ${boundedLines}`);
-    const previewNotice = deskPage.getByText(/Showing the first/i);
-    await previewNotice.waitFor();
-    const noticeText = await previewNotice.innerText();
-    assert.match(noticeText, /\d+(?:\.\d+)?\s*(?:bytes|KiB|KB|MiB|MB)/i, `large-file notice omitted total size: ${noticeText}`);
+    // A file the preview cuts short is read a page at a time: page, jump, find.
+    const reader = deskPage.getByRole('region', { name: 'Artifact reader' });
+    const pageSource = reader.getByRole('region', { name: 'File source' });
+    // By selector, not handle: a reload remounts the reader.
+    const waitPosition = text => deskPage.waitForFunction(want => document.querySelector('.memory-reader-position')?.textContent === want, text, { timeout: 10000 });
+    await waitPosition('Lines 1–500 of 9,000');
+    const firstPage = await pageSource.innerText();
+    assert.match(firstPage, /^1\s*current 00000 z+/);
+    assert.ok(Buffer.byteLength(firstPage) <= 64 * 1024 + 500 * 8, `one page exceeded its cap: ${Buffer.byteLength(firstPage)} bytes`);
+    const previousButton = reader.getByRole('button', { name: 'Previous' }).first();
+    const nextButton = reader.getByRole('button', { name: 'Next' }).first();
+    assert.equal(await previousButton.isDisabled(), true);
+    const nextBox = await nextButton.boundingBox();
+    await nextButton.click();
+    await waitPosition('Lines 501–1,000 of 9,000');
+    assert.deepEqual(await nextButton.boundingBox(), nextBox, 'Next moved after a page turn');
+    assert.match(await pageSource.innerText(), /^501\s*current 00500 /);
+    await previousButton.click();
+    await waitPosition('Lines 1–500 of 9,000');
+    await reader.getByLabel('Line').fill('8500');
+    await reader.getByRole('button', { name: 'Go', exact: true }).click();
+    await waitPosition('Lines 8,480–8,979 of 9,000');
+    const jumpRow = reader.locator('[data-line="8500"]');
+    assert.equal(await jumpRow.getAttribute('class'), 'is-target');
+    assert.match(await jumpRow.innerText(), /current 08499 /);
+    assert.ok(await jumpRow.isVisible());
+    await reader.getByLabel('Find').fill('CURRENT 08990');
+    await reader.getByRole('button', { name: 'Find', exact: true }).click();
+    const matchButton = reader.getByRole('button', { name: 'Line 8,991' });
+    await matchButton.waitFor();
+    assert.match(await reader.locator('.memory-reader-results').innerText(), /1 match for “CURRENT 08990”/);
+    assert.equal(await reader.locator('.memory-reader-results mark').innerText(), 'current 08990');
+    await matchButton.click();
+    await waitPosition('Lines 8,971–9,000 of 9,000');
+    assert.equal(await reader.locator('[data-line="8991"]').getAttribute('class'), 'is-target');
+    assert.equal(await nextButton.isDisabled(), true);
+    // Contrast on the reader's own grounds, measured from computed styles.
+    const readerContrast = await deskPage.evaluate(() => {
+      const rgb = value => value.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number);
+      const lum = ([r, g, b]) => [r, g, b].map(c => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; }).reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i], 0);
+      const ground = element => { for (let node = element; node; node = node.parentElement) { const bg = getComputedStyle(node).backgroundColor; if (!/rgba\(.*, 0\)$/.test(bg) && bg !== 'transparent') return bg; } return 'rgb(255,255,255)'; };
+      return [...document.querySelectorAll('.memory-reader-position, .memory-reader-form label, .memory-reader-number, .memory-reader-source code, .memory-reader-results p, .memory-reader-results li button, .memory-reader-results code, .memory-reader-results mark, .is-target .memory-reader-number, .memory-artifact-view-options button')].map(element => {
+        const a = lum(rgb(getComputedStyle(element).color)), b = lum(rgb(ground(element)));
+        return { name: element.className || element.tagName, text: element.textContent.slice(0, 24), ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+      });
+    });
+    for (const item of readerContrast) assert.ok(item.ratio >= 8, `reader text under 8:1: ${JSON.stringify(item)}`);
+    await deskPage.screenshot({ path: path.join(artifacts, 'carto-memory-reader.png'), fullPage: true });
+    // Open in editor runs the configured command (here /usr/bin/true).
+    await deskPage.getByRole('button', { name: 'Open in editor', exact: true }).click();
+    await deskPage.getByRole('status').filter({ hasText: /^Opened$/ }).waitFor();
+    // An edit after the review read makes the next page a 409, with a way back.
+    fs.appendFileSync(largeFile, 'appended after review\n');
+    await previousButton.click();
+    const changed = reader.getByRole('alert');
+    await changed.waitFor();
+    assert.match(await changed.innerText(), /changed since it was opened/);
+    await reader.getByRole('button', { name: 'Reload file', exact: true }).click();
+    await waitPosition('Lines 1–500 of 9,001');
+    fs.writeFileSync(largeFile, largeCurrent);
+    await reader.getByRole('button', { name: 'Next' }).first().click();
+    await reader.getByRole('button', { name: 'Reload file', exact: true }).click();
+    await waitPosition('Lines 1–500 of 9,000');
     const downloadLink = deskPage.getByRole('link', { name: 'Download full file', exact: true });
     const downloadHref = new URL(await downloadLink.getAttribute('href'), origin);
     assert.equal(downloadHref.pathname, '/api/memory/file');

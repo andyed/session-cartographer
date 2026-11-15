@@ -9,7 +9,7 @@ import { assertLoopbackRequest } from './loopback-guard.js';
 const exec = promisify(execFile);
 const controllerPath = fileURLToPath(new URL('../../scripts/cartographer-turbo.js', import.meta.url));
 const ACTIONS = new Set(['enable', 'start', 'refresh']);
-const MEMORY_PATHS = new Set(['/api/memory/health', '/api/memory/activity', '/api/memory/state', '/api/memory/session', '/api/memory/file', '/api/memory/recall', '/api/memory/recall/call', '/api/memory/day']);
+const MEMORY_PATHS = new Set(['/api/memory/health', '/api/memory/activity', '/api/memory/state', '/api/memory/session', '/api/memory/file', '/api/memory/file/open', '/api/memory/recall', '/api/memory/recall/call', '/api/memory/day']);
 
 function reply(res, status, body) {
   res.writeHead(status, {
@@ -76,12 +76,12 @@ async function memoryHealth(url, fetchImpl) {
 // there must validate its origin before serving private corpus data. The
 // host/origin half is the guard every listener shares (loopback-guard.js); a
 // mutation also demands an Origin and the explicit action header.
-export function validateUiRequest(req, mutation) {
+export function validateUiRequest(req, mutation, action = 'start') {
   assertLoopbackRequest(req, { requireOrigin: mutation });
   if (mutation && (
-    req.headers['x-cartographer-action'] !== 'start'
+    req.headers['x-cartographer-action'] !== action
     || !/^application\/json(?:\s*;|$)/i.test(req.headers['content-type'] || '')
-  )) throw failure(403, 'Turbo start requires an explicit JSON action');
+  )) throw failure(403, action === 'start' ? 'Turbo start requires an explicit JSON action' : 'This request requires an explicit JSON action');
 }
 
 function readAction(req) {
@@ -164,8 +164,11 @@ export function createTurboEntryMiddleware({
     if (!['/api/turbo/status', '/api/turbo/start'].includes(pathname) && !MEMORY_PATHS.has(pathname)) return next();
     try {
       const mutation = pathname === '/api/turbo/start';
-      validateUiRequest(req, mutation);
-      if (req.method !== (mutation ? 'POST' : 'GET')) throw failure(405, 'Method not allowed');
+      // Opening a file in an editor is forwarded like a read, but it is a POST
+      // with its own action header, checked here and again by the API.
+      const opening = pathname === '/api/memory/file/open';
+      validateUiRequest(req, mutation || opening, opening ? 'open-file' : 'start');
+      if (req.method !== (mutation || opening ? 'POST' : 'GET')) throw failure(405, 'Method not allowed');
       if (pathname === '/api/turbo/status') return reply(res, 200, await status());
       if (mutation) {
         const action = await readAction(req);
@@ -195,7 +198,8 @@ export function createTurboEntryMiddleware({
       try {
         const response = await fetchImpl(target, {
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(wide || download || dayDigest ? 60000 : 10000)]),
-          redirect: 'error', headers: { Accept: download ? 'application/octet-stream' : 'application/json' },
+          redirect: 'error', headers: { Accept: download ? 'application/octet-stream' : 'application/json', ...(opening ? { 'x-cartographer-action': 'open-file', 'content-type': 'application/json' } : {}) },
+          ...(opening ? { method: 'POST', body: '{}' } : {}),
         });
         if (download && response.ok && response.headers.get('content-type') === 'application/octet-stream') {
           const headers = { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "sandbox; default-src 'none'" };

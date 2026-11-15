@@ -233,6 +233,7 @@ All paths and endpoints are configurable:
 | `CARTOGRAPHER_TURBO_URL` | `http://127.0.0.1:2526` | Loopback recall endpoint; file transport is used when a sandbox blocks it |
 | `CARTOGRAPHER_TURBO_TIMEOUT_MS` | `4000` | Warm recall budget before portable fallback. A config written by `/turbo enable` before 2026-09-26 pins `timeout_ms: 1500`; raise it with `node scripts/cartographer-turbo.js enable --timeout 4000 --no-start` |
 | `CARTOGRAPHER_TURBO_READY_TIMEOUT_MS` | `20000` | How long `start` waits for a spawned service's `ready.json` before killing it (500–120000). The corpus load alone takes about 5 s at 290k events. A failed start is recorded in `.carto/turbo/server.log` as a `[turbo-control]` line |
+| `CARTOGRAPHER_EDITOR` | unset | Command the Memory Desk's **Open in editor** runs with the file as its one argument (`cursor`, `code`, or an absolute path, since a launchd-started Explorer has a short `PATH`). Set it where the Explorer or Turbo server runs. Unset on macOS opens the default text editor (`open -t`); unset elsewhere hides the button |
 | `CARTOGRAPHER_SEARCH_CALL_LOG` | `$CARTOGRAPHER_DEV_DIR/.carto/search-calls.jsonl` | Backend-attributed Turbo call telemetry |
 | `CARTOGRAPHER_SESSION_ID` | unset | Calling session for runtimes that export no session variable of their own (see [Recall telemetry from Hermes](#recall-telemetry-from-hermes)) |
 | `CARTOGRAPHER_PROVIDER` | inferred | Calling agent written on served, call and access rows (`claude`, `codex`, `hermes`) |
