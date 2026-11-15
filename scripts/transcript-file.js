@@ -19,6 +19,8 @@
  */
 import fs from 'node:fs';
 import zlib from 'node:zlib';
+import { Transform, pipeline } from 'node:stream';
+import { ZstdFrameValidator } from './zstd-frame-validator.js';
 
 export const canReadZstd = typeof zlib.createZstdDecompress === 'function' && typeof zlib.zstdDecompressSync === 'function';
 
@@ -46,6 +48,9 @@ export function readTranscriptBuffer(source, { compressed = isCompressedTranscri
   if (!compressed) return raw;
   if (!canReadZstd) throw new CompressedTranscriptError(file);
   try {
+    const frames = new ZstdFrameValidator();
+    frames.write(raw);
+    frames.finish();
     return zlib.zstdDecompressSync(raw);
   } catch (error) {
     // A truncated or corrupt frame. Say so; an empty transcript would be a lie.
@@ -63,7 +68,19 @@ export function transcriptStream(file) {
   if (!isCompressedTranscript(file)) return fs.createReadStream(file, { encoding: 'utf8' });
   if (!canReadZstd) throw new CompressedTranscriptError(file);
   const source = fs.createReadStream(file);
-  const decoded = source.pipe(zlib.createZstdDecompress());
-  source.on('error', (error) => decoded.destroy(error));
+  const frames = new ZstdFrameValidator();
+  const checked = new Transform({
+    transform(chunk, encoding, done) {
+      try { frames.write(chunk); done(null, chunk); }
+      catch (error) { done(new CompressedTranscriptError(file, error)); }
+    },
+    flush(done) {
+      try { frames.finish(); done(); }
+      catch (error) { done(new CompressedTranscriptError(file, error)); }
+    },
+  });
+  const decoded = zlib.createZstdDecompress();
+  // pipeline tears down the file descriptor and each stage on error/cancel.
+  pipeline(source, checked, decoded, () => {});
   return decoded.setEncoding('utf8');
 }

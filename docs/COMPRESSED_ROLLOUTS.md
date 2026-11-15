@@ -75,6 +75,15 @@ newer). A path that ends in `.jsonl.zst` goes through it.
 | `cartographer-search.sh --transcript` | searched with `rg -z`, into the slots plain transcripts left |
 | `scripts/repair-transcript-paths.js` | counted as on disk, never rewritten |
 
+Node 22's zstd decoder silently accepts truncated frames
+([nodejs/node#64592](https://github.com/nodejs/node/issues/64592)); the upstream
+fix shipped in Node 24.20.0 but is absent from Node 22.23.4. The shared reader
+checks frame boundaries before synchronous decompression and as bytes arrive
+in its stream. Only headers are retained; block/skippable payloads are counted.
+Zlib still owns payload decompression and checksum validation. Concatenated and
+skippable frames remain supported. Consumers must discard failed streams even
+if earlier chunks were already emitted.
+
 On a Node without zlib zstd, and for a `.zst` file that does not decode, the
 Explorer routes answer 503 `TRANSCRIPT_COMPRESSED` and the Memory Desk reports
 the transcript as compressed. Neither says "not found" or "empty".
