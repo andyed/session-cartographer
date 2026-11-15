@@ -108,6 +108,9 @@ export default function ImageWall({ isActive }) {
           {state.status === 'ready' && (
             <a className="image-wall-action" href={`${BASE}wunderkammer/?collection=${encodeURIComponent(imageCollectionUrl(route, { document: true }))}`} target="_blank" rel="noopener noreferrer" aria-label="Open wall in a new tab"><span className="iw-long">Open wall in a new tab ↗</span><span className="iw-short" aria-hidden="true">New tab ↗</span></a>
           )}
+          {state.status === 'ready' && (
+            <a className="image-wall-action" href={`${BASE}wunderkammer/?collection=${encodeURIComponent(imageCollectionUrl(route, { document: true }))}&view=float&arrange=cloud&front=attention`} target="_blank" rel="noopener noreferrer" aria-label="Open by attention in a new tab" title="Nearest and largest: images sent to you. Furthest and smallest: images only produced."><span className="iw-long">By attention ↗</span><span className="iw-short" aria-hidden="true">Attention ↗</span></a>
+          )}
         </div>
       </header>
       <div className="image-wall-stage" ref={host} data-state={state.status} />

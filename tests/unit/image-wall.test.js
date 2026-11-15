@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { createImageWall, namedBy, projectOfPath, scanTranscriptImages } from '../../explorer/server/image-wall.js';
+import { ATTENTION, attentionOf, createImageWall, namedBy, projectOfPath, scanTranscriptImages } from '../../explorer/server/image-wall.js';
 import { imageDimensions } from '../../explorer/server/image-probe.js';
 import { blockedMessage, copyPathFor, createGuardedInspector, protectedRoot, refusedMessage } from '../../explorer/server/guarded-open.js';
 import { inspectImage } from '../../explorer/server/session-artifacts.js';
@@ -97,6 +97,9 @@ test('"changed" keeps only images written inside a naming session; "named" adds 
   const [clip] = changed.collection.clips;
   assert.equal(clip.props.project, 'repo-a', 'a workspace-root session falls back to its first real project');
   assert.equal(clip.props.shape, 'landscape');
+  assert.equal(clip.props.attention, 'only produced', 'named by a command\'s output and nothing else');
+  assert.deepEqual(changed.collection.facetTypes, { attention: { type: 'ordinal', order: ATTENTION } });
+  assert.ok(changed.collection.ui.facetOrder.includes('attention'));
   assert.equal(clip.source, 'Claude Code');
   assert.match(clip.note, /Written during Claude Code session/);
   assert.match(clip.note, /1600 × 900/);
@@ -110,6 +113,7 @@ test('"changed" keeps only images written inside a naming session; "named" adds 
   assert.deepEqual(warnings, []);
 
   const named = await wall.collection({ transcripts: [{ path: transcript, session }], days: 30, scope: 'named', ...urls });
+  assert.equal(named.collection.clips.find(c => c.title === 'reference.png').props.attention, 'read by agent');
   const props = Object.fromEntries(named.collection.clips.map(c => [c.title, c.props.written]));
   assert.deepEqual(props, { 'written.png': 'during a session', 'reference.png': 'outside sessions' });
   assert.ok(named.collection.ui.facetOrder.includes('written'));
@@ -193,6 +197,17 @@ test('header probes read PNG, GIF, BMP, WebP and JPEG sizes and refuse truncated
   assert.deepEqual(probe('a.jpg', jpeg, 'image/jpeg'), { width: 640, height: 480, alpha: false });
   assert.equal(probe('short.png', png(2, 3).subarray(0, 20), 'image/png'), null);
   assert.equal(probe('a.svg', Buffer.from('<svg/>'), 'image/svg+xml'), null);
+});
+
+test('attention is the furthest an image got, in a ranked order', () => {
+  assert.deepEqual(ATTENTION, ['only produced', 'read by agent', 'reply link', 'sent to user'], 'lowest first: the wall reads the last as highest');
+  assert.equal(attentionOf(['tool output']), 'only produced');
+  assert.equal(attentionOf(['Write', 'listing']), 'only produced');
+  assert.equal(attentionOf(['read', 'tool output']), 'read by agent');
+  assert.equal(attentionOf(['read', 'reply link', 'tool output']), 'reply link');
+  assert.equal(attentionOf(['read', 'reply link', 'sent to user']), 'sent to user');
+  assert.equal(attentionOf([]), 'only produced');
+  for (const kinds of [['tool output'], ['read'], ['reply link'], ['sent to user']]) assert.ok(ATTENTION.includes(attentionOf(kinds)));
 });
 
 test('evidence labels become a small "named by" vocabulary', () => {

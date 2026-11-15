@@ -48,6 +48,23 @@ export function namedBy(evidence) {
 }
 
 /**
+ * How far an image got, lowest first: a ranked facet the wall can order and
+ * size by. It is the furthest of the ways the image's sessions named it:
+ * handed to the person, linked in a reply to them, read back by the agent, or
+ * only produced. It measures attention, not quality: over 30 days, 148 bursts
+ * of three or more images held just 27 where exactly one image was shown, so
+ * it does not name the winner of a comparison.
+ */
+export const ATTENTION = ['only produced', 'read by agent', 'reply link', 'sent to user'];
+export function attentionOf(named) {
+  const kinds = new Set(named);
+  if (kinds.has('sent to user')) return 'sent to user';
+  if (kinds.has('reply link')) return 'reply link';
+  if (kinds.has('read')) return 'read by agent';
+  return 'only produced';
+}
+
+/**
  * One transcript → the compact record the wall caches: identity, time span,
  * and for each image its path, naming times and how it was named. No tool
  * bodies or message text survive this.
@@ -239,6 +256,7 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
       const agent = AGENTS[primary.session?.provider || primary.record.identity.provider] || 'Other agent';
       const session = sessionLabel(primary);
       const sessionCount = new Set(namings.map(n => n.transcript)).size;
+      const named = [...new Set(namings.flatMap(n => n.image.named))].sort();
       const size = dimensions ? `${dimensions.width} × ${dimensions.height}` : '';
       const note = [
         writer ? `Written during ${agent} session “${session}”.` : `Named by ${sessionCount === 1 ? `${agent} session “${session}”` : `${sessionCount} sessions`}; written outside them.`,
@@ -259,7 +277,8 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
         props: {
           project: projectOfPath(file) || sessionProject(primary.session) || 'unattributed',
           session,
-          named: [...new Set(namings.flatMap(n => n.image.named))].sort(),
+          named,
+          attention: attentionOf(named),
           location: folderOf(file),
           format: FORMATS[mime] || mime,
           shape: shapeOf(dimensions),
@@ -287,9 +306,11 @@ export function createImageWall({ scan = scanInWorkers, inspector = createGuarde
           nouns: { item: 'image', items: 'images' },
           defaultGroup: 'project',
           // Listing a facet here keeps it groupable past the wall's 24-value default.
-          facetOrder: ['project', 'session', 'source', 'named', 'location', 'format', 'shape', 'day', ...(scope === 'named' ? ['written'] : [])],
+          facetOrder: ['project', 'session', 'attention', 'source', 'named', 'location', 'format', 'shape', 'day', ...(scope === 'named' ? ['written'] : [])],
           facetLabels: { source: 'agent', named: 'named by', location: 'folder', day: 'last written' },
         },
+        // Ranked, so the wall can order by it (front=attention) as well as filter.
+        facetTypes: { attention: { type: 'ordinal', order: ATTENTION } },
         clips,
       },
     };

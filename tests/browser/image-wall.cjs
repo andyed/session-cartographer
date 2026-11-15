@@ -85,6 +85,13 @@ const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - 
     await frame.waitForFunction(() => [...document.querySelectorAll('img')].filter(i => i.complete && i.naturalWidth > 0).length >= 3, null, { timeout: 30000 });
     assert.equal(await frame.title(), doc.ui.title);
     assert.equal(await frame.evaluate(() => window.artifactRan), undefined, 'SVG covers never execute');
+    // The ranked attention facet, and the link that opens the wall ordered by it.
+    assert.deepEqual(doc.facetTypes.attention.order, ['only produced', 'read by agent', 'reply link', 'sent to user']);
+    assert.ok(doc.clips.every(c => doc.facetTypes.attention.order.includes(c.props.attention)), 'every image has a place in the order');
+    const byAttention = new URL(await page.getAttribute('a.image-wall-action[aria-label="Open by attention in a new tab"]', 'href'), origin);
+    assert.equal(byAttention.searchParams.get('front'), 'attention');
+    assert.equal(byAttention.searchParams.get('arrange'), 'cloud');
+    assert.equal(byAttention.searchParams.get('collection'), new URL(await page.getAttribute('a.image-wall-action[aria-label="Open wall in a new tab"]', 'href'), origin).searchParams.get('collection'));
     for (const el of await page.$$('.image-wall-bar strong, .image-wall-bar span:not(.iw-short), .image-wall-bar button, .image-wall-bar a')) {
       const [fg, bg] = await el.evaluate(node => { let n = node, bg = 'rgba(0, 0, 0, 0)'; while (n && /rgba\(0, 0, 0, 0\)|transparent/.test(bg)) { bg = getComputedStyle(n).backgroundColor; n = n.parentElement; } return [getComputedStyle(node).color, bg]; });
       assert.ok(contrast(fg, bg) >= 8, `${await el.innerText()}: ${fg} on ${bg}`);
