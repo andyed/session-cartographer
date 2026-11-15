@@ -35,9 +35,16 @@ for candidate in "${TMPDIR:-}" "${RUNNER_TEMP:-}" "$HOME/.cache"; do
     *) BASE="$candidate"; break ;;
   esac
 done
-mkdir -p "$BASE"
-TOP=$(mktemp -d "$BASE/carto-rows.XXXXXX")
-TOP=$(cd "$TOP" && pwd -P)
+# Fail closed before installing a destructive cleanup trap. With set -u alone,
+# failed mktemp used to leave TOP empty; cd "" then resolved to the checkout.
+if [ -z "$BASE" ]; then
+  echo "No non-/tmp scratch directory available; set RUNNER_TEMP" >&2
+  exit 1
+fi
+mkdir -p "$BASE" || exit 1
+TOP=$(mktemp -d "$BASE/carto-rows.XXXXXX") || exit 1
+[ -n "$TOP" ] && [ -d "$TOP" ] || exit 1
+TOP=$(cd "$TOP" && pwd -P) || exit 1
 trap 'rm -rf "$TOP"' EXIT
 WS="$TOP/space"            # fixed basename: it becomes a project name once
 REPO="$WS/fixrepo"
