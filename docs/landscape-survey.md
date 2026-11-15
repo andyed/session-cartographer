@@ -5,7 +5,8 @@ from the GitHub API (2026-10-17 03:23 UTC), platform features from the vendors'
 docs and the public
 [Claude Code changelog](https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md).
 Categories 6 and 7 were added on 2026-11-11 with counts read that day;
-categories 1 to 5 keep their October counts.
+categories 1 to 5 keep their October counts, except lot-map (category 3),
+added on 2026-11-15 with its count read that day.
 See [Sources](#sources).*
 
 ## Summary
@@ -136,6 +137,7 @@ Notes on this category:
 | [claude-code-history-viewer](https://github.com/jhlee0409/claude-code-history-viewer) | 2,261 (726) | Desktop app and web server, now for several providers. Has grouped worktrees since 2026-01-25. |
 | [agenttrail](https://github.com/sodiumsun/agenttrail) | 906 (new) | Local observability for coding agents. |
 | [agentacct](https://github.com/mikehasa/agentacct) | 766 (new) | Per-task "work receipts": files changed and cost. |
+| [lot-map](https://github.com/alexeyw/lot-map) | 859 (new, created 2026-11-09) | A live map beside the chat of what Claude Code is doing: tool calls, model steps, hooks, skills and subagents light up at a ring of stations. A Claude Code plugin, local only, MIT, at 0.8.0. SC's flow map is a fork of its 0.6.0. |
 | [claude-code-otel](https://github.com/ColeMurray/claude-code-otel) | 512 (low) | OTel → Prometheus, Loki, Grafana. No push since 2025-06. |
 | [tracecrate](https://github.com/FankChen/tracecrate) | 256 (new) | Local trace workbench for Claude Code, Codex and OTLP logs. |
 | [loongsuite-pilot](https://github.com/alibaba/loongsuite-pilot) | 208 (new) | OpenTelemetry collector for Claude Code, Codex and Cursor. |
@@ -348,6 +350,7 @@ Cursor removed its memories UI in 2.1.x and offers an export to `.mdc` rules
 | See whether recall gets used | Each served result joins to its use mark by `(call_id, event_id)` ([`recall-join.js`](../scripts/recall-join.js)) | [deja-vu `stats --impact`](https://github.com/vshulcz/deja-vu/blob/main/cmd/deja/stats_impact.go) infers use from later transcripts; [mem0](https://github.com/mem0ai/mem0) has a feedback API |
 | Know who else is working | `/standup`: live sessions, files two sessions both edit, the session behind a commit | [Entire](https://github.com/entireio/cli), [git-ai](https://github.com/git-ai-project/git-ai), [mcp_agent_mail](https://github.com/Dicklesworthstone/mcp_agent_mail), [claude-context-sync](https://www.npmjs.com/package/claude-context-sync), Claude Code agent view |
 | Review a day's work | Day digest that checks each logged commit against git: landed, moved, rewritten or missing | [brain0](https://github.com/Brain0-ai/brain0) `today` and its drift check |
+| Watch where a session's calls go | [The flow map](FLOW_MAP.md): a ring of stations with the route between them in order, live beside the chat and as a replay of any recorded Claude Code or Codex session | [lot-map](https://github.com/alexeyw/lot-map) (live, Claude Code; the flow map's origin), [agenttrail](https://github.com/sodiumsun/agenttrail), [tracecrate](https://github.com/FankChen/tracecrate) |
 | Review one session's changes | Memory Desk diffs bounded by the session's commits | Entire checkpoints, brain0 per-prompt diffs, [Tessera](https://github.com/horang-labs/tessera) |
 | Configure auto mode from real usage | `/trustmap`, weighted by use across Claude Code and Codex, re-runnable as a delta | Claude Code [`/auto-mode-setup`](https://code.claude.com/docs/en/auto-mode-config) |
 | Carry planned work forward | `/wrapup` records `unresolved[]`, and the opt-in start note shows the newest one for the project. No dependencies, priorities or status | [beads](https://github.com/gastownhall/beads), [Backlog.md](https://github.com/MrLesk/Backlog.md), [Storybloq](https://github.com/Storybloq/storybloq), [plandb](https://github.com/Agent-Field/plandb), [OpenSpec](https://github.com/Fission-AI/OpenSpec) |

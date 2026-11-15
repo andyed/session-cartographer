@@ -43,6 +43,7 @@ the Explorer are optional. The default setup keeps your history on your machine.
 | Revisit an investigation | `/investigate <bug>` | Earlier diagnoses brought into the current investigation, with hypotheses tracked through verification |
 | Check concurrent work | `/standup` | Recent peer activity, shared-file edits, and commit attribution |
 | Speed up recall | `/turbo` | Enable, inspect, or disable the shared warm search service |
+| Watch where a session's calls go | `/carto-flow` | The flow map beside the chat, in order, live ([desktop app](docs/FLOW_MAP.md#known-limits)) |
 
 These are Claude Code command names. In Codex, invoke the corresponding skill,
 for example `$session-cartographer:remember` or `$session-cartographer:turbo`,
@@ -100,6 +101,16 @@ beside the documents and commits the session produced.
 <a href="docs/screenshots/search.webp"><img src="docs/screenshots/search.webp" alt="Search results with project, event type, and agent facets"></a>
 <br><b>Search every agent at once.</b> 416 results from keyword and semantic
 ranking in 209 ms, faceted by project, event type, and agent.
+</td>
+</tr>
+<tr>
+<td colspan="2">
+<a href="docs/screenshots/flow-map.webp"><img src="docs/screenshots/flow-map.webp" alt="Flow map of one session: a ring of stations with the route between them, a tape of calls by station, and the list of calls"></a>
+<br><b>Follow a session's route.</b> Where each call went, in order: model steps,
+files, commands, pages, memory, subagents, and what you said and were told. The
+same map runs live in a pane beside the chat. A test session is shown. Forked
+from Aleksei Volodin's <a href="https://github.com/alexeyw/lot-map">lot-map</a>;
+see <a href="docs/FLOW_MAP.md">the flow map</a>.
 </td>
 </tr>
 <tr>
@@ -351,8 +362,8 @@ To capture the Explorer with randomized names over your own activity, use the
 - [Provider architecture](docs/PROVIDERS.md), [log schemas](docs/LOG_SCHEMAS.md),
   and [custom hooks](docs/CUSTOM_HOOKS.md)
 - [Explorer architecture](docs/EXPLORER_SPEC.md) and [Internals](docs/INTERNALS.md)
-- [The flow map](docs/FLOW_MAP.md), unreleased: the pane beside the chat and the
-  Explorer's `/flow` page
+- [The flow map](docs/FLOW_MAP.md), on main and not yet in a release: the pane
+  beside the chat and the Explorer's `/flow` page
 - [Demo and evaluation](docs/GHPAGES_DEMO_SPEC.md) and
   [related projects](docs/landscape-survey.md)
 
@@ -360,6 +371,11 @@ To capture the Explorer with randomized names over your own activity, use the
 
 Search originated in a fork of Shreyas Patil's
 [claude-code-session-bridge](https://github.com/PatilShreyas/claude-code-session-bridge).
+The flow map is forked from Aleksei Volodin's
+[lot-map](https://github.com/alexeyw/lot-map) 0.6.0, a live map of what Claude
+Code is doing beside the chat; its stations, glyphs, classifier and feed are
+lot-map's design.
+
 The co-occurrence graph was inspired by DeepBlueDynamics'
 [lume](https://github.com/DeepBlueDynamics/lume) and the Semantic Knowledge Graph
 work of Trey Grainger and Erik Hatcher; Cartographer ranks structured session

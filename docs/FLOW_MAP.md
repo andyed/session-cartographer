@@ -12,9 +12,22 @@ same code.
 The pane is also the way into the Explorer from a session: while the Explorer is
 running, the pane links to this session's map there.
 
-> **Status: unreleased.** Added 2026-11-13 and 2026-11-14 and not yet in a
-> tagged release. This page is a stub: it says what exists and what is known
-> not to work. Open work is under "Session flow map" in [TODO.md](../TODO.md).
+The flow map began as a fork of [lot-map](https://github.com/alexeyw/lot-map)
+by Aleksei Volodin (MIT), a live map beside the chat of what Claude Code is
+doing. The ring of stations, their glyphs, the classifier that files each call
+at a station, and the feed are lot-map's design;
+the route with its directions, the ribbon, the two-way You station, Your
+screen, the family colours and the map page were added here. See
+[Credits](#credits).
+
+![The map page replaying a test session: the hub, the ribbon under it, the tape and the list of calls](screenshots/flow-map.webp)
+
+*The map page replaying a test session: 49 calls and 46 model steps, one
+failed command, the context window 97% full.*
+
+> **Status: on main, not in a tagged release yet.** The map page and the pane
+> landed on 2026-11-14. Open work is under "Session flow map" in
+> [TODO.md](../TODO.md).
 
 ## Stations
 
@@ -38,7 +51,8 @@ itself and says which model is at work.
 | Hooks | What a hook adds or stops, and a background task reporting back |
 
 You is two-way. A line into the centre is you speaking, a line out is the agent
-telling you something, and the two are counted apart ("5 said", "19 told").
+telling you something, and the two are counted apart: a bare number beside
+each lane on the hub, and "N from you · N to you" over the map page's list.
 Only what you typed counts as you: a background task reporting back, or a
 reminder the harness adds, is filed at Hooks.
 
@@ -109,6 +123,7 @@ no `/carto-flow` command; recall, capture and the Explorer are unaffected.
 | Option | Default | What it does |
 | --- | --- | --- |
 | `flowMap` | on | Opens the pane |
+| `theme` | `auto` | The hub's and ribbon's colours: `dark`, `light`, or `auto`, which follows the app's own theme setting |
 | `language` | `en` | Language of the labels |
 | `coreName` | `CLAUDE` | What the centre says under the model, up to ten characters |
 | `motion` | `full` | `reduced` stops everything that moves |
@@ -117,13 +132,16 @@ no `/carto-flow` command; recall, capture and the Explorer are unaffected.
 | `hookRecords` | off | Show numbered records a hook adds to memory, by number only |
 | `hookReasons` | off | Show the first line of a hook's refusal |
 
-`theme`, `background`, `colors`, `layout`, `terminalView` and `cellShape` are
-inherited from lot-map. They act only on lot-map's own drawing, which a light
-theme and a terminal still get (see below).
+`background`, `colors`, `layout`, `terminalView` and `cellShape` are inherited
+from lot-map. They act only on lot-map's own drawing, which is now drawn only as
+a terminal's picture (`terminalView: picture`), and a terminal gets no pane
+today (see below).
 
 ## The map page
 
-`/flow?session=<id>` in the Explorer. The same hub, with the ribbon under it, a
+`/flow?session=<id>` in the Explorer (`/map`, its name until 2026-11-14, still
+opens it). It reads Claude Code and Codex transcripts, a compressed Codex
+rollout and one recorded on Windows included. The same hub, with the ribbon under it, a
 tape (one lane a station, time left to right) and the list of calls beside it.
 A station on the hub is a control there: pressing it lists that station's calls.
 
@@ -140,9 +158,10 @@ A station on the hub is a control there: pressing it lists that station's calls.
 - **A terminal gets no pane.** The terminal's `claude` (2.1.277 when checked)
   refuses the pane's module; the app's engine (2.1.325) loads it. The plugin's
   other hooks keep running in a terminal session.
-- **A light theme gets lot-map's drawing**, which has no Your screen and whose
-  text is under this project's contrast and size floors. The new hub has no
-  light colours yet.
+- **Under `auto`, the pane follows the app's theme setting**, not the
+  system's: the desktop draws the pane as an image, and an image answers
+  `prefers-color-scheme` with the system's scheme. Where the app names no theme,
+  one picture carries both palettes and the system decides.
 - **Nothing in the pictures can be pressed.** The desktop draws a picture as an
   image and a button as its plain label, so the ribbon's controls stand under
   it and the links into the Explorer are in the feed's text.
@@ -156,7 +175,7 @@ A station on the hub is a control there: pressing it lists that station's calls.
 
 | What | Where |
 | --- | --- |
-| The drawing shared by both faces | `explorer/shared/flowmap/` (`hub.js`, `ribbon.js`, `kinds.js`, `flow.js`) |
+| The drawing shared by both faces | `explorer/shared/flowmap/`: `hub.js` (the ring and the route), `ribbon.js`, `kinds.js` (stations and family colours), `palette.js` (dark and light), `classify.js` (which station a call goes to), `feed.js`, `flow.js` (the board, the tape and the levels of detail) |
 | The map page | `explorer/src/components/SessionMap.jsx`, `explorer/server/flowmap.js` |
 | The pane | `plugins/session-cartographer/hooks/carto-flow/` (`register.tsx`, `hubview.ts`) |
 | The pane's state contract | `plugins/session-cartographer/types/index.d.ts` |
