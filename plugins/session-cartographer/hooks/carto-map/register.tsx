@@ -5,7 +5,7 @@ import type { Board, Entry, StationId, Status, Visit } from '../../types'
 import { STATIONS, classify, clean, describeNow, drawMap, firstLine, foldRows, formatMs, memoryIds, nowParts, setupFrom, shortModel, taskNotice, taskOf } from './map'
 import type { Setup } from './map'
 import { drawPicture, terminalPicture } from './terminal'
-import { hubPicture, isAt, pictureWidth, ribbonRuns, ribbonSlots, shownStation, slotRibbonPicture } from './hubview'
+import { hubPicture, isAt, pictureWidth, ribbonRuns, ribbonSlots, shownStation, slotRibbonPicture, themeFromConfig } from './hubview'
 import type { HubStation } from './hubview'
 import { isScreen } from './workmap/kinds.js'
 import { SLOT_CALLS } from './workmap/ribbon.js'
@@ -677,6 +677,8 @@ export const register: Register = (on, options) => {
     // The drawing the Explorer's session map uses, from the same code: the ribbon of the last calls over the hub.
     // A person who set the light theme keeps lot-map's hub, which has light colours; the new one has none yet.
     const wide = pictureWidth(e.props.bodyColumns)
+    // The pictures follow the app's own theme setting where it names a side; the map's own `theme` option, when set, wins.
+    const side = setup.theme !== 'auto' ? setup.theme : themeFromConfig((await quietly(() => $.config.list()))?.find(row => row.key === 'theme')?.value)
     // The ribbon is a picture, and a picture takes no press; a Button on the desktop is drawn as its plain label, so
     // a coloured block cannot be one either. So the ribbon is drawn in slots of one width, a slot a run of calls at
     // one station, and under it stands a row of as many equal boxes, each with the control for the slot over it.
@@ -705,11 +707,11 @@ export const register: Register = (on, options) => {
     const calls = runs.reduce((n, run) => n + Math.min(run.cells.length, SLOT_CALLS), 0)
     const pictures = isHub
       ? [
-          <Svg key="ribbon" source={slotRibbonPicture(runs, slots, wide, shown)} alt={`The last ${calls} calls in ${runs.length} runs, oldest to newest`} />,
+          <Svg key="ribbon" source={slotRibbonPicture(runs, slots, wide, shown, side)} alt={`The last ${calls} calls in ${runs.length} runs, oldest to newest`} />,
           ...targets,
           <Svg
             key="hub"
-            source={hubPicture(state, now, { names, coreName: setup.core, model: state.model === undefined ? '' : shortModel(state.model), motion: setup.motion, width: wide, ...(shown !== undefined ? { pressed: shown } : {}) })}
+            source={hubPicture(state, now, { names, coreName: setup.core, model: state.model === undefined ? '' : shortModel(state.model), motion: setup.motion, width: wide, theme: side, ...(shown !== undefined ? { pressed: shown } : {}) })}
             alt={`${t.title}. ${describeNow(state, t)}`}
           />,
         ]

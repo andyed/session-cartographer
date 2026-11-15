@@ -29,7 +29,7 @@
 
 import { boardAt } from './board.js'
 import { DARK } from './palette.js'
-import { FAULT, KIND, familyOfStation } from './kinds.js'
+import { familyOfStation, inkOf } from './kinds.js'
 import { STATIONS } from './setup.js'
 import { mix } from './tint.js'
 
@@ -309,6 +309,7 @@ export const CONTEXT_FULL = 90
  */
 export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK, names = {}, coreName = '', model = state.model ?? '', present, motion = 'full', pressed = '', accent = '#72e6ef' } = {}) {
   const p = palette
+  const { KIND, FAULT } = inkOf(p)
   const level = hubLevel(size)
   const unit = layout.width / size
   const px = v => n1(v * unit)

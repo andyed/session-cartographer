@@ -25,6 +25,8 @@
 //
 // These colour marks, never letters: a name beside a mark is drawn in the map's own ink.
 
+import { LIGHT } from './palette.js'
+
 /** The colour of each family, and of a failed call. */
 export const KIND = {
   you: '#edf0f5',
@@ -36,6 +38,24 @@ export const KIND = {
   agents: '#9174d9',
 }
 export const FAULT = '#ffa2a6'
+
+/**
+ * The same families on the light ground: the marks are darker, so each still holds against #f5f2ea (a mark, never a
+ * letter, but the failed call's count is lettered in it, so FAULT is the light palette's own red, 8:1).
+ */
+export const LIGHT_KIND = {
+  you: '#1f2228',
+  own: '#5f6570',
+  files: '#a8741a',
+  shell: '#4f7a0a',
+  out: '#1f6fb0',
+  memory: '#177a6c',
+  agents: '#6a4cc0',
+}
+export const LIGHT_FAULT = '#812a1c'
+
+/** The family colours and the failed call's colour that go with a palette: the light ones on the light ground. */
+export const inkOf = palette => (palette.ground === LIGHT.ground ? { KIND: LIGHT_KIND, FAULT: LIGHT_FAULT } : { KIND, FAULT })
 
 /** The families in the order a key lists them. */
 export const FAMILIES = ['you', 'files', 'shell', 'out', 'memory', 'agents', 'own']

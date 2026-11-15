@@ -71,3 +71,17 @@ export const COLOR_NAMES = {
   memoryActive: 'memHot',
   route: 'trail',
 }
+
+/**
+ * One picture for a surface that follows the person's theme: the drawing made in each palette, the dark one shown
+ * and the light one where the surface is light. Colours a drawing works out (a mix of two palette colours, a
+ * station's tint) are no palette value, so a rule per colour cannot reach them; two drawings can. `dark` and
+ * `light` are whole SVGs of one size.
+ */
+export function bothThemes(dark, light) {
+  const parts = svg => /^(<svg[^>]*>)([\s\S]*)<\/svg>$/.exec(svg)
+  const d = parts(dark)
+  const l = parts(light)
+  if (d === null || l === null) return dark
+  return `${d[1]}<style>.lt{display:none}@media (prefers-color-scheme: light){.dk{display:none}.lt{display:inline}}</style><g class="dk">${d[2]}</g><g class="lt">${l[2]}</g></svg>`
+}

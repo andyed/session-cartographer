@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { Board, Entry } from '../../types'
-import { buttonCount, CELL_PX, hubActions, hubPicture, hubTotals, isAt, PICTURE_WIDTH, pictureWidth, ribbonPicture, ribbonRuns, ribbonSlots, shownStation, slotRibbonPicture } from './hubview'
+import { buttonCount, themeFromConfig, CELL_PX, hubActions, hubPicture, hubTotals, isAt, PICTURE_WIDTH, pictureWidth, ribbonPicture, ribbonRuns, ribbonSlots, shownStation, slotRibbonPicture } from './hubview'
 
 const PANE = {
   plugin: 'session-cartographer',
@@ -150,6 +150,38 @@ test('the pane\'s pictures are the Explorer\'s drawing at a pane\'s width', () =
   expect(ribbon.svg.split('height="20" fill="#edf0f5"').length - 1).toBe(1)
 })
 
+test("the app's theme setting picks a side where it names one, and `auto` leaves it to the surface", () => {
+  expect(['light', 'light-daltonized', 'light-ansi', 'dark', 'dark-daltonized', 'auto', undefined, 3].map(themeFromConfig)).toEqual(['light', 'light', 'light', 'dark', 'dark', 'auto', 'auto', 'auto'])
+})
+
+test('the pane follows the theme: auto draws the hub and the ribbon in both palettes, the light one shown on a light surface', () => {
+  const board: Board = { entries: [entry(0, 'you', { from: 'inbound' }), entry(1, 'files'), entry(2, 'shell')], counts: { you: 1, files: 1, shell: 1 } }
+  const options = { names: {}, coreName: 'CLAUDE', model: 'fable 5.2', motion: 'reduced' } as const
+  const dark = hubPicture(board, T0 + 5000, options)
+  // Left alone it is the dark drawing, as before.
+  expect(dark).not.toContain('<g class="lt">')
+  expect(dark).toContain('fill="#0a0a0f"')
+  const light = hubPicture(board, T0 + 5000, { ...options, theme: 'light' })
+  expect(light).not.toContain('#0a0a0f')
+  expect(light).toContain('fill="#f5f2ea"')
+  const auto = hubPicture(board, T0 + 5000, { ...options, theme: 'auto' })
+  const [first, second] = auto.split('<g class="lt">')
+  expect(first).toContain('<g class="dk">')
+  expect(first).toContain('fill="#0a0a0f"')
+  expect(first).not.toContain('#f5f2ea')
+  expect(second).toContain('fill="#f5f2ea"')
+  expect(second).not.toContain('#0a0a0f')
+  // The light group shows only where the surface is light, and the picture keeps its size.
+  expect(auto).toContain('@media (prefers-color-scheme: light){.dk{display:none}.lt{display:inline}}')
+  expect(auto).toContain('viewBox="0 0 460 474"')
+  // The ribbon is the same, in the light palette's family colours: the person's message is dark ink there.
+  const cells = ribbonPicture(board, T0 + 5000, PICTURE_WIDTH, 'auto').svg.split('<g class="lt">')
+  expect(cells[0]).toContain('fill="#edf0f5"')
+  expect(cells[1]).toContain('fill="#1f2228"')
+  expect(cells[1]).not.toContain('#edf0f5')
+  expect(slotRibbonPicture([], 5, PICTURE_WIDTH, undefined, 'light')).toContain('fill="#f5f2ea"')
+})
+
 test('on the desktop the pane is the ribbon over the hub, and Your screen is a station with its own pages', async ($, on) => {
   let clock = T0
   on('clock.now', () => ({ value: clock }))
@@ -238,7 +270,8 @@ test('on the desktop the pane is the ribbon over the hub, and Your screen is a s
   // goes to that station.
   await ui.press({ key: String(controls[1]?.props.key) })
   expect((await slotButtons()).map(b => String(b.props.label))).toEqual(['△', '▲', '△', '▲', '△', '△'])
-  expect((await ribbonSvg()).split('class="held"').length - 1).toBe(2)
+  // The picture is drawn twice, once a theme (the second group is the light one): count in the first.
+  expect((await ribbonSvg()).split('<g class="lt">')[0]!.split('class="held"').length - 1).toBe(2)
   expect(await hubSvg()).toContain('class="pressed"')
   const held = (await ui.findAll({ type: 'Link' })).map(link => String(link.props.href))
   expect(held).toEqual(['https://mail.example.com/inbox', 'http://localhost:2527/map?session=sess-1&station=screen'])

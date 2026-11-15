@@ -9,6 +9,7 @@ import { drawHub, hubLayout, hubState } from './workmap/hub.js'
 import type { HubAction } from './workmap/hub'
 import { drawRibbon, drawSlotRibbon, ribbonCapacity, ribbonOf } from './workmap/ribbon.js'
 import type { RibbonCell } from './workmap/ribbon'
+import { LIGHT, bothThemes } from './workmap/palette.js'
 
 /** A station as the hub has them: lot-map's, and Your screen. */
 export type HubStation = StationId | 'screen'
@@ -80,6 +81,23 @@ export function shownStation(state: Board, isHub: boolean): HubStation | undefin
 /** Whether an entry is one of a station's rows, as the buttons count them. */
 export const isAt = (e: Entry, id: HubStation): boolean => (id === 'screen' ? e.yours === true : e.yours !== true && e.station === id)
 
+/** The page's own accent on the light ground: the cyan of the dark one is under 2:1 there. */
+const LIGHT_ACCENT = '#0b6f7a'
+
+/** `auto` is both drawings in one picture, and the surface shows the one that goes with its theme. */
+export type Theme = 'auto' | 'dark' | 'light'
+/**
+ * The theme the pictures are drawn for, from the app's own `theme` setting. The desktop draws a picture as an image,
+ * and an image answers `prefers-color-scheme` with the system's scheme, not the app's: a light app on a dark system
+ * showed the dark map. So a setting that names a side decides, and only `auto` (or none) leaves it to the surface.
+ */
+export const themeFromConfig = (value: unknown): Theme => {
+  const name = typeof value === 'string' ? value.toLowerCase() : ''
+  return name.startsWith('light') ? 'light' : name.startsWith('dark') ? 'dark' : 'auto'
+}
+const inTheme = (theme: Theme, make: (light: boolean) => string): string =>
+  theme === 'auto' ? bothThemes(make(false), make(true)) : make(theme === 'light')
+
 const sized = (svg: string, from: { width: number; height: number }, width: number): string =>
   svg.replace(`width="${from.width}" height="${from.height}"`, `width="${width}" height="${Math.round((width * from.height) / from.width)}"`)
 
@@ -88,11 +106,13 @@ const sized = (svg: string, from: { width: number; height: number }, width: numb
  * Every station is drawn from the first call on. A recorded session knows which stations it used and leaves the
  * rest out; a live one does not know yet, and a ring that grows a station at a time reads as a broken picture.
  */
-export function hubPicture(state: Board, now: number, options: { names: Record<string, string>; coreName: string; model: string; motion: 'full' | 'reduced'; pressed?: string; width?: number }): string {
-  const { width = PICTURE_WIDTH, ...rest } = options
+export function hubPicture(state: Board, now: number, options: { names: Record<string, string>; coreName: string; model: string; motion: 'full' | 'reduced'; pressed?: string; width?: number; theme?: Theme }): string {
+  const { width = PICTURE_WIDTH, theme = 'dark', ...rest } = options
   const totals = hubTotals(state)
   const hub = hubState(hubActions(state.entries), now, { totals, ...(state.context !== undefined ? { context: state.context } : {}) })
-  return sized(drawHub(hub, { layout: LAYOUT, size: width, present: new Set(LAYOUT.order), ...rest }), LAYOUT, width)
+  return inTheme(theme, light =>
+    sized(drawHub(hub, { layout: LAYOUT, size: width, present: new Set(LAYOUT.order), ...rest, ...(light ? { palette: LIGHT, accent: LIGHT_ACCENT } : {}) }), LAYOUT, width),
+  )
 }
 
 /**
@@ -131,12 +151,12 @@ export function ribbonRuns(state: Board, now: number, slots: number, held?: HubS
 }
 
 /** The ribbon in slots, one a run, with a bar under the held station's; and what it says for a reader who cannot see it. */
-export function slotRibbonPicture(runs: readonly Run[], slots: number, width: number = PICTURE_WIDTH, held?: HubStation): string {
-  return drawSlotRibbon(runs, { width, height: RIBBON_HEIGHT, slots, ...(held !== undefined ? { held } : {}) })
+export function slotRibbonPicture(runs: readonly Run[], slots: number, width: number = PICTURE_WIDTH, held?: HubStation, theme: Theme = 'dark'): string {
+  return inTheme(theme, light => drawSlotRibbon(runs, { width, height: RIBBON_HEIGHT, slots, ...(held !== undefined ? { held } : {}), ...(light ? { palette: LIGHT, accent: LIGHT_ACCENT } : {}) }))
 }
 
 /** The last calls in one row, oldest to newest, in the stations' colours; and how many of them it holds. */
-export function ribbonPicture(state: Board, now: number, width: number = PICTURE_WIDTH): { svg: string; shown: number } {
+export function ribbonPicture(state: Board, now: number, width: number = PICTURE_WIDTH, theme: Theme = 'dark'): { svg: string; shown: number } {
   const cells = ribbonOf(hubActions(state.entries), now, 80)
-  return { svg: drawRibbon(cells, { width, height: RIBBON_HEIGHT }), shown: Math.min(cells.length, ribbonCapacity(width, RIBBON_HEIGHT)) }
+  return { svg: inTheme(theme, light => drawRibbon(cells, { width, height: RIBBON_HEIGHT, ...(light ? { palette: LIGHT } : {}) })), shown: Math.min(cells.length, ribbonCapacity(width, RIBBON_HEIGHT)) }
 }

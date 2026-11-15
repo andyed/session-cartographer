@@ -18,7 +18,7 @@
 // where place says the kind as well.
 
 import { DARK } from './palette.js'
-import { FAULT, KIND, familyOf } from './kinds.js'
+import { familyOf, inkOf } from './kinds.js'
 
 /**
  * The last `n` calls up to a moment, oldest first. The model is left out, as it is from the route and the tape:
@@ -57,7 +57,7 @@ export function ribbonCapacity(width, height) {
 }
 
 /** One call's mark: `x` its left edge, `w` its width. */
-function cellMark(c, x, w, height, callH, besideH, floor) {
+function cellMark(c, x, w, height, callH, besideH, floor, { KIND, FAULT }) {
   if (c.kind === 'person') return `<rect x="${x}" y="0" width="${w}" height="${height}" fill="${KIND.you}"/>`
   if (c.kind === 'wake') {
     const narrow = Math.max(1, Math.round(w / 2))
@@ -77,6 +77,7 @@ function cellMark(c, x, w, height, callH, besideH, floor) {
  */
 export function drawRibbon(cells, { width = 320, height = 20, palette = DARK } = {}) {
   const p = palette
+  const ink = inkOf(p)
   const { w, gap } = ribbonCell(height)
   const shown = cells.slice(-ribbonCapacity(width, height))
   const out = [`<rect width="${width}" height="${height}" fill="${p.ground}"/>`]
@@ -85,7 +86,7 @@ export function drawRibbon(cells, { width = 320, height = 20, palette = DARK } =
   const floor = height - Math.round((height - callH) / 2)
   // A rule along the floor, so a ribbon with two calls in it reads as a strip with room left and not as a stray mark.
   out.push(`<line x1="0" y1="${floor + 0.5}" x2="${width}" y2="${floor + 0.5}" stroke="${p.spoke}" stroke-width="1"/>`)
-  shown.forEach((c, k) => out.push(cellMark(c, width - (shown.length - k) * (w + gap) + gap, w, height, callH, besideH, floor)))
+  shown.forEach((c, k) => out.push(cellMark(c, width - (shown.length - k) * (w + gap) + gap, w, height, callH, besideH, floor, ink)))
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${out.join('')}</svg>`
 }
 
@@ -102,6 +103,7 @@ export const SLOT_CALLS = 8
  */
 export function drawSlotRibbon(runs, { width = 320, height = 20, slots = 8, held = '', accent = '#72e6ef', palette = DARK } = {}) {
   const p = palette
+  const ink = inkOf(p)
   const out = [`<rect width="${width}" height="${height}" fill="${p.ground}"/>`]
   const callH = Math.max(3, Math.round(height * 0.6))
   const besideH = Math.max(2, Math.round(height * 0.3))
@@ -119,7 +121,7 @@ export function drawSlotRibbon(runs, { width = 320, height = 20, slots = 8, held
     const w = cells.length === 0 ? 0 : Math.max(2, Math.min(10, Math.floor((room - (cells.length - 1) * gap) / cells.length)))
     const span = cells.length * w + Math.max(0, cells.length - 1) * gap
     const x0 = Math.round(left + (slot - span) / 2)
-    cells.forEach((c, i) => out.push(cellMark(c, x0 + i * (w + gap), w, height, callH, besideH, floor)))
+    cells.forEach((c, i) => out.push(cellMark(c, x0 + i * (w + gap), w, height, callH, besideH, floor, ink)))
     if (held !== '' && run.station === held) out.push(`<rect class="held" x="${Math.round(left + 3)}" y="${height - 2}" width="${Math.round(slot - 6)}" height="2" fill="${accent}"/>`)
   })
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}">${out.join('')}</svg>`

@@ -643,7 +643,8 @@ test('what goes wrong stays on its station until the next message; an interrupte
     const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
     const source = await hubOf(ui)
     await ui.unmount()
-    return source.split('class="fault"').length - 1
+    // The picture is drawn once a theme, the light one second: the dots are counted in the first.
+    return source.split('<g class="lt">')[0]!.split('class="fault"').length - 1
   }
   expect(await dots()).toBe(1)
   await $.turn.start({ text: 'дальше', turnId: 't2' } as never)
@@ -868,7 +869,7 @@ test('a background task that failed leaves a fault on its station', { options: O
   // The task reporting back woke the agent: a row at Hooks says so, and it is no message of the person's.
   expect(await ui.find({ type: 'Text', text: /background task reported/ })).toBeDefined()
   await ui.unmount()
-  expect(source.split('class="fault"').length - 1).toBe(1)
+  expect(source.split('<g class="lt">')[0]!.split('class="fault"').length - 1).toBe(1)
 })
 
 test('a typed slash command keeps a background task that is older than the rows kept, and its name is cleaned', { options: OWN }, async ($, on) => {
