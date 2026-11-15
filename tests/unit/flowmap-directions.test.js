@@ -391,11 +391,15 @@ test('two-way, You is one station: an arrow in is the person speaking, an arrow 
   const outward = hubLeg(two, { from: 'core', to: 'you' });
   assert.ok(Math.abs(into.p0.x - outward.p2.x) >= 10, 'two lanes');
   const svg = drawHub(state, { layout: two, size: 560, names, coreName: 'CLAUDE', present: new Set(talk.map(a => a.station)), motion: 'reduced' });
-  // You says which count is which, and there is no Tells you on the ring.
-  // Each count stands beside its own lane: said to the left of the lane in, told to the right of the lane out.
-  const beside = Object.fromEntries([...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" text-anchor="(\w+)"[^>]*>(\d+ (?:said|told))<\/text>/g)].map(m => [m[3], { x: Number(m[1]), anchor: m[2] }]));
-  assert.deepEqual(Object.keys(beside), ['1 said', '4 told']);
-  assert.ok(beside['1 said'].x < two.core.x && beside['1 said'].anchor === 'end' && beside['4 told'].x > two.core.x && beside['4 told'].anchor === 'start');
+  // There is no Tells you on the ring. Each of You's counts stands beside its own lane as a bare figure, as every
+  // other station's count does (the flow-map label pass, 2026-11-14): the lane's arrow says which is which.
+  // Said to the left of the lane in, told to the right of the lane out.
+  const texts = [...svg.matchAll(/<text x="([\d.]+)" y="[\d.]+" text-anchor="(\w+)"[^>]*>([^<]+)<\/text>/g)].map(m => ({ x: Number(m[1]), anchor: m[2], text: m[3] }));
+  const saidLane = texts.find(t => t.text === '1' && t.anchor === 'end' && t.x < two.core.x);
+  const toldLane = texts.find(t => t.text === '4' && t.anchor === 'start' && t.x > two.core.x);
+  assert.ok(saidLane, 'the said count stands left of the lane in, anchored at its end');
+  assert.ok(toldLane, 'the told count stands right of the lane out, anchored at its start');
+  assert.doesNotMatch(svg, />\d+ (?:said|told)</, 'the counts carry no words');
   // You's name stands alone above it, so it cannot run into Your screen's name or Model's.
   assert.doesNotMatch(svg, /said · /);
   assert.doesNotMatch(svg, />Tells you</);
@@ -465,7 +469,8 @@ test('a live view that keeps only the newest calls draws the counts it was given
   const layout = hubLayout();
   const figures = size => [...drawHub(state, { layout, size, model: 'fable 5.2', present: new Set(layout.order) }).matchAll(/<text [^>]*>([^<]+)<\/text>/g)].map(m => m[1]);
   for (const n of ['77', '245', '3']) assert.ok(figures(440).includes(n) && figures(300).includes(n), `${n} at 440 and 300 px`);
-  assert.ok(figures(440).includes('41 said') && figures(440).includes('122 told'));
+  assert.ok(figures(440).includes('41') && figures(440).includes('122'));
+  assert.ok(!figures(440).includes('said') && !figures(440).includes('told'), 'You’s counts carry no words at any size');
   assert.ok(figures(300).includes('41') && figures(300).includes('122'));
   assert.deepEqual(figures(300).filter(w => !/^\d+$/.test(w)), ['fable', '5.2']);
   // A station with nothing at it has no figure, and every figure is 16 px at the width it is drawn for.
