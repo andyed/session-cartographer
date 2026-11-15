@@ -169,6 +169,71 @@ test('a variable-bound write is still found when the content carries a fake `>` 
     } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
 });
 
+test('a `>` inside code a heredoc feeds an interpreter is not a redirect, and does not hide the write', () => {
+    const ws = makeWorkspace();
+    try {
+        // Session de92cb87, 2026-11-14: a python heredoc rewrote the Spinodal essay
+        // through `p='…/index.html'` … `open(p,'w')`, and its CSS held a child
+        // combinator. The `>` read as a redirect to `.events`, which looks like a
+        // file with a 6-letter extension, so the variable-bound fallback never ran:
+        // the row said `Modified: .events` and commit c483c96 had no edit behind it.
+        const css = '.strip-wrap > .events { min-width: 1px; }';
+        const cmd = [
+            `cd ${ws.repo} && python3 - <<'PY'`,
+            `p='site/essay/index.html'`,
+            `s=open(p).read()`,
+            `css = """${css}"""`,
+            `open(p,'w').write(s + css)`,
+            `PY`,
+        ].join('\n');
+        assert.ok(/> \.events/.test(cmd), 'the fixture must carry the `> .name` shape that hid the write');
+        const recs = fire(ws, cmd);
+        assert.equal(last(recs).type, 'tool_file_edit');
+        assert.match(last(recs).summary, /site\/essay\/index\.html/);
+        assert.doesNotMatch(last(recs).summary, /\.events/);
+
+        // The JS arrow is the same shape: `=> errors.push(…)` harvested as a
+        // redirect to `errors.push`, the most common junk name in the corpus.
+        const js = `cd ${ws.repo} && node - <<'EOF'\nconst bad = [];\n[1, 2].forEach(x => bad.push(x));\nconsole.log(bad);\nEOF`;
+        assert.ok(/=> bad\.push/.test(js), 'the fixture must carry an arrow function');
+        const jsRecs = fire(ws, js);
+        assert.equal(last(jsRecs).type, 'tool_bash', 'a script that writes nothing is not an edit');
+        assert.doesNotMatch(last(jsRecs).summary, /^Modified/);
+    } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('an explicit target does not suppress a variable-bound write in the same command', () => {
+    const ws = makeWorkspace();
+    try {
+        // The fallback for `open(var,'w')` ran only when nothing explicit survived,
+        // so one real redirect anywhere in the command hid every variable-bound
+        // write: `POST.md` logged, `MEMORY.md` missed (session 94a9a17c, 2026-11-08).
+        const recs = fire(ws, [
+            `cd ${ws.repo} && cat >> notes/POST.md <<'EOF'`,
+            `a line`,
+            `EOF`,
+            `python3 - <<'PY'`,
+            `p='memory/MEMORY.md'`,
+            `open(p,'a').write('- entry\\n')`,
+            `PY`,
+        ].join('\n'));
+        assert.equal(last(recs).type, 'tool_file_edit');
+        assert.match(last(recs).summary, /notes\/POST\.md/, 'the explicit target');
+        assert.match(last(recs).summary, /memory\/MEMORY\.md/, 'the variable-bound target beside it');
+    } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
+test('a redirect inside a body fed to a shell still counts', () => {
+    const ws = makeWorkspace();
+    try {
+        // Bodies fed to bash/sh run as shell, so their redirects are real writes;
+        // only bodies fed to other interpreters (or to cat/tee as data) are skipped.
+        const recs = fire(ws, `cd ${ws.repo} && bash <<'SH'\necho done > notes/out.md\nSH`);
+        assert.equal(last(recs).type, 'tool_file_edit');
+        assert.match(last(recs).summary, /notes\/out\.md/);
+    } finally { fs.rmSync(ws.dir, { recursive: true, force: true }); }
+});
+
 test('a read-only heredoc is not called a write, and regexes are not harvested as paths', () => {
     const ws = makeWorkspace();
     try {

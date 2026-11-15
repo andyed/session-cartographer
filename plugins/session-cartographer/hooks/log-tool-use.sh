@@ -112,23 +112,31 @@ SALIENCE="0.5"  # default; per-branch overrides below
 #                          leading `&` keeps fd dups out.
 #   `sed -i … target`      the target is the last token of the sed clause.
 #   `tee [-a] path`
-#   python write-mode open(). Two shapes, because the idiomatic one binds the
-#   path to a variable first (`p='f.js'` … `open(p,'w')`) and a literal-only
-#   regex misses exactly the form that is most common in practice:
+#   These three are read from the command AS THE SHELL RUNS IT: heredoc bodies
+#   stripped, and matched against code_only() so a `>` inside quotes is not a
+#   redirect. A body fed to bash/sh/zsh is shell too, and is read the same way.
+#   Read from the raw text, a body's own `>` became a target: a CSS child
+#   combinator (`.strip-wrap > .events`) logged `.events`, and a JS arrow
+#   (`=> errors.push(…)`) logged `errors.push`, the commonest junk name in
+#   the corpus.
+#   python write-mode open(), read only where python runs: the command line
+#   (`python3 -c`) and bodies fed to an interpreter (`python3 - <<PY`,
+#   body_kind()). A body fed to cat/tee is data, so the test file
+#   `cat > t.test.js <<EOF … open('src/app.js','w') … EOF` names only itself.
+#   Three shapes, because the idiomatic one binds the path to a variable first
+#   (`p='f.js'` … `open(p,'w')`) and a literal-only regex misses exactly the
+#   form that is most common in practice:
 #     A) open('path', 'w')            → the literal
-#     B) open(var, 'w') + var='path'  → harvest path-like quoted strings
-#   Shape B is a LAST RESORT: harvest quoted path-like strings only when
-#   nothing explicit SURVIVES FILTERING. Otherwise a heredoc that writes a
-#   file whose CONTENT mentions other paths reports them all —
-#   `cat > t.test.js <<EOF … open('src/app.js','w') … EOF` named both.
-#   Gated on the filtered set, not the raw harvest. The raw check was empty in
-#   the tests but not in practice: a `<project>` placeholder inside the quoted
-#   content harvests as a `>` redirect to a bare backtick, and a `2>/dev/null`
-#   anywhere in the compound command harvests `/dev/null`. Either made the raw
-#   list non-empty, the fallback was skipped, the filter then discarded the
-#   junk, and a real `p='/Users/andyed/CLAUDE.md' … open(p,'w')` logged as
-#   `Ran:` (session 24b90edb, 2026-09-13, twice) while the same shape without
-#   the incidental `>` was caught.
+#     B) open(var, 'w') + var='path'  → that variable's assigned literal
+#     C) open(<computed>, 'w')        → harvest path-like quoted strings
+#   A and B are always read. C is a LAST RESORT, run only when nothing else
+#   survives filtering, because it names whatever paths the code mentions.
+#   B used to BE the last resort, gated on nothing explicit surviving, so any
+#   junk or real target elsewhere hid it: `p='/Users/andyed/CLAUDE.md'` logged
+#   as `Ran:` behind a `2>/dev/null` (session 24b90edb, 2026-09-13), the
+#   Spinodal essay as `Modified: .events` (de92cb87, 2026-11-14), and a
+#   `MEMORY.md` beside a real `>> POST.md` not at all (94a9a17c, 2026-11-08).
+#   In the week to 2026-11-14, 141 of 435 such commands lost a target.
 #
 # bash_strip_heredocs — the command as the shell runs it: heredoc bodies
 # removed, lines intact. Git and noise detection read this, never the raw
@@ -166,9 +174,10 @@ SALIENCE="0.5"  # default; per-branch overrides below
 # The summary forms are cut here too, in bytes as `head -c` cut them: the
 # 500-byte flattened COMMAND (newlines and tabs to spaces, runs of spaces
 # squeezed — downstream TSV/embedding paths are line-based, and the trailing
-# newline jq printed became its trailing space), the 20000-byte flattened
-# form the write harvest reads, and the heredoc-stripped 20000-byte form the
-# git and noise detection read. Detection reads the FULL command; only the
+# newline jq printed became its trailing space), and the heredoc-stripped
+# 20000-byte form that git, noise and write detection read; the write harvest
+# also reads up to 20000 bytes of the bodies that run (heredoc_code()).
+# Detection reads the FULL command; only the
 # SUMMARY is truncated. A long heredoc puts its `open(p,'w')` well past 500
 # chars, so detecting against the truncated copy missed precisely the largest
 # edits — a real CHANGELOG.md rewrite logged as `tool_bash` while a short one
@@ -261,24 +270,104 @@ function filter_paths(raw, want,   m, c, i, p, seen, out, k) {
   }
   return out
 }
-function written_paths(full,   raw, lst, m, a, i, tok, re) {
-  raw = "\n"
-  lst = harvest(full, ">>?[[:space:]]*[^ &|;<>()]+")
-  m = split(lst, a, "\n"); for (i = 1; i < m; i++) { tok = a[i]; sub(/^>>?[[:space:]]*/, "", tok); raw = raw tok "\n" }
+# harvest() over the code-only form m, cut from s at the same offsets: a `>`
+# inside quotes is not a redirect.
+function harvest_at(s, m, re,   out, off) {
+  out = ""; off = 0
+  while (match(m, re)) {
+    out = out substr(s, off + RSTART, RLENGTH) "\n"
+    off += RSTART + RLENGTH - 1; m = substr(m, RSTART + RLENGTH)
+  }
+  return out
+}
+# What a heredoc body is, from the command on its line that feeds it:
+# 2 = shell (its redirects run), 1 = another interpreter (its open() runs),
+# 0 = data (cat, tee, git commit -F -: written or read, never run).
+function body_kind(pre,   segs, k, seg, w) {
+  k = split(pre, segs, "&&|[|][|]|[|;(]"); seg = trim(segs[k])
+  while (match(seg, /^([A-Za-z_][A-Za-z0-9_]*=[^ \t]*|env|sudo|time|exec|command|nice)[ \t]+/)) seg = substr(seg, RLENGTH + 1)
+  w = seg; sub(/[ \t].*$/, "", w); sub(/^.*\//, "", w)
+  if (w ~ /^(bash|sh|zsh|dash|ksh)$/) return 2
+  if (w ~ /^(python[0-9.]*|node|nodejs|ruby|perl|bun|deno|php|uv|uvx|swift|osascript)$/) return 1
+  return 0
+}
+# The bodies that run, by kind, into CODE and SHCODE: the same delimiter walk
+# as strip_heredocs, keeping what it drops.
+function heredoc_code(   i, line, nq, rest, pre, before, tok, d, q, dash, kind, k, j, t, body) {
+  CODE = ""; SHCODE = ""; i = 1
+  while (i <= n) {
+    line = L[i++]; nq = 0; rest = line; pre = ""
+    while (match(rest, /<<-?[ \t]*[^ \t;&|<>()]+/)) {
+      before = (RSTART > 1) ? substr(rest, RSTART - 1, 1) : ""
+      tok = substr(rest, RSTART, RLENGTH)
+      pre = pre substr(rest, 1, RSTART - 1)
+      rest = substr(rest, RSTART + RLENGTH)
+      if (before == "<") { pre = pre tok; continue }
+      d = tok; sub(/^<<-?[ \t]*/, "", d); gsub(/["\\]/, "", d); gsub(/\047/, "", d)
+      if (d !~ /^[A-Za-z_][A-Za-z0-9_.-]*$/) { pre = pre tok; continue }
+      q[++nq] = d; dash[nq] = (substr(tok, 3, 1) == "-"); kind[nq] = body_kind(pre)
+      pre = pre tok
+    }
+    for (k = 1; k <= nq; k++) {
+      body = ""
+      for (j = i; j <= n; j++) {
+        t = L[j]; sub(/\r$/, "", t)
+        if (dash[k]) sub(/^\t+/, "", t)
+        if (t == q[k]) break
+        body = body L[j] "\n"
+      }
+      if (j > n) break
+      if (kind[k] == 2) SHCODE = SHCODE body
+      else if (kind[k] == 1) CODE = CODE body
+      i = j + 1
+    }
+  }
+  CODE = substr(CODE, 1, 20000); SHCODE = substr(SHCODE, 1, 20000)
+}
+# Redirect, sed -i and tee targets in shell text s (m = code_only(s), same length).
+function explicit_targets(s, m,   raw, lst, k, a, i, tok) {
+  raw = ""
+  lst = harvest_at(s, m, ">>?[[:space:]]*[^ &|;<>()]+")
+  k = split(lst, a, "\n"); for (i = 1; i < k; i++) { tok = a[i]; sub(/^>>?[[:space:]]*/, "", tok); raw = raw tok "\n" }
   raw = raw "\n"
-  lst = harvest(full, "sed -i[^|;&]*")
-  m = split(lst, a, "\n"); for (i = 1; i < m; i++) raw = raw last_field(a[i]) "\n"
+  lst = harvest_at(s, m, "sed -i[^|;&]*")
+  k = split(lst, a, "\n"); for (i = 1; i < k; i++) raw = raw last_field(a[i]) "\n"
   raw = raw "\n"
-  lst = harvest(full, "tee[[:space:]]+(-a[[:space:]]+)?[^ &|;]+")
-  m = split(lst, a, "\n"); for (i = 1; i < m; i++) raw = raw last_field(a[i]) "\n"
-  if (full ~ OPEN_W) {
+  lst = harvest_at(s, m, "tee[[:space:]]+(-a[[:space:]]+)?[^ &|;]+")
+  k = split(lst, a, "\n"); for (i = 1; i < k; i++) raw = raw last_field(a[i]) "\n"
+  return raw
+}
+# open(var, w|a): the literal each such var is assigned, in the same code.
+function open_var_targets(code,   out, rest, v, seen, lst, k, a, i, tok) {
+  out = ""; rest = code
+  while (match(rest, OPEN_VAR)) {
+    v = substr(rest, RSTART, RLENGTH); rest = substr(rest, RSTART + RLENGTH)
+    sub(/^open\([[:space:]]*/, "", v); sub(/[[:space:]]*,.*$/, "", v)
+    if (v in seen) continue
+    seen[v] = 1
+    lst = harvest(code, "(^|[\n;\"\047[:space:]])" v "[ \t]*=[ \t]*[\"\047][^\"\047\n]+[\"\047]")
+    k = split(lst, a, "\n")
+    for (i = 1; i < k; i++) { tok = a[i]; sub(/^[^=]*=[ \t]*["\047]/, "", tok); sub(/["\047]$/, "", tok); out = out tok "\n" }
+  }
+  return out
+}
+function written_paths(s, m, sh,   raw, sm, exe, lst, k, a, i, tok) {
+  raw = "\n" explicit_targets(s, m)
+  if (SHCODE != "") {
+    sm = code_only(SHCODE); tok = SHCODE
+    gsub(/[\t\r\n]/, " ", tok); gsub(/[\t\r\n]/, " ", sm)
+    raw = raw "\n" explicit_targets(tok, sm)
+  }
+  exe = sh "\n" SHCODE CODE
+  if (exe ~ OPEN_W) {
     raw = raw "\n"
-    lst = harvest(full, OPEN_LIT)
-    m = split(lst, a, "\n"); for (i = 1; i < m; i++) { tok = a[i]; sub(/^open\(["\047]/, "", tok); sub(/["\047].*$/, "", tok); raw = raw tok "\n" }
+    lst = harvest(exe, OPEN_LIT)
+    k = split(lst, a, "\n"); for (i = 1; i < k; i++) { tok = a[i]; sub(/^open\(["\047]/, "", tok); sub(/["\047].*$/, "", tok); raw = raw tok "\n" }
+    raw = raw "\n" open_var_targets(exe)
     if (filter_paths(raw, 1) == "") {
       raw = raw "\n"
-      lst = harvest(full, QUOTED_PATH)
-      m = split(lst, a, "\n"); for (i = 1; i < m; i++) { tok = a[i]; gsub(/["\047]/, "", tok); raw = raw tok "\n" }
+      lst = harvest(flat(exe), QUOTED_PATH)
+      k = split(lst, a, "\n"); for (i = 1; i < k; i++) { tok = a[i]; gsub(/["\047]/, "", tok); raw = raw tok "\n" }
     }
   }
   return filter_paths(raw, 5)
@@ -288,6 +377,7 @@ BEGIN {
   EXT_END = ext "$"
   OPEN_W = "open\\([^)]*,[[:space:]]*[\"\047][wa]"
   OPEN_LIT = "open\\([\"\047][^\"\047]+[\"\047][[:space:]]*,[[:space:]]*[\"\047][wa]"
+  OPEN_VAR = "open\\([[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*,[[:space:]]*[\"\047][wa]"
   QUOTED_PATH = "[\"\047][^\"\047 ]*(/[^\"\047 ]+|[^\"\047 /]+" ext ")[\"\047]"
 }
 { L[++n] = $0 }
@@ -300,7 +390,8 @@ END {
   print (match(m, re_push) ? substr(s, RSTART, RLENGTH) : "")
   print (match(m, re_verbs) ? substr(s, RSTART, RLENGTH) : "")
   print is_noise(sh)
-  print written_paths(flat(substr(raw, 1, 20000)))
+  heredoc_code()
+  print written_paths(s, m, sh)
   print flat(substr(raw, 1, 500))
   printf "%s\n.", sh
 }'
