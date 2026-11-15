@@ -16,6 +16,7 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
   const [fallback, setFallback] = useState(null);
   const [review, setReview] = useState(null);
   const [retryFile, setRetryFile] = useState(0);
+  const [opened, setOpened] = useState(null);
   const retryFocus = useRef(null);
   const heading = useRef(null), panel = useRef(null), previousReview = useRef(null);
   const selected = scoped?.sessions.find(s => s.id === route.session);
@@ -73,6 +74,12 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
   const taskInWindow = taskTimes.some(time => interval && containsTimestamp(time, interval));
   const recordsRoute = { q: '', project: null, providers: [], evidence: [], filter: 'all', kind: 'all', timelineView: 'chronological', brush: [session?.id], session: null, file: null, review: null, contributor: null, offset: 0, ...(!taskInWindow && taskTimes.length ? { from: Math.min(...taskTimes), through: Math.max(...taskTimes), lower: 'closed', mode: 'fixed', durationMs: null } : {}) };
   const fileName = route.file?.split('/').at(-1);
+  function openInEditor(current) {
+    setOpened(null);
+    apiRequest(current.openUrl, { method: 'POST', headers: { 'content-type': 'application/json', 'x-cartographer-action': 'open-file' }, body: '{}', signal: AbortSignal.timeout(10000) })
+      .then(() => setOpened({ key: current.key }))
+      .catch(error => setOpened({ key: current.key, error: error.status === 409 ? 'This file changed since it was opened.' : error.message, changed: error.status === 409 }));
+  }
   const openReview = (owner, file, mode = 'changes') => navigate({ session: owner.id, contributor: owner.id, file: file.path, review: mode });
   if (!route.session) return null;
   return <aside ref={panel} className="fw-inspector" aria-label="Evidence inspector" onKeyDown={event => {
@@ -115,8 +122,8 @@ export default function MemoryInspector({ workspace, tab = 'memory', onClose, on
       </nav>
       <p className="fw-muted">{route.review === 'changes' ? 'Session changes use the actual commit range; they are not a reconstruction of the focus interval.' : 'Current workspace state may include edits from other tasks.'}</p>
       {review?.key !== requestKey || review?.loading ? <p role="status">Reading file evidence…</p> : review.error ? <div><p role="alert">{review.error}</p><button data-retry-file onClick={() => { retryFocus.current = requestKey; setRetryFile(value => value + 1); }}>Retry file</button></div> : <>
-        {review.downloadUrl && <div className="fw-file-access"><a href={review.downloadUrl} download={fileName}>Download full file</a>{review.preview && <span>{formatFileBytes(review.preview.totalBytes)} · current workspace file</span>}</div>}
-        <MemoryArtifact key={route.file} review={review} mode={route.review} layout={route.diff} onLayout={diff => navigate({ diff })} documentMode={route.doc} onDocumentMode={doc => navigate({ doc })} />
+        {review.downloadUrl && <div className="fw-file-access"><a href={review.downloadUrl} download={fileName}>Download full file</a>{review.openUrl && <button type="button" onClick={() => openInEditor(review)}>Open in editor</button>}{review.preview && <span>{formatFileBytes(review.preview.totalBytes)} · current workspace file</span>}{opened?.key === review.key && <span role={opened.error ? 'alert' : 'status'} className={opened.error ? 'fw-file-access-error' : undefined}>{opened.error || 'Opened'}</span>}{opened?.key === review.key && opened.changed && <button type="button" onClick={() => setRetryFile(value => value + 1)}>Reload file</button>}</div>}
+        <MemoryArtifact key={route.file} review={review} mode={route.review} layout={route.diff} onLayout={diff => navigate({ diff })} documentMode={route.doc} onDocumentMode={doc => navigate({ doc })} onReload={() => setRetryFile(value => value + 1)} />
         {route.review === 'changes' && !review.diff && <button className="fw-link" onClick={() => navigate({ review: 'file' })}>Open current file</button>}
         <FileEvidenceHistory key={`${route.file}:${route.contributor || route.session}`} edits={review.evidence} filePath={route.file} records={source?.evidenceIndex || []} />
       </>}

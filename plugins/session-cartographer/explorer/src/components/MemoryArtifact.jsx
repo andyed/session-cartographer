@@ -1,5 +1,6 @@
 import { Component, Suspense, lazy, useMemo, useState } from 'react';
 import { describeReviewRange, parseArtifactMarkdown, parseUnifiedDiff, safeArtifactLink } from './memory-artifact.js';
+import MemoryFileReader from './MemoryFileReader.jsx';
 import '../styles/memory-artifact.css';
 
 // The side-by-side renderer is the one dependency this view carries, and it is
@@ -114,7 +115,7 @@ function UnifiedDiff({ rows }) {
     </div>;
 }
 
-export default function MemoryArtifact({ review, mode = 'file', layout = 'split', onLayout = null, documentMode, onDocumentMode }) {
+export default function MemoryArtifact({ review, mode = 'file', layout = 'split', onLayout = null, documentMode, onDocumentMode, onReload }) {
   const [sourcePath, setSourcePath] = useState(null);
   const path = review?.path || review?.name || '';
   const markdown = /\.(?:md|markdown|mdown)$/i.test(path);
@@ -125,8 +126,12 @@ export default function MemoryArtifact({ review, mode = 'file', layout = 'split'
   if (mode === 'changes') return <section className="memory-artifact" aria-label="Artifact changes">
     {review.diff ? <Changes review={review} layout={layout} onLayout={onLayout} /> : <p className="memory-artifact-empty">{review.diffReason || 'No session changes to display.'}</p>}
   </section>;
+  // A file the preview cut short is read a page at a time instead.
+  if (truncated && review.reader?.available && review.readerUrl && review.version) return <section className="memory-artifact" aria-label="Artifact reader">
+    <MemoryFileReader review={review} onReload={onReload} />
+  </section>;
   return <section className="memory-artifact" aria-label="Artifact reader">
-    {truncated && <p className="memory-artifact-notice" role="status">Showing the first {review.preview.lineCount.toLocaleString()} lines ({formatFileBytes(review.preview.bytes)}) of a {formatFileBytes(review.preview.totalBytes)} file. Download the full file to read the rest.</p>}
+    {truncated && <p className="memory-artifact-notice" role="status">Showing the first {review.preview.lineCount.toLocaleString()} lines ({formatFileBytes(review.preview.bytes)}) of a {formatFileBytes(review.preview.totalBytes)} file. Paging and search cover files up to {formatFileBytes(review.reader?.limitBytes ?? 32 * 1024 * 1024)}; download or open this one in your editor.</p>}
     <div className="memory-artifact-toolbar">
       <span>{truncated ? 'Partial source preview' : markdown ? 'Markdown document' : 'Source file'}</span>
       {markdown && !truncated && <div className="memory-artifact-view-options" role="group" aria-label="Document view">

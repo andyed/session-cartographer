@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### feat(memory): read a long file a page at a time, search it, open it in an editor
+
+The Memory Desk's file review stopped at the first 2,000 lines (256 KiB) of a
+file and offered a download for the rest. A file past that preview is now read
+a page at a time (500 lines or 64 KiB, whichever comes first), with Previous and
+Next, a line jump, and a literal case-insensitive find that lists up to 200
+matches by line. Paging and search cover files up to 32 MiB. The read, decode
+and scan run on a worker thread (`explorer/server/memory-file-worker.js`), so a
+large file or a stalled open does not hold the Explorer's other routes; a
+request that gets no answer in 10 s fails with 503 and the next one starts a
+fresh worker. Every page and search names the file version the review read,
+and a file edited since answers 409 with a **Reload file** action, so line
+numbers from two versions never mix.
+
+**Open in editor** launches the file through `CARTOGRAPHER_EDITOR`, or macOS
+`open -t` when it is unset. It is a POST that needs an
+`x-cartographer-action: open-file` header and the reviewed version; the UI
+host forwards it to the API, which checks both again.
+
 ### feat(explorer, plugin): the flow map
 
 A session's calls drawn in order: which station each went to (You, Model,

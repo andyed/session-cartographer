@@ -10,6 +10,8 @@ import { CORPUS_ROOT } from './jsonl.js';
 import { createTranscriptEnricher, missingTokens } from './memory-transcript.js';
 import { activityFromMemory, normalizeActivityScope, projectMemoryScope } from '../shared/activity-scope.js';
 import { createDayDigestSource, readDayParams } from './memory-day.js';
+import { FILE_READ_LIMIT, createFileReader, editorLauncher, fileVersion } from './memory-file.js';
+import { assertLoopbackRequest } from './loopback-guard.js';
 import { createRecallSource, fetchIndexedEvents, listRecallCalls, loadRecall, recallCallDetail, resolveUnplacedMarks, RECALL_CALL_LIMIT, RECALL_DEFAULT_WINDOW_MS, RECALL_MAX_WINDOW_MS } from './memory-recall.js';
 
 const execFileAsync = promisify(execFile);
@@ -349,13 +351,19 @@ class MemoryError extends Error {
 
 const lineCount = content => content ? content.split('\n').length - (content.endsWith('\n') ? 1 : 0) : 0;
 
-function openReviewFile(snapshot, sessionId, filePath, corpusRoot) {
+/** The session recorded this file, and it still resolves inside the corpus root. */
+function checkReviewFile(snapshot, sessionId, filePath, corpusRoot) {
   const session = snapshot.sessions.find((item) => item.id === sessionId);
   const evidence = snapshot.files[sessionId]?.find((item) => item.path === filePath);
   if (!session || !evidence) throw new MemoryError(404, 'File is not recorded as edited by this session in the current window.');
   // Revalidate at read time: a file can disappear or become a symlink after the
   // two-second projection cache was populated.
   if (resolveMemoryFile(filePath, null, corpusRoot) !== filePath) throw new MemoryError(403, 'File is no longer available inside this workspace.');
+  return { session, evidence };
+}
+
+function openReviewFile(snapshot, sessionId, filePath, corpusRoot) {
+  const { session, evidence } = checkReviewFile(snapshot, sessionId, filePath, corpusRoot);
   let fd;
   try {
     fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
@@ -412,11 +420,12 @@ async function downloadFile(snapshot, sessionId, filePath, corpusRoot, res) {
 }
 
 async function reviewFile(snapshot, sessionId, filePath, corpusRoot, { bounds, now }) {
-  const { fd, content, preview, evidence, session } = openReviewFile(snapshot, sessionId, filePath, corpusRoot);
+  const { fd, stat, content, preview, evidence, session } = openReviewFile(snapshot, sessionId, filePath, corpusRoot);
   fs.closeSync(fd);
   const { diff, diffAvailable, diffReason, range, note } = await reviewRange(filePath, content, bounds, now, preview.truncated);
   const diffBase = range?.base ? range.base.short : 'none';
-  return { path: filePath, name: evidence.name, content, preview, diff, diffAvailable, diffReason, range, evidence: evidence.edits, session: sessionId, title: session.title, state: 'current', diffBase, note };
+  // The version ties every later page, search and editor open to this read.
+  return { path: filePath, name: evidence.name, content, preview, version: fileVersion(stat), reader: { available: stat.size <= FILE_READ_LIMIT, limitBytes: FILE_READ_LIMIT }, diff, diffAvailable, diffReason, range, evidence: evidence.edits, session: sessionId, title: session.title, state: 'current', diffBase, note };
 }
 
 const IN_FLIGHT_MS = 15 * 60 * 1000;
@@ -526,7 +535,7 @@ async function reviewRange(filePath, content, bounds, nowMs, contentTruncated = 
 }
 
 /** Shared by Express and the zero-dependency Turbo HTTP server. */
-export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher(), recallSource = createRecallSource(), callEvidence = null, lookupIndexed = fetchIndexedEvents, dayDigest = createDayDigestSource({ corpusRoot }) }) {
+export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now = Date.now, cacheMs = 2000, transcriptEnricher = createTranscriptEnricher(), recallSource = createRecallSource(), callEvidence = null, lookupIndexed = fetchIndexedEvents, dayDigest = createDayDigestSource({ corpusRoot }), fileReader = createFileReader(), openInEditor = editorLauncher() }) {
   // Keep historical windows and session links isolated from the live cache.
   const cache = new Map();
   function readEnd(value) {
@@ -702,13 +711,41 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     if (!detail) throw new MemoryError(404, 'No recall call with this id is recorded.');
     return detail;
   }
+  // Paging and search read the whole file, so they run on the reader's worker.
+  // The evidence check stays here: it needs the snapshot, and it opens nothing.
+  async function readWindow(source, id, filePath, action, params) {
+    if (action !== 'page' && action !== 'search') throw new MemoryError(400, 'Unknown file action.');
+    checkReviewFile(source, id, filePath, corpusRoot);
+    const version = params.get('version');
+    if (!version) throw new MemoryError(400, 'A file version is required.');
+    const line = params.has('line') ? (/^\d{1,9}$/.test(params.get('line')) ? Number(params.get('line')) : NaN) : 1;
+    try { return await fileReader.read({ file: filePath, version, action, line, query: params.get('find') }); }
+    catch (error) { throw new MemoryError(error.status || 500, error.status ? error.message : 'Unable to read this file.'); }
+  }
+  async function openFile(source, id, filePath, version) {
+    if (!openInEditor) throw new MemoryError(501, 'Set CARTOGRAPHER_EDITOR to open files in your editor.');
+    checkReviewFile(source, id, filePath, corpusRoot);
+    // stat, not open: listing metadata does not wait on a privacy prompt.
+    if (!version || fileVersion(fs.statSync(filePath)) !== version) throw new MemoryError(409, 'This file changed since it was opened.');
+    try { await openInEditor(filePath); }
+    catch { throw new MemoryError(502, 'The editor did not start.'); }
+    return { opened: true };
+  }
   return async function handleMemory(req, res) {
     const url = new URL(req.url, 'http://127.0.0.1');
     if (!url.pathname.startsWith('/api/memory/') && url.pathname !== '/api/activity-scope') return false;
     let status = 200;
     let body;
     try {
-      if (req.method !== 'GET') throw new MemoryError(405, 'Memory endpoints are read-only.');
+      const opening = url.pathname === '/api/memory/file/open';
+      if (req.method !== (opening ? 'POST' : 'GET')) throw new MemoryError(405, opening ? 'Opening a file requires POST.' : 'Memory endpoints are read-only.');
+      // Launching an app is the one side effect here. The custom header makes a
+      // browser preflight the request, which this server never answers, so only
+      // the Explorer's own page (or a local client) can send it.
+      if (opening) {
+        assertLoopbackRequest(req);
+        if (req.headers['x-cartographer-action'] !== 'open-file') throw new MemoryError(403, 'Opening a file requires an explicit action.');
+      }
       if (url.pathname === '/api/memory/health') {
         const corpusId = `corpus-${stableHash([path.resolve(corpusRoot)])}`;
         body = { status: 'ok', contract_version: MEMORY_CONTRACT_VERSION, corpus_root: corpusRoot, refresh_ms: MEMORY_REFRESH_MS, source: { mode: 'warm-corpus', corpusId } };
@@ -728,7 +765,7 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
           : await snapshot(readEnd(url.searchParams.get('end')), id, readHours(url.searchParams.get('hours')));
         if (!body.sessions.length) throw new MemoryError(404, 'This session has no recorded activity in the selected window.');
       }
-      else if (url.pathname === '/api/memory/file') {
+      else if (url.pathname === '/api/memory/file' || opening) {
         const id = url.searchParams.get('session');
         if (!id) throw new MemoryError(400, 'A session id is required.');
         const exact = hasExactScope(url.searchParams);
@@ -736,14 +773,25 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
         const hours = readHours(url.searchParams.get('hours'));
         const field = exact ? await scopedSnapshot(url.searchParams) : await snapshot(end, null, hours);
         const source = field.sessions.some(session => session.id === id) ? field : exact ? field : await snapshot(end, id, hours);
-        if (url.searchParams.get('download') === '1') {
-          await downloadFile(source, id, url.searchParams.get('path'), corpusRoot, res);
+        const filePath = url.searchParams.get('path');
+        const action = url.searchParams.get('action');
+        if (opening) body = await openFile(source, id, filePath, url.searchParams.get('version'));
+        else if (action) body = await readWindow(source, id, filePath, action, url.searchParams);
+        else if (url.searchParams.get('download') === '1') {
+          await downloadFile(source, id, filePath, corpusRoot, res);
           return true;
+        } else {
+          // Bound the diff by the session's whole life, not the desk's window.
+          body = await reviewFile(source, id, filePath, corpusRoot, { bounds: sessionBounds(getEvents(), id), now: now() });
+          body.readerUrl = url.pathname + url.search;
+          if (openInEditor) {
+            const open = new URLSearchParams(url.searchParams);
+            open.set('version', body.version);
+            body.openUrl = `${url.pathname}/open?${open}`;
+          } else body.openUrl = null;
+          url.searchParams.set('download', '1');
+          body.downloadUrl = url.pathname + url.search;
         }
-        // Bound the diff by the session's whole life, not the desk's window.
-        body = await reviewFile(source, id, url.searchParams.get('path'), corpusRoot, { bounds: sessionBounds(getEvents(), id), now: now() });
-        url.searchParams.set('download', '1');
-        body.downloadUrl = url.pathname + url.search;
       }
       else throw new MemoryError(404, 'Memory endpoint not found.');
     } catch (error) {
