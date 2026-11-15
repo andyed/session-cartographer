@@ -105,19 +105,25 @@ export function effectiveTurboSettings(env = process.env) {
 /**
  * How long `start` waits for a spawned server's ready.json before killing it.
  *
- * Spawn-to-ready measured 2,059 ms at 158k events on 2026-09-26, and the
- * corpus load took 2,100 ms at load average 80 on 16 CPUs, so load average
- * alone does not stretch it toward the 5 s default. A `start` still failed
- * that day at load 72 with no output from its child, cause unknown. The
- * default stays until the controller's `[turbo-control]` line in server.log
- * says whether a child was killed at the deadline or died first.
+ * The default was 5 s, set when spawn-to-ready measured 2,059 ms at 158k
+ * events (2026-09-26). The corpus load grows with the corpus: 4,214–4,607 ms
+ * at 270–291k events (2026-11-05..14), and on 2026-11-14 a restart at load
+ * average 18 on 16 CPUs was killed at 5,000 ms before the child wrote
+ * ready.json, as its `[turbo-control]` line in server.log says; the retry
+ * loaded 293,591 events in 4,904 ms. A kill is the worst outcome here, not a
+ * safe one: `ensure` runs ahead of a recall, so that recall waits the whole
+ * budget, falls back to the portable CLI anyway, and leaves no server, and the
+ * next recall pays it all again. 20 s is four times the measured load and
+ * stays under the 30 s the MCP server gives `ensure` (QUICK_TIMEOUT_MS), so a
+ * slow start is waited for rather than killed by either side.
  * `CARTOGRAPHER_TURBO_READY_TIMEOUT_MS` sets the budget outright.
  */
+export const TURBO_READY_TIMEOUT_DEFAULT_MS = 20000;
 export function turboReadyTimeoutMs(settings, env = process.env) {
   const raw = env.CARTOGRAPHER_TURBO_READY_TIMEOUT_MS;
   const explicit = Number(raw);
   if (raw && Number.isFinite(explicit) && explicit >= 500 && explicit <= 120000) return explicit;
-  return Math.max(5000, Number(settings?.timeoutMs) || 0);
+  return Math.max(TURBO_READY_TIMEOUT_DEFAULT_MS, Number(settings?.timeoutMs) || 0);
 }
 
 export function updateTurboConfig(changes, env = process.env) {

@@ -13,7 +13,8 @@
 //     separates a child it killed at the deadline from one that died first;
 //   - the server writes a line before it loads, so a spawn that never reaches
 //     ready is still visible;
-//   - CARTOGRAPHER_TURBO_READY_TIMEOUT_MS overrides the 5 s default.
+//   - CARTOGRAPHER_TURBO_READY_TIMEOUT_MS overrides the default (5 s until
+//     2026-11-14, when a 4.9 s corpus load outgrew it; 20 s since).
 //
 // Hermetic: isolated state and corpus dirs and a free port per case. The
 // session-id chain is cleared per CLAUDE.md. No search runs, so no semantic
@@ -214,19 +215,23 @@ test('the server writes a line before it loads the corpus', async (t) => {
   assert.equal(fs.existsSync(ws.readyFile), false, 'the loading line must precede ready.json');
 });
 
-test('the ready deadline keeps its 5 s default and takes an explicit override', async () => {
+test('the ready deadline has a 20 s default and takes an explicit override', async () => {
   const { turboReadyTimeoutMs } = await import('../../scripts/turbo-common.js');
   const settings = { timeoutMs: 1500 };
 
-  assert.equal(turboReadyTimeoutMs(settings, {}), 5000, 'the default is unchanged');
-  assert.equal(turboReadyTimeoutMs({ timeoutMs: 8000 }, {}), 8000,
-    'a request budget above 5 s still raises it, as before');
+  // A ~290k-event corpus loads in 4.2–4.9 s (2026-11), so the old 5 s default
+  // killed a healthy start on a busy machine.
+  assert.equal(turboReadyTimeoutMs(settings, {}), 20000, 'the default covers a slow corpus load');
+  assert.ok(turboReadyTimeoutMs(settings, {}) < 30000,
+    'the default must stay under the 30 s the MCP server gives `ensure`, or the MCP side kills the wait first');
+  assert.equal(turboReadyTimeoutMs({ timeoutMs: 25000 }, {}), 25000,
+    'a request budget above the default still raises it, as before');
   assert.equal(turboReadyTimeoutMs(settings, { CARTOGRAPHER_TURBO_READY_TIMEOUT_MS: '12000' }), 12000,
     'an explicit budget wins');
   assert.equal(turboReadyTimeoutMs({ timeoutMs: 8000 }, { CARTOGRAPHER_TURBO_READY_TIMEOUT_MS: '2500' }), 2500,
     'an explicit budget wins over the request budget too');
   for (const bad of ['abc', '-1', '10', '999999999', '']) {
-    assert.equal(turboReadyTimeoutMs(settings, { CARTOGRAPHER_TURBO_READY_TIMEOUT_MS: bad }), 5000,
+    assert.equal(turboReadyTimeoutMs(settings, { CARTOGRAPHER_TURBO_READY_TIMEOUT_MS: bad }), 20000,
       `an invalid budget (${JSON.stringify(bad)}) is ignored`);
   }
 });
