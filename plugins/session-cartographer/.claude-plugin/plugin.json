@@ -19,11 +19,11 @@
   ],
   "types": "./types/index.d.ts",
   "userConfig": {
-    "workMap": {
+    "flowMap": {
       "type": "boolean",
-      "title": "Work map pane",
+      "title": "Flow map pane",
       "default": true,
-      "description": "Open the work map beside the chat: where the session's calls go, in order. Off, the plugin adds no pane and no /carto-map command; recall, the Explorer and the hooks are unchanged."
+      "description": "Open the flow map beside the chat: where the session's calls go, in order. Off, the plugin adds no pane and no /carto-flow command; recall, the Explorer and the hooks are unchanged."
     },
     "language": {
       "type": "string",

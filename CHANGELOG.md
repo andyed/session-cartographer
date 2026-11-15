@@ -2,15 +2,18 @@
 
 ## Unreleased
 
-### feat(explorer, plugin): the work map
+### feat(explorer, plugin): the flow map
 
 A session's calls drawn in order: which station each went to (You, Model,
 Memory, Files, Shell, Network, Browser, Agents, Skills, Hooks, and Your screen
 for calls into what the person has open), the route between them with a
 direction on every leg, and how full the context window is. The Explorer's
-`/map` page replays any recorded Claude Code or Codex session from its
+`/flow` page replays any recorded Claude Code or Codex session from its
 transcript. In Claude Code the plugin opens the same drawing in a pane beside
-the chat, live; its `workMap` option switches the pane off.
+the chat, live (`/carto-flow`); its `flowMap` option switches the pane off.
+It was called the work map while unreleased, and links to `/map` still open
+the page. You's two lanes carry their counts as bare figures beside the
+arrows; the list under the map says "from you" and "to you".
 
 The pane's ribbon filters the feed by station, and while the Explorer answers
 on its port the pane links into it: a station's name in the feed, a row that
@@ -18,7 +21,7 @@ changed a file, and one link to the session's map. With no Explorer running
 the pane offers no link to it. A terminal session gets no pane with the
 current terminal `claude`, and a light theme still gets the earlier drawing.
 What exists and what is known not to work is in
-[docs/WORK_MAP.md](docs/WORK_MAP.md).
+[docs/FLOW_MAP.md](docs/FLOW_MAP.md).
 
 The pane is forked from [lot-map](https://github.com/alexeyw/lot-map) 0.6.0 by
 Aleksei Volodin (MIT), which is no longer needed beside it.

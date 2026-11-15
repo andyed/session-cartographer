@@ -166,6 +166,6 @@
     ]
   },
   "modules": [
-    "./carto-map/register.tsx"
+    "./carto-flow/register.tsx"
   ]
 }

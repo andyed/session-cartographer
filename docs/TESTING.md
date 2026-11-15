@@ -154,10 +154,10 @@ look draws every candidate with no text under 16 px or under 8:1, and that at
 390 px the whole map shows and nothing scrolls sideways. Screenshots go to
 `carto-session-map-browser-artifacts`. It is not in CI's list yet.
 
-The sidebar pane (`plugins/session-cartographer/hooks/carto-map`, a hooks module the plugin's
-`hooks/hooks.json` names under `modules`) draws with copies of `explorer/shared/workmap`.
-`tests/unit/carto-map-workmap-sync.test.js` fails when a copy drifts; run
-`scripts/sync-carto-map-workmap.sh` after changing a shared file. The pane's own
+The sidebar pane (`plugins/session-cartographer/hooks/carto-flow`, a hooks module the plugin's
+`hooks/hooks.json` names under `modules`) draws with copies of `explorer/shared/flowmap`.
+`tests/unit/carto-flow-flowmap-sync.test.js` fails when a copy drifts; run
+`scripts/sync-carto-flow-flowmap.sh` after changing a shared file. The pane's own
 tests run on the desktop app's engine, not on the terminal's older `claude`:
 `"<app's claude binary>" plugin test plugins/session-cartographer`, where the binary is under
 `~/Library/Application Support/Claude/claude-code/<version>/`.

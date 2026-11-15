@@ -1,7 +1,7 @@
 /**
- * SessionMap — one recorded session as a work map.
+ * SessionMap — one recorded session as a flow map.
  *
- * The drawing is a fork of lot-map's (MIT, see shared/workmap/LICENSE-lot-map).
+ * The drawing is a fork of lot-map's (MIT, see shared/flowmap/LICENSE-lot-map).
  * lot-map draws a live Claude Code session from mod events and forgets it when
  * the session ends. This draws from the transcript, so it works for Claude and
  * Codex alike and for a session of any age, and the moment it shows is a
@@ -17,14 +17,14 @@ import AgentBadge from './AgentBadge';
 import SessionDirections from './SessionDirections.jsx';
 import SessionSizes from './SessionSizes.jsx';
 import { apiRequest, fetchSessions } from '../api';
-import { boardAt } from '../../shared/workmap/board.js';
-import { formatMs, shortModel } from '../../shared/workmap/classify.js';
-import { boardLayout, drawFlow, drawTape, flowBoxes, flowCoreBox, flowState, holdFor, ringLayout, tapeHeight, tapeOf } from '../../shared/workmap/flow.js';
-import { drawMap } from '../../shared/workmap/draw.js';
-import { drawHub, hubBoxes, hubCoreBox, hubLayout, hubState } from '../../shared/workmap/hub.js';
-import { seatScreen } from '../../shared/workmap/kinds.js';
-import { drawRibbon, ribbonCapacity, ribbonOf } from '../../shared/workmap/ribbon.js';
-import { setupFrom } from '../../shared/workmap/setup.js';
+import { boardAt } from '../../shared/flowmap/board.js';
+import { formatMs, shortModel } from '../../shared/flowmap/classify.js';
+import { boardLayout, drawFlow, drawTape, flowBoxes, flowCoreBox, flowState, holdFor, ringLayout, tapeHeight, tapeOf } from '../../shared/flowmap/flow.js';
+import { drawMap } from '../../shared/flowmap/draw.js';
+import { drawHub, hubBoxes, hubCoreBox, hubLayout, hubState } from '../../shared/flowmap/hub.js';
+import { seatScreen } from '../../shared/flowmap/kinds.js';
+import { drawRibbon, ribbonCapacity, ribbonOf } from '../../shared/flowmap/ribbon.js';
+import { setupFrom } from '../../shared/flowmap/setup.js';
 import { MAP_PATH, contextAt, tokenText, clockTime, mapHref, readMapRoute, recallIndex, reviewableFiles, rowDetail, rowTarget, rowsFor, spanText, stampFor, svgDataUri } from './session-map.js';
 import '../styles/session-map.css';
 
@@ -84,7 +84,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
   const go = useCallback((next, { push = false } = {}) => {
     setRoute(prev => {
       const merged = { ...prev, ...next };
-      window.history[push ? 'pushState' : 'replaceState']({ tab: 'map' }, '', mapHref(BASE, merged));
+      window.history[push ? 'pushState' : 'replaceState']({ tab: 'flow' }, '', mapHref(BASE, merged));
       return merged;
     });
   }, []);
@@ -93,10 +93,10 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
     const onPop = () => {
       if (!MAP_PATH.test(window.location.pathname.slice(BASE.replace(/\/$/, '').length))) return;
       const next = readMapRoute(window.location.search);
-      // The tab bar links to a bare /map. Coming back that way keeps the session that was open.
+      // The tab bar links to a bare /flow. Coming back that way keeps the session that was open.
       setRoute(prev => {
         if (next.session || !prev.session) return next;
-        window.history.replaceState({ tab: 'map' }, '', mapHref(BASE, prev));
+        window.history.replaceState({ tab: 'flow' }, '', mapHref(BASE, prev));
         return prev;
       });
     };
@@ -135,7 +135,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
     const controller = new AbortController();
     setError('');
     const key = /[/\\]/.test(route.session) ? 'path' : 'session_id';
-    apiRequest(`/api/workmap?${key}=${encodeURIComponent(route.session)}`, { signal: controller.signal })
+    apiRequest(`/api/flowmap?${key}=${encodeURIComponent(route.session)}`, { signal: controller.signal })
       .then(setMap)
       .catch(e => {
         if (e.name === 'AbortError') return;
@@ -344,7 +344,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
 
       {map && setup && layouts && list && (
         <div className="sm-body">
-          <section className="sm-stage" aria-label="Work map">
+          <section className="sm-stage" aria-label="Flow map">
             <div className="sm-mapbox" style={{ '--sm-aspect': shape.width / shape.height }}>
             <div className="sm-map" data-layout={onBoard ? 'board' : 'hub'} ref={stageRef} style={{ aspectRatio: `${shape.width} / ${shape.height}`, '--sm-aspect': shape.width / shape.height }}>
               <img src={onBoard ? boardSrc : src} alt="" draggable="false" />
@@ -451,7 +451,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
                 {station === 'model'
                   ? `${list.total} ${list.total === 1 ? 'step' : 'steps'} · ${list.byAgents} by subagents`
                   : station === 'you' && !onBoard
-                  ? `${list.total - list.told} said · ${list.told} told`
+                  ? `${list.total - list.told} from you · ${list.told} to you`
                   : `${list.total} ${list.total === 1 ? 'call' : 'calls'} · ${list.failed} failed · ${list.byAgents} by subagents${station === '' ? ` · ${list.steps} model steps not listed` : ''}`}
               </span>
             </h2>

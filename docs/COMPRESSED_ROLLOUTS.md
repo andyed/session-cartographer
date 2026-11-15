@@ -64,7 +64,7 @@ newer). A path that ends in `.jsonl.zst` goes through it.
 |---|---|
 | `scripts/resolve-transcript.sh` | returns the `.zst` path; the plain file wins when both exist |
 | `codexSessionIndex()`, `resolveTranscriptPath()` | same |
-| `/api/transcript`, `/api/workmap` | decompressed |
+| `/api/transcript`, `/api/flowmap` | decompressed |
 | `/api/session/artifacts`, `/artifact`, `/document`, the image wall | decompressed |
 | Memory Desk tokens, title and tool calls (`memory-transcript.js`) | inflated whole once, then answered from the parsed state |
 | `/api/transcript/analysis` | answers 503 `TRANSCRIPT_COMPRESSED`; its parser reads Claude transcripts only |

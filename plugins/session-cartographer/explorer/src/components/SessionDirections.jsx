@@ -1,5 +1,5 @@
 /**
- * SessionDirections — the candidate directions for the work map, side by side
+ * SessionDirections — the candidate directions for the flow map, side by side
  * on the session and moment the page is showing. The map on the left of the
  * page is the hub as it is; everything here is a candidate.
  *
@@ -9,11 +9,11 @@
  */
 
 import { useMemo, useState } from 'react';
-import { drawFlow, drawTape, flowState, tapeHeight, tapeOf } from '../../shared/workmap/flow.js';
-import { CONTEXT_FULL, CONTEXT_NEAR, ROUTE_PX, drawHub, hubLayout, hubLevel, hubState, movesOf } from '../../shared/workmap/hub.js';
-import { FAMILIES, FAMILY_NAMES, FAULT, HEAD_HUES, KIND, familyOfStation, seatScreen } from '../../shared/workmap/kinds.js';
-import { drawPortrait, portraitAspect, portraitState } from '../../shared/workmap/portrait.js';
-import { coloursShown, drawRibbon, ribbonCapacity, ribbonOf } from '../../shared/workmap/ribbon.js';
+import { drawFlow, drawTape, flowState, tapeHeight, tapeOf } from '../../shared/flowmap/flow.js';
+import { CONTEXT_FULL, CONTEXT_NEAR, ROUTE_PX, drawHub, hubLayout, hubLevel, hubState, movesOf } from '../../shared/flowmap/hub.js';
+import { FAMILIES, FAMILY_NAMES, FAULT, HEAD_HUES, KIND, familyOfStation, seatScreen } from '../../shared/flowmap/kinds.js';
+import { drawPortrait, portraitAspect, portraitState } from '../../shared/flowmap/portrait.js';
+import { coloursShown, drawRibbon, ribbonCapacity, ribbonOf } from '../../shared/flowmap/ribbon.js';
 import { mapHref, rowsFor, svgDataUri } from './session-map.js';
 
 export const GLYPH_SIZES = [160, 96, 64, 48, 32, 24];

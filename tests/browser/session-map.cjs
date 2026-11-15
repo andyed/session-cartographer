@@ -70,7 +70,7 @@ async function port() { const server = net.createServer(); await new Promise(r =
     for (let i = 0; ; i++) { try { if ((await fetch(origin)).ok) break; } catch {} if (i > 100) throw Error(output); await pause(100); }
 
     // What the server made of it: the fixture has to hold what the page is checked for, or the checks prove nothing.
-    const map = await (await fetch(`${origin}/api/workmap?path=${encodeURIComponent(transcript)}`)).json();
+    const map = await (await fetch(`${origin}/api/flowmap?path=${encodeURIComponent(transcript)}`)).json();
     const calls = map.actions.filter(a => a.station !== 'model');
     const steps = map.actions.length - calls.length;
     assert.ok(steps >= 40, `${steps} model steps`);
@@ -82,7 +82,7 @@ async function port() { const server = net.createServer(); await new Promise(r =
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    const base = `${origin}/map?session=${encodeURIComponent(transcript)}`;
+    const base = `${origin}/flow?session=${encodeURIComponent(transcript)}`;
 
     // ── 1440 x 900: nothing on the page's first screen is below the fold ──
     await page.goto(base);
@@ -122,7 +122,7 @@ async function port() { const server = net.createServer(); await new Promise(r =
     await page.waitForFunction(() => /^You/.test(document.querySelector('.sm-list h2')?.textContent ?? ''));
     const told = map.actions.filter(a => a.station === 'tells').length;
     assert.ok(told >= 4, 'the fixture holds reports');
-    assert.match(await page.locator('.sm-list h2').textContent(), new RegExp(`1 said · ${told} told`));
+    assert.match(await page.locator('.sm-list h2').textContent(), new RegExp(`1 from you · ${told} to you`));
     assert.match(page.url(), /station=you/);
     await page.locator('.sm-hit[aria-label="You"]').click();
     // An address that names the old station opens You.

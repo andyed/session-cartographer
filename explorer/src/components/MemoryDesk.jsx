@@ -15,7 +15,7 @@ export function SessionHandoff({ session, hideConversation = false }) {
   return <div className="md-handoff">
     {codexLink(session) && <a href={codexLink(session)}>Open in Codex ↗</a>}
     {!hideConversation && !isDemoMode && session.transcript && <a href={`${import.meta.env.BASE_URL || '/'}session/${encodeURIComponent(session.transcript)}?reader=conversation&return=${encodeURIComponent(window.location.pathname + window.location.search)}`}>Read conversation ↗</a>}
-    {map && <a href={map}>Work map ↗</a>}
+    {map && <a href={map}>Flow map ↗</a>}
     {command && <button onClick={async () => {
       try { await navigator.clipboard.writeText(command); setMessage('Resume command copied'); }
       catch { setMessage(command); }

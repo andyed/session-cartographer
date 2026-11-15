@@ -5,7 +5,7 @@
      meta   #d4dae3    14.05          12.99
      fault  #ffa2a6    10.32           9.54
      agent  #f0c595    12.35          11.42
-   The map's own colours are measured in shared/workmap/palette.js. */
+   The map's own colours are measured in shared/flowmap/palette.js. */
 
 .session-map {
   --sm-bg: #0a0a0f;

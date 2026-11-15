@@ -21,7 +21,7 @@ import {
 import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, readTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { COMPRESSED_UNREADABLE, canReadZstd, isCompressedTranscript } from '../../scripts/transcript-file.js';
 import { summarizeSessions } from './sessions.js';
-import { sessionWorkmap } from './workmap.js';
+import { sessionFlowmap } from './flowmap.js';
 import { MAX_FOCUS_DURATION_MS } from '../shared/focus.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -705,24 +705,24 @@ export function createExplorerApp() {
     });
   });
 
-  // ─── Work map: one session's actions, by station ────────────────────────────
+  // ─── Flow map: one session's actions, by station ────────────────────────────
   //
   // Takes the same `path` or `session_id` as /api/transcript and goes through the
   // same locator, so it can read nothing a transcript request could not. Each
   // action carries one clipped line about its call with credentials masked
-  // (workmap-detail.js), never a result or a file's contents.
+  // (flowmap-detail.js), never a result or a file's contents.
 
-  app.get('/api/workmap', (req, res) => {
+  app.get('/api/flowmap', (req, res) => {
     const located = locateTranscript(req);
     if (located.error) return res.status(located.status).json({ error: located.error, code: located.code });
     try {
-      const map = sessionWorkmap(located.path);
+      const map = sessionFlowmap(located.path);
       if (map.actions.length === 0) {
-        return res.status(404).json({ error: 'transcript holds no actions to map', code: 'WORKMAP_EMPTY' });
+        return res.status(404).json({ error: 'transcript holds no actions to map', code: 'FLOWMAP_EMPTY' });
       }
       res.json({ path: located.path, ...map });
     } catch (error) {
-      res.status(500).json({ error: error.message, code: 'WORKMAP_FAILED' });
+      res.status(500).json({ error: error.message, code: 'FLOWMAP_FAILED' });
     }
   });
 

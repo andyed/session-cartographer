@@ -71,7 +71,7 @@ function rolloutRows(id) {
     { timestamp: at(1000), type: 'response_item', payload: { type: 'message', role: 'user', id: 'ask', content: [{ type: 'input_text', text: 'Find where the palette is loaded' }] } },
     { timestamp: at(2000), type: 'response_item', payload: { type: 'message', role: 'assistant', id: 'answer', content: [{ type: 'output_text', text: 'The palette loads in src/palette.js, from loadPalette().' }] } },
     { timestamp: at(3000), type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: usage(1200, 34), last_token_usage: usage(1200, 34) } } },
-    // One model step, so the work map has an action to draw.
+    // One model step, so the flow map has an action to draw.
     { timestamp: at(3500), type: 'turn_context', payload: { cwd: '/workspace/repo', model: 'gpt-5.5' } },
     { timestamp: at(4000), type: 'token_usage_record', payload: { usage: usage(1200, 34) } },
   ];
@@ -280,10 +280,10 @@ test('the Explorer serves a compressed rollout from its recorded path and from i
   assert.equal(unreadable.status, 503);
   assert.equal(unreadable.body.code, 'TRANSCRIPT_COMPRESSED');
 
-  // The work map reads the same file through the same locator.
-  const map = await api('/api/workmap', { session_id: IN_PLACE });
+  // The flow map reads the same file through the same locator.
+  const map = await api('/api/flowmap', { session_id: IN_PLACE });
   const mapBody = await map.json();
-  const twinMap = await (await api('/api/workmap', { session_id: PLAIN })).json();
+  const twinMap = await (await api('/api/flowmap', { session_id: PLAIN })).json();
   assert.equal(map.status, 200, JSON.stringify(mapBody));
   assert.equal(mapBody.path, inPlaceFile);
   assert.equal(twinMap.actions.length, 1, 'the fixture gives the map one action');

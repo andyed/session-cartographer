@@ -105,14 +105,14 @@ SOFTWARE.
 
 **Source:** https://github.com/alexeyw/lot-map, by Aleksei Volodin
 **License:** MIT
-**What was derived:** the session map in the Explorer. `explorer/shared/workmap/`
+**What was derived:** the session map in the Explorer. `explorer/shared/flowmap/`
 (`classify.js`, `draw.js`, `feed.js`, `palette.js`, `setup.js`, `text.js`) is a
 fork of lot-map 0.6.0 at commit d3102bf, converted from TypeScript. Changed here:
 the palette, the option that leaves unused stations undrawn, and the exported
 station geometry. The Explorer's map is drawn from recorded transcripts, not
 from lot-map's live events.
 
-The sidebar pane, `plugins/session-cartographer/hooks/carto-map/`, is also a fork of
+The sidebar pane, `plugins/session-cartographer/hooks/carto-flow/`, is also a fork of
 lot-map 0.6.0: its hooks module, classifier, feed, terminal picture and tests,
 kept in TypeScript. `NOTICE.md` in that folder says what was changed, and
 `LICENSE-lot-map` beside it is lot-map's licence text.

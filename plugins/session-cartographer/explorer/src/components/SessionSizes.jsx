@@ -8,8 +8,8 @@
  */
 
 import { useMemo } from 'react';
-import { drawFlow } from '../../shared/workmap/flow.js';
-import { drawPortrait, portraitAspect, portraitState } from '../../shared/workmap/portrait.js';
+import { drawFlow } from '../../shared/flowmap/flow.js';
+import { drawPortrait, portraitAspect, portraitState } from '../../shared/flowmap/portrait.js';
 import { svgDataUri } from './session-map.js';
 
 export const SIZES = [160, 64, 24];

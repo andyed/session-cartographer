@@ -86,7 +86,7 @@ const READS_ONLY = {
   'codex-memory-stale.test.js': 'reads cartographer-search.sh as text',
   'provider-adapters.test.js': 'reads cartographer-search.sh as text',
   'turbo-recall.test.js': 'reads cartographer-feed.sh as text',
-  'workmap.test.js': 'names cartographer-search.sh and cartographer-pulse.sh inside transcript fixtures; spawns nothing',
+  'flowmap.test.js': 'names cartographer-search.sh and cartographer-pulse.sh inside transcript fixtures; spawns nothing',
   'worktree-project-attribution.test.js': 'reads record-investigation.sh as text',
 };
 

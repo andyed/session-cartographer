@@ -8,7 +8,7 @@ import { createWunderkammerMiddleware } from './wunderkammer-static.js';
 const EXPLORER_PATHS = new Set([
   '/api/health', '/api/activity-scope', '/api/events', '/api/autocomplete', '/api/coterms',
   '/api/search', '/api/projects', '/api/sessions', '/api/stream',
-  '/api/transcript', '/api/transcript/analysis', '/api/workmap',
+  '/api/transcript', '/api/transcript/analysis', '/api/flowmap',
   '/api/session/artifacts', '/api/session/artifact', '/api/session/document',
   '/api/images/collection', '/api/images/window', '/api/images/file',
 ]);

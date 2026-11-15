@@ -10,6 +10,7 @@ import SessionMap from './components/SessionMap';
 import RouteErrorBoundary from './components/RouteErrorBoundary';
 import { isDemoMode, getDemoQueries } from './api';
 import { safeTranscriptReturn } from './components/transcript-navigation.js';
+import { MAP_PATH } from './components/session-map.js';
 import { workspaceHref, readWorkspaceRoute } from './hooks/useFocusWorkspace.js';
 
 const BASE = import.meta.env.BASE_URL || '/';
@@ -27,7 +28,7 @@ function parseURL() {
   const isMemory = /^\/memory\/?$/.test(url.pathname.slice(base.length));
   const isTimeline = /^\/timeline\/?$/.test(url.pathname.slice(base.length));
   const isImages = !isDemoMode && /^\/images\/?$/.test(url.pathname.slice(base.length));
-  const isMap = !isDemoMode && /^\/map\/?$/.test(url.pathname.slice(base.length));
+  const isMap = !isDemoMode && MAP_PATH.test(url.pathname.slice(base.length));
   const isLegacyTimeline = /^\/?$/.test(url.pathname.slice(base.length))
     && ['concurrent', 'sessions', 'chronological'].includes(url.searchParams.get('view'));
   const deepLinkTranscript = sessionMatch
@@ -40,7 +41,7 @@ function parseURL() {
     : isMemory ? 'memory'
     : isInternals ? 'internals'
     : isImages ? 'images'
-    : isMap ? 'map'
+    : isMap ? 'flow'
     : isTimeline || isLegacyTimeline ? 'timeline'
     : (urlQuery || urlProject) ? 'search'
     : 'timeline';
@@ -90,7 +91,7 @@ export default function App() {
     if (t === 'internals') nextURL = `${BASE}internals`;
     if (t === 'images') nextURL = `${BASE}images`;
     // The map restores its own session, station and moment into the address when it is shown again.
-    if (t === 'map') nextURL = `${BASE}map`;
+    if (t === 'flow') nextURL = `${BASE}flow`;
     if (t === 'memory' || t === 'timeline') {
       const origin = tab === 'transcript' && safeTranscriptReturn(new URLSearchParams(window.location.search).get('return'), BASE);
       const route = origin ? readWorkspaceRoute(new URL(origin, window.location.origin).search) : readWorkspaceRoute();
@@ -166,12 +167,12 @@ export default function App() {
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-4 py-2">
           {/* Search input with autocomplete — flush left */}
           {/* Memory owns its local find control; other routes keep global search. */}
-          {['memory', 'timeline', 'transcript', 'images', 'map'].includes(tab) ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
+          {['memory', 'timeline', 'transcript', 'images', 'flow'].includes(tab) ? <span className="flex-1 text-base font-medium text-gray-200">Session Cartographer</span> : <SearchInput value={searchQuery} onChange={handleSearchInput} autoFocus />}
 
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
             <div className="flex flex-wrap gap-1">
-              {['memory', 'timeline', 'search', ...(isDemoMode ? [] : ['images', 'map', 'internals'])].map(t => (
+              {['memory', 'timeline', 'search', ...(isDemoMode ? [] : ['images', 'flow', 'internals'])].map(t => (
                 <button
                   key={t}
                   onClick={() => handleTabClick(t)}
@@ -243,10 +244,10 @@ export default function App() {
             </RouteErrorBoundary>
           </div>
         )}
-        {mountedTabs.current.has('map') && (
-          <div className={`absolute inset-0 ${tab === 'map' ? '' : 'hidden'}`}>
+        {mountedTabs.current.has('flow') && (
+          <div className={`absolute inset-0 ${tab === 'flow' ? '' : 'hidden'}`}>
             <RouteErrorBoundary name="Map" resetKey={tab} onLeave={() => handleTabClick('timeline')}>
-              <SessionMap onOpenTranscript={openTranscript} isActive={tab === 'map'} />
+              <SessionMap onOpenTranscript={openTranscript} isActive={tab === 'flow'} />
             </RouteErrorBoundary>
           </div>
         )}

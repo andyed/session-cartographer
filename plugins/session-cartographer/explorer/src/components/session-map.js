@@ -4,7 +4,8 @@
 
 import { memoryHref } from './memory-route.js';
 
-export const MAP_PATH = /^\/map\/?$/;
+// /map was the address before the rename to Flow map (2026-11-14); links written then still open it.
+export const MAP_PATH = /^\/(?:flow|map)\/?$/;
 
 /** Rows a list renders at most. A session can hold thousands of calls; the rest are counted, not drawn. */
 export const ROW_CAP = 300;
@@ -13,7 +14,7 @@ export const ROW_CAP = 300;
 export const LOOKS = ['sizes', 'directions'];
 
 /**
- * The map's address: `/map?session=<id or transcript path>&station=<id>&at=<epoch ms>`.
+ * The map's address: `/flow?session=<id or transcript path>&station=<id>&at=<epoch ms>`.
  * `station` and `at` are optional. A link carries the moment, so it reopens on the same frame.
  */
 export function readMapRoute(search = '') {
@@ -38,7 +39,7 @@ export function mapHref(base, { session, station, at, look, layout }) {
   if (LOOKS.includes(look)) params.set('look', look);
   if (layout === 'board') params.set('layout', 'board');
   const qs = params.toString();
-  return `${base.replace(/\/$/, '')}/map${qs ? `?${qs}` : ''}`;
+  return `${base.replace(/\/$/, '')}/flow${qs ? `?${qs}` : ''}`;
 }
 
 /**
@@ -216,7 +217,7 @@ export function rowTarget(base, map, action, { calls = new Map(), files = new Se
     const call = action.call ? calls.get(action.call) : undefined;
     // The desk shows a call inside its session's thread when it knows the session, and in the Recall list when it does not.
     if (call) return { kind: 'recall', href: memoryHref(call.session_id === session ? { ...window, session, call: action.call } : { ...window, surface: 'recall', call: action.call }, desk) };
-    // Only an edit or a write carries `file` (workmap-detail.js), so a read never lands on a diff.
+    // Only an edit or a write carries `file` (flowmap-detail.js), so a read never lands on a diff.
     if (action.file && files.has(action.file)) {
       return { kind: 'review', href: memoryHref({ ...window, session, file: action.file, review: 'changes' }, desk) };
     }
