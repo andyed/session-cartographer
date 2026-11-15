@@ -339,9 +339,11 @@ export function codexActions(rolloutPath, setup) {
         }
         break;
       case 'CommandExecution': {
-        // The command arrives as the argv Codex ran: ["/bin/zsh", "-lc", "<the line>"].
+        // The command arrives as the argv Codex ran: ["/bin/zsh", "-lc", "<the line>"], and on Windows
+        // ["…\pwsh.exe", "-Command", "<the script>"], which is read by PowerShell's rules.
         const command = Array.isArray(item.command) ? String(item.command.at(-1) ?? '') : String(item.command ?? '');
-        const c = classifyCall('Bash', { command }, setup);
+        const program = String(Array.isArray(item.command) ? item.command[0] ?? '' : '').replace(/\\/g, '/').split('/').pop().toLowerCase().replace(/\.exe$/, '');
+        const c = classifyCall(program === 'pwsh' || program === 'powershell' ? 'PowerShell' : 'Bash', { command }, setup);
         push(c.station, c.label, startedAt, status, { tool: 'exec_command' }, describeCodexItem(item, c.station));
         break;
       }
@@ -363,10 +365,16 @@ export function codexActions(rolloutPath, setup) {
       }
       case 'Extension': {
         const kind = String(item.kind ?? '');
+        // A pause the agent asked for is no work: it holds no station.
+        if (kind === 'clock.sleep') break;
         if (kind.startsWith('web')) push('web', hostOf(parseObject(item.action).url) || setup.t.webSearch, startedAt, 'ok', { tool: kind }, describeCodexItem(item, 'web'));
         else unknownItems[`Extension:${kind}`] = (unknownItems[`Extension:${kind}`] ?? 0) + 1;
         break;
       }
+      case 'SubAgentActivity':
+        // A spawned agent starts under a path of its own (`/root/proof_visual_review`); its rollout is another file.
+        if (item.kind === 'started') push('agents', String(item.agent_path ?? '').split('/').filter(Boolean).pop() || setup.t.subagent, ts, 'ok', { tool: 'spawn_agent' });
+        break;
       case 'ContextCompaction':
         push('model', 'compaction', ts);
         break;

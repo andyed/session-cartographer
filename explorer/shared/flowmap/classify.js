@@ -101,6 +101,8 @@ const RUNNERS = new Set(['python', 'python3', 'bash', 'sh', 'zsh', 'node'])
 // PowerShell's own names for the same three kinds of command, in lower case: PowerShell does not tell cases apart.
 const PS_FILE_WORDS = new Set(['get-content', 'gc', 'type', 'set-content', 'add-content', 'out-file', 'get-childitem', 'gci', 'dir', 'get-item', 'gi', 'select-string', 'sls', 'copy-item', 'cpi', 'copy', 'move-item', 'mi', 'move', 'rename-item', 'rni', 'ren', 'new-item', 'ni', 'md', 'test-path', 'resolve-path', 'get-filehash'])
 const PS_NEUTRAL_WORDS = new Set(['write-host', 'write-output', 'set-location', 'sl', 'get-location', 'gl', 'start-sleep', 'select-object', 'select', 'where-object', 'where', '?', 'foreach-object', 'foreach', '%', 'sort-object', 'measure-object', 'measure', 'format-table', 'ft', 'format-list', 'fl', 'out-string', 'out-null'])
+/** PowerShell's words that open a block or a condition and run nothing themselves. */
+const PS_CONTROL = new Set(['if', 'elseif', 'else', 'try', 'catch', 'finally', 'foreach', 'for', 'while', 'do', 'switch', 'function', 'param', 'begin', 'process', 'end', 'return', 'throw', 'trap'])
 const PS_NET_WORDS = new Set(['invoke-webrequest', 'iwr', 'invoke-restmethod', 'irm', 'test-connection', 'test-netconnection', 'resolve-dnsname', 'start-bitstransfer'])
 
 /**
@@ -152,10 +154,20 @@ function classifyShell(command, description, setup, powershell = false) {
   // PowerShell runs a quoted path with `&` and keeps results in `$name = ...`: neither is the command.
   const own = (words) => {
     if (!powershell) return words
-    let i = 0
-    if (/^\$[\w:]+$/.test(words[0] ?? '') && words[1] === '=') i = 2
-    if (words[i] === '&' || words[i] === '.') i++
-    return words.slice(i)
+    let rest = words
+    // Braces, parentheses and `@(` left over from a block or an expression are no command.
+    while (/^(?:[{}()]|@\()$/.test(rest[0] ?? '')) rest = rest.slice(1)
+    // `$name = ...` and `$name=(...)`: the assignment is not the command, what it is set to may be.
+    if (/^\$[\w:]+$/.test(rest[0] ?? '') && rest[1] === '=') rest = rest.slice(2)
+    else {
+      const glued = /^\$[\w:.]+=(.*)$/.exec(rest[0] ?? '')
+      if (glued !== null) rest = [glued[1] ?? '', ...rest.slice(1)].filter(w => w !== '')
+    }
+    rest = rest.map((w, i) => (i === 0 ? w.replace(/^[@(]+/, '') : w)).filter((w, i) => i > 0 || w !== '')
+    if (rest[0] === '&' || rest[0] === '.') rest = rest.slice(1)
+    // A control word opens a block or a test: the commands that count are on the lines inside it.
+    if (PS_CONTROL.has((rest[0] ?? '').toLowerCase())) return []
+    return rest
   }
   // `sudo curl` is curl, and so is the curl behind `env A=1`, `timeout 5` or `xargs`: the command run is the one that counts.
   const unwrapped = (words) => {
@@ -203,7 +215,10 @@ function classifyShell(command, description, setup, powershell = false) {
     return subs !== undefined && (subs.has(rest[0] ?? '') || subs.has(`${rest[0] ?? ''} ${rest[1] ?? ''}`))
   }
   const lines = segments(command).map(own).filter(words => words.length > 0)
-  const label = description.trim() || base(lines[0]?.[0] ?? 'shell')
+  // A PowerShell script often opens on an expression (`[Environment]::…`, `(Get-Date).AddDays(1)`): its label is the
+  // first line that begins with a command's name, and `powershell` where none does.
+  const first = powershell ? lines.find(words => /^[A-Za-z][\w.-]*$/.test(base(words[0] ?? ''))) : lines[0]
+  const label = description.trim() || base(first?.[0] ?? (powershell ? 'powershell' : 'shell'))
   for (const words of lines.flatMap(commands)) {
     const head = name(words[0])
     const script = RUNNERS.has(head) && words[1] ? base(words[1]) : ''
@@ -274,6 +289,8 @@ export function classify(tool, input, setup) {
     const url = str(input.url)
     return { station: 'browser', label: url && /^[a-z]+:/i.test(url) ? hostOf(url) : name.replace(/_+/g, ' ') }
   }
+  // Codex's computer use and its node REPL (the browser and desktop plugins) take a one-line `title` of what the code is for.
+  if (server === 'cua_repl' || server === 'node_repl') return { station: 'browser', label: clean(str(input.title), 72) || name.replace(/_+/g, ' ') }
   if (server === 'terminal') return { station: 'shell', label: name.replace(/_+/g, ' ') }
   if (server === 'visualize' || server.startsWith('ccd_')) return { station: 'you', label: name.replace(/_+/g, ' ') }
   if (server === 'plugin-authoring') return { station: 'skills', label: name.replace(/_+/g, ' ') }

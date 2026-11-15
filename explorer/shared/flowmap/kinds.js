@@ -175,7 +175,8 @@ export function wakeLabel(text) {
  * Tools that read or act in what the person has open: their own Chrome, their live tabs and history,
  * their terminal panel, their desktop. The built-in browser pane is the agent's own and is not here.
  */
-const SCREEN_TOOL = /^mcp__(?:claude-in-chrome|tabtopia|browsing-context|terminal|computer-use|desktop-control)__/
+// Claude's tools are `mcp__server__tool`; a Codex rollout names one `server.tool`, and its computer use is `cua_repl`.
+const SCREEN_TOOL = /^(?:mcp__(?:claude-in-chrome|tabtopia|browsing-context|terminal|computer-use|desktop-control)__|cua_repl\.)/
 
 export const isScreen = action => typeof action.tool === 'string' && action.agentId === undefined && SCREEN_TOOL.test(action.tool)
 
