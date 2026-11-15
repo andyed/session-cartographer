@@ -168,6 +168,7 @@ Open question worth settling before building: whether tracks are per-project (ch
 ---
 
 ## Explorer UI
+- [ ] **Image wall: an image's size ignores its rotation flag.** `imageDimensions` (`explorer/server/image-probe.js`, mirrored in the plugin) reads the stored pixel size and not the EXIF orientation, which browsers apply to a JPEG and to a PNG's `eXIf` chunk. A PNG stored 2436×1124 with orientation 8 is shown 1124×2436, so `props.dims`, `shape` and the size label describe it on its side. Wunderkammer 0.5.1 and later draw a floating card from the loaded image, so the card is right, but the Mountain reserves a landscape place for a portrait card. Found 2026-11-15 on the 7-day wall: 1 of 471 images. Swap width and height for orientations 5 to 8.
 - [ ] Facet brushing — hover pill → non-matching results collapse to colored pixel bars
 - [ ] Contrast audit — sweep remaining readable text to the 8:1 floor, computed not eyeballed. Shades are not the spec: on the body `#0a0a0f`, `gray-400` is 7.78:1 and `gray-600` is 2.61:1, so both fail. `gray-300` (13.40:1) and the `muted` token (`#abb1bb`, 9.16:1, added to `tailwind.config.js` and matching the existing `--internals-muted`) both pass. Largest remaining cluster is ~10 `text-gray-600` sites in `TranscriptViewer.jsx`.
 - [ ] Loading skeletons instead of text spinners
