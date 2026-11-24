@@ -171,12 +171,12 @@ export default function App() {
 
           {/* Nav — flush right */}
           <div className="flex items-center justify-between sm:justify-start gap-3 flex-shrink-0">
-            <div className="flex flex-wrap gap-1">
+            <nav aria-label="Explorer views" className="flex flex-wrap gap-0.5 sm:gap-1">
               {['memory', 'timeline', 'search', ...(isDemoMode ? [] : ['images', 'flow', 'internals'])].map(t => (
                 <button
                   key={t}
                   onClick={() => handleTabClick(t)}
-                  className={`px-1.5 sm:px-3 min-h-11 text-sm sm:text-base rounded ${
+                  className={`px-1 sm:px-3 min-h-11 min-w-11 text-sm sm:text-base rounded ${
                     tab === t
                       ? 'bg-gray-700 text-gray-200'
                       : 'text-gray-300 hover:text-gray-100'
@@ -190,8 +190,8 @@ export default function App() {
                   transcript
                 </span>
               )}
-            </div>
-            <span className="text-xs text-gray-600 font-mono" data-contrast-exempt="monogram">SC</span>
+            </nav>
+            <span className="hidden sm:inline text-xs text-gray-600 font-mono" data-contrast-exempt="monogram">SC</span>
           </div>
         </div>
         {isDemoMode && !searchQuery && tab !== 'transcript' && tab !== 'memory' && (

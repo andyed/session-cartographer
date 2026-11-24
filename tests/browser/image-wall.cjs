@@ -139,8 +139,14 @@ const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(100);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no horizontal scroll at 390');
-    const navRows = await page.$$eval('header nav button, header .flex-wrap > button', buttons => new Set(buttons.map(b => Math.round(b.getBoundingClientRect().top))).size);
-    assert.equal(navRows, 1, 'the five tabs stay on one row at 390');
+    const views = page.getByRole('navigation', { name: 'Explorer views' });
+    const tabs = await views.getByRole('button').evaluateAll(buttons => buttons.map(button => {
+      const { top, width, height } = button.getBoundingClientRect();
+      return { name: button.textContent, top, width, height };
+    }));
+    assert.deepEqual(tabs.map(t => t.name), ['memory', 'timeline', 'search', 'images', 'flow', 'internals']);
+    assert.equal(new Set(tabs.map(t => Math.round(t.top))).size, 1, 'all six views stay on one row at 390');
+    assert.ok(tabs.every(t => t.width >= 44 && t.height >= 44), 'every view has a full touch target');
     await page.screenshot({ path: path.join(artifacts, 'image-wall-390.png') });
 
     assert.deepEqual(errors, []);
