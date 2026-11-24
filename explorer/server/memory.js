@@ -579,11 +579,11 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     if (!Number.isInteger(hours) || hours < 1 || hours > MAX_WINDOW_HOURS) throw new MemoryError(400, 'Memory window hours must be an integer between 1 and 2160.');
     return hours;
   }
-  async function snapshot(end = null, sessionId = null, hours = DEFAULT_WINDOW_HOURS) {
+  async function snapshot(end = null, sessionId = null, hours = DEFAULT_WINDOW_HOURS, refresh = false) {
     const key = `${end ?? 'live'}:${hours}:${sessionId || ''}`;
     const time = now();
     const existing = cache.get(key);
-    if (existing && (existing.pending || (time >= existing.at && time - existing.at < cacheMs))) return existing.promise;
+    if (!refresh && existing && (existing.pending || (time >= existing.at && time - existing.at < cacheMs))) return existing.promise;
     let events = getEvents();
     let windowEnd = end ?? time;
     let corpusBounds = null;
@@ -664,7 +664,7 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     if (from > through) throw new MemoryError(400, 'Activity from must not be later than through.');
     const hours = Math.max(1, Math.ceil((through - from) / HOUR_MS));
     if (hours > MAX_WINDOW_HOURS) throw new MemoryError(422, 'Activity ranges wider than 90 days are not supported.');
-    return projectMemoryScope(await snapshot(through, sessionId, hours), activityScope(params, from, through));
+    return projectMemoryScope(await snapshot(through, sessionId, hours, params.get('refresh') === '1'), activityScope(params, from, through));
   }
 
   async function activity(params) {
@@ -678,7 +678,7 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
     if (from > through || contextFrom > from || contextThrough < through || contextFrom > contextThrough) throw new MemoryError(400, 'Activity ranges must be ordered, and context must contain the focus interval.');
     const contextHours = Math.max(1, Math.ceil((contextThrough - contextFrom) / HOUR_MS));
     if (contextHours > MAX_WINDOW_HOURS) throw new MemoryError(422, 'Activity ranges wider than 90 days are not supported.');
-    const base = await snapshot(contextThrough, null, contextHours);
+    const base = await snapshot(contextThrough, null, contextHours, params.get('refresh') === '1');
     const context = projectMemoryScope(base, activityScope(params, contextFrom, contextThrough));
     if (params.get('shape') === 'context') return {
       source: context.source,
@@ -781,7 +781,7 @@ export function createMemoryHandler({ getEvents, corpusRoot = CORPUS_ROOT, now =
       }
       else if (url.pathname === '/api/memory/state') body = hasExactScope(url.searchParams)
         ? await scopedSnapshot(url.searchParams)
-        : await snapshot(readEnd(url.searchParams.get('end')), null, readHours(url.searchParams.get('hours')));
+        : await snapshot(readEnd(url.searchParams.get('end')), null, readHours(url.searchParams.get('hours')), url.searchParams.get('refresh') === '1');
       else if (url.pathname === '/api/memory/activity' || url.pathname === '/api/activity-scope') body = await activity(url.searchParams);
       else if (url.pathname === '/api/memory/recall') body = await recallCalls(url.searchParams);
       else if (url.pathname === '/api/memory/recall/call') body = await recallCall(url.searchParams);

@@ -184,6 +184,24 @@ test('handler caches only briefly and sees warm array mutations and replacement'
   assert.equal((await invoke(handler, '/api/facts/health')).handled, false);
 });
 
+test('manual Refresh sees ingested changes within the cache lifetime and preserves fixed bounds', async () => {
+  for (const endpoint of ['/api/memory/state', '/api/activity-scope']) {
+    const rows = [event('one')];
+    const handler = createMemoryHandler({ getEvents: () => rows, now: () => now, corpusRoot: fixtureRoot });
+    const url = `${endpoint}?from=${now - 60_000}&through=${now}`;
+    const sessions = async suffix => {
+      const { status, body } = await invoke(handler, url + suffix);
+      assert.equal(status, 200);
+      return (body.context || body).sessions.map(session => session.id).sort();
+    };
+    assert.deepEqual(await sessions(''), ['session-a']);
+    rows.push(event('two', { session_id: 'session-b' }), event('out-of-window', { timestamp: now + 1, session_id: 'later' }));
+    assert.deepEqual(await sessions(''), ['session-a']);
+    assert.deepEqual(await sessions('&refresh=1'), ['session-a', 'session-b']);
+    assert.deepEqual(await sessions(''), ['session-a', 'session-b']);
+  }
+});
+
 test('wide enrichment bounds concurrent work without losing session evidence', async () => {
   const rows = Array.from({ length: 150 }, (_, i) => event(`event-${i}`, { session_id: `session-${i}`, type: 'user_prompt' }));
   const snapshot = projectMemory(rows, { now, hours: 2160, corpusRoot: fixtureRoot });

@@ -72,6 +72,7 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
   const [busy, setBusy] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [retry, setRetry] = useState(0);
+  const manualRefresh = useRef(false);
   // Why the last poll failed, so recovery clears only a connection failure and
   // never the message from a failed Start or Refresh the person asked for.
   const errorCode = useRef('');
@@ -149,6 +150,10 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
         }
         const endpoint = tab === 'timeline' ? '/api/activity-scope' : '/api/memory/state';
         if (tab === 'timeline') params.set('shape', 'context');
+        if (manualRefresh.current) {
+          params.set('refresh', '1');
+          manualRefresh.current = false;
+        }
         const result = await apiRequest(`${endpoint}?${params}`, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60000)]) });
         if (controller.signal.aborted) return;
         const snapshot = tab === 'timeline' ? result.context : result;
@@ -235,6 +240,10 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
     const href = workspaceHref({ ...routeRef.current, ...patch }, tab);
     if (window.history.state?.scopeParent === href) window.history.back(); else navigate(patch);
   }, [navigate, tab]);
+  const refreshRecords = useCallback(() => {
+    manualRefresh.current = true;
+    setRetry(n => n + 1);
+  }, []);
   const launch = useCallback(async () => {
     if (!status?.action || busy) return;
     setBusy(true); setError(''); errorCode.current = '';
@@ -244,5 +253,5 @@ export default function useFocusWorkspace({ isActive = true, tab = 'memory' } = 
     } catch (failure) { setError(failure.message); } finally { setBusy(false); }
   }, [status, busy]);
   return { route, navigate, up, query, endQuery, data: shownData, scoped, context, interval, bounds, preview, commitRange, activate, frame, fit, handoff,
-    status, streamStatus, error, busy, refreshing, launch, retry: () => setRetry(n => n + 1), sourceId: `${isDemoMode ? 'demo' : 'live'}:${data?.source?.corpusId || 'default'}` };
+    status, streamStatus, error, busy, refreshing, launch, retry: refreshRecords, sourceId: `${isDemoMode ? 'demo' : 'live'}:${data?.source?.corpusId || 'default'}` };
 }

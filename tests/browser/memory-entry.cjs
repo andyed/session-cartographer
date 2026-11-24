@@ -1,7 +1,7 @@
 // Real browser + managed controller, isolated from the user's config/corpus.
 // Run: node tests/browser/memory-entry.cjs
 // After an Explorer build: node tests/browser/memory-entry.cjs --preview
-const { chromium } = require('@playwright/test');
+const { chromium, expect } = require('@playwright/test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -1320,6 +1320,14 @@ async function port() {
     // New matching work is incorporated only on refresh, and the fixed focus
     // keeps unrelated projects and timestamps governed by its exact bounds.
     fs.appendFileSync(log, JSON.stringify({ event_id: 'new-session-event', timestamp: now + 1200, session_id: 'new-live-session', session_title: 'Fresh session', project: 'new-project', summary: 'A new event', type: 'tool_bash' }) + '\n');
+    // File writes reach the warm corpus asynchronously. Exercise Refresh once
+    // the source has ingested this exact line, independent of host speed.
+    const writtenThrough = fs.statSync(log).size;
+    await expect.poll(async () => {
+      const response = await deskPage.request.get(`http://127.0.0.1:${apiPort}/api/recall/health`);
+      assert.equal(response.status(), 200);
+      return (await response.json()).watch.changelog.offset;
+    }).toBeGreaterThanOrEqual(writtenThrough);
     await deskPage.getByRole('button', { name: 'Tasks', exact: true }).click();
     await refreshRecords(deskPage);
     await deskPage.getByText('Fresh session', { exact: true }).waitFor({ timeout: 15000 });
