@@ -140,14 +140,20 @@ const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - 
     await page.waitForTimeout(100);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'no horizontal scroll at 390');
     const views = page.getByRole('navigation', { name: 'Explorer views' });
-    const tabs = await views.getByRole('button').evaluateAll(buttons => buttons.map(button => {
-      const { top, width, height } = button.getBoundingClientRect();
-      return { name: button.textContent, top, width, height };
-    }));
-    assert.deepEqual(tabs.map(t => t.name), ['memory', 'timeline', 'search', 'images', 'flow', 'internals']);
-    assert.equal(new Set(tabs.map(t => Math.round(t.top))).size, 1, 'all six views stay on one row at 390');
-    assert.ok(tabs.every(t => t.width >= 44 && t.height >= 44), 'every view has a full touch target');
-    await page.screenshot({ path: path.join(artifacts, 'image-wall-390.png') });
+    for (const width of [390, 360]) {
+      await page.setViewportSize({ width, height: 844 });
+      const tabs = await views.getByRole('button').evaluateAll(buttons => buttons.map(button => {
+        const { top, left, right, width, height } = button.getBoundingClientRect();
+        const text = document.createRange();
+        text.selectNodeContents(button);
+        const label = text.getBoundingClientRect();
+        return { name: button.textContent, top, width, height, fits: label.left >= left && label.right <= right };
+      }));
+      assert.deepEqual(tabs.map(t => t.name), ['memory', 'timeline', 'search', 'images', 'flow', 'internals']);
+      assert.equal(new Set(tabs.map(t => Math.round(t.top))).size, 1, `all six views stay on one row at ${width}: ${JSON.stringify(tabs)}`);
+      assert.ok(tabs.every(t => t.fits && t.width >= 44 && t.height >= 44), `every label fits its touch target at ${width}`);
+      if (width === 390) await page.screenshot({ path: path.join(artifacts, 'image-wall-390.png') });
+    }
 
     assert.deepEqual(errors, []);
     assert.deepEqual(unwanted, []);
