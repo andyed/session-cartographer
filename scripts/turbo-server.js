@@ -193,7 +193,6 @@ const requestInterval = setInterval(scanRequests, 40);
 scanRequests();
 
 let httpServer = null;
-let httpStatus = spoolOnly ? 'disabled' : 'starting';
 
 if (!spoolOnly) {
   httpServer = http.createServer(async (req, res) => {
@@ -254,9 +253,8 @@ if (!spoolOnly) {
   });
   httpServer.on('error', (error) => {
     if (error.code === 'EADDRINUSE') {
-      httpStatus = 'port_in_use';
       console.error(`[turbo] ${url.origin} already in use; file transport remains available`);
-      publishReady();
+      publishReady('port_in_use');
       return;
     }
     // A sandboxed spawn (Codex seatbelt, a hardened Bash tool) is denied the
@@ -265,22 +263,19 @@ if (!spoolOnly) {
     // one this process will serve. Say so, and keep the two cases apart so an
     // operator reading `status` is not sent hunting for a broken server.
     if (error.code === 'EPERM' || error.code === 'EACCES') {
-      httpStatus = 'blocked';
       console.error(
         `[turbo] loopback listen denied by the sandbox (${error.code}); `
         + 'file transport is serving recall',
       );
-      publishReady();
+      publishReady('blocked');
       return;
     }
     console.error(`[turbo] HTTP server error: ${error.message}`);
-    httpStatus = 'failed';
-    publishReady();
+    publishReady('failed');
   });
   httpServer.listen(Number(url.port || 80), url.hostname.replace(/^\[|\]$/g, ''), () => {
-    httpStatus = 'listening';
     console.log(`[turbo] HTTP recall ready at ${url.origin}`);
-    publishReady();
+    publishReady('listening');
   });
 }
 
@@ -303,7 +298,7 @@ function loseLease(reason) {
 }
 
 function checkLease() {
-  if (leaseLost) return;
+  if (leaseLost || !readyPublished) return;
   if (!fs.existsSync(paths.state)) return loseLease('state dir is gone');
   let holder = null;
   try { holder = JSON.parse(fs.readFileSync(paths.ready, 'utf8')); } catch {}
@@ -311,16 +306,12 @@ function checkLease() {
   if (Number(holder.pid) !== process.pid) return loseLease(`ready file names pid ${holder.pid}`);
 }
 
-function publishReady() {
-  if (leaseLost) return;
-  // The HTTP listen callback may arrive after a caller removed or replaced the
-  // initial ready file. An update must honor that lost lease, not recreate it.
-  if (readyPublished) checkLease();
-  if (leaseLost) return;
-  // Never resurrect a state dir that was removed under us — that is exactly the
-  // orphan shape. `writeJsonAtomic` would mkdir it back.
-  if (!fs.existsSync(paths.state)) return loseLease('state dir is gone');
-  writeJsonAtomic(paths.ready, {
+// Publish one complete lease, once the available transports are known. Replacing an
+// earlier "starting" record here could overwrite a revocation between the ownership
+// check and rename. A hard link installs the finished record only if the name is free.
+function publishReady(httpStatus) {
+  if (readyPublished || leaseLost) return;
+  const record = {
     pid: process.pid,
     contract_version: 1,
     runtime_version: runtimeVersion,
@@ -330,11 +321,23 @@ function publishReady() {
     indexed_docs: index.docs.size,
     http: httpStatus,
     spool: paths.requests,
-  });
+  };
+  const temporary = `${paths.ready}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(record) + '\n', { mode: 0o600, flag: 'wx' });
+    try {
+      fs.linkSync(temporary, paths.ready);
+    } finally {
+      try { fs.unlinkSync(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+  } catch (error) {
+    if (error.code === 'ENOENT') return loseLease('state dir is gone');
+    if (error.code === 'EEXIST') return loseLease('another ready record exists');
+    throw error;
+  }
   readyPublished = true;
 }
 
-publishReady();
 console.log(
   `[turbo] loaded ${events.length} events / ${index.docs.size} docs in ${Date.now() - loadStarted} ms; `
   + `file transport ready at ${paths.requests}`,
@@ -359,13 +362,17 @@ function shutdown() {
   clearInterval(leaseInterval);
   if (idleInterval) clearInterval(idleInterval);
   stopWatching();
-  try {
-    const ready = JSON.parse(fs.readFileSync(paths.ready, 'utf8'));
-    if (Number(ready.pid) === process.pid) fs.unlinkSync(paths.ready);
-  } catch {}
+  if (readyPublished && !leaseLost) {
+    try {
+      const ready = JSON.parse(fs.readFileSync(paths.ready, 'utf8'));
+      if (Number(ready.pid) === process.pid) fs.unlinkSync(paths.ready);
+    } catch {}
+  }
   if (httpServer?.listening) httpServer.close(() => process.exit(0));
   else process.exit(0);
 }
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+if (spoolOnly) publishReady('disabled');

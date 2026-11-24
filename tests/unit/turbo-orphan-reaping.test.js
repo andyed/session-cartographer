@@ -133,15 +133,19 @@ test('start reaps the child it spawned when readiness times out', async () => {
   }
 });
 
-/** Spawn the server directly and wait until it has published ready.json. */
-async function spawnReadyServer(t, ws) {
-  const child = spawn(process.execPath, [SERVER], { env: ws.env, stdio: 'ignore' });
+function spawnServer(t, ws, args = [], stdio = 'ignore') {
+  const child = spawn(process.execPath, [...args, SERVER], { env: ws.env, stdio });
   t.after(async () => {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill('SIGKILL');
       await once(child, 'exit');
     }
   });
+  return child;
+}
+
+async function spawnReadyServer(t, ws) {
+  const child = spawnServer(t, ws);
   await waitFor(() => Number(readJson(ws.readyFile)?.pid) === child.pid, 15000, 'ready.json');
   return child;
 }
@@ -155,6 +159,40 @@ async function exitedWithin(child, ms) {
   clearTimeout(timer);
   return result;
 }
+
+test('HTTP startup publishes only the settled transport as its lease', async (t) => {
+  const ws = await isolated();
+  t.after(ws.cleanup);
+  // Keep the bind unresolved until the parent has inspected the state dir.
+  // The immediate runs after server initialization has returned to its event loop.
+  const gate = path.join(ws.stateDir, 'hold-listen.cjs');
+  fs.writeFileSync(gate, `
+    const net = require('node:net');
+    const listen = net.Server.prototype.listen;
+    net.Server.prototype.listen = function (...args) {
+      process.once('message', () => listen.apply(this, args));
+      setImmediate(() => process.send('bind pending'));
+      return this;
+    };
+  `);
+  const child = spawnServer(t, ws, ['--require', gate], ['ignore', 'ignore', 'ignore', 'ipc']);
+  const [message] = await once(child, 'message', { signal: AbortSignal.timeout(15000) });
+  assert.equal(message, 'bind pending');
+  assert.equal(fs.existsSync(ws.readyFile), false, 'a provisional lease could overwrite a later revocation');
+  child.send('bind');
+  await waitFor(() => readJson(ws.readyFile)?.http === 'listening', 15000, 'settled HTTP lease');
+  assert.equal(readJson(ws.readyFile).pid, child.pid);
+});
+
+test('a starting server cannot overwrite an existing ready lease', async (t) => {
+  const ws = await isolated();
+  const owner = { pid: 1, contract_version: 1 };
+  fs.writeFileSync(ws.readyFile, JSON.stringify(owner));
+  t.after(ws.cleanup);
+  const child = spawnServer(t, ws);
+  assert.ok(await exitedWithin(child, 8000), 'the server must yield the occupied lease');
+  assert.deepEqual(readJson(ws.readyFile), owner);
+});
 
 test('a server whose ready file is removed exits instead of running unrecorded', async (t) => {
   const ws = await isolated();

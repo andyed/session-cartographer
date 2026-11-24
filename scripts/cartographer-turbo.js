@@ -60,14 +60,9 @@ async function waitForReady(pid, timeoutMs, env = process.env) {
         && Number(ready.pid) === pid
         && ready.contract_version === 1
         && ready.runtime_version === runtimeVersion) {
-      // The server publishes ready.json as soon as the corpus is loaded, with
-      // `http: "starting"`, and again once listen() settles. Returning on the
-      // first publication reported a service whose port was not yet open: a
-      // recall fired straight after `enable` raced the listener and only
-      // succeeded because the client fell back to the file spool (perf
-      // check-in, 2026-09-14). Wait for a terminal state — listening, blocked,
-      // port_in_use, failed, or disabled — and hand back the last record seen
-      // if the deadline passes first, since the spool is still a real path.
+      // Older servers published "starting" before listen() settled. Wait for
+      // their final transport status when possible. The spool was already usable
+      // with that earlier record, so keep it as the deadline fallback.
       if (ready.http !== 'starting') return ready;
       lastReady = ready;
     }
