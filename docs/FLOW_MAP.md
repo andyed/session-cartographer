@@ -25,7 +25,7 @@ screen, the family colours and the map page were added here. See
 *The map page replaying a test session: 49 calls and 46 model steps, one
 failed command, the context window 97% full.*
 
-> **Status: on main, not in a tagged release yet.** The map page and the pane
+> **Included in [version 0.9.0](releases/v0.9.0.md).** The map page and the pane
 > landed on 2026-11-14. Open work is under "Session flow map" in
 > [TODO.md](../TODO.md).
 

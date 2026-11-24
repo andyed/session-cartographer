@@ -362,7 +362,7 @@ To capture the Explorer with randomized names over your own activity, use the
 - [Provider architecture](docs/PROVIDERS.md), [log schemas](docs/LOG_SCHEMAS.md),
   and [custom hooks](docs/CUSTOM_HOOKS.md)
 - [Explorer architecture](docs/EXPLORER_SPEC.md) and [Internals](docs/INTERNALS.md)
-- [The flow map](docs/FLOW_MAP.md), on main and not yet in a release: the pane
+- [The flow map](docs/FLOW_MAP.md), included in 0.9.0: the pane
   beside the chat and the Explorer's `/flow` page
 - [Demo and evaluation](docs/GHPAGES_DEMO_SPEC.md) and
   [related projects](docs/landscape-survey.md)

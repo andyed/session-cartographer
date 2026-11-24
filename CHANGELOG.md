@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.0 (2026-11-24)
 
 ### fix(index): halve an over-budget embedding input until it fits
 
@@ -58,7 +58,8 @@ direction on every leg, and how full the context window is. The Explorer's
 transcript. In Claude Code the plugin opens the same drawing in a pane beside
 the chat, live (`/carto-flow`); its `flowMap` option switches the pane off.
 It was called the work map while unreleased, and links to `/map` still open
-the page. You's two lanes carry their counts as bare figures beside the
+the page. The center node shows the session’s context fill at the selected replay moment,
+including below 70% and on phone-width maps. You's two lanes carry their counts as bare figures beside the
 arrows; the list under the map says "from you" and "to you".
 
 The pane's ribbon filters the feed by station, and while the Explorer answers

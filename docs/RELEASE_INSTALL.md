@@ -61,6 +61,10 @@ npm run dev
 The full web app binds to `127.0.0.1:2527`. Timeline, search, sessions, and
 transcripts work without Turbo and coexist with it when it is running.
 
+For the Flow map, open `http://127.0.0.1:2527/flow` and select a recorded
+Claude Code or Codex session. The center node shows context fill as you replay
+the session. In the Claude Code desktop app, use `/carto-flow` for the live pane.
+
 For the live working-memory view, use `npm run memory` from the same Explorer
 directory and open `http://127.0.0.1:2527/memory`. Both launch commands serve the
 whole web app; they do not occupy Turbo's API port. **Enable Turbo**, **Start Turbo**,

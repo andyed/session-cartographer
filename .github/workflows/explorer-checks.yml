@@ -5,7 +5,8 @@ on:
 
 jobs:
   explorer:
-    runs-on: ubuntu-latest
+    # The locked Playwright release provides Chromium for Ubuntu 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -41,6 +42,7 @@ jobs:
           node tests/browser/evidence-review.cjs
           node tests/browser/command-review.cjs
           node tests/browser/image-wall.cjs --preview
+          node tests/browser/session-map.cjs --preview
       - name: Preserve browser screenshots on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -54,4 +56,5 @@ jobs:
             ${{ runner.temp }}/carto-evidence-review-browser-artifacts
             ${{ runner.temp }}/carto-command-review-browser-artifacts
             ${{ runner.temp }}/carto-image-wall-browser-artifacts
+            ${{ runner.temp }}/carto-session-map-browser-artifacts
           if-no-files-found: ignore
