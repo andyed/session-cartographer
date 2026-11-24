@@ -258,7 +258,7 @@ function coreTrace(place) {
  * The flow as one SVG string. `size` is the width it is shown at in CSS pixels.
  * `present` are the stations the session used at all: the others keep their places and get no ink.
  */
-export function drawFlow(state, { layout, size = W, palette = DARK, names = {}, coreName = '', model = '', present, motion = 'full' } = {}) {
+export function drawFlow(state, { layout, size = W, palette = DARK, names = {}, coreName = '', model = '', context, present, motion = 'full' } = {}) {
   const p = palette
   const level = flowLevel(size)
   const unit = layout.width / size
@@ -323,7 +323,16 @@ export function drawFlow(state, { layout, size = W, palette = DARK, names = {}, 
   if (isBoard) {
     const c = layout.core
     out.push(`<rect x="${c.x - c.w / 2}" y="${c.y - c.h / 2}" width="${c.w}" height="${c.h}" rx="6" fill="${p.raised}" stroke="${coreEdge}" stroke-width="${px(level === 1 ? 2.4 : 1.6)}"/>`)
-    if (level === 3) {
+    const hasContext = Number.isFinite(context)
+    // The chip is wide enough for a percentage at 16 CSS px from 240 px of map width.
+    if (hasContext && size >= 240) {
+      const font = px(LABEL_PX)
+      const full = Math.max(0, Math.min(100, Math.round(context)))
+      const showModel = model && model.length * font * 0.62 <= c.w - 8 && font * 2.6 <= c.h
+      const y = showModel ? c.y + font * 0.9 : c.y + font * 0.34
+      if (showModel) out.push(`<text x="${c.x}" y="${n1(c.y - font * 0.3)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="700" fill="${p.bone}">${esc(model)}</text>`)
+      out.push(`<text x="${c.x}" y="${n1(y)}" text-anchor="middle" ${FONT} font-size="${font}" fill="${p.bone}">${full}%</text>`)
+    } else if (level === 3) {
       const font = n1(Math.max(LABEL_PX, LABEL_PX * unit))
       out.push(`<text x="${c.x}" y="${c.y - 4}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="700" letter-spacing="1" fill="${p.bone}">${esc(coreName)}</text>`)
       if (model) out.push(`<text x="${c.x}" y="${n1(c.y - 4 + font * 1.25)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="500" fill="${p.ash}">${esc(model)}</text>`)

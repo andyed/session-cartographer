@@ -18,7 +18,7 @@
 //   the hub is the key to the ribbon drawn under it. Its light is brightness.
 //
 //   The context ring is a faint arc until the window is 70% full. Then it is
-//   the map's grey with "NN% full" in the core, and its white from 90%. It is
+//   the map's grey, and its white from 90%. The core gives the percentage. It is
 //   never as wide as the newest leg, and never red: red means a call failed.
 //
 // The person's side is the top of the ring: You, and Your screen (what the
@@ -307,7 +307,7 @@ export const CONTEXT_FULL = 90
  * `pressed` is the station a page is listing, if any. `model` is the name the core says; left out, it is the
  * model of the state's last main-loop step.
  */
-export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK, names = {}, coreName = '', model = state.model ?? '', present, motion = 'full', pressed = '', accent = '#72e6ef' } = {}) {
+export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK, names = {}, coreName = '', model = state.model ?? '', prioritizeContext = false, present, motion = 'full', pressed = '', accent = '#72e6ef' } = {}) {
   const p = palette
   const { KIND, FAULT } = inkOf(p)
   const level = hubLevel(size)
@@ -387,21 +387,24 @@ export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK,
   const coreR = level === 1 ? CORE * 0.55 : CORE
   out.push(`<circle cx="${layout.core.x}" cy="${layout.core.y}" r="${n1(coreR)}" fill="${p.raised}" stroke="${level === 1 && near ? ringHue : mix(p.line, p.bone, 0.3 + 0.5 * coreLevel)}" stroke-width="${px(level === 1 ? 2.2 : 1.6)}"/>`)
   const font = n1(LABEL_PX * unit)
-  // What the core says, at 16 px: the model first, since which model is at work is the thing to know, and under it the
-  // agent's name or, once the window nears its limit, how full it is. Where both lines do not fit the model keeps its
-  // place and the second line goes; a name too long for one line is broken in two. A short name fits the core from
-  // about 280 px of map up, where the stations have no room for theirs; where nothing fits, the core says nothing.
-  if (level === 3 || (level === 2 && size >= 240 && model !== '')) {
-    const under = near ? `${full}% full` : level === 3 ? coreName : ''
+  // Give a recorded percentage a place inside the core at every width where it fits.
+  // Prefer the model alongside it. The shorter percentage survives a narrow core or a long name.
+  const meterFirst = prioritizeContext && full !== undefined
+  if (level === 3 || (level === 2 && (meterFirst || (size >= 240 && model !== '')))) {
+    const under = meterFirst || near ? `${full}% full` : level === 3 ? coreName : ''
     const tries = []
+    if (meterFirst) {
+      const compact = `${full}%`
+      if (model) tries.push([model, under], [model, compact])
+      tries.push([under], [compact])
+    }
     if (model !== '') {
-      // In order: both lines; the model alone on one line; the model broken in two.
-      if (under !== '') tries.push([model, under])
+      if (!meterFirst && under !== '') tries.push([model, under])
       tries.push([model])
       const cut = breakInTwo(model)
       if (cut) tries.push(cut)
     }
-    if (under !== '') tries.push([under])
+    if (!meterFirst && under !== '') tries.push([under])
     const lead = font * 1.12
     const fits = lines =>
       lines.every((line, k) => {
@@ -411,7 +414,7 @@ export function drawHub(state, { layout = hubLayout(), size = W, palette = DARK,
     const lines = tries.find(fits) ?? []
     lines.forEach((line, k) => {
       const y = layout.core.y + (k - (lines.length - 1) / 2) * lead + font * 0.34
-      const isModel = model !== '' && line !== under
+      const isModel = model !== '' && line !== under && !line.endsWith('%')
       const weight = isModel || (near && full >= CONTEXT_FULL) ? 700 : 500
       out.push(`<text x="${layout.core.x}" y="${n1(y)}" text-anchor="middle" ${FONT} font-size="${font}" font-weight="${weight}" fill="${isModel || near ? p.bone : p.ash}">${esc(line)}</text>`)
     })

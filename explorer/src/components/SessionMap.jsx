@@ -251,7 +251,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
   const src = useMemo(() => {
     if (!map || !setup) return '';
     const state = hubState(seated, at, { tau: 4000 * pace, hold, travel: 700 * pace, context: context?.percent });
-    return svgDataUri(drawHub(state, { layout: hub, size: stageWidth, names, coreName, present: seatedPresent, motion: reducedMotion ? 'reduced' : 'full', pressed: onBoard ? '' : station }));
+    return svgDataUri(drawHub(state, { layout: hub, size: stageWidth, prioritizeContext: true, names, coreName, present: seatedPresent, motion: reducedMotion ? 'reduced' : 'full', pressed: onBoard ? '' : station }));
   }, [map, setup, seated, seatedPresent, hub, at, pace, hold, context?.percent, stageWidth, names, coreName, reducedMotion, station, onBoard]);
 
   // lot-map's hub, which this view drew until 2026-11-13: kept for the two looks that compare against it.
@@ -276,8 +276,8 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
     [map, setup],
   );
   const boardSrc = useMemo(
-    () => (onBoard && flow && layouts && drawOptions ? svgDataUri(drawFlow(flow, { ...drawOptions, layout: layouts.board, size: stageWidth, motion: reducedMotion ? 'reduced' : 'full' })) : ''),
-    [onBoard, flow, layouts, drawOptions, stageWidth, reducedMotion],
+    () => (onBoard && flow && layouts && drawOptions ? svgDataUri(drawFlow(flow, { ...drawOptions, context: context?.percent, layout: layouts.board, size: stageWidth, motion: reducedMotion ? 'reduced' : 'full' })) : ''),
+    [onBoard, flow, layouts, drawOptions, context?.percent, stageWidth, reducedMotion],
   );
   // Lanes are the stations the session used, fixed for the session, so the tape does not change height as it plays.
   const tape = useMemo(() => {
@@ -354,6 +354,7 @@ export default function SessionMap({ isActive, onOpenTranscript }) {
                 style={onBoard ? flowCoreBox(layouts.board) : hubCoreBox(hub)}
                 aria-pressed={station === ''}
                 aria-label="All stations"
+                aria-description={context ? `Context window ${Math.round(context.percent)}% full` : undefined}
                 onClick={() => go({ station: '' })}
               />
               {(onBoard ? flowBoxes(layouts.board, setup.present) : hubBoxes(hub, seatedPresent)).map(box => (

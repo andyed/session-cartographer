@@ -31,5 +31,5 @@ export function hubState(
 ): HubState
 export function drawHub(
   state: HubState,
-  options?: { layout?: HubLayout; size?: number; names?: Record<string, string>; coreName?: string; model?: string; present?: Set<string>; motion?: 'full' | 'reduced'; pressed?: string; accent?: string; palette?: Record<string, string> },
+  options?: { layout?: HubLayout; size?: number; names?: Record<string, string>; coreName?: string; model?: string; prioritizeContext?: boolean; present?: Set<string>; motion?: 'full' | 'reduced'; pressed?: string; accent?: string; palette?: Record<string, string> },
 ): string

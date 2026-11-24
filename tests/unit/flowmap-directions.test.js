@@ -293,7 +293,7 @@ test('the core says the model first, at 16 px, at every width it fits', () => {
   assert.equal(hubState(recorded, T0 + 3500).model, 'fable 5.2');
   assert.equal(hubState(recorded, T0 + 5000).model, 'opus 5.5');
   const words = (size, more = {}) => {
-    const svg = drawHub(hubState(recorded, T0 + 2500, more.state), { layout, size, names: {}, coreName: 'CLAUDE', present, ...more.draw });
+    const svg = drawHub(hubState(recorded, T0 + 2500, more.state), { layout, size, names: {}, coreName: 'CLAUDE', prioritizeContext: true, present, ...more.draw });
     // The core's own words: those written inside its circle.
     const texts = [...svg.matchAll(/<text x="[\d.]+" y="([\d.]+)"[^>]*font-size="([\d.]+)"[^>]*>([^<]+)<\/text>/g)].filter(m => Math.abs(Number(m[1]) - layout.core.y) < layout.core.r).map(m => [m[0], m[2], m[3]]);
     for (const m of texts) assert.ok(Number(m[1]) / (layout.width / size) >= 15.9, `${m[2]} at ${size} px`);
@@ -304,8 +304,10 @@ test('the core says the model first, at 16 px, at every width it fits', () => {
   assert.deepEqual(words(460), ['fable 5.2', 'CLAUDE']);
   // At 400 px the letters are larger against the core and the two lines no longer fit: the model stays, alone.
   assert.deepEqual(words(400), ['fable 5.2']);
-  assert.deepEqual(words(400, { state: { context: 91 } }), ['fable 5.2']);
-  // Once the window nears its limit the second line is how full it is.
+  assert.ok(words(400, { state: { context: 91 } }).some(line => line.startsWith('91%')));
+  // The center keeps the percentage when the model is too long or the core too narrow.
+  assert.deepEqual(words(340, { state: { context: 25 }, draw: { model: 'gpt-5.1-codex-max' } }), ['25%']);
+  assert.deepEqual(words(280, { state: { context: 0 }, draw: { model: '' } }), ['0%']);
   assert.deepEqual(words(560, { state: { context: 91 } }), ['fable 5.2', '91% full']);
   // Without station names the model is still there, broken in two where one line would not fit at 16 px.
   assert.deepEqual(words(340), ['fable', '5.2']);
@@ -322,15 +324,15 @@ test('the core says the model first, at 16 px, at every width it fits', () => {
 
 test('the context ring is quiet until the window nears its limit, and is never red', () => {
   const present = new Set(['you', 'model', 'files', 'shell', 'web']);
-  const draw = context => drawHub(hubState(session, T0 + 7500, { context }), { layout, size: 560, names, coreName: 'CLAUDE', present, motion: 'reduced' });
+  const draw = context => drawHub(hubState(session, T0 + 7500, { context }), { layout, size: 560, prioritizeContext: true, names, coreName: 'CLAUDE', present, motion: 'reduced' });
   const ring = svg => /<circle [^>]*stroke="(#[0-9a-f]{6})" stroke-width="([\d.]+)" pathLength="100" stroke-dasharray="(\d+) 100"/.exec(svg);
   const px = w => Number(w) / (layout.width / 560);
   const quiet = ring(draw(22));
   assert.equal(quiet[3], '22');
   // Quieter than any family colour (the dimmest of those is 5.36:1) and thinner than any leg of the route.
   assert.ok(px(quiet[2]) <= 1.5 && ratio(quiet[1], DARK.ground) < 4.5, `under the threshold: ${px(quiet[2]).toFixed(2)} px at ${ratio(quiet[1], DARK.ground).toFixed(2)}:1`);
-  assert.doesNotMatch(draw(22), /% full/);
-  assert.doesNotMatch(draw(CONTEXT_NEAR - 1), /% full/);
+  assert.match(draw(22), />22% full</);
+  assert.match(draw(CONTEXT_NEAR - 1), />69% full</);
   const near = ring(draw(CONTEXT_NEAR));
   assert.equal(near[1], DARK.ash);
   assert.match(draw(CONTEXT_NEAR), new RegExp(`>${CONTEXT_NEAR}% full<`));

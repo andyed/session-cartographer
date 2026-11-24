@@ -143,6 +143,7 @@ today (see below).
 opens it). It reads Claude Code and Codex transcripts, a compressed Codex
 rollout and one recorded on Windows included. The same hub, with the ribbon under it, a
 tape (one lane a station, time left to right) and the list of calls beside it.
+The center shows how full this session’s context window was at the selected moment.
 A station on the hub is a control there: pressing it lists that station's calls.
 
 | Parameter | Meaning |

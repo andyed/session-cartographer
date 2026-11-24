@@ -39,7 +39,7 @@ async function port() { const server = net.createServer(); await new Promise(r =
     for (const [name, input] of tools) {
       step++;
       const id = `tu_${step}`;
-      rows.push({ type: 'assistant', timestamp: at(step * 20), message: { id: `msg_${step}`, model: 'claude-fable-5-2', usage: { input_tokens: 1000 * step, cache_read_input_tokens: 150_000 }, content: [{ type: 'tool_use', id, name, input }] } });
+      rows.push({ type: 'assistant', timestamp: at(step * 20), message: { id: `msg_${step}`, model: 'claude-fable-5-2', usage: { input_tokens: 1000 * step, cache_read_input_tokens: step === 1 ? 49_000 : 150_000 }, content: [{ type: 'tool_use', id, name, input }] } });
       rows.push({ type: 'user', timestamp: at(step * 20 + 4), message: { content: [{ type: 'tool_result', tool_use_id: id, is_error: step === 4, content: 'ok' }] } });
     }
   }
@@ -83,6 +83,20 @@ async function port() { const server = net.createServer(); await new Promise(r =
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     const base = `${origin}/flow?session=${encodeURIComponent(transcript)}`;
+
+    // The percentage belongs inside the selected session's center node, including early in a replay.
+    const expectCoreFill = async percent => {
+      const core = page.getByRole('button', { name: 'All stations', exact: true });
+      await core.waitFor();
+      assert.equal(await core.getAttribute('aria-description'), `Context window ${percent}% full`);
+      const svg = await page.locator('.sm-map img').evaluate(img => decodeURIComponent(img.src.split(',')[1]));
+      assert.match(svg, new RegExp(`<text x="230" [^>]*>${percent}%(?: full)?</text>`));
+    };
+    await page.goto(`${base}&at=${Date.parse(at(21))}`);
+    await expectCoreFill(25);
+    await page.getByRole('button', { name: 'Board', exact: true }).click();
+    await page.waitForSelector('.sm-map[data-layout="board"]');
+    await expectCoreFill(25);
 
     // ── 1440 x 900: nothing on the page's first screen is below the fold ──
     await page.goto(base);
@@ -211,6 +225,7 @@ async function port() { const server = net.createServer(); await new Promise(r =
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(base);
     await page.waitForFunction(() => document.querySelector('.sm-map img')?.naturalWidth > 0);
+    await expectCoreFill(97);
     const narrow = await page.evaluate(() => {
       const r = document.querySelector('.sm-map').getBoundingClientRect();
       const img = document.querySelector('.sm-map img').getBoundingClientRect();
