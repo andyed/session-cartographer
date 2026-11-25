@@ -221,6 +221,7 @@ const envSelf = [
   process.env.CLAUDE_SESSION_ID,
   process.env.CLAUDE_CODE_SESSION_ID,
   process.env.CODEX_SESSION_ID,
+  process.env.ANTIGRAVITY_CONVERSATION_ID,
 ].find((v) => v && isResolved(v));
 const newest = events[events.length - 1];
 const selfId = opt('me', null) || envSelf

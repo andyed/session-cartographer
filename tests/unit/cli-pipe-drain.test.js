@@ -76,7 +76,7 @@ function corpus(stamp) {
 function hermeticEnv(dir, extra = {}) {
   const env = { ...process.env, CARTOGRAPHER_DEV_DIR: dir,
     CODEX_HOME: path.join(dir, 'empty-codex'), CLAUDE_CONFIG_DIR: path.join(dir, 'empty-claude'), ...extra };
-  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
+  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete env[key];
   return env;
 }
 

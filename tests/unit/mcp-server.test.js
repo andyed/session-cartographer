@@ -54,6 +54,7 @@ const runAsync = promisify(execFile);
 // Every variable that can name a session or a provider to the CLIs.
 const LIVE_IDENTITY_VARS = [
   'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
+  'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT',
   'CARTOGRAPHER_PROVIDER', 'CODEX_THREAD_ID', 'CODEX_HOME', 'HERMES_SESSION_ID', 'CARTOGRAPHER_PURPOSE',
 ];
 
@@ -358,7 +359,7 @@ test('a child that exits while a process it started holds its pipes still answer
   assert.ok(elapsed < 3000, `answered after ${elapsed} ms, when the holder exited`);
 });
 
-test('the plugin registers the server for Claude Code and Codex, and the mirror is byte-identical', () => {
+test('the plugin registers the server for Claude Code, Codex, and Antigravity, and the mirror is byte-identical', () => {
   const claude = JSON.parse(fs.readFileSync(path.join(PLUGIN, '.mcp.json'), 'utf8')).mcpServers.cartographer;
   assert.equal(claude.command, 'node');
   assert.deepEqual(claude.args, ['${CLAUDE_PLUGIN_ROOT}/scripts/cartographer-mcp.js']);
@@ -370,11 +371,61 @@ test('the plugin registers the server for Claude Code and Codex, and the mirror 
   assert.deepEqual(codex, { command: 'node', args: ['./scripts/cartographer-mcp.js'], cwd: './' });
   assert.ok(!JSON.stringify(codex).includes('${'), 'Codex passes ${…} through literally');
 
+  // Antigravity reads plugin-root mcp_config.json and expands ${PLUGIN_ROOT}.
+  const agy = JSON.parse(fs.readFileSync(path.join(PLUGIN, 'mcp_config.json'), 'utf8')).mcpServers.cartographer;
+  assert.deepEqual(agy, { command: 'node', args: ['${PLUGIN_ROOT}/scripts/cartographer-mcp.js'] });
+
   for (const name of ['cartographer-mcp.js', 'facts-render.js', 'cartographer-facts.js', 'sentinels.js']) {
     // Buffer.equals, not deepEqual: on a drift, deepEqual diffs two ~50 KB
     // byte arrays and runs the test process out of heap instead of failing.
     assert.ok(fs.readFileSync(path.join(ROOT, 'scripts', name)).equals(fs.readFileSync(path.join(PLUGIN, 'scripts', name))),
       `${name} drifted from its packaged plugin mirror`);
+  }
+});
+
+test('Antigravity MCP clients attribute provider from ANTIGRAVITY_CONVERSATION_ID or clientInfo', async () => {
+  const fx = makeFixture();
+  const sid = freshSid('agy-mcp');
+  try {
+    // 1. With ANTIGRAVITY_CONVERSATION_ID in env: session attribution + delta serving + provider antigravity.
+    await withServer(fx, { ANTIGRAVITY_CONVERSATION_ID: sid }, async (client) => {
+      const first = await client.call('recall', { query: QUERY, limit: 5 });
+      const text = modelSees(first);
+      const hits = hitsIn(text);
+      assert.equal(hits[0]?.event_id, HIT, text);
+      const callId = callIdIn(text);
+
+      const servedRows = readJsonl(fx.served).filter((row) => row.call_id === callId);
+      assert.ok(servedRows.some((row) => row.event_id === HIT));
+      for (const row of servedRows) {
+        assert.equal(row.provider, 'antigravity');
+        assert.equal(row.session_id, sid);
+        assert.equal(row.attribution_status, 'session');
+        assert.equal(row.session_source, 'ANTIGRAVITY_CONVERSATION_ID');
+      }
+
+      const second = await client.call('recall', { query: QUERY, limit: 5 });
+      assert.equal(hitsIn(modelSees(second)).length, 0, 'delta serving suppresses seen hits in the same Antigravity session');
+
+      const marked = await client.call('mark_used', { event_ids: [HIT], call_id: callId });
+      assert.equal(marked.isError, undefined, modelSees(marked));
+      const access = readJsonl(fx.ledger).find((row) => row.event_id === HIT && row.call_id === callId && row.source === 'result_used');
+      assert.ok(access, 'mark_used wrote a result_used access row for Antigravity');
+      assert.equal(access.provider, 'antigravity');
+      assert.equal(access.session_id, sid);
+    }, { client: 'antigravity' });
+
+    // 2. Without a session env var: honest no_session with provider named from clientInfo.
+    await withServer(fx, {}, async (client) => {
+      const res = await client.call('recall', { query: QUERY, limit: 5 });
+      const callId = callIdIn(modelSees(res));
+      const callRow = readJsonl(fx.calls).find((row) => row.call_id === callId);
+      assert.ok(callRow, 'search-call row recorded');
+      assert.equal(callRow.provider, 'antigravity');
+      assert.equal(callRow.attribution_status, 'no_session');
+    }, { client: 'antigravity-app' });
+  } finally {
+    fx.cleanup();
   }
 });
 

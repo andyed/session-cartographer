@@ -82,7 +82,7 @@ function pulse(extra, envOverrides = {}) {
     CARTOGRAPHER_SEARCH_CALL_LOG: path.join(dev, 'calls.jsonl'),
     ...envOverrides,
   };
-  for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
+  for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
   return spawnSync('bash', [PULSE, '--projects', 'fixture', '--since', '24h',
     '--facts-url', 'http://127.0.0.1:9', '--facts-timeout-ms', '300', ...extra], { encoding: 'utf8', env });
 }

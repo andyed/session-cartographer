@@ -26,6 +26,15 @@ fixtures plus live exact-use data — not another constant chosen by eye.
 
 # Session Cartographer — TODO
 
+## Antigravity provider support (added 2026-11-25)
+
+Phased integration of Google Antigravity onto Session Cartographer's shared
+memory plane without breaking Claude Code or Codex installs.
+
+- **[x] Milestone 1: Read-only Antigravity plugin, MCP config, and identity** (2026-11-25, `0.9.1`). Ships `.antigravity-plugin/plugin.json`, plugin-root `mcp_config.json` (`${PLUGIN_ROOT}/scripts/cartographer-mcp.js`), `ANTIGRAVITY_CONVERSATION_ID` in the canonical session chain, `provider: "antigravity"` attribution (env + MCP `clientInfo`), Explorer `AgentBadge` (`#9ecbff`), and test harness env scrubbing. No plugin-root `hooks.json` yet.
+- **[ ] Milestone 2: Antigravity live hook capture bridge and root `hooks.json`.** Add a Node payload/output bridge translating Antigravity's camelCase payloads and tool names (`run_command`, `edit_file`, `write_file`, `search_web`) to Cartographer's snake_case hooks and strict Antigravity stdout JSON (`{"decision":"allow"}`, `{}`, `injectSteps`), gate `PreInvocation` to the first step per prompt, log `Stop` milestones, and detect `*/.gemini/antigravity*/brain/*` paths in `common.sh`.
+- **[ ] Milestone 3: Antigravity transcript indexing, Explorer viewer, and optional SQLite backfill.** Add `scripts/antigravity-transcript-to-turns.awk`, wire `CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR` across `resolve-transcript.sh`, `retro-index.sh`, `cartographer-search.sh`, and `explorer/server/transcripts.js`, teach `explorer/server/transcript-evidence.js` about `USER_INPUT`/`PLANNER_RESPONSE`/`tool_calls`, and use `conversation_summaries.db` (`workspace_uris`, `parent_conversation_id`, `conversations_fts`) for project resolution, subagent folding, and optional pre-JSONL historical backfill.
+
 ## [x] Indexing outcomes are unobservable — reject vs fail vs skip (resolved 2026-08-30)
 
 Before this fix, `index-event.sh` had **three** `exit 0` paths and a caller that

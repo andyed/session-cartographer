@@ -150,7 +150,7 @@ test('end to end: a hookless Codex editor shows as SILENT and its change as UNCL
   const res = spawnSync(process.execPath, [SCRIPT, '--project', 'widgetworks', '--since', '1h'], {
     encoding: 'utf-8', cwd: dev,
     env: { ...process.env, CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_SESSION_ID: CLAUDE_ID,
-           CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '',
+           CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '',
            CODEX_HOME: home, CLAUDE_CONFIG_DIR: tmp('claude-empty-') },
   });
   assert.equal(res.status, 0, res.stderr);

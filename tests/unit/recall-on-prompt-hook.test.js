@@ -29,7 +29,7 @@ import { withoutTrialGates } from './helpers/trial-gates.js';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const HOOK = path.join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'surface-recall-on-prompt.sh');
 const IDENTITY_VARS = ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID',
-  'CODEX_SESSION_ID', 'CARTOGRAPHER_PROVIDER', 'CODEX_THREAD_ID', 'CODEX_HOME', 'HERMES_SESSION_ID',
+  'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_PROVIDER', 'CODEX_THREAD_ID', 'CODEX_HOME', 'HERMES_SESSION_ID',
   'CARTOGRAPHER_RECALL_ON_PROMPT', 'CARTOGRAPHER_RECALL_ON_PROMPT_BUDGET_MS',
   'CARTOGRAPHER_RECALL_ON_PROMPT_MIN_SCORE', 'CARTOGRAPHER_RECALL_ON_PROMPT_LOG'];
 const SID = 'sess-asking-0001';

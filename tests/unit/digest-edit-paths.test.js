@@ -48,7 +48,7 @@ function digest(events, files) {
 
   const env = { ...process.env, CARTOGRAPHER_DEV_DIR: dir, CARTOGRAPHER_CHANGELOG: changelog };
   // Delta serving is real: a harness that inherits a live session id loses rows.
-  for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
+  for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
 
   const run = spawnSync('node', [SCRIPT, '--session', SESSION, '--json', '--no-git'], { encoding: 'utf8', env });
   fs.rmSync(dir, { recursive: true, force: true });

@@ -3,7 +3,7 @@
 // The record is never changed: session_id, used and fetched stay what the
 // logs say, and the transcript's answer is reported beside them.
 process.env.CARTOGRAPHER_SEMANTIC = '0';
-for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete process.env[name];
+for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete process.env[name];
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

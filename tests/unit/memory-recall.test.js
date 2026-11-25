@@ -2,7 +2,7 @@
 // listing with its Unattributed group, and parity with the two other readers
 // of the same logs (Internals and the session digest).
 process.env.CARTOGRAPHER_SEMANTIC = '0';
-for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete process.env[name];
+for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete process.env[name];
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

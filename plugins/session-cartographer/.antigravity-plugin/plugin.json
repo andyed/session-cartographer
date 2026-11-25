@@ -1,0 +1,16 @@
+{
+  "name": "session-cartographer",
+  "displayName": "Session Cartographer",
+  "version": "0.9.1",
+  "description": "Read-only recall, orientation, facts, and peer standup across shared Claude Code, Codex, and Hermes session history.",
+  "author": {
+    "name": "Andy Edmonds"
+  },
+  "homepage": "https://github.com/andyed/session-cartographer",
+  "repository": "https://github.com/andyed/session-cartographer",
+  "suggestedPrompts": [
+    "Remember what we decided last time on this project.",
+    "Orient me on this project's recent work and open threads.",
+    "Run standup to see active peer sessions and file contention."
+  ]
+}

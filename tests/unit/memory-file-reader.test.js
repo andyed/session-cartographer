@@ -8,7 +8,7 @@ import { EventEmitter } from 'node:events';
 
 const fixtureRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'carto-reader-')));
 process.env.CARTOGRAPHER_DEV_DIR = fixtureRoot;
-for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_EDITOR']) delete process.env[name];
+for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_EDITOR']) delete process.env[name];
 process.on('exit', () => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
 
 const { createMemoryHandler } = await import('../../explorer/server/memory.js');

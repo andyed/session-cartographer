@@ -15,6 +15,7 @@ function fixture(t) {
     'plugins/session-cartographer/package.json': { version },
     'plugins/session-cartographer/.codex-plugin/plugin.json': { version },
     'plugins/session-cartographer/.claude-plugin/plugin.json': { version },
+    'plugins/session-cartographer/.antigravity-plugin/plugin.json': { version },
     '.claude-plugin/marketplace.json': { plugins: [{ name: 'session-cartographer', version }] },
   };
   const write = (relative, value) => {
@@ -40,6 +41,7 @@ for (const [relative, mutate] of [
   ['plugins/session-cartographer/package.json', doc => { doc.version = '0.7.5'; }],
   ['plugins/session-cartographer/.codex-plugin/plugin.json', doc => { doc.version = '0.7.5'; }],
   ['plugins/session-cartographer/.claude-plugin/plugin.json', doc => { doc.version = '0.7.5'; }],
+  ['plugins/session-cartographer/.antigravity-plugin/plugin.json', doc => { doc.version = '0.7.5'; }],
   ['.claude-plugin/marketplace.json', doc => { doc.plugins = []; }],
 ]) {
   test(`rejects stale or missing metadata in ${relative}: ${mutate}`, t => {

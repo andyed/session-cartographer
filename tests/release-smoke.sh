@@ -4,7 +4,7 @@ set -euo pipefail
 # Delta serving suppresses event_ids already returned this session. A harness
 # that inherits a live session id silently loses repeat results and fails on
 # runs that are actually fine. Tests must be hermetic.
-unset CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID
+unset CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID ANTIGRAVITY_CONVERSATION_ID ANTIGRAVITY_AGENT
 export CARTOGRAPHER_TURBO=0
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -23,7 +23,9 @@ PLUGIN="$BUNDLE/plugins/session-cartographer"
 for required in \
   "$PLUGIN/.codex-plugin/plugin.json" \
   "$PLUGIN/.claude-plugin/plugin.json" \
+  "$PLUGIN/.antigravity-plugin/plugin.json" \
   "$PLUGIN/.mcp.json" \
+  "$PLUGIN/mcp_config.json" \
   "$PLUGIN/scripts/cartographer-mcp.js" \
   "$PLUGIN/scripts/facts-render.js" \
   "$PLUGIN/hooks/hooks.json" \

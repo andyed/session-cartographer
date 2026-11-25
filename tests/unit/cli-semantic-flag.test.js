@@ -68,7 +68,7 @@ test.after(async () => {
 function cliEnv(semantic) {
   const env = { ...process.env };
   for (const key of [
-    'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
+    'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT',
     'CARTOGRAPHER_SEMANTIC', 'CARTOGRAPHER_SEARCH_BACKEND',
   ]) delete env[key];
   if (semantic !== undefined) env.CARTOGRAPHER_SEMANTIC = semantic;

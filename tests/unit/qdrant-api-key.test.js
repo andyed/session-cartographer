@@ -38,7 +38,7 @@ const FILE_KEY = 'filekey-8e2a6c4d0f1b';
 const TERM = 'wombatkey';
 
 for (const name of [
-  'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
+  'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT',
   // The semantic leg has to run for its requests to be observed; the URLs
   // below keep it on the recorder.
   'CARTOGRAPHER_SEMANTIC', 'CARTOGRAPHER_SEARCH_BACKEND',

@@ -10,7 +10,7 @@ import { PassThrough } from 'node:stream';
 
 const fixtureRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'carto-memory-')));
 process.env.CARTOGRAPHER_DEV_DIR = fixtureRoot;
-for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete process.env[name];
+for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete process.env[name];
 process.on('exit', () => fs.rmSync(fixtureRoot, { recursive: true, force: true }));
 const { createMemoryHandler, projectMemory, enrichMemory, resolveMemoryFile } = await import('../../explorer/server/memory.js');
 const now = Date.parse('2026-09-09T12:00:00Z');

@@ -16,7 +16,7 @@ detect_provider() {
   local input="$1"
 
   case "${CARTOGRAPHER_PROVIDER:-}" in
-    claude|codex) printf '%s\n' "$CARTOGRAPHER_PROVIDER"; return 0 ;;
+    claude|codex|antigravity) printf '%s\n' "$CARTOGRAPHER_PROVIDER"; return 0 ;;
   esac
 
   command -v jq >/dev/null 2>&1 || { printf '%s\n' "unknown"; return 0; }
@@ -37,7 +37,7 @@ detect_provider_from() {
   local transcript="$1" turn_id="$2" model="$3"
 
   case "${CARTOGRAPHER_PROVIDER:-}" in
-    claude|codex) printf '%s\n' "$CARTOGRAPHER_PROVIDER"; return 0 ;;
+    claude|codex|antigravity) printf '%s\n' "$CARTOGRAPHER_PROVIDER"; return 0 ;;
   esac
 
   # Windows payloads spell the path with `\` (C:\Users\me\.claude\projects\…),
@@ -77,14 +77,15 @@ cartographer_resolved() {
 #
 # Sets CARTO_SESSION_ID and CARTO_SESSION_SOURCE from the chain
 # cartographer-search.sh reads — CARTOGRAPHER_SESSION_ID, CLAUDE_SESSION_ID,
-# CLAUDE_CODE_SESSION_ID, CODEX_SESSION_ID — taking the first resolved value,
+# CLAUDE_CODE_SESSION_ID, CODEX_SESSION_ID, ANTIGRAVITY_CONVERSATION_ID —
+# taking the first resolved value,
 # not the first non-empty one: a ${a:-$b} chain lets "unknown" shadow a real id.
 # A hook that calls a search must name the session the search will name, or its
 # own rows cannot be joined to the served rows; this is that one reading.
 cartographer_session_id() {
   local var
   CARTO_SESSION_ID=""; CARTO_SESSION_SOURCE=""
-  for var in CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID; do
+  for var in CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID ANTIGRAVITY_CONVERSATION_ID; do
     if cartographer_resolved "${!var:-}"; then
       CARTO_SESSION_ID="${!var}"; CARTO_SESSION_SOURCE="$var"
       return 0

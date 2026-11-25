@@ -69,7 +69,7 @@ const run = (s, args = []) =>
       CARTOGRAPHER_SESSION_ID: '',
       CLAUDE_SESSION_ID: '',
       CLAUDE_CODE_SESSION_ID: '',
-      CODEX_SESSION_ID: '',
+      CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '',
     },
   });
 

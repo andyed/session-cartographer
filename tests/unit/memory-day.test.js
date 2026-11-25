@@ -64,7 +64,7 @@ const changelog = path.join(dev, 'changelog.jsonl');
 fs.writeFileSync(changelog, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
 
 const env = { ...process.env, TZ, CARTOGRAPHER_CHANGELOG: changelog };
-for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
+for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
 
 function cli(format) {
   const run = spawnSync('node', [SCRIPT, '--day', DAY, `--${format}`], { encoding: 'utf8', env: { ...env, CARTOGRAPHER_DEV_DIR: dev } });

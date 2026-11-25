@@ -417,7 +417,7 @@ describe('hermes-source --write', () => {
     const env = { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: work, CARTOGRAPHER_INDEXER: indexer,
       CARTOGRAPHER_MILESTONES: path.join(work, 'session-milestones.jsonl'),
       CARTOGRAPHER_HERMES_STATE: path.join(work, 'state.json'), CARTOGRAPHER_HERMES_CONFIG: fx.configPath, ...extraEnv };
-    for (const k of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete env[k];
+    for (const k of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_SESSION_ID']) delete env[k];
     const result = spawnSync(process.execPath, [SCRIPT, ...args], { env, encoding: 'utf8' });
     const read = (f) => (fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean) : []);
     return { ...result, rows: read(env.CARTOGRAPHER_MILESTONES).map(JSON.parse), indexed: read(indexLog) };
@@ -463,7 +463,7 @@ describe('hermes-source --write', () => {
     const search = (q) => spawnSync('bash', [path.join(ROOT, 'scripts', 'cartographer-search.sh'), q, '--limit', '5'], {
       encoding: 'utf8',
       env: { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: fx.work, CARTOGRAPHER_TURBO: '0', CARTOGRAPHER_SEMANTIC: '0',
-        CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', CARTOGRAPHER_SESSION_ID: '' },
+        CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '', CARTOGRAPHER_SESSION_ID: '' },
     }).stdout;
     // searchable() keeps quotes out of the row. bm25-search.awk cut a JSON string
     // at its first quote, escaped or not, until 2026-09-25; the reader side is

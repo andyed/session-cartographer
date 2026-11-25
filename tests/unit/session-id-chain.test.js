@@ -34,6 +34,8 @@ const SESSION_VARS = [
   'CLAUDE_SESSION_ID',
   'CLAUDE_CODE_SESSION_ID',
   'CODEX_SESSION_ID',
+  'ANTIGRAVITY_CONVERSATION_ID',
+  'ANTIGRAVITY_AGENT',
 ];
 
 // Delta serving keeps a per-session served list under /tmp that outlives the
@@ -123,12 +125,24 @@ test('served row carries the session from CLAUDE_CODE_SESSION_ID', () => {
   }
 });
 
+test('served row carries the session and provider from ANTIGRAVITY_CONVERSATION_ID', () => {
+  const sid = freshSid('antigravity');
+  const { rows } = servedRowsFor({ ANTIGRAVITY_CONVERSATION_ID: sid });
+  assert.ok(rows.length > 0, 'no served row — fixture broken, not the chain');
+  for (const row of rows) {
+    assert.equal(row.session_id, sid,
+      'served row must carry the session from ANTIGRAVITY_CONVERSATION_ID');
+    assert.equal(row.provider, 'antigravity');
+  }
+});
+
 test('CARTOGRAPHER_SESSION_ID wins over every provider variable', () => {
   const sid = freshSid('override');
   const { rows } = servedRowsFor({
     CARTOGRAPHER_SESSION_ID: sid,
     CLAUDE_CODE_SESSION_ID: freshSid('code'),
     CODEX_SESSION_ID: freshSid('codex'),
+    ANTIGRAVITY_CONVERSATION_ID: freshSid('antigravity'),
   });
   assert.ok(rows.length > 0, 'no served row — fixture broken, not the chain');
   for (const row of rows) assert.equal(row.session_id, sid);
@@ -163,6 +177,12 @@ test('digest honours CODEX_SESSION_ID', () => {
   const { stderr, status } = digestSession({ CODEX_SESSION_ID: 'sid-codex-abc' });
   assert.equal(status, 1, `expected resolved-but-empty, got: ${stderr}`);
   assert.match(stderr, /sid-codex-abc/);
+});
+
+test('digest honours ANTIGRAVITY_CONVERSATION_ID', () => {
+  const { stderr, status } = digestSession({ ANTIGRAVITY_CONVERSATION_ID: 'sid-agy-abc' });
+  assert.equal(status, 1, `expected resolved-but-empty, got: ${stderr}`);
+  assert.match(stderr, /sid-agy-abc/);
 });
 
 test('digest exits 2 with a clear message when nothing resolves', () => {

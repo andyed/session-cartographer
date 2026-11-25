@@ -72,7 +72,7 @@ async function port() { const server = net.createServer(); await new Promise(r =
     fs.writeFileSync(pairedPath,records.map(JSON.stringify).join('\n')+'\n');
   }
   const uiPort = await port(), apiPort = await port();
-  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CARTOGRAPHER_') && !['CLAUDE_SESSION_ID','CLAUDE_CODE_SESSION_ID','CODEX_SESSION_ID','VITE_DEMO'].includes(key)));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('CARTOGRAPHER_') && !['CLAUDE_SESSION_ID','CLAUDE_CODE_SESSION_ID','CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT','VITE_DEMO'].includes(key)));
   const config = path.join(work, 'config.json'); fs.writeFileSync(config,JSON.stringify({turbo:{enabled:false,url:`http://127.0.0.1:${apiPort}`}}));
   Object.assign(env,{CARTOGRAPHER_DEV_DIR:corpus,CARTOGRAPHER_CONFIG:config,CARTOGRAPHER_TURBO_STATE_DIR:path.join(work,'turbo'),CARTOGRAPHER_TURBO_URL:`http://127.0.0.1:${apiPort}`,CARTOGRAPHER_SEMANTIC:'0',CARTOGRAPHER_QDRANT_URL:'http://127.0.0.1:1',CARTOGRAPHER_EMBED_URL:'http://127.0.0.1:1/v1/embeddings',CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:path.dirname(transcript),CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:path.join(work,'codex'),CARTOGRAPHER_CODEX_ARCHIVED_DIR:path.join(work,'archives')});
   const vite = spawn(process.execPath,[path.join(root,'explorer/node_modules/vite/bin/vite.js'),...(process.argv.includes('--preview')?['preview']:[]),'--host','127.0.0.1','--port',String(uiPort),'--strictPort'],{cwd:path.join(root,'explorer'),env,stdio:['ignore','pipe','pipe']});

@@ -123,7 +123,7 @@ function run(dev, args, { self = OBSERVER, codexHome } = {}) {
     encoding: 'utf-8',
     cwd: dev,
     env: { ...process.env, CARTOGRAPHER_DEV_DIR: dev, CARTOGRAPHER_SESSION_ID: self,
-           CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '',
+           CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '',
            CODEX_HOME: codexHome || path.join(empty, 'codex'), CLAUDE_CONFIG_DIR: path.join(empty, 'claude') },
   });
   assert.equal(res.status, 0, `exit ${res.status}: ${res.stderr}`);

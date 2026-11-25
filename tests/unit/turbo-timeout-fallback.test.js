@@ -35,7 +35,7 @@ const SEARCH = path.join(ROOT, 'scripts', 'cartographer-search.sh');
 const FACTS = path.join(ROOT, 'scripts', 'cartographer-facts.js');
 
 const IDENTITY_VARS = [
-  'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
+  'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT',
   'CARTOGRAPHER_PROVIDER', 'CARTOGRAPHER_TURBO_TIMEOUT_MS',
 ];
 const HIT = 'evt-timeoutfixturehit';

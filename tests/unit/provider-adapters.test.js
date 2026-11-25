@@ -149,6 +149,36 @@ describe('hook provider detection', () => {
 
   test('supports an explicit custom-producer override', () => {
     assert.equal(detectProvider({}, { CARTOGRAPHER_PROVIDER: 'codex' }), 'codex');
+    assert.equal(detectProvider({}, { CARTOGRAPHER_PROVIDER: 'antigravity' }), 'antigravity');
+  });
+});
+
+describe('Antigravity read-only plugin manifest', () => {
+  test('declares only documented Antigravity top-level fields, matching version, and no root hooks.json in M1', () => {
+    const manifestPath = join(ROOT, 'plugins', 'session-cartographer', '.antigravity-plugin', 'plugin.json');
+    const mcpPath = join(ROOT, 'plugins', 'session-cartographer', 'mcp_config.json');
+    const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    const mcp = JSON.parse(readFileSync(mcpPath, 'utf8'));
+
+    const allowed = new Set([
+      '$schema', 'name', 'displayName', 'version', 'description',
+      'logo', 'suggestedPrompts', 'author', 'homepage', 'repository', 'disabled',
+    ]);
+    for (const key of Object.keys(manifest)) {
+      assert.ok(allowed.has(key), `Unexpected Antigravity plugin.json field: ${key}`);
+    }
+    assert.equal(manifest.name, 'session-cartographer');
+    assert.equal(manifest.version, pkg.version);
+    assert.ok(Array.isArray(manifest.suggestedPrompts) && manifest.suggestedPrompts.length <= 3);
+    assert.deepEqual(mcp.mcpServers.cartographer, {
+      command: 'node',
+      args: ['${PLUGIN_ROOT}/scripts/cartographer-mcp.js'],
+    });
+    assert.equal(
+      readFileSync(join(ROOT, 'plugins', 'session-cartographer', 'scripts', 'cartographer-mcp.js')).length > 0,
+      true,
+    );
   });
 });
 

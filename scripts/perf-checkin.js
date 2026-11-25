@@ -56,7 +56,7 @@ const SKIP_CLI = flag('--skip-cli');
 // Delta serving and time decay both make a benchmark lie: a live session id
 // suppresses repeat results, and a fixed corpus ages under decay. Same
 // precautions as tests/release-smoke.sh and scripts/eval-search.js.
-for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) {
+for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) {
   delete process.env[key];
 }
 process.env.CARTOGRAPHER_SEMANTIC = '0';
@@ -177,7 +177,7 @@ function freePort() {
 
 function childEnv(extra) {
   const env = { ...process.env, ...extra };
-  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
+  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete env[key];
   return env;
 }
 

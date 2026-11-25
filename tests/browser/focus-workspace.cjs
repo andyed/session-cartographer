@@ -27,7 +27,7 @@ async function unusedPort() {
 function isolatedEnvironment(work, corpus, apiPort, config) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
     !key.startsWith('CARTOGRAPHER_')
-    && !['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'VITE_DEMO'].includes(key)));
+    && !['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'VITE_DEMO'].includes(key)));
   return {
     ...env,
     CARTOGRAPHER_DEV_DIR: corpus,

@@ -35,7 +35,7 @@ async function port() {
   // A developer's telemetry paths, spool-only setting, or demo mode must not
   // change the fixture or send its reads/writes to the real corpus.
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
-    !key.startsWith('CARTOGRAPHER_') && !['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'VITE_DEMO'].includes(key)));
+    !key.startsWith('CARTOGRAPHER_') && !['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'VITE_DEMO'].includes(key)));
   Object.assign(env, {
     CARTOGRAPHER_DEV_DIR: corpus,
     CARTOGRAPHER_CONFIG: config,

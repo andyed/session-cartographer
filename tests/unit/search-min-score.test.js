@@ -35,7 +35,7 @@ const SEARCH = path.join(ROOT, 'scripts', 'cartographer-search.sh');
 const runAsync = promisify(execFile);
 const QUERY = 'zzfloorqq';
 const IDENTITY_VARS = ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID',
-  'CODEX_SESSION_ID', 'CARTOGRAPHER_PROVIDER', 'CODEX_THREAD_ID', 'CODEX_HOME', 'HERMES_SESSION_ID'];
+  'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_PROVIDER', 'CODEX_THREAD_ID', 'CODEX_HOME', 'HERMES_SESSION_ID'];
 
 function readJsonl(file) {
   if (!fs.existsSync(file)) return [];

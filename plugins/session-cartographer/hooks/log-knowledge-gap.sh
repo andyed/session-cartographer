@@ -37,9 +37,11 @@ TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 # is a legacy name it never sets. Reading only the legacy name is what left 86%
 # of milestone records unattributed before 0.5.0.
 CLAUDE_SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
-SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-}}}"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-${ANTIGRAVITY_CONVERSATION_ID:-}}}}"
 PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
 [ "$PROVIDER" = "unknown" ] && [ -n "$CLAUDE_SID" ] && PROVIDER="claude"
+[ "$PROVIDER" = "unknown" ] && [ -n "${CODEX_SESSION_ID:-}" ] && PROVIDER="codex"
+[ "$PROVIDER" = "unknown" ] && [ -n "${ANTIGRAVITY_CONVERSATION_ID:-}${ANTIGRAVITY_AGENT:-}" ] && PROVIDER="antigravity"
 CWD=$(pwd)
 
 # Knowledge gaps carry mid-high salience — they are signals worth surfacing

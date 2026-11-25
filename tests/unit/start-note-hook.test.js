@@ -139,7 +139,7 @@ function run(f, cwd, { sid = SELF, source = 'startup', gate = '1', env = {} } = 
     transcript_path: `/home/t/.claude/projects/x/${sid}.jsonl` };
   const childEnv = { ...withoutTrialGates(process.env), ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: f.dev,
     CARTOGRAPHER_FOCUS_ON_START: gate, CARTOGRAPHER_SEMANTIC: '0', ...env };
-  for (const k of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
+  for (const k of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT',
     'CARTOGRAPHER_SESSION_ID', 'CARTOGRAPHER_ROOT', 'CARTOGRAPHER_MILESTONES', 'CARTOGRAPHER_PROVIDER']) {
     if (!(k in env)) delete childEnv[k];
   }

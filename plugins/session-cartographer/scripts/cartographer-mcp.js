@@ -86,7 +86,13 @@ const PURPOSE = 'mcp';
 
 // Same order and same sentinel rule as cartographer-search.sh. Read here only
 // to report attribution back to the caller; the script resolves it for itself.
-const SESSION_CHAIN = ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID'];
+const SESSION_CHAIN = [
+  'CARTOGRAPHER_SESSION_ID',
+  'CLAUDE_SESSION_ID',
+  'CLAUDE_CODE_SESSION_ID',
+  'CODEX_SESSION_ID',
+  'ANTIGRAVITY_CONVERSATION_ID',
+];
 
 // Mirrors VALID_INTENTS in cartographer-search.sh / classify-prompt-intent.js.
 const INTENTS = [
@@ -147,6 +153,7 @@ function providerFromClient(name) {
   if (value.includes('claude')) return 'claude';
   if (value.includes('codex')) return 'codex';
   if (value.includes('hermes')) return 'hermes';
+  if (value.includes('antigravity') || value === 'agy' || value.startsWith('agy-') || value.startsWith('agy ')) return 'antigravity';
   return '';
 }
 

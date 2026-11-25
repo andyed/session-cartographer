@@ -15,7 +15,7 @@ Codex hooks ───> Codex adapter ──┘              │
 ## Invariants
 
 1. **Provider is provenance, not partitioning.** Every new event or normalized
-   turn carries `provider: "claude" | "codex" | "unknown"`. All providers use
+   turn carries `provider: "claude" | "codex" | "hermes" | "antigravity" | "unknown"`. All providers use
    the same logs, Qdrant collection, scoring, and Explorer index.
 2. **Consumers search across providers by default.** Claude can recall Codex
    work and Codex can recall Claude work. Provider filters are optional facets,
@@ -28,8 +28,14 @@ Codex hooks ───> Codex adapter ──┘              │
    transcript path and provider-specific payload fields. This is safe when both
    agents are working at once.
 5. **Unknown is preferable to a false label.** Custom hook producers may set
-   `CARTOGRAPHER_PROVIDER=claude|codex`; otherwise ambiguous inputs are stored
+   `CARTOGRAPHER_PROVIDER=claude|codex|antigravity`; otherwise ambiguous inputs are stored
    as `unknown` and remain searchable.
+
+> **Antigravity (Milestone 1 — read-only):** Antigravity currently participates as
+> a read-only consumer via `.antigravity-plugin/plugin.json`, plugin-root
+> `mcp_config.json`, skills, and `ANTIGRAVITY_CONVERSATION_ID` identity
+> attribution. Live hook capture (M2) and transcript indexing (M3) are tracked in
+> `roadmap.toml`.
 
 ## Boundaries
 

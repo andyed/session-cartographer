@@ -58,7 +58,7 @@ chmod +x "$ROOT/scripts/index-event.sh"
 
 # A hermetic environment: no live session id (delta serving), no live index,
 # no user git config, one time zone.
-unset CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID CARTOGRAPHER_SESSION_ID
+unset CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID CARTOGRAPHER_SESSION_ID ANTIGRAVITY_CONVERSATION_ID ANTIGRAVITY_AGENT
 unset CARTOGRAPHER_PROVIDER
 export HOME="$HOMEDIR" TZ=UTC
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null

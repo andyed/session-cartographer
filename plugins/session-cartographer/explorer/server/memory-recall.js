@@ -184,8 +184,8 @@ export function listRecallCalls({ index, coverage, transcript_attribution: trans
 }
 
 // Transcript turns live only in the semantic index, but their ids name their
-// session: turn-<sid>-<idx> (Claude), turn-codex-<sid>-<idx>, turn-hermes-<sid>-<idx>.
-const TURN_ID = /^turn-(?:(codex|hermes)-)?(.+)-(\d+)$/;
+// session: turn-<sid>-<idx> (Claude), turn-codex-<sid>-<idx>, turn-hermes-<sid>-<idx>, turn-antigravity-<sid>-<idx>.
+const TURN_ID = /^turn-(?:(codex|hermes|antigravity)-)?(.+)-(\d+)$/;
 export function parseTurnId(eventId) {
   const match = TURN_ID.exec(String(eventId || ''));
   if (!match) return null;

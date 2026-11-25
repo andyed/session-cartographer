@@ -66,7 +66,7 @@ function sandbox() {
   fs.writeFileSync(path.join(dev, 'changelog.jsonl'), JSON.stringify({ event_id: 'evt-unrelated', timestamp: '2026-10-01T09:00:00Z', type: 'note', summary: 'an unrelated row', project: 'widget-web' }) + '\n');
 
   const env = { ...process.env, ...OFFLINE_INDEX_ENV };
-  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
+  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete env[key];
   Object.assign(env, {
     CARTOGRAPHER_SEMANTIC: '0',
     CARTOGRAPHER_DEV_DIR: dev,

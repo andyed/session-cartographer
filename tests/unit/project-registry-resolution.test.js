@@ -33,7 +33,7 @@ for (const name of [
   'CARTOGRAPHER_SESSION_ID',
   'CLAUDE_SESSION_ID',
   'CLAUDE_CODE_SESSION_ID',
-  'CODEX_SESSION_ID',
+  'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT',
   'CARTOGRAPHER_PROJECT_REGISTRY',
   'CARTOGRAPHER_CONFIG',
 ]) delete process.env[name];
@@ -94,7 +94,7 @@ function workspace() {
       CARTOGRAPHER_SESSION_ID: '',
       CLAUDE_SESSION_ID: '',
       CLAUDE_CODE_SESSION_ID: '',
-      CODEX_SESSION_ID: '',
+      CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '',
     },
   };
 }
@@ -102,7 +102,7 @@ function workspace() {
 /** Strip the emptied session vars — bash `set -u` is fine with them, but they must not read as set. */
 function shellEnv(env) {
   const out = { ...env };
-  for (const k of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) {
+  for (const k of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) {
     delete out[k];
   }
   return out;

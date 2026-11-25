@@ -25,7 +25,7 @@ function runSearch(searchScript, callLog, env = {}) {
         CARTOGRAPHER_SESSION_ID: '',
         CLAUDE_SESSION_ID: '',
         CLAUDE_CODE_SESSION_ID: '',
-        CODEX_SESSION_ID: '',
+        CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '',
         CARTOGRAPHER_SEMANTIC: '0',
         CARTOGRAPHER_SEARCH_CALL_LOG: callLog,
         CARTOGRAPHER_SERVED_LOG: '/dev/null',

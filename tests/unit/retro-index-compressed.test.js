@@ -106,7 +106,7 @@ function sandbox() {
 
   const progress = path.join(dev, '.carto', 'retro-index-progress');
   const env = { ...process.env, ...OFFLINE_INDEX_ENV };
-  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_ZSTD']) delete env[key];
+  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_ZSTD']) delete env[key];
   Object.assign(env, {
     CARTOGRAPHER_DEV_DIR: dev,
     CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR: path.join(dir, 'claude'),

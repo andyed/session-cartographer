@@ -137,7 +137,8 @@ function runSearch(query, mode) {
   // that inherits a live session id scores later queries against a shrinking
   // result set and reports a precision drop that is pure measurement artifact.
   for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID',
-    'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
+    'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
+    'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete env[key];
   // An evaluation is not a recall: its served rows would feed hit-rate reports
   // and its call rows the Internals latency cohorts. The access ledger is left
   // alone — it is only written by --touch, which this never passes, and it is

@@ -14,10 +14,11 @@
  *
  *            page     card     expanded  active
  *            #0a0a0f  #0d1019  #030712   #151a23
- *   claude   10.91    10.52    11.12      9.68   #f0b48a
- *   codex    11.58    11.17    11.80     10.27   #8fd3c7
- *   hermes   11.27    10.87    11.49     10.00   #cdb9ff
- *   (other)  10.78    10.40    10.99      9.57   #b9c0cb
+ *   claude      10.91    10.52    11.12      9.68   #f0b48a
+ *   codex       11.58    11.17    11.80     10.27   #8fd3c7
+ *   hermes      11.27    10.87    11.49     10.00   #cdb9ff
+ *   antigravity 11.70    11.26    11.93     10.33   #9ecbff
+ *   (other)     10.78    10.40    10.99      9.57   #b9c0cb
  *
  * card = a session card (bg-gray-900/40 over the page); expanded = the event
  * list inside an open session card (bg-gray-950); active = the keyboard-active
@@ -39,6 +40,7 @@ const AGENTS = {
   claude: { label: 'claude', color: '#f0b48a' },
   codex: { label: 'codex', color: '#8fd3c7' },
   hermes: { label: 'hermes', color: '#cdb9ff' },
+  antigravity: { label: 'antigravity', color: '#9ecbff' },
 };
 
 const UNKNOWN_AGENT = { label: '', color: NEUTRAL };

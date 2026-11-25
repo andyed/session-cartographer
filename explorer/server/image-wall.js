@@ -27,7 +27,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SPAN_SLACK_MS = 2 * 60 * 1000;
 const TITLE_MAX = 80;
 
-const AGENTS = { claude: 'Claude Code', codex: 'Codex', hermes: 'Hermes' };
+const AGENTS = { claude: 'Claude Code', codex: 'Codex', hermes: 'Hermes', antigravity: 'Antigravity' };
 const FORMATS = { 'image/png': 'PNG', 'image/jpeg': 'JPEG', 'image/gif': 'GIF', 'image/webp': 'WebP', 'image/svg+xml': 'SVG', 'image/avif': 'AVIF', 'image/bmp': 'BMP', 'image/x-icon': 'ICO' };
 
 function readEntries(file) {

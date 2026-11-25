@@ -17,7 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
-for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) {
+for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) {
   delete process.env[name];
 }
 

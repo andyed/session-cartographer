@@ -49,7 +49,7 @@ function fixture(t, serves = []) {
     CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR: path.join(dir, 'no-transcripts'),
     CARTOGRAPHER_CODEX_ARCHIVED_DIR: path.join(dir, 'no-transcripts'),
     TMPDIR_BASE: dir,
-    CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '',
+    CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '',
   };
   function run(args, overrides = {}) {
     const result = spawnSync('bash', [SEARCH, ...args, '--all'], {

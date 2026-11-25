@@ -63,7 +63,7 @@ function fixture() {
   fs.writeFileSync(log, rows.join('\n') + '\n');
 
   const env = { ...process.env, ...OFFLINE_INDEX_ENV };
-  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete env[key];
+  for (const key of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete env[key];
   Object.assign(env, {
     CARTOGRAPHER_DEV_DIR: dev,
     CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR: path.join(dir, '.codex', 'sessions'),

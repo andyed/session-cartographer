@@ -44,10 +44,11 @@ flat() { printf '%s' "$1" | tr '\n\t' '  '; }
 
 # ── Who and where ──────────────────────────────────────────────────────────
 CLAUDE_SID="${CLAUDE_SESSION_ID:-${CLAUDE_CODE_SESSION_ID:-}}"
-SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-unknown}}}"
+SESSION_ID="${CARTOGRAPHER_SESSION_ID:-${CLAUDE_SID:-${CODEX_SESSION_ID:-${ANTIGRAVITY_CONVERSATION_ID:-unknown}}}}"
 PROVIDER="${CARTOGRAPHER_PROVIDER:-unknown}"
 [ "$PROVIDER" = "unknown" ] && [ -n "$CLAUDE_SID" ] && PROVIDER="claude"
 [ "$PROVIDER" = "unknown" ] && [ -n "${CODEX_SESSION_ID:-}" ] && PROVIDER="codex"
+[ "$PROVIDER" = "unknown" ] && [ -n "${ANTIGRAVITY_CONVERSATION_ID:-}${ANTIGRAVITY_AGENT:-}" ] && PROVIDER="antigravity"
 # A worktree resolves to its parent repo; cartographer-project.sh is the one
 # definition shared with the hooks.
 PROJECT=$(bash "$SCRIPT_DIR/cartographer-project.sh" 2>/dev/null) || PROJECT=""

@@ -78,7 +78,7 @@ function fixture(t, { qdrantUrl = OFFLINE_INDEX_ENV.CARTOGRAPHER_QDRANT_URL, ext
     CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR: path.join(dir, 'no-transcripts'),
     CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR: path.join(dir, 'no-transcripts'),
     CARTOGRAPHER_CODEX_ARCHIVED_DIR: path.join(dir, 'no-transcripts'),
-    CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '',
+    CLAUDE_SESSION_ID: '', CLAUDE_CODE_SESSION_ID: '', CODEX_SESSION_ID: '', ANTIGRAVITY_CONVERSATION_ID: '', ANTIGRAVITY_AGENT: '',
     ...extraEnv,
   };
   // Async, so an in-process stand-in can answer while the CLI waits on it.

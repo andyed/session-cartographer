@@ -4,7 +4,7 @@
 // "Cannot read properties of undefined (reading 'filter')" from /api/search.
 process.env.CARTOGRAPHER_SEMANTIC = '0';
 process.env.CARTOGRAPHER_ACCESS_LEDGER = '/dev/null';
-for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) delete process.env[name];
+for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) delete process.env[name];
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

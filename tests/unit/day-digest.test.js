@@ -96,7 +96,7 @@ function fixture() {
 
 function digest(f, extra) {
   const env = { ...process.env, TZ, CARTOGRAPHER_DEV_DIR: f.dev, CARTOGRAPHER_CHANGELOG: f.changelog };
-  for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
+  for (const key of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_SESSION_ID']) delete env[key];
   return spawnSync('node', [SCRIPT, '--day', DAY, ...extra], { encoding: 'utf8', env });
 }
 

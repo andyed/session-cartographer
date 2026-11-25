@@ -62,6 +62,7 @@ const SESSION = valueAfter(
     || process.env.CLAUDE_SESSION_ID
     || process.env.CLAUDE_CODE_SESSION_ID
     || process.env.CODEX_SESSION_ID
+    || process.env.ANTIGRAVITY_CONVERSATION_ID
     || ''
 );
 

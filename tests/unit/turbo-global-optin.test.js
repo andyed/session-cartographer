@@ -68,6 +68,8 @@ test('one persistent opt-in selects Turbo for Claude and Codex sessions', (t) =>
   delete env.CLAUDE_SESSION_ID;
   delete env.CLAUDE_CODE_SESSION_ID;
   delete env.CODEX_SESSION_ID;
+  delete env.ANTIGRAVITY_CONVERSATION_ID;
+  delete env.ANTIGRAVITY_AGENT;
 
   const started = run(process.execPath, [CONTROL, 'start'], env);
   assert.equal(started.status, 0, started.stderr || started.stdout);

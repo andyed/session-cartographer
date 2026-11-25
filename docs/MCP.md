@@ -272,6 +272,30 @@ CARTOGRAPHER_DEV_DIR = "/Users/you/Documents/dev"
 
 The plugin installs nothing into `config.toml` and never edits it.
 
+### Antigravity
+
+The plugin ships `.antigravity-plugin/plugin.json` and plugin-root
+`mcp_config.json`, which registers the same stdio server using `${PLUGIN_ROOT}`:
+
+```json
+{
+  "mcpServers": {
+    "cartographer": {
+      "command": "node",
+      "args": ["${PLUGIN_ROOT}/scripts/cartographer-mcp.js"]
+    }
+  }
+}
+```
+
+When `ANTIGRAVITY_CONVERSATION_ID` is present in the server environment, recall
+and access rows carry session attribution (`session_source:
+"ANTIGRAVITY_CONVERSATION_ID"`) and delta serving activates automatically. When
+the runtime omits it from the stdio MCP child, rows record `attribution_status:
+"no_session"` with `provider: "antigravity"` inferred from `clientInfo.name`.
+This milestone is read-only with respect to capture hooks (no plugin-root
+`hooks.json` yet).
+
 ### Hermes
 
 Not registered by this repository. A Hermes MCP entry for the same command

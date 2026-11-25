@@ -48,7 +48,7 @@
 #   CARTOGRAPHER_TURBO_URL       — default: http://127.0.0.1:2526
 #   CARTOGRAPHER_SESSION_ID      — caller's session, for runtimes that export none of the
 #                                  agent chain below (Hermes: pass $HERMES_SESSION_ID)
-#   CARTOGRAPHER_PROVIDER        — caller's agent (claude, codex, hermes); inferred when unset
+#   CARTOGRAPHER_PROVIDER        — caller's agent (claude, codex, hermes, antigravity); inferred when unset
 #
 # Every displayed result is appended to CARTOGRAPHER_SERVED_LOG (query, rank,
 # source, event_id). Joined against the access ledger, this is the input to
@@ -161,7 +161,7 @@ print_usage() {
 Usage: cartographer-search.sh "<query>" [--project NAME] [--limit N] [--format text|jsonl] [--turbo|--no-turbo] [--transcript] [--since WHEN] [--before WHEN] [--intent KEY] [--purpose KIND] [--call-id ID] [--min-score X] [--all] [--reset-served] [--thread EVENT_ID] [--get EVENT_IDS] [--touch EVENT_IDS]
        Flags and the query may come in any order. The first words that are not flags form the query (several unquoted words are joined with single spaces). "--" ends flag parsing, so a query that starts with "--" is: cartographer-search.sh --project NAME -- "--force flag". "--flag=value" works for every flag that takes a value.
        WHEN: today | yesterday | "this morning" | "this afternoon" | "this evening" | "this week" | "last week" | "this month" | "last month" | 7d | 2h | 30m | 1w | 2026-04-20
-       Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, or CODEX_SESSION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
+       Delta serving (auto when the session resolves — CARTOGRAPHER_SESSION_ID, CLAUDE_CODE_SESSION_ID, CLAUDE_SESSION_ID, CODEX_SESSION_ID, or ANTIGRAVITY_CONVERSATION_ID): suppresses event_ids returned in prior calls this session. --all bypasses; --reset-served wipes the per-session list.
        --intent KEY: restrict to transcript turns with a given prompt-intent (bug-fixes, implementation, research, ...). Semantic-only — keyword logs carry no intent.
        --thread EVENT_ID: walk the parent_event_id chain (ancestors + descendants) for that event and print the work-arc as a timeline. No query is needed (a leading "_" placeholder from older callers is accepted and ignored).
        --get EVENT_IDS: exact fetch. Print the complete untruncated record for each comma-separated event_id — the verification step after a search returns an id. A conversation turn (turn-…) comes from the semantic index. Missing ids are reported, not silently dropped. No query is needed ("_" accepted and ignored).
@@ -327,7 +327,7 @@ esac
 # caller that set it.
 CONTEXT_SESSION_ID=""
 SESSION_SOURCE=""
-for session_var in CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID; do
+for session_var in CARTOGRAPHER_SESSION_ID CLAUDE_SESSION_ID CLAUDE_CODE_SESSION_ID CODEX_SESSION_ID ANTIGRAVITY_CONVERSATION_ID; do
   session_value="${!session_var:-}"
   case "$(printf '%s' "$session_value" | tr '[:upper:]' '[:lower:]' \
     | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')" in
@@ -351,6 +351,7 @@ if [ -z "$CONTEXT_PROVIDER" ]; then
   case "$SESSION_SOURCE" in
     CLAUDE_SESSION_ID|CLAUDE_CODE_SESSION_ID) CONTEXT_PROVIDER="claude" ;;
     CODEX_SESSION_ID) CONTEXT_PROVIDER="codex" ;;
+    ANTIGRAVITY_CONVERSATION_ID) CONTEXT_PROVIDER="antigravity" ;;
   esac
 fi
 if [ -z "$CONTEXT_PROVIDER" ]; then
@@ -363,6 +364,8 @@ if [ -z "$CONTEXT_PROVIDER" ]; then
     CONTEXT_PROVIDER="claude"
   elif [ -n "${CODEX_SESSION_ID:-}" ] || [ -n "${CODEX_THREAD_ID:-}" ] || [ -n "${CODEX_HOME:-}" ]; then
     CONTEXT_PROVIDER="codex"
+  elif [ -n "${ANTIGRAVITY_CONVERSATION_ID:-}" ] || [ -n "${ANTIGRAVITY_AGENT:-}" ]; then
+    CONTEXT_PROVIDER="antigravity"
   elif [ -n "${HERMES_SESSION_ID:-}" ]; then
     CONTEXT_PROVIDER="hermes"
   else

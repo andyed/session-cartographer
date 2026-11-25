@@ -19,7 +19,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID']) {
+for (const name of ['CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT']) {
   delete process.env[name];
 }
 
@@ -41,15 +41,18 @@ test('the session fold attributes an agent to every session that recorded one', 
     event({ session_id: 'codex-a', provider: 'codex', timestamp: at(9) }),
     event({ session_id: 'claude-a', provider: 'claude' }),
     event({ session_id: 'claude-a', provider: 'claude', timestamp: at(8) }),
+    event({ session_id: 'agy-a', provider: 'antigravity' }),
+    event({ session_id: 'agy-a', provider: 'antigravity', timestamp: at(7) }),
   ], { now: NOW });
 
   const byId = Object.fromEntries(sessions.map(s => [s.session_id, s]));
   assert.equal(byId['codex-a'].provider, 'codex');
   assert.equal(byId['claude-a'].provider, 'claude');
+  assert.equal(byId['agy-a'].provider, 'antigravity');
 
-  // The point of the fix: both agents are present and distinguishable. A fold
+  // The point of the fix: all agents are present and distinguishable. A fold
   // that dropped the field would pass an "is it non-empty" check on either row.
-  assert.deepEqual(new Set(sessions.map(s => s.provider)), new Set(['codex', 'claude']));
+  assert.deepEqual(new Set(sessions.map(s => s.provider)), new Set(['codex', 'claude', 'antigravity']));
 });
 
 test('sentinel providers never become a third agent, and a mixed session stays mixed', () => {

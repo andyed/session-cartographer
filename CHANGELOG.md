@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.9.1 (2026-11-25)
+
+### feat(antigravity): read-only Antigravity plugin, MCP config, and identity (Milestone 1)
+
+- Ship `.antigravity-plugin/plugin.json` and plugin-root `mcp_config.json` in the
+  unified plugin and release archive so Antigravity can query, orient on, inspect,
+  and run peer standups against the shared Claude Code, Codex, and Hermes corpus
+  with no live capture hooks yet.
+- Extend the session-identity chain with `ANTIGRAVITY_CONVERSATION_ID` across
+  `common.sh`, `cartographer-search.sh`, `cartographer-mcp.js`, `session-digest.js`,
+  `cartographer-standup.js`, `record-investigation.sh`, and `log-knowledge-gap.sh`,
+  inferring `provider: "antigravity"` from env or MCP `clientInfo.name`.
+- Add `antigravity` to Explorer's `AgentBadge` (`#9ecbff`, ≥ 10.33:1 contrast on
+  all four dark surfaces), `memory-recall.js`, and `image-wall.js`, and scrub
+  `ANTIGRAVITY_CONVERSATION_ID`/`ANTIGRAVITY_AGENT` across unit, browser, and
+  packaging test harnesses.
+- Track follow-on Milestone 2 (live hook capture bridge) and Milestone 3
+  (transcript indexing + Explorer viewer + optional SQLite backfill) in `TODO.md`.
+
 ## 0.9.0 (2026-11-24)
 
 ### fix(index): halve an over-budget embedding input until it fits

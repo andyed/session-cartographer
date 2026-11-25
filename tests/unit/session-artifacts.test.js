@@ -350,7 +350,7 @@ test('HTTP artifacts retain canonical commits without a transcript and never byp
   const id = '11111111-1111-4111-8111-111111111111';
   fs.writeFileSync(path.join(f.dir, 'changelog.jsonl'), JSON.stringify({ event_id: 'http-commit', timestamp: '2020-01-01T00:00:00Z', type: 'git_commit', session_id: id, provider: 'claude', summary: 'Commit abcdef1: Preserved despite missing transcript' }) + '\n');
   const saved = { ...process.env };
-  for (const name of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete process.env[name];
+  for (const name of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_SESSION_ID']) delete process.env[name];
   Object.assign(process.env, OFFLINE_INDEX_ENV, { CARTOGRAPHER_DEV_DIR: f.dir, CARTOGRAPHER_SEMANTIC: '0', CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR: transcripts, CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR: transcripts, CARTOGRAPHER_CODEX_ARCHIVED_DIR: transcripts });
   const { createExplorerApp } = await import('../../explorer/server/app.js');
   const { app, close } = createExplorerApp();

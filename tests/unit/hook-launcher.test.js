@@ -119,7 +119,7 @@ test('registered SessionEnd records an archive event through PowerShell on Windo
   const env = { ...process.env, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_ROOT: plugin.replace(/\\/g, '/'),
     CARTOGRAPHER_DEV_DIR: dir.replace(/\\/g, '/'), CARTOGRAPHER_HOOK_ACTIVE: '',
     CARTOGRAPHER_SEMANTIC: '0', CARTOGRAPHER_TURBO: '0', CARTOGRAPHER_AUTO_CATCHUP: '0' };
-  for (const name of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'CARTOGRAPHER_SESSION_ID']) delete env[name];
+  for (const name of ['CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID', 'ANTIGRAVITY_CONVERSATION_ID', 'ANTIGRAVITY_AGENT', 'CARTOGRAPHER_SESSION_ID']) delete env[name];
   const opts = { cwd: dir, env, windowsHide: true, timeout: 12000, encoding: 'utf8' };
   if (process.platform === 'win32') {
     const ps = path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe');

@@ -20,6 +20,7 @@ export function checkReleaseVersion(root, requested) {
     ['plugins/session-cartographer/package.json', read('plugins/session-cartographer/package.json').version],
     ['Codex plugin', read('plugins/session-cartographer/.codex-plugin/plugin.json').version],
     ['Claude plugin', read('plugins/session-cartographer/.claude-plugin/plugin.json').version],
+    ['Antigravity plugin', read('plugins/session-cartographer/.antigravity-plugin/plugin.json').version],
     ['marketplace', read('.claude-plugin/marketplace.json').plugins?.find(p => p.name === 'session-cartographer')?.version],
   ];
   const mismatches = declared.filter(([, version]) => version !== expected);
