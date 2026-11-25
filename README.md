@@ -11,10 +11,10 @@ investigation, and connect work whose relationship only becomes apparent later.
 You can work organically without preparing a starting context for every future
 session.
 
-Claude Code and Codex contribute to the same local history and can recall each
-other's work; a read-only adapter brings Hermes history into the corpus too.
-Use `/remember` to find the earlier reasoning and follow it back to its source
-conversation, or browse the Explorer to reconnect with a thread of work.
+Google Antigravity, Claude Code, and Codex share a local history. Ask Antigravity
+to recall a decision from Claude Code, or ask Codex to find the conversation
+where you discussed it in Antigravity. Use `/remember` to find the source, or
+browse it in the Explorer. A read-only adapter also brings in Hermes history.
 
 [Download a release](https://github.com/andyed/session-cartographer/releases) ·
 [Setup guide](docs/SETUP.md) · [Changelog](CHANGELOG.md) ·
@@ -136,8 +136,9 @@ session started without jq prints a notice saying so.
 
 Download and extract `session-cartographer-<version>.tar.gz` from
 [Releases](https://github.com/andyed/session-cartographer/releases), keeping the
-extracted directory in a stable location. One bundle supports both agents.
-Run the commands for your agent from that directory:
+extracted directory in a stable location. For Google Antigravity, follow the
+[Antigravity install and first recall](docs/RELEASE_INSTALL.md#antigravity).
+For Codex or Claude Code, run the matching commands from that directory:
 
 ```bash
 # Codex

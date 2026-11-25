@@ -50,24 +50,28 @@ Start a new Claude Code session after installation.
 
 ## Antigravity
 
-The plugin ships full Antigravity support: `.antigravity-plugin/plugin.json`,
-plugin-root `mcp_config.json`, plugin-root `hooks.json` (translated through
-`hooks/antigravity-hook-bridge.cjs`), bundled skills, transcript indexing
-(`--provider antigravity`), and Explorer session/transcript/Flow map support.
-
-From the extracted directory, copy or symlink the plugin into your global
-Antigravity plugins folder:
+On macOS or Linux, run these commands from the extracted release directory for
+a first install. The copy places the plugin manifest, hooks, MCP server, and
+skills together where Antigravity discovers them.
 
 ```bash
 mkdir -p ~/.gemini/config/plugins
-cp -R "$PWD/plugins/session-cartographer" ~/.gemini/config/plugins/session-cartographer
+cp -R "$PWD/plugins/session-cartographer" ~/.gemini/config/plugins/
 ```
 
 Or register the extracted `plugins/` directory through
 `~/.gemini/config/plugins.json`, or run `agy plugin install ./plugins/session-cartographer`
 where the `agy` CLI is installed.
 
-Antigravity automatically discovers the plugin and enables:
+Start a new Antigravity chat. If you already use Cartographer in Claude Code or
+Codex, point Antigravity at the same history directory (`CARTOGRAPHER_DEV_DIR`,
+default `~/Documents/dev`). Ask “Use Cartographer to remember why we chose
+<distinctive project term>, and show me the original record.” Use a term from
+work you have already captured. On a fresh history, ask for a standup after a
+few turns to check that Antigravity activity is appearing.
+
+Antigravity discovers these components:
+
 - **MCP tools (`cartographer`):** `recall`, `get`, `mark_used`, `thread`,
   `orient`, `facts`, and `standup`, plus the bundled skills (`/remember`,
   `/standup`, `/carto`, `/turbo`, `/setup`, `/wrapup`, `/investigate`, `/trustmap`).
@@ -75,10 +79,12 @@ Antigravity automatically discovers the plugin and enables:
   (deduplicated per user turn), `PreToolUse` collision checks, `PostToolUse`
   tool/research capture (`run_command`, `edit_file`, `write_file`, `search_web`),
   and `Stop` turn milestones, all tagged `provider: "antigravity"`.
-- **Transcript backfill:** `bash scripts/retro-index.sh --provider antigravity`
-  indexes `brain/<id>/.system_generated/logs/transcript.jsonl` files, and
-  `node scripts/antigravity-source.js --backfill --write` optionally backfills
-  older conversations from `conversation_summaries.db` (read-only).
+- **Older conversations.** With local semantic search configured, run
+  `bash plugins/session-cartographer/scripts/retro-index.sh --provider antigravity`
+  from the extracted directory to index retained transcript turns. For older
+  conversations held only in Antigravity’s SQLite store, preview available history
+  with `node plugins/session-cartographer/scripts/antigravity-source.js --backfill`.
+  Add `--write` to index those records. Coverage depends on what Antigravity retained.
 
 ## Explorer
 
@@ -95,8 +101,7 @@ The full web app binds to `127.0.0.1:2527`. Timeline, search, sessions, and
 transcripts work without Turbo and coexist with it when it is running.
 
 For the Flow map, open `http://127.0.0.1:2527/flow` and select a recorded
-Claude Code or Codex session. The center node shows context fill as you replay
-the session. In the Claude Code desktop app, use `/carto-flow` for the live pane.
+Antigravity, Claude Code, or Codex session to replay its recorded activity. In the Claude Code desktop app, use `/carto-flow` for the live pane.
 
 For the live working-memory view, use `npm run memory` from the same Explorer
 directory and open `http://127.0.0.1:2527/memory`. Both launch commands serve the
@@ -114,7 +119,7 @@ the current local file and working-tree changes, not a historical file snapshot.
 Turbo Mode is off by default and does not require Explorer's npm dependencies.
 After starting a fresh session, enable it through the installed skill:
 
-- Claude Code: invoke `/turbo enable`.
+- Claude Code or Antigravity: ask the Turbo skill to enable Turbo.
 - Codex: invoke `$session-cartographer:turbo` and ask it to enable Turbo.
 
 The same skill accepts `status` and `disable`; users do not need to find the
@@ -122,7 +127,7 @@ agent's managed plugin cache or run a script from the extracted marketplace.
 
 The provider-neutral preference in
 `~/.config/session-cartographer/config.json` applies to ordinary `/remember`
-queries in all future Claude Code and Codex sessions. A zero-dependency
+queries in future Antigravity, Claude Code, and Codex sessions. A zero-dependency
 headless process starts on demand; if a sandbox blocks loopback HTTP, the same
 process serves a private file request channel. Queries fall back to the
 portable CLI when the warm service is unavailable.
