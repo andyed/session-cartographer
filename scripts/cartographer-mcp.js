@@ -188,11 +188,24 @@ function resolveCommand(command, platform = process.platform) {
  * spawns, not just the bash parent. Not on Windows, where detaching gives the
  * child a console of its own, as in the hook launcher.
  */
+function safeSpawnCwd() {
+  // If a plugin directory is replaced in-place while this server stays running,
+  // process.cwd() points at an unlinked inode and child tools like ripgrep fail
+  // with os error 2. Re-resolve ROOT by path (or fall back to homedir) on spawn.
+  for (const candidate of [ROOT, os.homedir()]) {
+    try {
+      if (candidate && fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+  return undefined;
+}
+
 function run(command, args, { timeoutMs = SEARCH_TIMEOUT_MS, signal, env = childEnv() } = {}) {
   return new Promise((resolve) => {
     let child;
     try {
       child = spawn(resolveCommand(command), args, {
+        cwd: safeSpawnCwd(),
         env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true,
       });
     } catch (error) {

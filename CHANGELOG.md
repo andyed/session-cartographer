@@ -29,6 +29,15 @@
   `memory-transcript.js`, wire per-provider derivation in `app.js`, and add full
   Antigravity session replay to `/flow` (`explorer/server/flowmap.js`).
 
+- **Fix `get()` / `--get` after in-place plugin upgrades or deleted worktrees:**
+  When a long-lived MCP server's working directory was replaced or deleted,
+  `ripgrep` failed with exit 2 (`os error 2: failed to get current working
+  directory`) under `2>/dev/null`, causing `--get` to report every served
+  `evt-*` ID as missing. `cartographer-search.sh --get` now anchors to a live
+  directory, passes `--no-config --no-ignore` on explicit log paths, and falls
+  back to `grep` on any `rg` error (exit > 1); `cartographer-mcp.js` also
+  re-resolves a valid `cwd` on every child spawn.
+
 ## 0.9.1 (2026-11-25)
 
 ### feat(antigravity): read-only Antigravity plugin, MCP config, and identity (Milestone 1)

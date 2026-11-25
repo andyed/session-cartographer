@@ -811,6 +811,15 @@ if [ -n "$GET_IDS" ]; then
   GET_TMP=$(mktemp -d)
   trap 'rm -rf "$GET_TMP"' EXIT
   for gid in $get_ids; do printf '"%s"\n' "$gid"; done > "$GET_TMP/patterns"
+  # A long-lived MCP server whose plugin directory was upgraded in place (or a
+  # session whose worktree was pruned) can inherit an unlinked CWD. ripgrep
+  # calls std::env::current_dir() and fails with exit 2 ("did your CWD get
+  # deleted?"), which previously emptied candidates under 2>/dev/null and made
+  # --get report every served id as missing. Anchor to a live directory, ignore
+  # user rg config/ignore files on explicit log paths, and fall back to grep
+  # whenever rg returns an error (exit > 1).
+  pwd >/dev/null 2>&1 || cd "$DEV" 2>/dev/null || cd / 2>/dev/null || true
+  get_rg_ok=0
   if command -v rg >/dev/null 2>&1; then
     # -I suppresses the filename prefix. rg adds one whenever more than one
     # file is searched, which is always here; the prefix rides through the
@@ -818,9 +827,12 @@ if [ -n "$GET_IDS" ]; then
     # pretty-print (the line is no longer valid JSON) and silently breaks the
     # "complete record" contract --get exists to keep. `grep -h` in the
     # fallback below has always suppressed it; this is the rg equivalent.
-    rg -N -I -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
-  else
-    LC_ALL=C grep -h -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null
+    rg_status=0
+    rg --no-config --no-ignore -N -I -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null || rg_status=$?
+    [ "$rg_status" -le 1 ] && get_rg_ok=1
+  fi
+  if [ "$get_rg_ok" -eq 0 ]; then
+    LC_ALL=C grep -h -F -f "$GET_TMP/patterns" $get_logs > "$GET_TMP/candidates" 2>/dev/null || true
   fi
 
   # Resolve every id before printing any, and record the fetch before the first

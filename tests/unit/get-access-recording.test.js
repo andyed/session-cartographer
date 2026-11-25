@@ -184,6 +184,22 @@ test('a turn the index does not hold stays missing and unrecorded', async (t) =>
   assert.deepEqual(f.rows().map((row) => row.event_id), ['evt-small']);
 });
 
+test('--get falls back to grep when rg exits 2 (e.g. unlinked CWD after in-place plugin upgrade)', async (t) => {
+  const f = fixture(t);
+  const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'carto-fake-rg-'));
+  t.after(() => fs.rmSync(fakeBin, { recursive: true, force: true }));
+  const fakeRg = path.join(fakeBin, 'rg');
+  fs.writeFileSync(fakeRg, '#!/bin/sh\necho "rg: failed to get current working directory: No such file or directory (os error 2)" >&2\nexit 2\n', { mode: 0o755 });
+
+  const result = await f.run(
+    `PATH="${fakeBin}:$PATH" bash "$SEARCH" _ --get evt-small --call-id call-get-1`,
+  );
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /=== evt-small ===/);
+  assert.match(result.stdout, /\(1 fetched, 0 missing\)/);
+  assert.deepEqual(f.rows().map((row) => row.event_id), ['evt-small']);
+});
+
 test('an unreachable index leaves a turn missing without failing the fetch of the rest', async (t) => {
   const f = fixture(t); // OFFLINE_INDEX_ENV: port 1 refuses at once
   const result = await f.run(`bash "$SEARCH" _ --get ${TURN},evt-small --call-id call-get-1`);
