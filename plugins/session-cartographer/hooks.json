@@ -1,0 +1,74 @@
+{
+  "session-cartographer": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-hook-bridge.cjs warn-missing-jq-on-start.sh 2000",
+        "timeout": 7
+      },
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-hook-bridge.cjs start-transcript-catch-up.sh 5000",
+        "timeout": 10
+      },
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-hook-bridge.cjs surface-turbo-on-start.sh 2000",
+        "timeout": 7
+      },
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-hook-bridge.cjs surface-focus-on-start.sh 10000",
+        "timeout": 15
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-hook-bridge.cjs surface-recall-on-prompt.sh 5000",
+        "timeout": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "edit_file|write_file|replace_file_content|multi_replace_file_content|write_to_file",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/antigravity-hook-bridge.cjs check-edit-collision.sh 3000",
+            "timeout": 8
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "search_web|read_url_content|fetch_url|mcp__.*search.*|mcp__.*fetch.*|mcp__.*open.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/antigravity-hook-bridge.cjs log-research.sh 10000",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "edit_file|write_file|replace_file_content|multi_replace_file_content|write_to_file|run_command",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ./hooks/antigravity-hook-bridge.cjs log-tool-use.sh 10000",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ./hooks/antigravity-hook-bridge.cjs log-session-milestones.sh 10000",
+        "timeout": 15
+      }
+    ]
+  }
+}

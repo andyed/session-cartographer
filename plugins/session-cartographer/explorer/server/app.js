@@ -18,7 +18,7 @@ import {
   FACTS_VERBS,
   FactsContractError,
 } from './facts-contract.js';
-import { codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, readTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
+import { antigravitySessionIndex, codexSessionIndex, isAllowedTranscriptPath, normalizeTranscriptEntries, readTranscriptEntries, resolveTranscriptPath, transcriptRoots } from './transcripts.js';
 import { COMPRESSED_UNREADABLE, canReadZstd, isCompressedTranscript } from '../../scripts/transcript-file.js';
 import { summarizeSessions } from './sessions.js';
 import { sessionFlowmap } from './flowmap.js';
@@ -429,8 +429,14 @@ export function createExplorerApp() {
   function deriveSessionTranscript({ session_id, provider, project, recorded_path }) {
     if (recorded_path && existsSync(recorded_path)) return recorded_path;
 
-    const tryCodex = provider !== 'claude';
-    const tryClaude = provider !== 'codex';
+    const tryAntigravity = provider !== 'claude' && provider !== 'codex';
+    const tryCodex = provider !== 'claude' && provider !== 'antigravity';
+    const tryClaude = provider !== 'codex' && provider !== 'antigravity';
+
+    if (tryAntigravity && session_id) {
+      const hit = antigravitySessionIndex().get(session_id);
+      if (hit) return hit;
+    }
 
     if (tryCodex) {
       const hit = codexSessionIndex().get(session_id);

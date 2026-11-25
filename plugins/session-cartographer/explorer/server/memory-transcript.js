@@ -5,8 +5,17 @@ import path from 'node:path';
 import { Worker, isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { serialize } from 'node:v8';
 import { transcriptRoots, isAllowedTranscriptPath } from './transcripts.js';
+import { AGY_RESULT_TYPES, stripAntigravityUserEnvelope, unwrapAntigravityArgs } from './transcript-evidence.js';
 import { epochMsFromTimestamp } from './event-time.js';
 import { COMPRESSED_UNREADABLE, canReadZstd, isCompressedTranscript, readTranscriptBuffer } from '../../scripts/transcript-file.js';
+
+const AGY_EDIT_TOOLS = new Set(['edit_file', 'write_file', 'replace_file_content', 'multi_replace_file_content', 'write_to_file']);
+
+function antigravityConversationId(filePath) {
+  const normalized = String(filePath || '').replace(/\\/g, '/');
+  const match = /\/([^/]+)\/\.system_generated\/logs\/transcript\.jsonl$/.exec(normalized);
+  return match ? match[1] : null;
+}
 
 const FIELDS = ['input', 'output', 'cacheRead', 'cacheWrite', 'total'];
 const MAX_PASS_BYTES = 64 * 1024 * 1024;
@@ -21,11 +30,24 @@ export function missingTokens(reason = 'No token usage is recorded for this sess
 
 function usage(raw, provider) {
   if (!raw || number(raw.input_tokens) === null || number(raw.output_tokens) === null) return null;
-  const cacheRead = number(provider === 'claude' ? raw.cache_read_input_tokens : raw.cached_input_tokens) ?? 0;
-  const cacheWrite = number(provider === 'claude' ? raw.cache_creation_input_tokens : raw.cache_write_input_tokens) ?? 0;
+  const cacheRead = number(
+    provider === 'claude' ? raw.cache_read_input_tokens
+      : provider === 'antigravity' ? raw.cache_read_tokens
+      : raw.cached_input_tokens,
+  ) ?? 0;
+  const cacheWrite = number(
+    provider === 'claude' ? raw.cache_creation_input_tokens
+      : provider === 'antigravity' ? 0
+      : raw.cache_write_input_tokens,
+  ) ?? 0;
   // Anthropic input_tokens excludes the two cache buckets. Codex includes
-  // them. Normalize once: input always means all input, total=input+output.
-  const input = raw.input_tokens + (provider === 'claude' ? cacheRead + cacheWrite : 0);
+  // them. Antigravity input_tokens also excludes cache_read_tokens (verified
+  // on real traces: step 10 had input_tokens=19871, cache_read_tokens=17641;
+  // step 18 had input_tokens=15895, cache_read_tokens=37513; step 27 had
+  // input_tokens=6029, cache_read_tokens=53409, proving input_tokens is
+  // uncached input and total input is input_tokens + cache_read_tokens).
+  // Normalize once: input always means all input, total=input+output.
+  const input = raw.input_tokens + (provider === 'claude' || provider === 'antigravity' ? cacheRead + cacheWrite : 0);
   return { input, output: raw.output_tokens, cacheRead, cacheWrite, total: input + raw.output_tokens };
 }
 
@@ -45,8 +67,8 @@ function patchPaths(patch) {
   return typeof patch === 'string' ? [...patch.matchAll(/^\*\*\* (?:Add File|Update File|Move to): (.+)$/gm)].map((match) => match[1].trim()) : [];
 }
 
-function fresh(expected) {
-  return { expected, offset: 0, size: 0, mtime: 0, inode: null, boundary: null, provider: null, identity: false, cwd: null, customTitle: '', prompts: [], counters: [], previous: null, messages: new Map(), tools: new Map(), malformed: false, limited: false, incomplete: false };
+function fresh(expected, filePath = '') {
+  return { expected, filePath, offset: 0, size: 0, mtime: 0, inode: null, boundary: null, provider: null, identity: false, cwd: null, customTitle: '', prompts: [], counters: [], previous: null, messages: new Map(), tools: new Map(), pendingTools: [], malformed: false, limited: false, incomplete: false };
 }
 
 function rememberTool(state, { name, input, callId, t, cwd }) {
@@ -55,16 +77,24 @@ function rememberTool(state, { name, input, callId, t, cwd }) {
     literalToolInputs(input).forEach((call, index) => rememberTool(state, { ...call, callId: `${callId}:${index}`, t, cwd }));
     return;
   }
+  const agyPath = AGY_EDIT_TOOLS.has(suffix) ? (input?.Path || input?.TargetFile || input?.file_path) : null;
   const paths = suffix === 'apply_patch' ? patchPaths(input)
-    : ['Edit', 'Write', 'MultiEdit'].includes(suffix) && typeof input?.file_path === 'string' ? [input.file_path] : [];
-  const workdir = input?.workdir || input?.cwd || cwd;
-  if (paths.length || (suffix === 'exec_command' && typeof input?.cmd === 'string' && path.isAbsolute(workdir || ''))) {
-    state.tools.set(callId, { t, callId, cwd: workdir, paths, command: suffix === 'exec_command' ? input.cmd.replace(/\s+/g, ' ').trim().slice(0, 180) : null });
+    : ['Edit', 'Write', 'MultiEdit'].includes(suffix) && typeof input?.file_path === 'string' ? [input.file_path]
+    : typeof agyPath === 'string' && agyPath.trim() ? [agyPath] : [];
+  const workdir = input?.Cwd || input?.workdir || input?.cwd || cwd;
+  const agyCmd = suffix === 'run_command' ? (input?.CommandLine || input?.command || input?.cmd) : null;
+  const command = suffix === 'exec_command' && typeof input?.cmd === 'string' && path.isAbsolute(workdir || '')
+    ? input.cmd.replace(/\s+/g, ' ').trim().slice(0, 180)
+    : typeof agyCmd === 'string' && agyCmd.trim()
+      ? agyCmd.replace(/\s+/g, ' ').trim().slice(0, 180)
+      : null;
+  if (paths.length || command) {
+    state.tools.set(callId, { t, callId, cwd: workdir, paths, command });
   }
 }
 
 function consume(state, row) {
-  const t = epochMsFromTimestamp(row.timestamp);
+  const t = epochMsFromTimestamp(row.timestamp ?? row.created_at);
   const p = row.payload || {};
   if (row.type === 'session_meta') {
     state.provider = 'codex';
@@ -72,13 +102,22 @@ function consume(state, row) {
     state.cwd = p.cwd || null;
     return;
   }
+  if (!state.provider && row.step_index !== undefined && (row.type === 'USER_INPUT' || row.type === 'PLANNER_RESPONSE')) {
+    state.provider = 'antigravity';
+    // Antigravity JSONL lines do not repeat the conversation id; the path
+    // `<brain>/<conversation-id>/.system_generated/logs/transcript.jsonl` binds identity.
+    const pathId = antigravityConversationId(state.filePath);
+    state.identity = pathId ? pathId === state.expected : (!state.filePath || state.filePath.includes(state.expected));
+  }
   if (row.sessionId === state.expected && !state.provider) { state.provider = 'claude'; state.identity = true; }
   if (!state.identity || (state.provider === 'claude' && row.sessionId && row.sessionId !== state.expected)) return;
   if (row.type === 'turn_context' && p.cwd) state.cwd = p.cwd;
   if (row.type === 'custom-title' && meaningfulPrompt(row.customTitle)) state.customTitle = meaningfulPrompt(row.customTitle);
   const user = state.provider === 'codex'
     ? (row.type === 'response_item' && p.type === 'message' && p.role === 'user' ? messageText(p.content) : row.type === 'event_msg' && p.type === 'user_message' ? p.message : '')
-    : row.type === 'user' ? messageText(row.message?.content) : '';
+    : state.provider === 'antigravity'
+      ? (row.type === 'USER_INPUT' ? stripAntigravityUserEnvelope(row.content) : '')
+      : row.type === 'user' ? messageText(row.message?.content) : '';
   const prompt = meaningfulPrompt(user);
   if (prompt && state.prompts.length < 30 && !state.prompts.some((entry) => entry.text === prompt)) state.prompts.push({ t, text: prompt });
   if (state.provider === 'codex') {
@@ -105,6 +144,35 @@ function consume(state, row) {
     if (row.type === 'response_item' && ['function_call_output', 'custom_tool_call_output'].includes(p.type)) {
       const failed = p.is_error === true || (typeof p.output === 'string' && /^(Error:|Failed to find expected lines|apply_patch verification failed)/.test(p.output));
       for (const [id, tool] of state.tools) if (id === p.call_id || id.startsWith(`${p.call_id}:`)) { tool.end = t; tool.failed = failed; }
+    }
+  } else if (state.provider === 'antigravity') {
+    if (row.type === 'USER_INPUT') {
+      state.pendingTools = [];
+    } else if (row.type === 'PLANNER_RESPONSE') {
+      state.pendingTools = [];
+      const id = `step-${row.step_index}`;
+      if (Number.isFinite(t)) {
+        const record = usage(row, 'antigravity');
+        if (record) state.messages.set(id, { t, usage: record });
+      }
+      if (Array.isArray(row.tool_calls)) {
+        row.tool_calls.forEach((tc, i) => {
+          const callId = `${id}-call-${i}`;
+          state.pendingTools.push(callId);
+          const input = unwrapAntigravityArgs(tc?.args ?? tc?.input ?? {});
+          rememberTool(state, { name: tc?.name, input, callId, t, cwd: state.cwd });
+        });
+      }
+    } else if (AGY_RESULT_TYPES.has(row.type)) {
+      const callId = state.pendingTools.shift();
+      if (callId) {
+        const tool = state.tools.get(callId);
+        if (tool) {
+          tool.end = Number.isFinite(t) ? t : tool.t;
+          tool.failed = row.status === 'ERROR' || row.type === 'ERROR_MESSAGE' || Boolean(row.error)
+            || (typeof row.content === 'string' && /^Command exited with code (?!0\b)-?\d+\.?\s*$/m.test(row.content));
+        }
+      }
     }
   } else if (row.type === 'assistant') {
     const msg = row.message || {};
@@ -184,7 +252,7 @@ function parseFile({ filePath, expected, start, end }) {
       ? inflated.copy(buffer, 0, position, position + buffer.length)
       : fs.readSync(fd, buffer, 0, buffer.length, position));
     if (!reset && state.offset === size) cacheHits++;
-    if (reset) state = fresh(expected);
+    if (reset) state = fresh(expected, filePath);
     const until = Math.min(size, state.offset + MAX_PASS_BYTES);
     let cursor = state.offset;
     let carry = Buffer.alloc(0);
@@ -289,10 +357,16 @@ export function createTranscriptEnricher({ roots = transcriptRoots(), cacheBytes
             // A rollout Codex has compressed is rollout-….jsonl.zst; a plain
             // file for the same session is tried first.
             const plain = entry.name.endsWith('.jsonl');
+            const fullPath = path.join(dir, entry.name);
+            const agyId = entry.name === 'transcript.jsonl' ? antigravityConversationId(fullPath) : null;
+            if (agyId) {
+              if (!files.has(agyId)) files.set(agyId, []);
+              files.get(agyId).unshift(fullPath);
+            }
             for (const [id] of entry.name.matchAll(/[\da-f]{8}-[\da-f-]{27}/ig)) {
               if (!files.has(id)) files.set(id, []);
-              if (plain) files.get(id).unshift(path.join(dir, entry.name));
-              else files.get(id).push(path.join(dir, entry.name));
+              if (plain) files.get(id).unshift(fullPath);
+              else files.get(id).push(fullPath);
             }
           }
         }
@@ -308,9 +382,17 @@ export function createTranscriptEnricher({ roots = transcriptRoots(), cacheBytes
       .flatMap((candidate) => (typeof candidate === 'string' && candidate.endsWith('.jsonl') ? [candidate, `${candidate}.zst`] : [candidate]));
     // A shared event may carry a subagent transcript. Its filename is not a
     // match, even if the parent session id was copied onto the event.
-    for (const candidate of candidates) if (path.basename(candidate).includes(session.id)) {
+    // Antigravity stores each conversation at `<brain>/<id>/.system_generated/logs/transcript.jsonl`.
+    for (const candidate of candidates) if (path.basename(candidate).includes(session.id) || antigravityConversationId(candidate) === session.id) {
       const valid = await allowed(candidate);
       if (valid) { pathCache.set(session.id, valid); return valid; }
+    }
+    if (typeof session.id === 'string' && session.id && !/[/\\]/.test(session.id) && session.id !== '.' && session.id !== '..') {
+      for (const root of roots) {
+        const direct = path.join(root, session.id, '.system_generated', 'logs', 'transcript.jsonl');
+        const valid = await allowed(direct);
+        if (valid) { pathCache.set(session.id, valid); return valid; }
+      }
     }
     if (!/^[\da-f]{8}-[\da-f-]{27}$/i.test(session.id)) return null;
     for (const candidate of (await indexFiles()).get(session.id) || []) {

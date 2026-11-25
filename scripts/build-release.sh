@@ -37,6 +37,7 @@ cp "$ROOT/plugins/session-cartographer/.antigravity-plugin/plugin.json" "$PLUGIN
 # Antigravity reads mcp_config.json at the plugin root.
 cp "$ROOT/plugins/session-cartographer/.mcp.json" "$PLUGIN/.mcp.json"
 cp "$ROOT/plugins/session-cartographer/mcp_config.json" "$PLUGIN/mcp_config.json"
+cp "$ROOT/plugins/session-cartographer/hooks.json" "$PLUGIN/hooks.json"
 cp -R "$ROOT/plugins/session-cartographer/hooks" "$PLUGIN/hooks"
 for skill_file in "$ROOT"/plugins/session-cartographer/skills/*/SKILL.md; do
   skill=$(basename "$(dirname "$skill_file")")

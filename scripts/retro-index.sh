@@ -22,7 +22,7 @@
 # were not indexed at their last write, because this script walked the live
 # tree only and they were archived before the next catch-up.
 #
-# Usage: ./retro-index.sh [--provider all|claude|codex] [--limit-days N]
+# Usage: ./retro-index.sh [--provider all|claude|codex|antigravity] [--limit-days N]
 #                         [--project NAME] [--transcript PATH] [--fresh]
 
 set -o pipefail
@@ -45,8 +45,8 @@ while [ $# -gt 0 ]; do
 done
 
 case "$PROVIDER_FILTER" in
-  all|claude|codex) ;;
-  *) echo "Error: --provider must be all, claude, or codex"; exit 2 ;;
+  all|claude|codex|antigravity) ;;
+  *) echo "Error: --provider must be all, claude, codex, or antigravity"; exit 2 ;;
 esac
 
 # CARTOGRAPHER_TRANSCRIPTS_DIR remains the backwards-compatible Claude
@@ -55,16 +55,33 @@ CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSC
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 # Codex archives sessions rather than deleting them; index that root too.
 CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
+ANTIGRAVITY_DIRS=()
+if [ -n "${CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR:-}" ]; then
+  IFS=':' read -r -a _ag_parts <<< "$CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR"
+  for _ag_dir in "${_ag_parts[@]}"; do
+    [ -n "$_ag_dir" ] && ANTIGRAVITY_DIRS+=("$_ag_dir")
+  done
+  [ -n "${CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR:-}" ] && ANTIGRAVITY_DIRS+=("$CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR")
+  [ -n "${CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR:-}" ] && ANTIGRAVITY_DIRS+=("$CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR")
+else
+  ANTIGRAVITY_DIRS=(
+    "$HOME/.gemini/antigravity/brain"
+    "${CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR:-$HOME/.gemini/antigravity-ide/brain}"
+    "${CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR:-$HOME/.gemini/antigravity-cli/brain}"
+  )
+fi
 # The zstd binary that reads a compressed rollout. Overridable so a test can
 # name one that is not there and see the skip counted.
 ZSTD_BIN="${CARTOGRAPHER_ZSTD:-zstd}"
 SCRIPT_DIR="$(dirname "$0")"
-INDEXER="$SCRIPT_DIR/index-event.sh"
+INDEXER="${CARTOGRAPHER_INDEXER:-$SCRIPT_DIR/index-event.sh}"
 CLAUDE_TURN_GROUPER="$SCRIPT_DIR/transcript-to-turns.awk"
 CODEX_TURN_GROUPER="$SCRIPT_DIR/codex-transcript-to-turns.awk"
+ANTIGRAVITY_TURN_GROUPER="$SCRIPT_DIR/antigravity-transcript-to-turns.awk"
 # Overridable so a test can stand in a recorder for the inferer and prove the
 # checkpoint pre-check below never reaches it.
 CODEX_PROJECT_INFERER="${CARTOGRAPHER_CODEX_PROJECT_INFERER:-$SCRIPT_DIR/infer-codex-project.js}"
+ANTIGRAVITY_PROJECT_INFERER="${CARTOGRAPHER_ANTIGRAVITY_PROJECT_INFERER:-$SCRIPT_DIR/antigravity-source.js}"
 
 # Resume checkpoint — lives alongside the carto event logs.
 DEV="${CARTOGRAPHER_DEV_DIR:-$HOME/Documents/dev}"
@@ -88,12 +105,23 @@ if [ ! -f "$CODEX_PROJECT_INFERER" ]; then
     exit 1
 fi
 
+if [ "$PROVIDER_FILTER" = "all" ] || [ "$PROVIDER_FILTER" = "antigravity" ]; then
+    if [ ! -f "$ANTIGRAVITY_TURN_GROUPER" ]; then
+        echo "Error: Cannot find $ANTIGRAVITY_TURN_GROUPER"
+        exit 1
+    fi
+    if [ ! -f "$ANTIGRAVITY_PROJECT_INFERER" ]; then
+        echo "Error: Cannot find $ANTIGRAVITY_PROJECT_INFERER"
+        exit 1
+    fi
+fi
+
 if [ -n "$TRANSCRIPT_FILTER" ] && [ ! -f "$TRANSCRIPT_FILTER" ]; then
     echo "Error: --transcript path does not exist: $TRANSCRIPT_FILTER"
     exit 2
 fi
 if [ -n "$TRANSCRIPT_FILTER" ] && [ "$PROVIDER_FILTER" = "all" ]; then
-    echo "Error: --transcript requires --provider claude or --provider codex"
+    echo "Error: --transcript requires --provider claude, --provider codex, or --provider antigravity"
     exit 2
 fi
 
@@ -175,6 +203,13 @@ discover_transcripts() {
         find "$CODEX_TRANSCRIPTS" "$CODEX_ARCHIVED" \( -name "*.jsonl" -o -name "*.jsonl.zst" \) -type f "${FIND_ARGS[@]}" -print 2>/dev/null | \
         while IFS= read -r path; do printf 'codex\t%s\n' "$path"; done
     fi
+    if [ "$PROVIDER_FILTER" = "all" ] || [ "$PROVIDER_FILTER" = "antigravity" ]; then
+        for ag_root in "${ANTIGRAVITY_DIRS[@]}"; do
+            [ -d "$ag_root" ] || continue
+            find "$ag_root" -mindepth 4 -maxdepth 4 -path "*/.system_generated/logs/transcript.jsonl" -type f "${FIND_ARGS[@]}" -print 2>/dev/null | \
+            while IFS= read -r path; do printf 'antigravity\t%s\n' "$path"; done
+        done
+    fi
 }
 
 while IFS=$'\t' read -r provider transcript; do
@@ -252,6 +287,28 @@ while IFS=$'\t' read -r provider transcript; do
         fi
         project_dir="${project_dir:-$(basename "${session_cwd:-$(dirname "$transcript")}")}"
         turn_grouper="$CODEX_TURN_GROUPER"
+    elif [ "$provider" = "antigravity" ]; then
+        case "$transcript" in
+            */.system_generated/logs/*)
+                session_id=$(basename "${transcript%/.system_generated/logs/*}")
+                ;;
+            *)
+                session_id=$(basename "$(dirname "$transcript")")
+                ;;
+        esac
+        if [ -n "$session_id" ] && [ -z "$PROJECT_FILTER" ]; then
+            pre_mtime=$(file_mtime "$transcript")
+            pre_prefix="antigravity $session_id $pre_mtime "
+            pre_hit=$(grep -m1 -- "^$pre_prefix" "$PROGRESS_FILE" 2>/dev/null)
+            if [ -n "$pre_hit" ]; then
+                echo "Skipping (already indexed): $session_id (antigravity/${pre_hit#"$pre_prefix"})"
+                echo 1 >> "$SKIPPED_FILE"
+                continue
+            fi
+        fi
+        project_dir=$(node "$ANTIGRAVITY_PROJECT_INFERER" --project "$session_id" "$transcript" 2>/dev/null)
+        project_dir="${project_dir:-unknown}"
+        turn_grouper="$ANTIGRAVITY_TURN_GROUPER"
     else
         project_dir=$(basename "$(dirname "$transcript")")
         session_id="${session_file%.jsonl}"

@@ -31,6 +31,35 @@ NEEDLE="${1:-}"
 CLAUDE_TRANSCRIPTS="${CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR:-${CARTOGRAPHER_TRANSCRIPTS_DIR:-$HOME/.claude/projects}}"
 CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
+ANTIGRAVITY_DIRS=()
+if [ -n "${CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR:-}" ]; then
+  IFS=':' read -r -a _ag_parts <<< "$CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR"
+  for _ag_dir in "${_ag_parts[@]}"; do
+    [ -n "$_ag_dir" ] && [ -d "$_ag_dir" ] && ANTIGRAVITY_DIRS+=("$_ag_dir")
+  done
+  [ -n "${CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR:-}" ] && [ -d "$CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR" ] && ANTIGRAVITY_DIRS+=("$CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR")
+  [ -n "${CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR:-}" ] && [ -d "$CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR" ] && ANTIGRAVITY_DIRS+=("$CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR")
+else
+  for _ag_dir in \
+    "$HOME/.gemini/antigravity/brain" \
+    "${CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR:-$HOME/.gemini/antigravity-ide/brain}" \
+    "${CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR:-$HOME/.gemini/antigravity-cli/brain}"; do
+    [ -d "$_ag_dir" ] && ANTIGRAVITY_DIRS+=("$_ag_dir")
+  done
+fi
+
+resolve_antigravity_id() {
+  local cid="$1" dir candidate
+  case "$cid" in
+    ""|"."|".."|*/*|*\\*) return 1 ;;
+  esac
+  [ "${#ANTIGRAVITY_DIRS[@]}" -gt 0 ] || return 1
+  for dir in "${ANTIGRAVITY_DIRS[@]}"; do
+    candidate="$dir/$cid/.system_generated/logs/transcript.jsonl"
+    [ -f "$candidate" ] && { printf '%s\n' "$candidate"; return 0; }
+  done
+  return 1
+}
 
 # 1. Recorded path still valid — the common case, costs one stat.
 if [ -f "$NEEDLE" ]; then printf '%s\n' "$NEEDLE"; exit 0; fi
@@ -39,6 +68,14 @@ if [ -f "$NEEDLE" ]; then printf '%s\n' "$NEEDLE"; exit 0; fi
 # spelling finds the file in the other.
 PLAIN="${NEEDLE%.zst}"
 BASE=$(basename "$PLAIN")
+
+# 1a. Stale Antigravity path (<root>/<conversation-id>/.system_generated/logs/transcript*.jsonl).
+case "$PLAIN" in
+  */.system_generated/logs/transcript.jsonl|*/.system_generated/logs/transcript_full.jsonl)
+    AG_ID=$(basename "${PLAIN%/.system_generated/logs/*}")
+    if resolve_antigravity_id "$AG_ID"; then exit 0; fi
+    ;;
+esac
 
 case "$BASE" in
   *.jsonl)
@@ -63,6 +100,9 @@ ID="${ID##*-rollout-}"
 case "$ID" in
   rollout-*) ID="${ID##*-}" ;;
 esac
+
+# 3a. Direct O(1) Antigravity conversation-id lookup before walking Codex/Claude.
+if resolve_antigravity_id "$ID"; then exit 0; fi
 
 # One find over both stores and both spellings, archive first as before. The
 # awk prints the first plain match from either store, or the first compressed

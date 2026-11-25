@@ -153,13 +153,15 @@ describe('hook provider detection', () => {
   });
 });
 
-describe('Antigravity read-only plugin manifest', () => {
-  test('declares only documented Antigravity top-level fields, matching version, and no root hooks.json in M1', () => {
+describe('Antigravity plugin manifest', () => {
+  test('declares only documented Antigravity top-level fields, matching version, MCP config, and root hooks.json', () => {
     const manifestPath = join(ROOT, 'plugins', 'session-cartographer', '.antigravity-plugin', 'plugin.json');
     const mcpPath = join(ROOT, 'plugins', 'session-cartographer', 'mcp_config.json');
+    const agyHooksPath = join(ROOT, 'plugins', 'session-cartographer', 'hooks.json');
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const mcp = JSON.parse(readFileSync(mcpPath, 'utf8'));
+    const agyHooks = JSON.parse(readFileSync(agyHooksPath, 'utf8'));
 
     const allowed = new Set([
       '$schema', 'name', 'displayName', 'version', 'description',
@@ -175,6 +177,12 @@ describe('Antigravity read-only plugin manifest', () => {
       command: 'node',
       args: ['${PLUGIN_ROOT}/scripts/cartographer-mcp.js'],
     });
+    assert.ok(agyHooks['session-cartographer'], 'root hooks.json must key under session-cartographer');
+    assert.equal(agyHooks.hooks, undefined, 'Antigravity root hooks.json must not wrap in Claude hooks key');
+    assert.equal(
+      readFileSync(join(ROOT, 'plugins', 'session-cartographer', 'hooks', 'antigravity-hook-bridge.cjs')).length > 0,
+      true,
+    );
     assert.equal(
       readFileSync(join(ROOT, 'plugins', 'session-cartographer', 'scripts', 'cartographer-mcp.js')).length > 0,
       true,

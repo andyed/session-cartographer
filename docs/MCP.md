@@ -293,8 +293,8 @@ and access rows carry session attribution (`session_source:
 "ANTIGRAVITY_CONVERSATION_ID"`) and delta serving activates automatically. When
 the runtime omits it from the stdio MCP child, rows record `attribution_status:
 "no_session"` with `provider: "antigravity"` inferred from `clientInfo.name`.
-This milestone is read-only with respect to capture hooks (no plugin-root
-`hooks.json` yet).
+Live capture hooks ship alongside MCP in plugin-root `hooks.json` via
+`hooks/antigravity-hook-bridge.cjs`.
 
 ### Hermes
 

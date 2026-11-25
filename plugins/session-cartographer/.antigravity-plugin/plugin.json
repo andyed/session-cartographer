@@ -1,8 +1,8 @@
 {
   "name": "session-cartographer",
   "displayName": "Session Cartographer",
-  "version": "0.9.1",
-  "description": "Read-only recall, orientation, facts, and peer standup across shared Claude Code, Codex, and Hermes session history.",
+  "version": "0.10.0",
+  "description": "Capture, index, search, and explore shared Claude Code, Codex, Hermes, and Antigravity session history with MCP recall, lifecycle hooks, and local Explorer.",
   "author": {
     "name": "Andy Edmonds"
   },

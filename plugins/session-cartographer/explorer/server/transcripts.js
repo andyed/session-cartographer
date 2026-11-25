@@ -1,12 +1,23 @@
-import { resolve, sep } from 'path';
+import { join, resolve, sep } from 'path';
 import { homedir } from 'os';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { createRequire } from 'module';
 import { normalizeEvidenceEntries } from './transcript-evidence.js';
 import { listCodexRollouts } from '../../scripts/codex-call-evidence.js';
 import { isCompressedTranscript, readTranscriptText } from '../../scripts/transcript-file.js';
+
+function antigravityBrainRoots(env = process.env, home = homedir()) {
+  if (env.CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR) {
+    return [resolve(env.CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR)];
+  }
+  return [
+    resolve(`${home}/.gemini/antigravity/brain`),
+    resolve(`${home}/.gemini/antigravity-ide/brain`),
+    resolve(`${home}/.gemini/antigravity-cli/brain`),
+  ];
+}
 
 export function transcriptRoots(env = process.env, home = homedir()) {
   return [
@@ -15,6 +26,7 @@ export function transcriptRoots(env = process.env, home = homedir()) {
     // Codex moves finished sessions here instead of deleting them. Without this
     // root, isAllowedTranscriptPath() rejects every archived transcript.
     resolve(env.CARTOGRAPHER_CODEX_ARCHIVED_DIR || `${home}/.codex/archived_sessions`),
+    ...antigravityBrainRoots(env, home),
   ];
 }
 
@@ -222,5 +234,34 @@ export function codexSessionIndex({ env = process.env, home = homedir(), now = D
   }
 
   codexIndexCache = { map, until: now() + INDEX_TTL_MS };
+  return map;
+}
+
+let antigravityIndexCache = null;
+
+/**
+ * Map of Antigravity conversation id → transcript path, across configured brain
+ * roots. Antigravity writes each conversation's compact JSONL log at
+ * `<brain>/<conversation-id>/.system_generated/logs/transcript.jsonl`.
+ */
+export function antigravitySessionIndex({ env = process.env, home = homedir(), now = Date.now, force = false } = {}) {
+  if (!force && antigravityIndexCache && antigravityIndexCache.until > now()) return antigravityIndexCache.map;
+
+  const map = new Map();
+  for (const root of antigravityBrainRoots(env, home)) {
+    let entries;
+    try {
+      entries = readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.isDirectory() || map.has(entry.name)) continue;
+      const candidate = join(root, entry.name, '.system_generated', 'logs', 'transcript.jsonl');
+      if (existsSync(candidate)) map.set(entry.name, candidate);
+    }
+  }
+
+  antigravityIndexCache = { map, until: now() + INDEX_TTL_MS };
   return map;
 }

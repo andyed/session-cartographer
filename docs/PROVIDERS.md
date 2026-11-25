@@ -31,23 +31,17 @@ Codex hooks ───> Codex adapter ──┘              │
    `CARTOGRAPHER_PROVIDER=claude|codex|antigravity`; otherwise ambiguous inputs are stored
    as `unknown` and remain searchable.
 
-> **Antigravity (Milestone 1 — read-only):** Antigravity currently participates as
-> a read-only consumer via `.antigravity-plugin/plugin.json`, plugin-root
-> `mcp_config.json`, skills, and `ANTIGRAVITY_CONVERSATION_ID` identity
-> attribution. Live hook capture (M2) and transcript indexing (M3) are tracked in
-> `roadmap.toml`.
-
 ## Boundaries
 
-| Boundary | Claude | Codex | Shared output |
-|---|---|---|---|
-| Plugin manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` | Same skills and hooks |
-| Transcript root | `~/.claude/projects` | `~/.codex/sessions` | Normalized `transcript` events |
-| Turn adapter | `transcript-to-turns.awk` | `codex-transcript-to-turns.awk` | One JSON object per user turn |
-| Natural end | `SessionEnd` | No equivalent currently | Provider-specific lifecycle event |
-| Turn completion | `Stop` | `Stop` | Codex turn milestone; ignored for Claude to avoid duplication |
-| File edit tools | `Edit`, `Write` | `apply_patch` | `tool_file_edit` |
-| Web tools | `WebFetch`, `WebSearch` | built-in web/MCP tools | research events |
+| Boundary | Claude | Codex | Antigravity | Shared output |
+|---|---|---|---|---|
+| Plugin manifest | `.claude-plugin/plugin.json` | `.codex-plugin/plugin.json` | `.antigravity-plugin/plugin.json` + root `hooks.json` + `mcp_config.json` | Same skills, MCP, and hooks |
+| Transcript root | `~/.claude/projects` | `~/.codex/sessions` (+ `archived_sessions`) | `~/.gemini/antigravity/brain` (+ `-ide`/`-cli`) | Normalized `transcript` events |
+| Turn adapter | `transcript-to-turns.awk` | `codex-transcript-to-turns.awk` | `antigravity-transcript-to-turns.awk` | One JSON object per user turn |
+| Natural end | `SessionEnd` | No equivalent currently | No equivalent currently | Provider-specific lifecycle event |
+| Turn completion | `Stop` | `Stop` | `Stop` (via `antigravity-hook-bridge.cjs`) | Turn milestone; ignored for Claude to avoid duplication |
+| File edit tools | `Edit`, `Write` | `apply_patch` | `edit_file`, `write_file`, `replace_file_content` | `tool_file_edit` |
+| Web tools | `WebFetch`, `WebSearch` | built-in web/MCP tools | `search_web`, `read_url_content`, `fetch_url` | research events |
 
 Codex hook transcripts are a convenience interface, not a stable public wire
 format. Keep the Codex parser isolated and fixture-tested.
@@ -67,6 +61,7 @@ Administrative backfills can be scoped without changing consumer behavior:
 bash scripts/retro-index.sh --provider all
 bash scripts/retro-index.sh --provider claude
 bash scripts/retro-index.sh --provider codex
+bash scripts/retro-index.sh --provider antigravity
 ```
 
 Provider-specific root overrides are:
@@ -74,6 +69,7 @@ Provider-specific root overrides are:
 ```text
 CARTOGRAPHER_CLAUDE_TRANSCRIPTS_DIR
 CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR
+CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR
 ```
 
 `CARTOGRAPHER_TRANSCRIPTS_DIR` remains a backwards-compatible alias for the

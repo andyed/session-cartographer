@@ -28,6 +28,7 @@ import { classify, shortModel } from '../shared/flowmap/classify.js';
 import { starterOf, wakeLabel } from '../shared/flowmap/kinds.js';
 import { STATIONS, setupFrom } from '../shared/flowmap/setup.js';
 import { describeCodexItem, describeHook, describePrompt, describeTool, describeUsage, promptText, runsScript } from './flowmap-detail.js';
+import { AGY_RESULT_TYPES, stripAntigravityUserEnvelope, unwrapAntigravityArgs } from './transcript-evidence.js';
 
 /**
  * lot-map files a shell line under Memory by the words of its first command: `grep -n x scripts/cartographer-feed.sh`
@@ -100,7 +101,7 @@ const resultText = content => (typeof content === 'string' ? content : (Array.is
 
 /** Carto's own recall is memory, whichever way the agent reached it: the MCP server or the scripts. */
 export const FLOWMAP_OPTIONS = Object.freeze({
-  memoryServers: 'memory,cartographer,plugin_session-cartographer_cartographer',
+  memoryServers: 'memory,cartographer,plugin_session-cartographer_cartographer,session-cartographer_cartographer',
   memoryCommands: 'cartographer,cooccurrence-graph',
 });
 
@@ -391,11 +392,219 @@ export function codexActions(rolloutPath, setup) {
   return { actions, model, sessionId, context: window === undefined ? null : { window, source: 'recorded' }, notes: { subagent_thread: subagent, unknown_items: unknownItems } };
 }
 
+// ─── Antigravity ────────────────────────────────────────────────────────────
+
+const AGY_STEP_TYPES = new Set(['USER_INPUT', 'PLANNER_RESPONSE', 'GENERIC', 'SYSTEM_MESSAGE', 'CONVERSATION_HISTORY', 'CHECKPOINT', ...AGY_RESULT_TYPES]);
+
+function antigravityWindow(model, peak) {
+  if (peak === 0) return null;
+  const long = /gemini|\[1m\]/i.test(String(model ?? '')) || peak > 200_000;
+  return { window: long ? 1_000_000 : 200_000, source: 'inferred' };
+}
+
+function antigravitySessionId(transcriptPath) {
+  const normalized = String(transcriptPath ?? '').replace(/\\/g, '/');
+  const match = /\/([^/]+)\/\.system_generated\/logs\/transcript\.jsonl$/.exec(normalized);
+  return match ? match[1] : basename(transcriptPath, '.jsonl');
+}
+
+function mapAntigravityTool(rawName, args) {
+  const name = String(rawName ?? '');
+  const a = args && typeof args === 'object' ? args : {};
+  switch (name) {
+    case 'run_command':
+      return {
+        name: 'Bash',
+        input: {
+          command: String(a.CommandLine ?? a.command ?? a.cmd ?? ''),
+          description: String(a.toolSummary ?? a.description ?? ''),
+        },
+      };
+    case 'edit_file':
+    case 'replace_file_content':
+    case 'multi_replace_file_content':
+      return {
+        name: 'Edit',
+        input: { file_path: String(a.Path ?? a.TargetFile ?? a.file_path ?? '') },
+      };
+    case 'write_file':
+    case 'write_to_file':
+      return {
+        name: 'Write',
+        input: {
+          file_path: String(a.Path ?? a.TargetFile ?? a.file_path ?? ''),
+          content: String(a.Content ?? a.CodeContent ?? a.content ?? ''),
+        },
+      };
+    case 'read_file':
+    case 'view_file':
+    case 'view_file_outline':
+    case 'view_code_item': {
+      const start = Number(a.StartLine);
+      const end = Number(a.EndLine);
+      return {
+        name: 'Read',
+        input: {
+          file_path: String(a.Path ?? a.AbsolutePath ?? a.File ?? a.file_path ?? ''),
+          ...(Number.isFinite(start) ? { offset: start } : {}),
+          ...(Number.isFinite(start) && Number.isFinite(end) && end >= start ? { limit: end - start + 1 } : {}),
+        },
+      };
+    }
+    case 'grep_search':
+      return { name: 'Grep', input: { pattern: String(a.Query ?? a.pattern ?? '') } };
+    case 'find_by_name':
+    case 'list_dir':
+      return { name: 'Glob', input: { pattern: String(a.Pattern ?? a.DirectoryPath ?? a.pattern ?? '') } };
+    case 'search_web':
+      return { name: 'WebSearch', input: { query: String(a.query ?? a.Query ?? '') } };
+    case 'read_url_content':
+      return { name: 'WebFetch', input: { url: String(a.Url ?? a.url ?? '') } };
+    case 'invoke_subagent':
+      return {
+        name: 'Agent',
+        input: {
+          description: String(a.Role ?? a.TypeName ?? a.description ?? ''),
+          subagent_type: String(a.TypeName ?? ''),
+        },
+      };
+    case 'send_message':
+      return { name: 'SendMessage', input: a };
+    case 'ask_question':
+      return { name: 'AskUserQuestion', input: a };
+    case 'call_mcp_tool': {
+      const server = String(a.ServerName ?? a.server ?? 'mcp');
+      const tool = String(a.ToolName ?? a.tool ?? 'call');
+      const mcpInput = a.Arguments && typeof a.Arguments === 'object' ? a.Arguments : parseObject(a.Arguments);
+      return { name: `mcp__${server}__${tool}`, input: mcpInput };
+    }
+    default:
+      return { name, input: a };
+  }
+}
+
+export function antigravityActions(transcriptPath, setup) {
+  const actions = [];
+  let model;
+  let peak = 0;
+  let unanswered = 0;
+  let pending = [];
+
+  for (const row of rows(transcriptPath)) {
+    const ts = Date.parse(row.created_at ?? row.timestamp);
+    if (!Number.isFinite(ts)) continue;
+    const uuid = row.step_index !== undefined ? `step-${row.step_index}` : undefined;
+
+    if (row.type === 'USER_INPUT') {
+      unanswered += pending.length;
+      pending = [];
+      const clean = stripAntigravityUserEnvelope(row.content ?? '');
+      if (clean !== '') actions.push(arrival(clean, setup, ts, uuid));
+      continue;
+    }
+
+    if (row.type === 'PLANNER_RESPONSE') {
+      unanswered += pending.length;
+      pending = [];
+      if (typeof row.model === 'string' && row.model !== '') model = row.model;
+
+      // Antigravity input_tokens excludes cache_read_tokens; context read is their sum.
+      const read = (Number(row.input_tokens) || 0) + (Number(row.cache_read_tokens) || 0);
+      const said = describeUsage({
+        input_tokens: row.input_tokens,
+        cache_read_input_tokens: row.cache_read_tokens,
+        output_tokens: row.output_tokens,
+      });
+      const request = {
+        station: 'model',
+        label: shortModel(row.model ?? model ?? 'model'),
+        from: 'core',
+        startedAt: ts,
+        endedAt: ts,
+        status: 'ok',
+        uuid,
+        ...(said !== '' ? { detail: said } : {}),
+        ...(read > 0 ? { ctx: read } : {}),
+      };
+      if (read > 0) peak = Math.max(peak, read);
+      actions.push(request);
+
+      const hasThinking = typeof row.thinking === 'string' && row.thinking.trim() !== '';
+      const hasText = typeof row.content === 'string' && row.content.trim() !== '';
+      const blockOffset = (hasThinking ? 1 : 0) + (hasText ? 1 : 0);
+      const toolCalls = Array.isArray(row.tool_calls) ? row.tool_calls : [];
+
+      if (toolCalls.length === 0) {
+        if (hasText) {
+          actions.push({
+            station: 'tells',
+            label: describePrompt(row.content) || setup.t.stations.tells,
+            from: 'core',
+            startedAt: ts,
+            endedAt: ts,
+            status: 'ok',
+            uuid,
+            block: hasThinking ? 1 : 0,
+          });
+        }
+        continue;
+      }
+
+      toolCalls.forEach((tc, index) => {
+        const unwrapped = unwrapAntigravityArgs(tc?.args ?? tc?.input ?? {});
+        const mapped = mapAntigravityTool(tc?.name, unwrapped);
+        const { station, label } = classifyCall(mapped.name, mapped.input, setup);
+        const action = enrich(
+          {
+            station,
+            label,
+            from: 'core',
+            startedAt: ts,
+            status: 'ok',
+            tool: mapped.name,
+            uuid,
+            block: blockOffset + index,
+          },
+          describeTool(mapped.name, mapped.input, {}, station),
+        );
+        pending.push({ action, mappedName: mapped.name, mappedInput: mapped.input });
+        actions.push(action);
+      });
+      continue;
+    }
+
+    if (AGY_RESULT_TYPES.has(row.type)) {
+      const current = pending.shift();
+      if (current === undefined) continue;
+      const { action, mappedName, mappedInput } = current;
+      action.endedAt = ts;
+      const text = resultText(row.content ?? row.error ?? '');
+      const failed = row.status === 'ERROR' || row.type === 'ERROR_MESSAGE' || Boolean(row.error)
+        || /^Command exited with code (?!0\b)-?\d+\.?\s*$/m.test(text);
+      if (failed) action.status = 'err';
+      enrich(action, describeTool(mappedName, mappedInput, { text }, action.station));
+    }
+  }
+
+  unanswered += pending.length;
+  actions.sort((a, b) => a.startedAt - b.startedAt);
+  return {
+    actions,
+    model,
+    context: antigravityWindow(model, peak),
+    sessionId: antigravitySessionId(transcriptPath),
+    notes: { unanswered },
+  };
+}
+
 // ─── One session, either provider ───────────────────────────────────────────
 
-/** A Codex rollout opens with a `session_meta` row; a Claude transcript never has one. */
+/** A Codex rollout opens with a `session_meta` row; an Antigravity log carries `step_index`; a Claude transcript has neither. */
 export function providerOfTranscript(path) {
-  for (const row of rows(path)) return row.type === 'session_meta' || row.payload !== undefined ? 'codex' : 'claude';
+  for (const row of rows(path)) {
+    if (row.step_index !== undefined && AGY_STEP_TYPES.has(row.type)) return 'antigravity';
+    return row.type === 'session_meta' || row.payload !== undefined ? 'codex' : 'claude';
+  }
   return 'claude';
 }
 
@@ -408,7 +617,11 @@ export function providerOfTranscript(path) {
 export function sessionFlowmap(transcriptPath) {
   const provider = providerOfTranscript(transcriptPath);
   const setup = setupFrom(FLOWMAP_OPTIONS);
-  const read = provider === 'codex' ? codexActions(transcriptPath, setup) : claudeActions(transcriptPath, setup);
+  const read = provider === 'codex'
+    ? codexActions(transcriptPath, setup)
+    : provider === 'antigravity'
+      ? antigravityActions(transcriptPath, setup)
+      : claudeActions(transcriptPath, setup);
   const { actions } = read;
   const totals = tally(actions);
   const last = actions.reduce((max, a) => Math.max(max, a.endedAt ?? a.startedAt), 0);

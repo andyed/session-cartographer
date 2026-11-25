@@ -45,6 +45,7 @@ detect_provider_from() {
   case "${transcript//\\//}" in
     */.codex/sessions/*|*/.codex/archived_sessions/*) printf '%s\n' "codex"; return 0 ;;
     */.claude/projects/*) printf '%s\n' "claude"; return 0 ;;
+    */.gemini/antigravity/brain/*|*/.gemini/antigravity-ide/brain/*|*/.gemini/antigravity-cli/brain/*|*/.gemini/antigravity*/transcript*.jsonl) printf '%s\n' "antigravity"; return 0 ;;
   esac
 
   # turn_id and model are Codex hook extensions. Keep this below path checks

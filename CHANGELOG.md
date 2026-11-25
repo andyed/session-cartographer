@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.10.0 (2026-11-25)
+
+### feat(antigravity): full Antigravity capture hooks, transcript indexing, and Explorer / Flow map support
+
+- **Live capture hook bridge (Milestone 2):** Ship plugin-root `hooks.json` and
+  `hooks/antigravity-hook-bridge.cjs` translating Antigravity's camelCase
+  lifecycle payloads and tool schemas (`run_command`, `edit_file`, `write_file`,
+  `replace_file_content`, `search_web`, `read_url_content`) into Cartographer's
+  existing hooks and strict Antigravity stdout JSON (`{"decision":"allow"}`,
+  `{}`, `injectSteps`). Deduplicates `PreInvocation` mid-turn model steps,
+  logs `Antigravity turn completed` on `Stop` (skipping `USER_CANCELED` and
+  `continuationActive`), detects `*/.gemini/antigravity*/brain/*` paths in
+  `common.sh`, and scopes `start-transcript-catch-up.sh` by provider.
+- **Transcript turn adapter, resolver, backfill & standup folding (Milestone 3A):**
+  Add zero-dep `scripts/antigravity-transcript-to-turns.awk` (`turn-antigravity-<sid>-<idx>`)
+  and read-only `scripts/antigravity-source.js` (`conversation_summaries.db`
+  workspace→project resolution, `--show <id>`, and optional `--backfill` for
+  pre-JSONL conversations). Wire `CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR`
+  across `resolve-transcript.sh`, `retro-index.sh --provider antigravity`,
+  `catch-up-transcripts.sh`, `cartographer-search.sh --transcript`, and
+  `standup-silence.js` (`parent_conversation_id` subagent folding).
+- **Explorer transcript viewer, Memory Desk & Flow map (Milestone 3B):** Add
+  Antigravity brain roots to `transcriptRoots()` and `antigravitySessionIndex()`,
+  parse `USER_INPUT` / `PLANNER_RESPONSE` / `tool_calls` / `GENERIC` results
+  (with `<USER_REQUEST>` envelope stripping, uncached+cached token totals, and
+  file reference extraction) in `transcript-evidence.js` and
+  `memory-transcript.js`, wire per-provider derivation in `app.js`, and add full
+  Antigravity session replay to `/flow` (`explorer/server/flowmap.js`).
+
 ## 0.9.1 (2026-11-25)
 
 ### feat(antigravity): read-only Antigravity plugin, MCP config, and identity (Milestone 1)

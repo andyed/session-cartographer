@@ -60,12 +60,23 @@ case "$EVENT" in
         ;;
     Stop)
         # Claude Code has a dedicated SessionEnd event. Its Stop event is a
-        # turn boundary and would duplicate every response. Codex currently
-        # exposes Stop but not SessionEnd, so preserve it as a provider-labeled
-        # turn milestone rather than pretending the whole session ended.
-        [ "$PROVIDER" = "codex" ] || exit 0
-        MILESTONE="turn_stop"
-        DESCRIPTION="Codex turn completed"
+        # turn boundary and would duplicate every response. Codex and
+        # Antigravity currently expose Stop without SessionEnd, so preserve it
+        # as a provider-labeled turn milestone rather than pretending the whole
+        # session ended.
+        case "$PROVIDER" in
+            codex)
+                MILESTONE="turn_stop"
+                DESCRIPTION="Codex turn completed"
+                ;;
+            antigravity)
+                MILESTONE="turn_stop"
+                DESCRIPTION="Antigravity turn completed"
+                ;;
+            *)
+                exit 0
+                ;;
+        esac
         ;;
     SubagentStop)
         case "$AGENT_TYPE" in

@@ -25,6 +25,11 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+case "$PROVIDER" in
+  all|claude|codex|antigravity) ;;
+  *) echo "Error: --provider must be all, claude, codex, or antigravity" >&2; exit 2 ;;
+esac
+
 mkdir -p "$STATE_DIR"
 now=$(date +%s)
 if [ "$FORCE" -eq 0 ] && [ -f "$LAST_RUN" ]; then

@@ -5,9 +5,9 @@ Windows), and jq. After updating, restart the agent and review the changed
 hook commands; every registration invokes `node` and `run-hook.cjs`.
 
 This archive is a self-contained local marketplace and plugin bundle for Claude
-Code, Codex, and Antigravity (read-only recall milestone). It is the same
-artifact for all three agents; install only the sections you use, or install
-multiple to give them one shared history.
+Code, Codex, and Antigravity. It is the same artifact for all three agents;
+install only the sections you use, or install multiple to give them one shared
+history.
 Keep the extracted directory in a stable location; Claude Code and Codex copy
 the plugin into their own managed cache when it is installed.
 
@@ -48,13 +48,12 @@ claude plugin install session-cartographer@session-cartographer
 
 Start a new Claude Code session after installation.
 
-## Antigravity (read-only recall)
+## Antigravity
 
-This milestone adds read-only recall, orientation, facts, and peer standup in
-Antigravity over the shared Claude Code, Codex, and Hermes corpus. It ships
-`.antigravity-plugin/plugin.json`, `mcp_config.json`, and the bundled skills,
-and intentionally omits a plugin-root `hooks.json` so Antigravity does not
-write live hook capture rows yet.
+The plugin ships full Antigravity support: `.antigravity-plugin/plugin.json`,
+plugin-root `mcp_config.json`, plugin-root `hooks.json` (translated through
+`hooks/antigravity-hook-bridge.cjs`), bundled skills, transcript indexing
+(`--provider antigravity`), and Explorer session/transcript/Flow map support.
 
 From the extracted directory, copy or symlink the plugin into your global
 Antigravity plugins folder:
@@ -68,11 +67,18 @@ Or register the extracted `plugins/` directory through
 `~/.gemini/config/plugins.json`, or run `agy plugin install ./plugins/session-cartographer`
 where the `agy` CLI is installed.
 
-Antigravity automatically discovers the plugin and exposes the `cartographer`
-MCP tools (`recall`, `get`, `mark_used`, `thread`, `orient`, `facts`,
-`standup`) along with the bundled skills (`/remember`, `/standup`, `/carto`,
-`/turbo`, `/setup`). Recall calls made from Antigravity record telemetry with
-`provider: "antigravity"` and use `ANTIGRAVITY_CONVERSATION_ID` when present.
+Antigravity automatically discovers the plugin and enables:
+- **MCP tools (`cartographer`):** `recall`, `get`, `mark_used`, `thread`,
+  `orient`, `facts`, and `standup`, plus the bundled skills (`/remember`,
+  `/standup`, `/carto`, `/turbo`, `/setup`, `/wrapup`, `/investigate`, `/trustmap`).
+- **Live capture hooks (`hooks.json`):** `SessionStart`, `PreInvocation`
+  (deduplicated per user turn), `PreToolUse` collision checks, `PostToolUse`
+  tool/research capture (`run_command`, `edit_file`, `write_file`, `search_web`),
+  and `Stop` turn milestones, all tagged `provider: "antigravity"`.
+- **Transcript backfill:** `bash scripts/retro-index.sh --provider antigravity`
+  indexes `brain/<id>/.system_generated/logs/transcript.jsonl` files, and
+  `node scripts/antigravity-source.js --backfill --write` optionally backfills
+  older conversations from `conversation_summaries.db` (read-only).
 
 ## Explorer
 

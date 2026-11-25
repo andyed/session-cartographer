@@ -27,9 +27,62 @@
  *     (73 of 78 SILENT rows on 2026-10-27, docs/standup-codex-threads-2026-10-27.md).
  */
 import { readdirSync, statSync, readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync, openSync, readSync, closeSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { join, delimiter, resolve } from 'path';
+import { homedir, tmpdir } from 'os';
 import { execFileSync } from 'child_process';
+import { isResolved } from './sentinels.js';
+
+let SqliteDatabaseSync = null;
+{
+  const origEmitWarning = process.emitWarning;
+  process.emitWarning = function patched(warning, ...rest) {
+    const text = typeof warning === 'string' ? warning : warning?.message;
+    if (/SQLite/i.test(String(text))) return;
+    return origEmitWarning.call(this, warning, ...rest);
+  };
+  try {
+    ({ DatabaseSync: SqliteDatabaseSync } = await import('node:sqlite'));
+  } catch {
+    SqliteDatabaseSync = null;
+  } finally {
+    process.emitWarning = origEmitWarning;
+  }
+}
+
+function expandHomeDir(p, home) {
+  if (typeof p !== 'string' || !p) return '';
+  if (p === '~') return home;
+  if (p.startsWith('~/')) return join(home, p.slice(2));
+  return p;
+}
+
+function resolveAntigravityRoots(env = process.env, home = homedir()) {
+  const roots = [];
+  const push = (raw) => {
+    if (!raw || typeof raw !== 'string') return;
+    for (const part of raw.split(delimiter)) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      const abs = resolve(expandHomeDir(trimmed, home));
+      if (!roots.includes(abs)) roots.push(abs);
+    }
+  };
+  if (env.CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR) {
+    push(env.CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR);
+    if (env.CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR) push(env.CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR);
+    if (env.CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR) push(env.CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR);
+    return roots;
+  }
+  push(join(home, '.gemini', 'antigravity', 'brain'));
+  push(env.CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR || join(home, '.gemini', 'antigravity-ide', 'brain'));
+  push(env.CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR || join(home, '.gemini', 'antigravity-cli', 'brain'));
+  return roots;
+}
+
+function resolveAntigravityDbPath(env = process.env, home = homedir()) {
+  if (env.CARTOGRAPHER_ANTIGRAVITY_DB) return resolve(expandHomeDir(env.CARTOGRAPHER_ANTIGRAVITY_DB, home));
+  return join(home, '.gemini', 'antigravity', 'conversation_summaries.db');
+}
 
 const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.jsonl$/i;
 const DAY = 86400e3;
@@ -130,6 +183,151 @@ export function codexThreadMeta(path, { maxBytes = 256 * 1024 } = {}) {
     originator: str(p.originator),
     cwd: str(p.cwd),
   };
+}
+
+/**
+ * Antigravity transcripts written since `sinceMs`
+ * (`<brain>/<conversation-id>/.system_generated/logs/transcript.jsonl`).
+ * @returns {{id: string, provider: 'antigravity', path: string, mtimeMs: number}[]}
+ */
+export function antigravityTranscripts({ env = process.env, home = homedir(), roots, sinceMs = 0 } = {}) {
+  const searchRoots = roots || resolveAntigravityRoots(env, home);
+  const out = [];
+  const seen = new Set();
+  for (const root of searchRoots) {
+    let entries;
+    try { entries = readdirSync(root, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const cid = entry.name;
+      if (!isResolved(cid)) continue;
+      const lower = cid.toLowerCase();
+      if (seen.has(lower)) continue;
+      const file = join(root, cid, '.system_generated', 'logs', 'transcript.jsonl');
+      let st;
+      try { st = statSync(file); } catch { continue; }
+      if (st.mtimeMs >= sinceMs) {
+        seen.add(lower);
+        out.push({ id: lower, provider: 'antigravity', path: file, mtimeMs: st.mtimeMs });
+      }
+    }
+  }
+  return out.sort((a, b) => b.mtimeMs - a.mtimeMs);
+}
+
+/**
+ * Parent-child metadata for Antigravity conversations, read strictly read-only
+ * from `conversation_summaries.db` (`parent_conversation_id` and `conversation_parents`).
+ *
+ * Parallel to `codexThreadMeta()`: Antigravity spawns subagent conversations whose
+ * parent is recorded in SQLite rather than inside the transcript header. Only
+ * explicit, `isResolved()` parent IDs are returned — never inferred from time
+ * adjacency. Gracefully returns an empty Map if the DB is missing or unreadable.
+ *
+ * @returns {Map<string, {id: string, parent: string|null, threadSource: string|null, subagent: string|null, nestingDepth: number}>}
+ */
+export function antigravityThreadMeta(env = process.env, home = homedir()) {
+  const out = new Map();
+  const dbPath = typeof env === 'string'
+    ? env
+    : (env && typeof env.dbPath === 'string' ? env.dbPath : resolveAntigravityDbPath(env, home));
+  if (!SqliteDatabaseSync || !dbPath || !existsSync(dbPath)) return out;
+
+  let db;
+  try {
+    db = new SqliteDatabaseSync(dbPath, { readOnly: true, readBigInts: true });
+    try {
+      db.exec('PRAGMA busy_timeout = 2000');
+      db.exec('PRAGMA query_only = 1');
+    } catch { /* ignore pragma errors on read-only DB */ }
+
+    const hasTable = (name) => Boolean(
+      db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name = ?").get(name),
+    );
+    const parentLookup = new Map();
+    if (hasTable('conversation_parents')) {
+      try {
+        for (const r of db.prepare('SELECT conversation_id, parent_id FROM conversation_parents').all()) {
+          const cid = String(r.conversation_id || '').trim().toLowerCase();
+          const pid = String(r.parent_id || '').trim().toLowerCase();
+          if (isResolved(cid) && isResolved(pid) && cid !== pid) parentLookup.set(cid, pid);
+        }
+      } catch { /* ignore schema mismatch */ }
+    }
+
+    if (hasTable('conversation_summaries')) {
+      const cols = new Set(db.prepare('PRAGMA table_info(conversation_summaries)').all().map((c) => c.name));
+      const opt = (name, defSql = "''") => (cols.has(name) ? name : `${defSql} AS ${name}`);
+      const rows = db.prepare(`
+        SELECT conversation_id,
+               ${opt('parent_conversation_id')},
+               ${opt('agent_name')},
+               ${opt('nesting_depth', '0')}
+          FROM conversation_summaries
+      `).all();
+      for (const row of rows) {
+        const rawId = String(row.conversation_id || '').trim();
+        if (!isResolved(rawId)) continue;
+        const id = rawId.toLowerCase();
+        const rawParent = String(row.parent_conversation_id || '').trim() || parentLookup.get(id) || '';
+        const parent = isResolved(rawParent) ? rawParent.toLowerCase() : null;
+        const validParent = parent && parent !== id ? parent : null;
+        const agentName = row.agent_name ? String(row.agent_name).trim() : null;
+        out.set(id, {
+          id,
+          parent: validParent,
+          threadSource: agentName || (validParent ? 'subagent' : null),
+          subagent: validParent ? (agentName || 'subagent') : null,
+          nestingDepth: Number(row.nesting_depth || 0),
+        });
+      }
+    }
+
+    for (const [cid, pid] of parentLookup) {
+      if (!out.has(cid)) {
+        out.set(cid, {
+          id: cid,
+          parent: pid,
+          threadSource: 'subagent',
+          subagent: 'subagent',
+          nestingDepth: 1,
+        });
+      }
+    }
+  } catch {
+    return out;
+  } finally {
+    try { db?.close(); } catch { /* ignore */ }
+  }
+  return out;
+}
+
+/**
+ * Fold Antigravity subagent threads under their resolved parent conversation ID.
+ * Threads without an explicit resolved parent stay in `standalone` (never grouped
+ * by time adjacency or sentinel parent values).
+ *
+ * @param {{id: string}[]} threads
+ * @param {Map<string, {parent: string|null, threadSource?: string|null, subagent?: string|null}>} metaMap
+ * @returns {{standalone: object[], subthreads: object[], byParent: Map<string, object[]>}}
+ */
+export function foldAntigravityThreads(threads, metaMap) {
+  const standalone = [];
+  const subthreads = [];
+  const byParent = new Map();
+  for (const thread of threads || []) {
+    const id = isResolved(thread?.id) ? String(thread.id).trim().toLowerCase() : '';
+    const meta = id && metaMap instanceof Map ? metaMap.get(id) : null;
+    const parent = meta && isResolved(meta.parent) ? String(meta.parent).trim().toLowerCase() : null;
+    if (parent && parent !== id) {
+      subthreads.push({ ...thread, parent, subagent: meta.subagent || meta.threadSource || 'subagent' });
+      if (!byParent.has(parent)) byParent.set(parent, []);
+      byParent.get(parent).push(thread);
+    } else {
+      standalone.push(thread);
+    }
+  }
+  return { standalone, subthreads, byParent };
 }
 
 /** PostToolUse → post_tool_use: Codex's trust keys spell events in snake case. */

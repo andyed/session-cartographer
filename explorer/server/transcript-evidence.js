@@ -5,7 +5,59 @@ const TEXT_TYPES = new Set(['text', 'input_text', 'output_text', 'summary_text']
 const CALL_TYPES = new Set(['tool_use', 'server_tool_use', 'function_call', 'custom_tool_call']);
 const RESULT_TYPES = new Set(['tool_result', 'function_call_output', 'custom_tool_call_output']);
 const BINARY_TYPES = new Set(['image', 'input_image', 'output_image', 'audio', 'input_audio', 'output_audio', 'document', 'redacted_thinking', 'encrypted_content']);
+export const AGY_RESULT_TYPES = new Set(['GENERIC', 'RUN_COMMAND', 'VIEW_FILE', 'LIST_DIRECTORY', 'GREP_SEARCH', 'CODE_ACTION', 'ERROR_MESSAGE']);
+const AGY_WRITE_TOOLS = new Set(['edit_file', 'write_file', 'replace_file_content', 'multi_replace_file_content', 'write_to_file']);
+const AGY_READ_TOOLS = new Set(['read_file', 'view_file', 'view_file_outline', 'view_code_item']);
 const isResult = value => RESULT_TYPES.has(value.type) || (typeof value.type === 'string' && value.type.endsWith('_tool_result') && !!value.tool_use_id);
+const isAntigravityEntry = entry => entry && entry.step_index !== undefined && (entry.type === 'USER_INPUT' || entry.type === 'PLANNER_RESPONSE');
+
+/**
+ * Antigravity wraps explicit user prompts in `<USER_REQUEST>...</USER_REQUEST>`
+ * alongside harness `<ADDITIONAL_METADATA>` and `<USER_SETTINGS_CHANGE>` tags.
+ * Extract the human prompt text so titles and messages render clean prose.
+ */
+export function stripAntigravityUserEnvelope(content) {
+  if (typeof content !== 'string') return '';
+  const stripped = content
+    .replace(/<ADDITIONAL_METADATA>[\s\S]*?<\/ADDITIONAL_METADATA>/g, '')
+    .replace(/<USER_SETTINGS_CHANGE>[\s\S]*?<\/USER_SETTINGS_CHANGE>/g, '');
+  const match = stripped.match(/<USER_REQUEST>\s*([\s\S]*?)\s*<\/USER_REQUEST>/);
+  if (match) return match[1].trim();
+  return stripped.replace(/<\/?USER_REQUEST>/g, '').trim();
+}
+
+/**
+ * Compact Antigravity `transcript.jsonl` encodes each `tool_calls[].args` value
+ * as a JSON-stringified scalar or object (e.g. `"\"/abs/path\""`, `"5000"`,
+ * `"{\"query\":\"...\"}"`). Unwrap cleanly while leaving plain values intact.
+ */
+export function unwrapAntigravityArgs(args) {
+  if (typeof args === 'string') {
+    try {
+      const parsed = JSON.parse(args);
+      if (parsed && typeof parsed === 'object') return unwrapAntigravityArgs(parsed);
+      return parsed;
+    } catch {
+      return args;
+    }
+  }
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args ?? {};
+  const out = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === 'string') {
+      try {
+        out[key] = JSON.parse(value);
+      } catch {
+        out[key] = value.length >= 2 && value.startsWith('"') && value.endsWith('"')
+          ? value.slice(1, -1)
+          : value;
+      }
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
 
 function printable(value) {
   return typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value, null, 2);
@@ -44,8 +96,8 @@ function safeValue(value) {
 function explicitFailure(value) {
   if (typeof value === 'string') {
     try { return explicitFailure(JSON.parse(value)); } catch {
-      // Codex's exec tool records this envelope even when output is plain text.
-      const exit = value.match(/^Process exited with code (-?\d+)\s*$/m);
+      // Codex's exec tool and Antigravity's run_command record this envelope even when output is plain text.
+      const exit = value.match(/^(?:Process|Command) exited with code (-?\d+)\.?\s*$/m);
       return !!exit && Number(exit[1]) !== 0;
     }
   }
@@ -122,9 +174,17 @@ function filesFromCall(call, message) {
   if (!input || typeof input !== 'object') return [];
   // Only explicit file parameters; never infer a path from arbitrary shell
   // text or claim that a requested edit succeeded.
+  const name = call.name.toLowerCase();
+  if (AGY_WRITE_TOOLS.has(name)) {
+    const target = input.Path || input.TargetFile || input.file_path || input.filePath || input.path;
+    return typeof target === 'string' && target.trim() ? [reference(target, 'write')] : [];
+  }
+  if (AGY_READ_TOOLS.has(name)) {
+    const target = input.Path || input.AbsolutePath || input.File || input.file_path || input.filePath || input.path;
+    return typeof target === 'string' && target.trim() ? [reference(target, 'read')] : [];
+  }
   const path = input.file_path || input.filePath || input.path;
   if (typeof path !== 'string' || !path.trim()) return [];
-  const name = call.name.toLowerCase();
   if (!/read|write|edit|file|notebook/.test(name)) return [];
   return [reference(path, /write|edit|delete|remove|create|patch/.test(name) ? 'write' : 'read')];
 }
@@ -169,15 +229,57 @@ function pairEvidence(messages) {
 }
 
 export function normalizeEvidenceEntries(entries) {
-  const provider = entries.some(entry => ['session_meta', 'response_item', 'event_msg'].includes(entry.type)) ? 'codex' : 'claude';
+  const provider = entries.some(isAntigravityEntry)
+    ? 'antigravity'
+    : entries.some(entry => ['session_meta', 'response_item', 'event_msg'].includes(entry.type))
+      ? 'codex'
+      : 'claude';
   const legacyPrompts = new Set(entries.filter(e => e.type === 'event_msg' && e.payload?.type === 'user_message')
     .map(e => `${e.timestamp || ''}\0${e.payload.message || ''}`));
   const ids = new Set();
   const messages = [];
+  let pendingAgyCalls = [];
   entries.forEach((e, index) => {
     const p = provider === 'codex' ? e.payload || {} : e.message || {};
     let rawBlocks, role, sourceUuid, type;
-    if (provider === 'codex') {
+    let agyToolUseId = '';
+    if (provider === 'antigravity') {
+      type = e.type;
+      sourceUuid = e.step_index !== undefined ? `step-${e.step_index}` : '';
+      if (e.type === 'USER_INPUT') {
+        pendingAgyCalls = [];
+        const cleanText = stripAntigravityUserEnvelope(e.content || '');
+        if (!cleanText) return;
+        rawBlocks = [{ type: 'text', text: cleanText }];
+        role = 'user';
+      } else if (e.type === 'PLANNER_RESPONSE') {
+        pendingAgyCalls = [];
+        const baseStepId = sourceUuid || `antigravity-record-${index}`;
+        const built = [];
+        if (typeof e.thinking === 'string' && e.thinking.trim()) built.push({ type: 'thinking', text: e.thinking });
+        if (typeof e.content === 'string' && e.content.trim()) built.push({ type: 'text', text: e.content });
+        const calls = Array.isArray(e.tool_calls) ? e.tool_calls : [];
+        calls.forEach((tc, callIdx) => {
+          const callId = `${baseStepId}-call-${callIdx}`;
+          const name = tc?.name || 'Tool';
+          built.push({ type: 'tool_use', id: callId, name, input: unwrapAntigravityArgs(tc?.args ?? tc?.input ?? {}) });
+          pendingAgyCalls.push({ callId, name });
+        });
+        rawBlocks = built;
+        role = 'assistant';
+      } else if (AGY_RESULT_TYPES.has(e.type)) {
+        const paired = pendingAgyCalls.shift();
+        const callId = paired?.callId || '';
+        const name = paired?.name || e.type || 'Tool';
+        const output = e.content ?? e.error ?? '';
+        const isError = e.status === 'ERROR' || e.type === 'ERROR_MESSAGE' || Boolean(e.error);
+        rawBlocks = [{ type: 'tool_result', tool_use_id: callId, name, content: output, is_error: isError }];
+        role = 'tool';
+        agyToolUseId = callId;
+      } else {
+        return;
+      }
+    } else if (provider === 'codex') {
       type = p.type || e.type;
       if (e.type === 'event_msg' && p.type === 'user_message') { rawBlocks = [p.message || '']; role = 'user'; }
       else if (e.type === 'event_msg' && p.type === 'item_completed' && p.item?.type === 'UserMessage') {
@@ -210,10 +312,10 @@ export function normalizeEvidenceEntries(entries) {
     const blocks = (Array.isArray(rawBlocks) ? rawBlocks : [rawBlocks]).map((block, i) => normalizeBlock(block, `${uuid}--block-${i}`, uuid));
     if (!blocks.length || blocks.every(b => b.type === 'text' && !b.text)) return;
     messages.push({
-      uuid, sourceUuid, sourceIndex: index, type, timestamp: e.timestamp, role, blocks,
+      uuid, sourceUuid, sourceIndex: index, type, timestamp: provider === 'antigravity' ? (e.created_at ?? e.timestamp) : e.timestamp, role, blocks,
       content: blocks.map(blockText).filter(Boolean).join('\n'),
-      model: provider === 'claude' ? p.model || '' : '',
-      toolUseID: provider === 'claude' ? e.toolUseID || '' : p.call_id || '',
+      model: provider === 'claude' ? p.model || '' : provider === 'antigravity' ? e.model || '' : '',
+      toolUseID: provider === 'claude' ? e.toolUseID || '' : provider === 'antigravity' ? agyToolUseId : p.call_id || '',
       parentToolUseID: e.parentToolUseID || '', isSidechain: e.isSidechain ?? false, agentId: e.agentId || '',
       ...(provider === 'codex' && p.type === 'agent_message' ? { author: p.author || '', recipient: p.recipient || '' } : {}),
     });

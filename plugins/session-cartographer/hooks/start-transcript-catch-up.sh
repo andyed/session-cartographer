@@ -9,5 +9,9 @@ CATCHUP=$(cartographer_script catch-up-transcripts.sh)
 [ -x "$CATCHUP" ] || exit 0
 
 # The worker owns cooldown and locking. Detaching keeps SessionStart fast.
-nohup "$CATCHUP" --provider codex >/dev/null 2>&1 </dev/null &
+CATCHUP_PROVIDER="codex"
+case "${CARTOGRAPHER_PROVIDER:-}" in
+  antigravity|all|claude|codex) CATCHUP_PROVIDER="$CARTOGRAPHER_PROVIDER" ;;
+esac
+nohup "$CATCHUP" --provider "$CATCHUP_PROVIDER" >/dev/null 2>&1 </dev/null &
 exit 0

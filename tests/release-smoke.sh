@@ -26,6 +26,10 @@ for required in \
   "$PLUGIN/.antigravity-plugin/plugin.json" \
   "$PLUGIN/.mcp.json" \
   "$PLUGIN/mcp_config.json" \
+  "$PLUGIN/hooks.json" \
+  "$PLUGIN/hooks/antigravity-hook-bridge.cjs" \
+  "$PLUGIN/scripts/antigravity-transcript-to-turns.awk" \
+  "$PLUGIN/scripts/antigravity-source.js" \
   "$PLUGIN/scripts/cartographer-mcp.js" \
   "$PLUGIN/scripts/facts-render.js" \
   "$PLUGIN/hooks/hooks.json" \

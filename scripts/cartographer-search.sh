@@ -569,6 +569,23 @@ CODEX_TRANSCRIPTS="${CARTOGRAPHER_CODEX_TRANSCRIPTS_DIR:-$HOME/.codex/sessions}"
 # delete it. A recorded transcript_path therefore goes stale while the data is
 # still on disk, which reads as "transcript missing" unless this root is scanned.
 CODEX_ARCHIVED="${CARTOGRAPHER_CODEX_ARCHIVED_DIR:-$HOME/.codex/archived_sessions}"
+ANTIGRAVITY_TRANSCRIPTS="${CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR:-$HOME/.gemini/antigravity/brain}"
+ANTIGRAVITY_TRANSCRIPT_DIRS=()
+if [ -n "${CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR:-}" ]; then
+  IFS=':' read -r -a _ag_parts <<< "$CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR"
+  for _ag_dir in "${_ag_parts[@]}"; do
+    [ -n "$_ag_dir" ] && [ -d "$_ag_dir" ] && ANTIGRAVITY_TRANSCRIPT_DIRS+=("$_ag_dir")
+  done
+  [ -n "${CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR:-}" ] && [ -d "$CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR" ] && ANTIGRAVITY_TRANSCRIPT_DIRS+=("$CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR")
+  [ -n "${CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR:-}" ] && [ -d "$CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR" ] && ANTIGRAVITY_TRANSCRIPT_DIRS+=("$CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR")
+else
+  for _ag_dir in \
+    "$HOME/.gemini/antigravity/brain" \
+    "${CARTOGRAPHER_ANTIGRAVITY_IDE_TRANSCRIPTS_DIR:-$HOME/.gemini/antigravity-ide/brain}" \
+    "${CARTOGRAPHER_ANTIGRAVITY_CLI_TRANSCRIPTS_DIR:-$HOME/.gemini/antigravity-cli/brain}"; do
+    [ -d "$_ag_dir" ] && ANTIGRAVITY_TRANSCRIPT_DIRS+=("$_ag_dir")
+  done
+fi
 QDRANT="${CARTOGRAPHER_QDRANT_URL:-http://localhost:6333}"
 # The api-key header for every Qdrant request, when a key applies. Sourced only
 # when present, like the registry below: a runtime lagging the repo loses the
@@ -1240,12 +1257,16 @@ compressed_rollout_hits() {
 }
 
 grep_transcripts_to_tsv() {
-  [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || [ -d "$CODEX_ARCHIVED" ] || return 0
+  [ -d "$CLAUDE_TRANSCRIPTS" ] || [ -d "$CODEX_TRANSCRIPTS" ] || [ -d "$CODEX_ARCHIVED" ] || [ "${#ANTIGRAVITY_TRANSCRIPT_DIRS[@]}" -gt 0 ] || return 0
 
-  # Per-line grep, no turn-grouping, no BM25. Turn-extraction is an
-  # indexing-layer concern (Qdrant embeddings); the CLI keyword path is
-  # a plain needle-finder of last resort. Opt-in via --transcript only.
+  # Per-line grep, no turn-grouping, no BM25 for Claude/Codex; Antigravity
+  # transcripts normalize through antigravity-transcript-to-turns.awk so
+  # boilerplate envelopes and raw tool dumps do not pollute matches. Opt-in
+  # via --transcript only.
   local matched_files=0
+  local script_dir ag_turn_grouper
+  script_dir="$(dirname "$0")"
+  ag_turn_grouper="$script_dir/antigravity-transcript-to-turns.awk"
 
   while IFS= read -r transcript; do
     [ -z "$transcript" ] && continue
@@ -1260,6 +1281,46 @@ grep_transcripts_to_tsv() {
         session_id="${session_id:-${session_file%.jsonl}}"
         session_cwd=$(transcript_rows "$transcript" | jq -r 'select(.type == "session_meta") | .payload.cwd // empty' 2>/dev/null | head -1)
         project_dir=$(basename "${session_cwd:-$(dirname "$transcript")}")
+        ;;
+      */.system_generated/logs/transcript.jsonl)
+        provider="antigravity"
+        session_id=$(basename "${transcript%/.system_generated/logs/*}")
+        project_dir=$(node -e '
+          const fs = require("node:fs"), path = require("node:path"), os = require("node:os");
+          const { fileURLToPath } = require("node:url");
+          const { execFileSync } = require("node:child_process");
+          const [cid, dbEnv, devDir] = process.argv.slice(1);
+          const dbPath = dbEnv || path.join(os.homedir(), ".gemini", "antigravity", "conversation_summaries.db");
+          if (!fs.existsSync(dbPath)) process.exit(0);
+          const orig = process.emitWarning;
+          process.emitWarning = (w, ...r) => /SQLite/i.test(String(w?.message || w)) ? undefined : orig.call(process, w, ...r);
+          try {
+            const { DatabaseSync } = require("node:sqlite");
+            const db = new DatabaseSync(dbPath, { readOnly: true, readBigInts: true });
+            try {
+              const row = db.prepare("SELECT workspace_uris FROM conversation_summaries WHERE conversation_id = ?").get(cid);
+              if (!row || !row.workspace_uris) process.exit(0);
+              const uris = row.workspace_uris.startsWith("[") ? JSON.parse(row.workspace_uris) : [row.workspace_uris];
+              for (const u of uris) {
+                const p = u.startsWith("file://") ? fileURLToPath(u) : u;
+                if (!p) continue;
+                let name = "";
+                if (fs.existsSync(p)) {
+                  try {
+                    const common = execFileSync("git", ["-C", p, "rev-parse", "--git-common-dir"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 1500 }).trim();
+                    if (common) {
+                      const abs = path.resolve(p, common);
+                      name = path.basename(abs) === ".git" ? path.basename(path.dirname(abs)) : path.basename(abs).replace(/\.git$/, "");
+                    }
+                  } catch {}
+                }
+                if (!name) name = path.basename(p);
+                if (name && name !== path.basename(devDir || "") && name !== "dev") { console.log(name); break; }
+              }
+            } finally { db.close(); }
+          } catch {}
+        ' "$session_id" "${CARTOGRAPHER_ANTIGRAVITY_DB:-}" "$DEV" 2>/dev/null)
+        project_dir="${project_dir:-unknown}"
         ;;
       *)
         provider="claude"
@@ -1276,22 +1337,70 @@ grep_transcripts_to_tsv() {
 
     # The paths go through ENVIRON, not -v, for the reason given at the fusion
     # awk's BEGIN: rg on Windows joins the components it walks with "\".
-    transcript_rows "$transcript" | LC_ALL=C grep -niE "$GREP_QUERY" 2>/dev/null | head -20 | \
-      CARTO_PROJ="$project_dir" CARTO_TPATH="$transcript" \
-      awk -F: -v sid="$session_id" -v provider="$provider" '
-        BEGIN { proj = ENVIRON["CARTO_PROJ"]; tpath = ENVIRON["CARTO_TPATH"] }
-        {
-          lineno = $1
-          content = $2
-          for (i = 3; i <= NF; i++) content = content ":" $i
-          gsub(/\t/, " ", content)
-          gsub(/[[:cntrl:]]/, " ", content)
-          if (length(content) > 300) content = substr(content, 1, 300) "..."
-          printf "transcript\t%d\ttranscript-%s-%s-%d\t?\t%s\t%s\t%s\t%s\t%s\n", \
-            NR, provider, sid, lineno, proj, content, \
-            "provider:" provider "|session:" sid "|transcript:" tpath, "transcript", "0.5"
-        }
-      '
+    if [ "$provider" = "antigravity" ] && [ -f "$ag_turn_grouper" ]; then
+      transcript_rows "$transcript" | LC_ALL=C awk -f "$ag_turn_grouper" \
+        -v sid="$session_id" -v proj="$project_dir" -v tpath="$transcript" 2>/dev/null | \
+        LC_ALL=C grep -niE "$GREP_QUERY" 2>/dev/null | head -20 | \
+        CARTO_PROJ="$project_dir" CARTO_TPATH="$transcript" \
+        awk -F: -v sid="$session_id" -v provider="$provider" '
+          function field(line, key,    pat, val, i, len, c, nc) {
+            pat = "\"" key "\"[[:space:]]*:[[:space:]]*\""
+            if (!match(line, pat)) return ""
+            i = RSTART + RLENGTH
+            len = length(line)
+            val = ""
+            while (i <= len) {
+              c = substr(line, i, 1)
+              if (c == "\\") {
+                nc = substr(line, i + 1, 1)
+                if (nc == "n" || nc == "t" || nc == "r") val = val " "
+                else val = val nc
+                i += 2
+                continue
+              }
+              if (c == "\"") break
+              val = val c
+              i++
+            }
+            return val
+          }
+          BEGIN { proj = ENVIRON["CARTO_PROJ"]; tpath = ENVIRON["CARTO_TPATH"] }
+          {
+            lineno = $1
+            raw = $2
+            for (i = 3; i <= NF; i++) raw = raw ":" $i
+            ev_id = field(raw, "event_id")
+            if (ev_id == "") ev_id = "transcript-" provider "-" sid "-" lineno
+            ts = field(raw, "timestamp")
+            if (ts == "") ts = "?"
+            content = field(raw, "summary")
+            if (content == "") content = raw
+            gsub(/\t/, " ", content)
+            gsub(/[[:cntrl:]]/, " ", content)
+            if (length(content) > 300) content = substr(content, 1, 300) "..."
+            printf "transcript\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", \
+              NR, ev_id, ts, proj, content, \
+              "provider:" provider "|session:" sid "|transcript:" tpath, "transcript", "0.5"
+          }
+        '
+    else
+      transcript_rows "$transcript" | LC_ALL=C grep -niE "$GREP_QUERY" 2>/dev/null | head -20 | \
+        CARTO_PROJ="$project_dir" CARTO_TPATH="$transcript" \
+        awk -F: -v sid="$session_id" -v provider="$provider" '
+          BEGIN { proj = ENVIRON["CARTO_PROJ"]; tpath = ENVIRON["CARTO_TPATH"] }
+          {
+            lineno = $1
+            content = $2
+            for (i = 3; i <= NF; i++) content = content ":" $i
+            gsub(/\t/, " ", content)
+            gsub(/[[:cntrl:]]/, " ", content)
+            if (length(content) > 300) content = substr(content, 1, 300) "..."
+            printf "transcript\t%d\ttranscript-%s-%s-%d\t?\t%s\t%s\t%s\t%s\t%s\n", \
+              NR, provider, sid, lineno, proj, content, \
+              "provider:" provider "|session:" sid "|transcript:" tpath, "transcript", "0.5"
+          }
+        '
+    fi
 
     if [ "$matched_files" -ge 20 ]; then
       echo "(showing top 20 matching transcripts)" >&2
@@ -1304,12 +1413,18 @@ grep_transcripts_to_tsv() {
           [ -d "$CLAUDE_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CLAUDE_TRANSCRIPTS" --glob '*.jsonl' --max-depth 3 2>/dev/null
           [ -d "$CODEX_TRANSCRIPTS" ] && rg -l "$GREP_QUERY" "$CODEX_TRANSCRIPTS" --glob '*.jsonl' --max-depth 5 2>/dev/null
           [ -d "$CODEX_ARCHIVED" ] && rg -l "$GREP_QUERY" "$CODEX_ARCHIVED" --glob '*.jsonl' --max-depth 5 2>/dev/null
+          for _ag_dir in "${ANTIGRAVITY_TRANSCRIPT_DIRS[@]}"; do
+            [ -d "$_ag_dir" ] && rg -li --hidden --no-ignore "$GREP_QUERY" "$_ag_dir" --glob '**/.system_generated/logs/transcript.jsonl' --max-depth 5 2>/dev/null
+          done
         } | head -20
       else
         {
           [ -d "$CLAUDE_TRANSCRIPTS" ] && find "$CLAUDE_TRANSCRIPTS" -mindepth 2 -maxdepth 2 -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
           [ -d "$CODEX_TRANSCRIPTS" ] && find "$CODEX_TRANSCRIPTS" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
           [ -d "$CODEX_ARCHIVED" ] && find "$CODEX_ARCHIVED" -name "*.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+          for _ag_dir in "${ANTIGRAVITY_TRANSCRIPT_DIRS[@]}"; do
+            [ -d "$_ag_dir" ] && find "$_ag_dir" -mindepth 4 -maxdepth 4 -path "*/.system_generated/logs/transcript.jsonl" -type f -exec grep -liE "$GREP_QUERY" {} + 2>/dev/null
+          done
         } | head -20
       fi
     )
