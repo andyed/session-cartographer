@@ -182,6 +182,9 @@ async function main() {
 
     const lines = hits.slice(0, 3).map((h) => `- ${note(h, now)}`);
     if (hits.length > 3) lines.push(`- … ${hits.length - 3} more; run /standup for the full view.`);
+    // The note names each peer by the 8-character prefix `tell` accepts, so the
+    // moment a collision is seen is also the moment to warn the other side.
+    lines.push('To warn a session before it edits again, use the cartographer `tell` tool with its id above.');
     notes.push(`[carto collision] Another session touched a file this edit changes:\n${lines.join('\n')}`);
   }
 

@@ -41,7 +41,7 @@ import { homedir } from 'os';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { HOUR, fmtAge, readTail, COMMIT_RE, eventFiles, contentionKey, unmappedWorktrees } from './contention.js';
 import { isResolved } from './sentinels.js';
-import { pendingCounts } from './mailbox.js';
+import { pendingCounts } from './mailbox-store.js';
 import { codexRollouts, claudeTranscripts, codexHookTrust, unclaimedChanges, transcriptMentions, commandEvidence, codexThreadMeta } from './standup-silence.js';
 
 /**
@@ -406,7 +406,7 @@ if (needingTranscripts.length) {
 }
 
 // Notes other sessions left with the tell tool that the recipient's prompt hook
-// has not delivered yet (scripts/mailbox.js). A directory read, no parsing.
+// has not delivered yet (scripts/mailbox-store.js). A directory read, no parsing.
 const notesWaiting = (() => { try { return pendingCounts({ dev }); } catch { return {}; } })();
 const waitingFor = (id) => notesWaiting[id] || 0;
 

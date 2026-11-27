@@ -328,6 +328,7 @@ test('the delivered note tells an Antigravity recipient how to answer from a she
 });
 
 test('the mailbox module is mirrored byte for byte into the plugin', () => {
+  assert.equal(fs.readFileSync(path.join(PLUGIN, 'scripts', 'mailbox-store.js'), 'utf8'), fs.readFileSync(path.join(ROOT, 'scripts', 'mailbox-store.js'), 'utf8'));
   assert.equal(fs.readFileSync(path.join(PLUGIN, 'scripts', 'mailbox.js'), 'utf8'),
     fs.readFileSync(path.join(ROOT, 'scripts', 'mailbox.js'), 'utf8'));
 });

@@ -42,6 +42,7 @@ the Explorer are optional. The default setup keeps your history on your machine.
 | Preserve what emerged | `/wrapup` | Decisions, discoveries, and unfinished questions made easier to return to |
 | Revisit an investigation | `/investigate <bug>` | Earlier diagnoses brought into the current investigation, with hypotheses tracked through verification |
 | Check concurrent work | `/standup` | Recent peer activity, shared-file edits, and commit attribution |
+| Tell another session | `tell` (MCP tool) | A short note delivered into a peer Claude Code, Codex or Antigravity session's next turn |
 | Speed up recall | `/turbo` | Enable, inspect, or disable the shared warm search service |
 | Watch where a session's calls go | `/carto-flow` | The flow map beside the chat, in order, live ([desktop app](docs/FLOW_MAP.md#known-limits)) |
 
@@ -257,6 +258,23 @@ open questions. It is useful for material sessions; ordinary sessions already
 have their automatic history. `/standup` reports recent activity and file overlap;
 [shared-goal briefings and handoff records](docs/STANDUP_SHARED_GOAL_PLAN.md)
 remain planned.
+
+### Notes between sessions
+
+Claude Code, Codex and Antigravity sessions can leave each other notes. The
+`tell` MCP tool queues a note for any session standup lists, and the prompt
+hook delivers it once. Claude Code and Codex receive it on the next user
+prompt. Antigravity receives it before the next model step, so mid-turn too.
+Standup shows `· N notes waiting` until a note is delivered. Use notes for
+what a peer needs before its next move: a shared file you are about to change,
+a commit that landed under it, a handoff. The recipient is told a note comes
+from a peer, not from its user.
+
+From Antigravity, send from the shell with
+`node scripts/mailbox.js send --to <id> --note "<text>"`, because its MCP
+server cannot see the conversation id. Codex delivers only after its user
+approves the new hook in `/hooks`. Details: [MCP](docs/MCP.md) and the
+standup skill.
 
 ### Turbo Mode
 
