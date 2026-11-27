@@ -99,8 +99,8 @@ function logEvent(dev, row, { index = true } = {}) {
     return false;
   }
   if (index) {
-    const indexer = [path.join(HERE, 'index-event.sh')].find((file) => fs.existsSync(file));
-    if (indexer && process.platform !== 'win32') {
+    const indexer = process.env.CARTOGRAPHER_INDEXER || path.join(HERE, 'index-event.sh');
+    if (process.platform !== 'win32' && fs.existsSync(indexer)) {
       try {
         const child = spawn('bash', [indexer], { stdio: ['pipe', 'ignore', 'ignore'], detached: true });
         child.on('error', () => {});

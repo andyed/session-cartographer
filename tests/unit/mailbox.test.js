@@ -24,7 +24,7 @@ import {
   safeSessionId, sendNote, takeNotes,
 } from '../../scripts/mailbox.js';
 
-import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+import { NO_INDEXER_ROOT, OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PLUGIN = path.join(ROOT, 'plugins', 'session-cartographer');
@@ -52,7 +52,11 @@ function fixture() {
 function env(fx, overrides = {}) {
   const out = { ...process.env };
   for (const key of IDENTITY_VARS) delete out[key];
-  return { ...out, CARTOGRAPHER_DEV_DIR: fx.dev, TMPDIR_BASE: fx.root, ...overrides };
+  return {
+    ...out, ...OFFLINE_INDEX_ENV, CARTOGRAPHER_DEV_DIR: fx.dev, TMPDIR_BASE: fx.root,
+    CARTOGRAPHER_INDEXER: path.join(NO_INDEXER_ROOT, 'scripts', 'index-event.sh'),
+    ...overrides,
+  };
 }
 
 const events = (fx) => {
@@ -287,7 +291,7 @@ test('send from a shell names the Antigravity conversation as sender, and refuse
     for (const name of ['session-milestones.jsonl', 'research-log.jsonl', 'tool-use-log.jsonl']) fs.writeFileSync(path.join(fx.dev, name), '');
 
     const cli = (args, overrides = {}, input) => spawnSync(process.execPath, [MAILBOX_CLI, 'send', ...args],
-      { env: { ...env(fx, { ...OFFLINE_INDEX_ENV, ...overrides }) }, encoding: 'utf8', input });
+      { env: env(fx, overrides), encoding: 'utf8', input });
     const asAgy = { ANTIGRAVITY_CONVERSATION_ID: AGY };
 
     const ok = cli(['--to', CLAUDE.slice(0, 8), '--note', '-'], asAgy, 'Synced the plugin.\nReload to pick up the hook.\n');

@@ -41,7 +41,7 @@ import readline from 'node:readline';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+import { NO_INDEXER_ROOT, OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
 import { hitLines, resolveCommand, run } from '../../scripts/cartographer-mcp.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -122,6 +122,7 @@ function cleanEnv(fx, overrides = {}) {
   return {
     ...env,
     ...OFFLINE_INDEX_ENV,
+    CARTOGRAPHER_INDEXER: path.join(NO_INDEXER_ROOT, 'scripts', 'index-event.sh'),
     CARTOGRAPHER_DEV_DIR: fx.dev,
     CARTOGRAPHER_SERVED_LOG: fx.served,
     CARTOGRAPHER_SEARCH_CALL_LOG: fx.calls,
