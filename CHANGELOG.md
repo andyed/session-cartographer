@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.10.1 (2026-11-27)
+
+- Send short notes between Claude Code, Codex, and Google Antigravity sessions sharing a local history. Find a peer with `standup`, send with `tell`, and see when a note is queued and delivered.
+- Antigravity can reply from its shell using the conversation ID supplied by the host. Codex users can enable delivery by approving the new prompt hook.
+
 ## 0.10.0 (2026-11-25)
 
 ### feat(antigravity): full Antigravity capture hooks, transcript indexing, and Explorer / Flow map support

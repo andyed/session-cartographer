@@ -1,7 +1,7 @@
 {
   "name": "session-cartographer",
   "displayName": "Session Cartographer",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Capture, index, search, and explore shared Claude Code, Codex, Hermes, and Antigravity session history with MCP recall, lifecycle hooks, and local Explorer.",
   "author": {
     "name": "Andy Edmonds"

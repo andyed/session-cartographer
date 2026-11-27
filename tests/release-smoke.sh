@@ -41,6 +41,9 @@ for required in \
   "$PLUGIN/skills/turbo/SKILL.md" \
   "$PLUGIN/scripts/cartographer-search.sh" \
   "$PLUGIN/scripts/backfill-codex-memories.js" \
+  "$PLUGIN/scripts/mailbox.js" \
+  "$PLUGIN/scripts/mailbox-store.js" \
+  "$PLUGIN/hooks/deliver-notes-on-prompt.sh" \
   "$PLUGIN/scripts/cartographer-standup.js" \
   "$PLUGIN/scripts/contention.js" \
   "$PLUGIN/scripts/cartographer-collision.js" \
@@ -99,7 +102,7 @@ MCP_TOOLS=$(printf '%s\n' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
   | CARTOGRAPHER_DEV_DIR="$DEV" node "$PLUGIN/scripts/cartographer-mcp.js" \
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const r=s.trim().split("\n").map(JSON.parse).find(m=>m.id===2);console.log(r.result.tools.map(t=>t.name).join(","))})')
-[ "$MCP_TOOLS" = "recall,get,mark_used,thread,orient,facts,standup" ] || {
+[ "$MCP_TOOLS" = "recall,get,mark_used,thread,orient,facts,standup,tell" ] || {
   echo "Bundled MCP server listed: $MCP_TOOLS" >&2
   exit 1
 }

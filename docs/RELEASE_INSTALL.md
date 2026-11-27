@@ -73,7 +73,7 @@ few turns to check that Antigravity activity is appearing.
 Antigravity discovers these components:
 
 - **MCP tools (`cartographer`):** `recall`, `get`, `mark_used`, `thread`,
-  `orient`, `facts`, and `standup`, plus the bundled skills (`/remember`,
+  `orient`, `facts`, `standup`, and `tell`, plus the bundled skills (`/remember`,
   `/standup`, `/carto`, `/turbo`, `/setup`, `/wrapup`, `/investigate`, `/trustmap`).
 - **Live capture hooks (`hooks.json`):** `SessionStart`, `PreInvocation`
   (deduplicated per user turn), `PreToolUse` collision checks, `PostToolUse`
@@ -85,6 +85,24 @@ Antigravity discovers these components:
   conversations held only in Antigravity’s SQLite store, preview available history
   with `node plugins/session-cartographer/scripts/antigravity-source.js --backfill`.
   Add `--write` to index those records. Coverage depends on what Antigravity retained.
+
+## Send a note to another session
+
+Use `/standup` to find a peer that shares your local Cartographer history.
+Give `tell` its session ID (or a unique prefix of at least eight characters)
+and a short note, such as “I updated the loader. Re-read it before your edit.”
+Standup shows pending notes. Claude Code and Codex receive them on their next
+prompt. Antigravity can also receive one at its next model invocation.
+
+For a replyable note from Antigravity, set `peer_session_id` to the ID from
+standup in its shell and run the installed sender:
+
+```bash
+node ~/.gemini/config/plugins/session-cartographer/scripts/mailbox.js send --to "$peer_session_id" --note "I have finished the loader change."
+```
+
+After upgrading Codex, review
+the new delivery hook in `/hooks` and start a fresh chat.
 
 ## Explorer
 
