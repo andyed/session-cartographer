@@ -327,6 +327,23 @@ test('the delivered note tells an Antigravity recipient how to answer from a she
   assert.match(text, /mailbox\.js" send --to <id> --note "<text>"/);
 });
 
+test('a plugin installed through a directory link delivers the queued note', () => {
+  const fx = fixture();
+  try {
+    const installed = path.join(fx.root, 'installed-plugin');
+    fs.symlinkSync(PLUGIN, installed, 'junction');
+    send(fx, { id: AGY, provider: 'antigravity' }, { id: CLAUDE, provider: 'claude' }, 'Linked plugin delivery');
+    const result = spawnSync(process.execPath, [
+      path.join(installed, 'scripts', 'mailbox.js'), 'deliver', '--session', AGY, '--provider', 'antigravity',
+    ], { env: env(fx), encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(contextOf(result.stdout), /^> Linked plugin delivery$/m);
+    assert.equal(events(fx).filter(row => row.type === 'milestone_note_delivered').length, 1);
+  } finally {
+    fx.cleanup();
+  }
+});
+
 test('the mailbox module is mirrored byte for byte into the plugin', () => {
   assert.equal(fs.readFileSync(path.join(PLUGIN, 'scripts', 'mailbox-store.js'), 'utf8'), fs.readFileSync(path.join(ROOT, 'scripts', 'mailbox-store.js'), 'utf8'));
   assert.equal(fs.readFileSync(path.join(PLUGIN, 'scripts', 'mailbox.js'), 'utf8'),
