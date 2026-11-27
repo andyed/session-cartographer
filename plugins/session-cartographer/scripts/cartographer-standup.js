@@ -41,6 +41,7 @@ import { homedir } from 'os';
 import { isNonProject, nonProjectNames } from './non-projects.js';
 import { HOUR, fmtAge, readTail, COMMIT_RE, eventFiles, contentionKey, unmappedWorktrees } from './contention.js';
 import { isResolved } from './sentinels.js';
+import { pendingCounts } from './mailbox.js';
 import { codexRollouts, claudeTranscripts, codexHookTrust, unclaimedChanges, transcriptMentions, commandEvidence, codexThreadMeta } from './standup-silence.js';
 
 /**
@@ -404,6 +405,11 @@ if (needingTranscripts.length) {
   }
 }
 
+// Notes other sessions left with the tell tool that the recipient's prompt hook
+// has not delivered yet (scripts/mailbox.js). A directory read, no parsing.
+const notesWaiting = (() => { try { return pendingCounts({ dev }); } catch { return {}; } })();
+const waitingFor = (id) => notesWaiting[id] || 0;
+
 if (asJson) {
   console.log(JSON.stringify({
     window: opt('since', '6h'), generated: new Date(now).toISOString(), self: selfId,
@@ -418,6 +424,7 @@ if (asJson) {
       edits_unresolved: s.unresolvedEdits,
       commits: s.commits.map((c) => ({ sha: c.sha, subject: c.subject, type: c.type, project: c.project })),
       pushes: s.pushes,
+      notes_waiting: waitingFor(s.id),
       // Contention keys (worktree-collapsed absolute paths), most recent first:
       // what a peer is in the middle of, for a reader deciding where not to edit.
       recent_files: [...s.files.entries()].sort((a, b) => b[1].t - a[1].t).slice(0, 5).map(([key]) => key),
@@ -494,7 +501,8 @@ if (!peers.length && !folded.length) {
     out.push(`${mark} ${short(s.id)}${self}  ${s.provider.padEnd(6)} ${projs.join(' + ')}`);
     out.push(`    ${fmtAge(idle)} idle · ${fmtAge(s.last - s.first)} span · ${s.n} events` +
       (s.commits.length ? ` · ${s.commits.length} commit${s.commits.length === 1 ? '' : 's'}` : '') +
-      (s.pushes ? ` · ${s.pushes} push` : ''));
+      (s.pushes ? ` · ${s.pushes} push` : '') +
+      (waitingFor(s.id) ? ` · ${waitingFor(s.id)} note${waitingFor(s.id) === 1 ? '' : 's'} waiting` : ''));
     for (const c of s.commits.slice(-3).reverse()) {
       const subj = c.subject || gitSubject(c.sha, c.cwd);
       out.push(`    ${c.sha.slice(0, 8)}  ${subj || '(subject not captured — git commit -q?)'}`.slice(0, 110));

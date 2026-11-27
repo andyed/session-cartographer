@@ -256,7 +256,7 @@ const freshSid = (label) => `sid-mcp-${label}-${process.pid}-${++counter}`;
 
 // ─── Contract ───
 
-test('tools/list names seven tools whose descriptions say when to call them', async () => {
+test('tools/list names eight tools whose descriptions say when to call them', async () => {
   const fx = makeFixture();
   try {
     const client = new Client(cleanEnv(fx));
@@ -271,7 +271,7 @@ test('tools/list names seven tools whose descriptions say when to call them', as
 
       const { result } = await client.request('tools/list', {});
       assert.deepEqual(result.tools.map((t) => t.name),
-        ['recall', 'get', 'mark_used', 'thread', 'orient', 'facts', 'standup']);
+        ['recall', 'get', 'mark_used', 'thread', 'orient', 'facts', 'standup', 'tell']);
       for (const tool of result.tools) {
         assert.ok(tool.description.trim().length >= 200, `${tool.name}: description is the product; it is too thin`);
         assert.ok(tool.description.length <= 4096, `${tool.name}: Claude Code cuts descriptions at 4,096`);
@@ -842,6 +842,93 @@ test('a facts census through the server agrees with an independent count', async
     });
   } finally {
     try { await runAsync(process.execPath, [CONTROL, 'stop'], { env: turboEnv }); } catch {}
+    fx.cleanup();
+  }
+});
+
+// ─── tell: notes to another live session ───
+
+test('tell queues a note for a session standup lists, from the session the client gave, and standup shows it waiting', async () => {
+  const now = Date.now();
+  const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+  const AGY = 'agyrecip-0000-4000-8000-000000000001';
+  const ME = 'tellsndr-0000-4000-8000-000000000002';
+  const freshRows = [
+    { event_id: 'evt-tell-agy-1', timestamp: iso(now - 30 * 60e3), type: 'tool_bash', provider: 'antigravity',
+      project: 'mavericks', session_id: AGY, summary: 'Ran: git status' },
+    { event_id: 'evt-tell-agy-2', timestamp: iso(now - 25 * 60e3), type: 'tool_bash', provider: 'antigravity',
+      project: 'mavericks', session_id: AGY, summary: 'Ran: npm test' },
+    { event_id: 'evt-tell-me-1', timestamp: iso(now - 10 * 60e3), type: 'tool_bash', provider: 'claude',
+      project: 'mcpfixture', session_id: ME, summary: 'Ran: ls' },
+    { event_id: 'evt-tell-me-2', timestamp: iso(now - 5 * 60e3), type: 'tool_bash', provider: 'claude',
+      project: 'mcpfixture', session_id: ME, summary: 'Ran: ls' },
+  ];
+  const fx = makeFixture({ freshRows });
+  const isolated = { CODEX_HOME: path.join(fx.root, 'codex-home'), CLAUDE_CODE_SESSION_ID: ME };
+  try {
+    await withServer(fx, isolated, async (client) => {
+      const sent = await client.call('tell', { to: 'agyrecip', note: 'Rincon push landed on main.\nRebase before you merge.' });
+      assert.equal(sent.isError, undefined, sent.content[0].text);
+      assert.match(modelSees(sent), new RegExp(`Queued note-\\S+ for antigravity session ${AGY} \\(mavericks\\)`));
+      assert.match(modelSees(sent), new RegExp(`from claude session ${ME}`));
+
+      const dir = path.join(fx.dev, '.carto', 'mailbox', AGY, 'pending');
+      const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+      assert.equal(files.length, 1);
+      const note = JSON.parse(fs.readFileSync(path.join(dir, files[0]), 'utf8'));
+      assert.deepEqual([note.from.session_id, note.from.provider, note.from.project], [ME, 'claude', 'mcpfixture'],
+        'the sender is the session the client gave the server, never one the model names');
+      assert.equal(note.to.provider, 'antigravity');
+      assert.equal(note.text, 'Rincon push landed on main.\nRebase before you merge.', 'newlines survive');
+      const sentRows = readJsonl(path.join(fx.dev, 'changelog.jsonl')).filter((r) => r.type === 'milestone_note_sent');
+      assert.equal(sentRows.length, 1);
+      assert.equal(sentRows[0].to_session_id, AGY);
+
+      const standup = modelSees(await client.call('standup', { window: '2h' }));
+      assert.match(standup, /agyrecip.*\n.*· 1 note waiting/, 'standup shows the note waiting on the recipient\'s line');
+    });
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('tell refuses a recipient standup does not list, an ambiguous prefix, itself, and a bad note, and writes nothing', async () => {
+  const now = Date.now();
+  const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+  const ME = 'tellself-0000-4000-8000-000000000003';
+  const twin = (n) => [
+    { event_id: `evt-twin-${n}-a`, timestamp: iso(now - 20 * 60e3), type: 'tool_bash', provider: 'codex',
+      project: 'mcpfixture', session_id: `twinpref-${n}000-7000-8000-000000000000`, summary: 'Ran: ls' },
+    { event_id: `evt-twin-${n}-b`, timestamp: iso(now - 15 * 60e3), type: 'tool_bash', provider: 'codex',
+      project: 'mcpfixture', session_id: `twinpref-${n}000-7000-8000-000000000000`, summary: 'Ran: ls' },
+  ];
+  const freshRows = [...twin(1), ...twin(2),
+    { event_id: 'evt-self-a', timestamp: iso(now - 9 * 60e3), type: 'tool_bash', provider: 'claude',
+      project: 'mcpfixture', session_id: ME, summary: 'Ran: ls' },
+    { event_id: 'evt-self-b', timestamp: iso(now - 4 * 60e3), type: 'tool_bash', provider: 'claude',
+      project: 'mcpfixture', session_id: ME, summary: 'Ran: ls' }];
+  const fx = makeFixture({ freshRows });
+  const isolated = { CODEX_HOME: path.join(fx.root, 'codex-home'), CLAUDE_CODE_SESSION_ID: ME };
+  try {
+    await withServer(fx, isolated, async (client) => {
+      for (const [args, expected] of [
+        [{ to: 'nosuchse', note: 'hi' }, /no session in the last 2 days of standup starts with "nosuchse"/],
+        [{ to: 'twinpref', note: 'hi' }, /matches 2 sessions/],
+        [{ to: 'tellself', note: 'hi' }, /that is this session/],
+        [{ to: 'short', note: 'hi' }, /at least 8 characters/],
+        [{ to: '../../etc', note: 'hi' }, /at least 8 characters|must not start/],
+        [{ to: 'twinpref-1', note: '' }, /note is required/],
+        [{ to: 'twinpref-1', note: 'x'.repeat(2001) }, /limit is 2000/],
+        [{ to: 'twinpref-1', note: 'bell \u0007' }, /plain text/],
+      ]) {
+        const result = await client.call('tell', args);
+        assert.equal(result.isError, true, `${JSON.stringify(args).slice(0, 60)} must be refused`);
+        assert.match(modelSees(result), expected);
+      }
+      assert.equal(fs.existsSync(path.join(fx.dev, '.carto', 'mailbox')), false, 'no refused note reached the mailbox');
+      assert.equal(readJsonl(path.join(fx.dev, 'changelog.jsonl')).filter((r) => /^milestone_note/.test(r.type)).length, 0);
+    });
+  } finally {
     fx.cleanup();
   }
 });

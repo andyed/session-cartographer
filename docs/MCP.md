@@ -27,6 +27,7 @@ its arguments cannot be put in the wrong order.
 | `orient(project)` | Recent state of one project | the `/remember --project` recipe | 1–3 s | served + search-call rows |
 | `facts(verb, …)` | Counts: census, tempo, delta | `cartographer-facts.js --format json` | 0.1–0.5 s, needs Turbo | nothing |
 | `standup(window?, project?, commit?)` | Who else is working, which files collide | `cartographer-standup.js` | ~0.2 s | nothing |
+| `tell(to, note)` | Leaves a note for a session standup lists | `mailbox.js`, after a standup roster check | ~0.2 s | one note file + one `milestone_note_sent` event |
 
 Every answer is compact text and nothing else, one line per hit
 (`date · project · agent · event type · summary · event_id`), and always names
@@ -158,6 +159,35 @@ to "whoever logged the freshest event". That is sound for a Bash call the tool
 hook just logged, and wrong for an MCP call, which no hook logs: the guess
 claims a peer as the caller and drops it from the roster. With no session the
 server passes `--me unknown`, the pipeline's own spelling of absence.
+
+**Tell: notes between live sessions.** `tell` leaves a note for another
+session (Claude Code, Codex or Antigravity) in `.carto/mailbox/<session>/pending/`.
+The prompt hook `deliver-notes-on-prompt.sh` hands it over: on the recipient's
+next user prompt in Claude Code and Codex, before its next model step in
+Antigravity (PreInvocation fires mid-turn too). Nothing is pushed into an idle
+session. Delivery renames the note into `delivered/`, so two hooks racing on one
+session deliver it once, and logs `milestone_note_delivered`.
+
+- **The recipient must be in standup.** `to` is matched against the last two days
+  of standup's roster, as a full id or a unique prefix of 8+ characters. Any
+  other id, an ambiguous prefix and the caller's own session are refused before
+  anything is written.
+- **The sender comes from the client, never from the model.** It is the
+  session the client gave the server (the same chain as every other tool). A
+  client that gives none sends as "an unidentified session", which the
+  recipient is told it cannot answer.
+- **A note is a peer's message, not the user's.** The delivered text names the
+  sender's provider, session and project, and tells the recipient to treat it
+  as information, not an instruction.
+- **Why not push.** Claude Code's SendMessage reaches only Claude sessions;
+  Codex has no way into a live thread (`codex exec resume` starts a second
+  turn); Antigravity's `agentapi send-message` needs `ANTIGRAVITY_LS_ADDRESS`
+  and a CSRF token that only its own agent environment holds (measured
+  2026-11-26: "missing CSRF token" from every listening port). All three run
+  the cartographer prompt hook.
+- **Codex needs one approval.** The delivery hook is a new UserPromptSubmit
+  group, appended after the existing ones so their trust records keep their
+  positions. Approve it once in the Codex CLI's `/hooks` ([setup](SETUP.md#codex-hook-trust)).
 
 ## What each client gives an MCP server
 

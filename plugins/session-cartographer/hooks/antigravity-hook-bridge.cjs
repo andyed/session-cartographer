@@ -37,6 +37,7 @@ function inferEventFromHook(hookName) {
     case 'log-research.sh':
       return 'PostToolUse';
     case 'surface-recall-on-prompt.sh':
+    case 'deliver-notes-on-prompt.sh':
       return 'PreInvocation';
     case 'log-session-milestones.sh':
       return 'Stop';

@@ -35,6 +35,28 @@ memory plane without breaking Claude Code or Codex installs.
 - **[x] Milestone 2: Antigravity live hook capture bridge and root `hooks.json`** (2026-11-25, `0.10.0`). Ships plugin-root `hooks.json` and `hooks/antigravity-hook-bridge.cjs` translating camelCase payloads/tool names to snake_case hooks and strict Antigravity stdout JSON (`{"decision":"allow"}`, `{}`, `injectSteps`), deduplicating `PreInvocation` mid-turn steps, logging `Stop` milestones, and detecting `*/.gemini/antigravity*/brain/*` paths in `common.sh`.
 - **[x] Milestone 3: Antigravity transcript indexing, Explorer viewer, and optional SQLite backfill** (2026-11-25, `0.10.0`). Ships `scripts/antigravity-transcript-to-turns.awk`, `scripts/antigravity-source.js`, `CARTOGRAPHER_ANTIGRAVITY_TRANSCRIPTS_DIR` across `resolve-transcript.sh`, `retro-index.sh`, `catch-up-transcripts.sh`, `cartographer-search.sh --transcript`, and `explorer/server/transcripts.js`, plus Explorer `transcript-evidence.js`, `memory-transcript.js`, `flowmap.js` replay, and `standup-silence.js` subagent folding.
 
+## Cross-agent notes between live sessions (added 2026-11-26)
+
+Andy: "Is comms with AGY something we could enable in session cartographer?"
+and "generally can we make standup enable comms between all 3 model
+environements?" Roadmap item `cross-agent-notes`.
+
+- **[x] Mailbox and `tell` tool** (branch `feat/tell-mailbox`). `scripts/mailbox.js`
+  owns the store under `.carto/mailbox/`; the MCP `tell(to, note)` tool checks
+  the recipient against standup's roster before writing. Design notes in
+  [MCP.md](docs/MCP.md) ("Tell").
+- **[x] Delivery hook for all three providers.** `deliver-notes-on-prompt.sh`
+  on UserPromptSubmit (Claude Code, Codex) and PreInvocation (Antigravity,
+  through the bridge). The no-note path is one bash glob.
+- **[x] Standup shows notes waiting** per session (text and `notes_waiting` in JSON).
+- **[ ] Live check in each provider** after the plugin is reinstalled: a note
+  from Claude to a real Codex and Antigravity session and back. Not run; the
+  tests drive the hook with each provider's payload shape.
+- **[ ] Antigravity push.** `agentapi send-message` would wake an idle
+  Antigravity conversation, but only a caller inside Antigravity has the
+  address and CSRF token. Possible later: an Antigravity sender pushes to an
+  Antigravity recipient from its own environment.
+
 ## [x] Indexing outcomes are unobservable — reject vs fail vs skip (resolved 2026-08-30)
 
 Before this fix, `index-event.sh` had **three** `exit 0` paths and a caller that

@@ -53,6 +53,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { isResolved } from './sentinels.js';
 import { renderText as renderFactsText } from './facts-render.js';
+import { sendNote, NOTE_MAX_CHARS } from './mailbox.js';
 
 // Resolve physically, as cartographer-search.sh does: a skills symlink into the
 // checkout makes a lexical `..` point somewhere else than the kernel's.
@@ -846,6 +847,90 @@ async function toolStandup(args, { signal }) {
   return okResult(result.stdout.trimEnd());
 }
 
+// The provider a session-chain variable names, for a sender whose provider
+// nothing else states. CARTOGRAPHER_SESSION_ID names no agent.
+const PROVIDER_BY_SOURCE = {
+  CLAUDE_SESSION_ID: 'claude',
+  CLAUDE_CODE_SESSION_ID: 'claude',
+  CODEX_SESSION_ID: 'codex',
+  ANTIGRAVITY_CONVERSATION_ID: 'antigravity',
+};
+
+function topProject(projects) {
+  const entries = Object.entries(projects || {}).filter(([name]) => isResolved(name));
+  entries.sort((a, b) => b[1] - a[1]);
+  return entries[0]?.[0] || '';
+}
+
+/**
+ * Queue a note for another live session (scripts/mailbox.js). The recipient
+ * must be in standup's roster: an id the caller got from somewhere else, a
+ * page or a file, is refused rather than written to a directory of its name.
+ */
+async function toolTell(args, { signal }) {
+  const target = readString(args, 'to', { required: true, max: 128, pattern: /^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/, hint: 'a session id or a prefix of at least 8 characters, as standup prints it' }).toLowerCase();
+  const raw = args?.note;
+  if (typeof raw !== 'string' || !raw.trim()) throw new ToolInputError('note is required.');
+  const note = raw.replace(/\r\n?/g, '\n').trim();
+  if (note.length > NOTE_MAX_CHARS) throw new ToolInputError(`note is ${note.length} characters; the limit is ${NOTE_MAX_CHARS}.`);
+  if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(note)) throw new ToolInputError('note must be plain text (newlines are fine).');
+
+  const env = childEnv();
+  const result = await run('node', [STANDUP, '--since', '2d', '--roster', '--json', '--all', '--no-fold'], { signal, timeoutMs: QUICK_TIMEOUT_MS, env });
+  if (result.code !== 0) return errorResult(failure('standup', result));
+  let roster;
+  try { roster = JSON.parse(result.stdout); } catch { return errorResult('tell: standup returned output that is not JSON.'); }
+  const sessions = Array.isArray(roster?.sessions) ? roster.sessions : [];
+
+  const { session_source: source } = sessionAttribution(env);
+  const senderId = source ? String(env[source]).trim() : '';
+  const senderProvider = (isResolved(env.CARTOGRAPHER_PROVIDER) && env.CARTOGRAPHER_PROVIDER)
+    || PROVIDER_BY_SOURCE[source] || providerFromClient(clientInfo?.name) || 'unknown';
+  const self = sessions.find((s) => senderId && String(s.id).toLowerCase() === senderId.toLowerCase());
+
+  const matches = sessions.filter((s) => String(s.id).toLowerCase().startsWith(target));
+  if (matches.length === 0) {
+    return errorResult(`tell: no session in the last 2 days of standup starts with "${target}". Run standup and use an id it lists.`);
+  }
+  if (matches.length > 1) {
+    return errorResult(`tell: "${target}" matches ${matches.length} sessions (${matches.slice(0, 5).map((s) => String(s.id).slice(0, 12)).join(', ')}); give more of the id.`);
+  }
+  const to = matches[0];
+  if (senderId && String(to.id).toLowerCase() === senderId.toLowerCase()) {
+    return errorResult('tell: that is this session. A note to yourself would arrive on your own next prompt; write it down instead.');
+  }
+
+  let sent;
+  try {
+    sent = sendNote({
+      dev: devDir(),
+      to: { id: to.id, provider: to.provider, project: topProject(to.projects) },
+      from: { id: senderId, provider: senderProvider, project: self ? topProject(self.projects) : '' },
+      text: note,
+    });
+  } catch (err) {
+    return errorResult(`tell: ${err.message}`);
+  }
+  const when = to.provider === 'antigravity'
+    ? 'before its next model step (Antigravity checks on every step, mid-turn included)'
+    : 'when it next receives a user prompt';
+  const lines = [
+    `Queued ${sent.note.note_id} for ${to.provider} session ${to.id}${sent.note.to.project ? ` (${sent.note.to.project})` : ''}.`,
+    `It is delivered ${when}, labelled as a note from ${senderProvider} session ${senderId || '(unidentified: this client exposes no session id, so the recipient cannot reply)'}.`,
+    `Idle ${fmtIdle(to.idle_ms)}. Standup shows it as waiting until then.`,
+  ];
+  if (to.provider === 'codex') lines.push('Codex runs the delivery hook only once its user has approved it in /hooks.');
+  return okResult(lines.join('\n'));
+}
+
+function fmtIdle(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return 'for an unknown time';
+  const m = Math.round(ms / 60e3);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return h < 48 ? `${h}h${String(m % 60).padStart(2, '0')}m` : `${Math.floor(h / 24)}d`;
+}
+
 // ─── Tool definitions: the descriptions are the product ───
 // Claude Code's tool search loads names and server instructions up front and a
 // tool's schema on demand, matching only the head of a long description, so
@@ -1022,7 +1107,7 @@ const TOOLS = [
     name: 'standup',
     title: 'Who else is working now',
     description: [
-      'Who else is working right now: Claude, Codex and Hermes sessions active in a recent window, their projects',
+      'Who else is working right now: Claude, Codex, Antigravity and Hermes sessions active in a recent window, their projects',
       'and commits, and, the part that matters, CONTENTION: files two sessions both edited. Call it before editing a',
       'shared file in a busy workspace, when a commit appears that you did not make (commit=<sha> names the session',
       'behind it), or when orienting mid-task. window looks like 90m, 6h or 2d (default 6h). Cost about 0.2 s;',
@@ -1039,6 +1124,30 @@ const TOOLS = [
     },
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     handler: toolStandup,
+  },
+  {
+    name: 'tell',
+    title: 'Send a note to another live session',
+    description: [
+      'Send a short note to another agent session that standup lists: Claude Code, Codex or Antigravity, any',
+      'direction. Use it to warn a peer before you both edit a file, hand over a finding, or ask it to hold a merge.',
+      'to is the recipient\'s id (or an 8+ character prefix) exactly as standup prints it; any other id is refused.',
+      'The note waits in a mailbox and is shown to the recipient, labelled with your session id, on its next user',
+      'prompt (Antigravity: its next model step). It is not pushed into an idle session, and the recipient treats',
+      'it as information from a peer, not an instruction from its user. Plain text up to 2000 characters. Writes',
+      'the note and one event; cost about 0.2 s.',
+    ].join('\n'),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: 'Recipient id or a prefix of 8+ characters, as standup prints it.' },
+        note: { type: 'string', description: 'The note, plain text, up to 2000 characters.' },
+      },
+      required: ['to', 'note'],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    handler: toolTell,
   },
 ];
 
@@ -1057,7 +1166,8 @@ const INSTRUCTIONS = [
   'Workflow: recall → get (full records and transcript paths, with the recall call_id) → read the transcript if',
   'the record is not enough → mark_used for the hits that actually informed your answer. orient(project) catches',
   'you up on a project; standup shows who else is working now and which files collide; thread traces how an event',
-  'came about; facts counts what happened (census, tempo, delta) instead of ranking it.',
+  'came about; facts counts what happened (census, tempo, delta) instead of ranking it; tell leaves a note for a',
+  'session standup lists, delivered on its next prompt.',
 ].join('\n');
 
 // ─── Results ───
