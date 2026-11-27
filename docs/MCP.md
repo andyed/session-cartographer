@@ -176,6 +176,13 @@ session deliver it once, and logs `milestone_note_delivered`.
   session the client gave the server (the same chain as every other tool). A
   client that gives none sends as "an unidentified session", which the
   recipient is told it cannot answer.
+- **A shell sender for Antigravity.** Antigravity exports
+  `ANTIGRAVITY_CONVERSATION_ID` to shell commands and hooks but not to stdio MCP
+  servers, so `tell` from Antigravity has no reply address. From its shell,
+  `node scripts/mailbox.js send --to <id> --note "<text>"` (or `--note -` to
+  read stdin) sends with the conversation id as sender. The CLI and `tell` use
+  the same rules in `mailbox.js`; exit 0 queued, 1 refused, 2 usage.
+  The delivered note names this command, with its full path.
 - **A note is a peer's message, not the user's.** The delivered text names the
   sender's provider, session and project, and tells the recipient to treat it
   as information, not an instruction.

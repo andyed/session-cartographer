@@ -24,10 +24,13 @@ import {
   safeSessionId, sendNote, takeNotes,
 } from '../../scripts/mailbox.js';
 
+import { OFFLINE_INDEX_ENV } from './helpers/offline-index.js';
+
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const PLUGIN = path.join(ROOT, 'plugins', 'session-cartographer');
 const HOOK = path.join(PLUGIN, 'hooks', 'deliver-notes-on-prompt.sh');
 const BRIDGE = path.join(PLUGIN, 'hooks', 'antigravity-hook-bridge.cjs');
+const MAILBOX_CLI = path.join(ROOT, 'scripts', 'mailbox.js');
 
 const IDENTITY_VARS = [
   'CARTOGRAPHER_SESSION_ID', 'CLAUDE_SESSION_ID', 'CLAUDE_CODE_SESSION_ID', 'CODEX_SESSION_ID',
@@ -267,6 +270,61 @@ test('the hook is registered for all three providers without moving an existing 
     assert.match(fs.readFileSync(path.join(PLUGIN, 'hooks', launcher), 'utf8'), /'deliver-notes-on-prompt\.sh'/,
       `${launcher} must allow the hook by name`);
   }
+});
+
+// ─── The send CLI: a shell sender for Antigravity, whose MCP server sees no session ───
+
+test('send from a shell names the Antigravity conversation as sender, and refuses what tell refuses', () => {
+  const fx = fixture();
+  try {
+    const now = Date.now();
+    const iso = (ms) => new Date(ms).toISOString().replace(/\.\d+Z$/, 'Z');
+    const row = (id, sid, provider, project, ago) => ({ event_id: id, timestamp: iso(now - ago * 60e3), type: 'tool_bash',
+      provider, project, session_id: sid, summary: 'Ran: ls' });
+    const rows = [row('evt-s-1', CLAUDE, 'claude', 'session-cartographer', 20), row('evt-s-2', CLAUDE, 'claude', 'session-cartographer', 15),
+      row('evt-s-3', AGY, 'antigravity', 'mavericks', 10), row('evt-s-4', AGY, 'antigravity', 'mavericks', 5)];
+    fs.writeFileSync(path.join(fx.dev, 'changelog.jsonl'), `${rows.map((r) => JSON.stringify(r)).join('\n')}\n`);
+    for (const name of ['session-milestones.jsonl', 'research-log.jsonl', 'tool-use-log.jsonl']) fs.writeFileSync(path.join(fx.dev, name), '');
+
+    const cli = (args, overrides = {}, input) => spawnSync(process.execPath, [MAILBOX_CLI, 'send', ...args],
+      { env: { ...env(fx, { ...OFFLINE_INDEX_ENV, ...overrides }) }, encoding: 'utf8', input });
+    const asAgy = { ANTIGRAVITY_CONVERSATION_ID: AGY };
+
+    const ok = cli(['--to', CLAUDE.slice(0, 8), '--note', '-'], asAgy, 'Synced the plugin.\nReload to pick up the hook.\n');
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, new RegExp(`Queued note-\\S+ for claude session ${CLAUDE} \\(session-cartographer\\)`));
+    assert.match(ok.stdout, new RegExp(`from antigravity session ${AGY}`));
+    const pending = pendingNotes({ dev: fx.dev, session: CLAUDE }).map((x) => x.note);
+    assert.equal(pending.length, 1);
+    assert.deepEqual([pending[0].from.session_id, pending[0].from.provider, pending[0].from.project], [AGY, 'antigravity', 'mavericks'],
+      'the sender comes from the environment the shell was given');
+    assert.equal(pending[0].text, 'Synced the plugin.\nReload to pick up the hook.', 'stdin is read, newlines survive');
+
+    const refusals = [
+      [['--to', 'zzzzzzzz', '--note', 'x'], asAgy, /no session in the last 2 days of standup starts with "zzzzzzzz"/],
+      [['--to', AGY, '--note', 'x'], asAgy, /that is this session/],
+      [['--to', 'short', '--note', 'x'], asAgy, /prefix of at least 8 characters/],
+      [['--to', CLAUDE, '--note', '   '], asAgy, /note is required/],
+      [['--to', CLAUDE, '--note', 'x'.repeat(2001)], asAgy, /limit is 2000/],
+    ];
+    for (const [args, overrides, reason] of refusals) {
+      const res = cli(args, overrides);
+      assert.equal(res.status, 1, `${args.join(' ')} is refused`);
+      assert.match(res.stderr, reason);
+    }
+    assert.equal(cli(['--to', CLAUDE]).status, 2, 'a missing --note is a usage error');
+    assert.equal(pendingNotes({ dev: fx.dev, session: CLAUDE }).length, 1, 'no refusal wrote a note');
+    assert.equal(pendingNotes({ dev: fx.dev, session: AGY }).length, 0);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('the delivered note tells an Antigravity recipient how to answer from a shell', () => {
+  const text = renderDelivery([{ sent_at: new Date().toISOString(), text: 'hi',
+    from: { session_id: CLAUDE, provider: 'claude', project: 'dev' } }]);
+  assert.match(text, /`tell` tool/);
+  assert.match(text, /mailbox\.js" send --to <id> --note "<text>"/);
 });
 
 test('the mailbox module is mirrored byte for byte into the plugin', () => {

@@ -53,7 +53,7 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { isResolved } from './sentinels.js';
 import { renderText as renderFactsText } from './facts-render.js';
-import { sendNote, NOTE_MAX_CHARS } from './mailbox.js';
+import { sendNote, checkNoteText, pickRecipient, senderFromEnv, sentReport, topProject, TARGET_PATTERN } from './mailbox.js';
 
 // Resolve physically, as cartographer-search.sh does: a skills symlink into the
 // checkout makes a lexical `..` point somewhere else than the kernel's.
@@ -849,31 +849,16 @@ async function toolStandup(args, { signal }) {
 
 // The provider a session-chain variable names, for a sender whose provider
 // nothing else states. CARTOGRAPHER_SESSION_ID names no agent.
-const PROVIDER_BY_SOURCE = {
-  CLAUDE_SESSION_ID: 'claude',
-  CLAUDE_CODE_SESSION_ID: 'claude',
-  CODEX_SESSION_ID: 'codex',
-  ANTIGRAVITY_CONVERSATION_ID: 'antigravity',
-};
-
-function topProject(projects) {
-  const entries = Object.entries(projects || {}).filter(([name]) => isResolved(name));
-  entries.sort((a, b) => b[1] - a[1]);
-  return entries[0]?.[0] || '';
-}
-
 /**
  * Queue a note for another live session (scripts/mailbox.js). The recipient
  * must be in standup's roster: an id the caller got from somewhere else, a
  * page or a file, is refused rather than written to a directory of its name.
+ * mailbox.js owns the rules, shared with its `send` CLI.
  */
 async function toolTell(args, { signal }) {
-  const target = readString(args, 'to', { required: true, max: 128, pattern: /^[A-Za-z0-9][A-Za-z0-9._-]{7,127}$/, hint: 'a session id or a prefix of at least 8 characters, as standup prints it' }).toLowerCase();
-  const raw = args?.note;
-  if (typeof raw !== 'string' || !raw.trim()) throw new ToolInputError('note is required.');
-  const note = raw.replace(/\r\n?/g, '\n').trim();
-  if (note.length > NOTE_MAX_CHARS) throw new ToolInputError(`note is ${note.length} characters; the limit is ${NOTE_MAX_CHARS}.`);
-  if (/[\u0000-\u0008\u000b-\u001f\u007f]/.test(note)) throw new ToolInputError('note must be plain text (newlines are fine).');
+  const target = readString(args, 'to', { required: true, max: 128, pattern: TARGET_PATTERN, hint: 'a session id or a prefix of at least 8 characters, as standup prints it' }).toLowerCase();
+  let note;
+  try { note = checkNoteText(args?.note); } catch (err) { throw new ToolInputError(err.message); }
 
   const env = childEnv();
   const result = await run('node', [STANDUP, '--since', '2d', '--roster', '--json', '--all', '--no-fold'], { signal, timeoutMs: QUICK_TIMEOUT_MS, env });
@@ -882,53 +867,23 @@ async function toolTell(args, { signal }) {
   try { roster = JSON.parse(result.stdout); } catch { return errorResult('tell: standup returned output that is not JSON.'); }
   const sessions = Array.isArray(roster?.sessions) ? roster.sessions : [];
 
-  const { session_source: source } = sessionAttribution(env);
-  const senderId = source ? String(env[source]).trim() : '';
-  const senderProvider = (isResolved(env.CARTOGRAPHER_PROVIDER) && env.CARTOGRAPHER_PROVIDER)
-    || PROVIDER_BY_SOURCE[source] || providerFromClient(clientInfo?.name) || 'unknown';
-  const self = sessions.find((s) => senderId && String(s.id).toLowerCase() === senderId.toLowerCase());
+  const sender = senderFromEnv(env, { fallbackProvider: providerFromClient(clientInfo?.name) });
+  const self = sessions.find((s) => sender.id && String(s.id).toLowerCase() === sender.id.toLowerCase());
 
-  const matches = sessions.filter((s) => String(s.id).toLowerCase().startsWith(target));
-  if (matches.length === 0) {
-    return errorResult(`tell: no session in the last 2 days of standup starts with "${target}". Run standup and use an id it lists.`);
-  }
-  if (matches.length > 1) {
-    return errorResult(`tell: "${target}" matches ${matches.length} sessions (${matches.slice(0, 5).map((s) => String(s.id).slice(0, 12)).join(', ')}); give more of the id.`);
-  }
-  const to = matches[0];
-  if (senderId && String(to.id).toLowerCase() === senderId.toLowerCase()) {
-    return errorResult('tell: that is this session. A note to yourself would arrive on your own next prompt; write it down instead.');
-  }
-
+  let to;
   let sent;
   try {
+    to = pickRecipient(sessions, target, sender.id);
     sent = sendNote({
       dev: devDir(),
       to: { id: to.id, provider: to.provider, project: topProject(to.projects) },
-      from: { id: senderId, provider: senderProvider, project: self ? topProject(self.projects) : '' },
+      from: { id: sender.id, provider: sender.provider, project: self ? topProject(self.projects) : '' },
       text: note,
     });
   } catch (err) {
     return errorResult(`tell: ${err.message}`);
   }
-  const when = to.provider === 'antigravity'
-    ? 'before its next model step (Antigravity checks on every step, mid-turn included)'
-    : 'when it next receives a user prompt';
-  const lines = [
-    `Queued ${sent.note.note_id} for ${to.provider} session ${to.id}${sent.note.to.project ? ` (${sent.note.to.project})` : ''}.`,
-    `It is delivered ${when}, labelled as a note from ${senderProvider} session ${senderId || '(unidentified: this client exposes no session id, so the recipient cannot reply)'}.`,
-    `Idle ${fmtIdle(to.idle_ms)}. Standup shows it as waiting until then.`,
-  ];
-  if (to.provider === 'codex') lines.push('Codex runs the delivery hook only once its user has approved it in /hooks.');
-  return okResult(lines.join('\n'));
-}
-
-function fmtIdle(ms) {
-  if (!Number.isFinite(ms) || ms < 0) return 'for an unknown time';
-  const m = Math.round(ms / 60e3);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  return h < 48 ? `${h}h${String(m % 60).padStart(2, '0')}m` : `${Math.floor(h / 24)}d`;
+  return okResult(sentReport(sent, to, sender));
 }
 
 // ─── Tool definitions: the descriptions are the product ───
